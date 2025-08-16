@@ -25,6 +25,7 @@ router.register("feeding_status", handle_feeding_status)
 router.register("dues_notice", handle_dues_notice)
 
 invites_cache: dict[int, dict[str, int]] = {}  # guild_id -> {code: uses}
+message_cache: dict[int, str] = {}
 
 async def _refresh_invites(guild: discord.Guild):
     try:
@@ -49,8 +50,9 @@ async def on_ready():
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
-    
     now = time.time()
+    # Cache message content for edit tracking
+    message_cache[message.id] = message.content
     log_event({
         "ts": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(),
         "event": "message",
@@ -79,10 +81,14 @@ async def on_message(message: discord.Message):
 
 @bot.event
 async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
-    before_content = payload.cached_message.content if payload.cached_message else "[Content not cached]"
-    # The 'after' content is not always present, e.g. when an embed is added
+    before_content = (
+        payload.cached_message.content if payload.cached_message
+        else message_cache.get(payload.message_id, "[Content not cached]")
+    )
     after_content = payload.data.get("content", "[Content not available]")
-
+    # Update cache with new content if present
+    if after_content not in ("[Content not available]", None):
+        message_cache[payload.message_id] = after_content
     log_event({
         "ts": datetime.now(timezone.utc).isoformat(),
         "event": "message_edit",

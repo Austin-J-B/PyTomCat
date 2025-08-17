@@ -14,8 +14,8 @@ def log_event(event_data):
     # Convert to Central Time for human-readable log
     ts_ct = ts_utc.astimezone(ZoneInfo("America/Chicago"))
     
-    # Keep filenames based on UTC date for consistency
-    date_str = ts_utc.strftime("%Y-%m-%d")
+    # Keep filenames based on Central Time date
+    date_str = ts_ct.strftime("%Y-%m-%d")
     time_str = ts_ct.strftime("%m/%d/%Y, %I:%M:%S %p")
 
     # Machine log (NDJSON) - remains in UTC

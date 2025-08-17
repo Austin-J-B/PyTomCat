@@ -28,11 +28,20 @@ invites_cache: dict[int, dict[str, int]] = {}  # guild_id -> {code: uses}
 message_cache: dict[int, str] = {}
 
 async def _refresh_invites(guild: discord.Guild):
+    """Refreshes the invite cache for a given guild."""
+    if not guild.me.guild_permissions.manage_guild:
+        print(f"Warning: Missing 'Manage Server' permission in '{guild.name}' to track invites.")
+        return
     try:
         invites = await guild.invites()
-        invites_cache[guild.id] = {inv.code: inv.uses for inv in invites if inv.uses is not None}
-    except Exception:
-        invites_cache[guild.id] = {}
+        invites_cache[guild.id] = {
+            invite.code: invite.uses for invite in invites if invite.uses is not None
+        }
+    except discord.Forbidden:
+        print(f"Error: Could not fetch invites for '{guild.name}' due to missing permissions.")
+    except discord.HTTPException as e:
+        print(f"Error: Failed to fetch invites for '{guild.name}': {e}")
+
 
 @bot.event
 async def on_ready():
@@ -63,10 +72,7 @@ async def on_message(message: discord.Message):
         "channel": getattr(message.channel, "name", None),
         "content": message.content,
     })
-
-    # Check for misc triggers first
     await handle_misc(message, now_ts=now, allow_in_channels=settings.misc_channels)
-
     intent: Intent | None = classify(message.channel.id, message.content)
     if intent:
         log_event({
@@ -81,6 +87,10 @@ async def on_message(message: discord.Message):
 
 @bot.event
 async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
+    # Ignore edits from bots to prevent log spam
+    if payload.data.get("author", {}).get("bot", False):
+        return
+
     before_content = (
         payload.cached_message.content if payload.cached_message
         else message_cache.get(payload.message_id, "[Content not cached]")

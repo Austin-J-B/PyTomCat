@@ -27,7 +27,7 @@ def classify(channel_id: int, content: str) -> Optional[Intent]:
         if PAT_SUB_REQUEST.search(text):
             return Intent("feeding_sub_request", {})
 
-    if settings.ch_due_portal and channel_id == settings.ch_due_portal:
+    if settings.ch_dues_portal and channel_id == settings.ch_dues_portal:
         if re.search(r"(@\w+|\$\w+|paypal|venmo|cash\s*app|receipt)", text, re.I):
             return Intent("dues_notice", {"raw": text})
 

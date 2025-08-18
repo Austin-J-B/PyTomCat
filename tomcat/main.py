@@ -11,6 +11,8 @@ from .handlers.feeding import handle_feeding_status
 from .handlers.dues import handle_dues_notice
 import time
 from .handlers.misc import handle_misc
+from .scheduler import dues_ingest_loop
+from .models.dues_store import init_db
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -50,10 +52,12 @@ async def on_ready():
         "event": "ready",
         "bot": str(bot.user) if bot.user else "Unknown"
     })
+    init_db()
     # Refresh invites for all guilds
     for g in bot.guilds:
         await _refresh_invites(g)
     print(f"TomCat VI online as {bot.user}")
+    bot.loop.create_task(dues_ingest_loop())
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -82,7 +86,7 @@ async def on_message(message: discord.Message):
             "args": intent.args,
             "msg_id": message.id
         })
-        await router.dispatch(intent, {"channel": message.channel, "author": message.author})
+        await router.dispatch(intent, {"channel": message.channel, "author": message.author, "message": message})
     await bot.process_commands(message)
 
 @bot.event

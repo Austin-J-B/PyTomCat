@@ -40,15 +40,52 @@ from .handlers.dues import (
 from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
 
+# --- Muted wrappers: run handlers but drop outbound sends ---
+class _MuteChannel:
+    def __init__(self, real, label_fn):
+        self._real = real
+        self._label_fn = label_fn
+        self.id = getattr(real, "id", None)
+        self.name = getattr(real, "name", None)
+
+    async def send(self, content=None, **kwargs):
+        # Log what would have been sent; don’t actually send.
+        from .logger import log_action  # local import to avoid cycles
+        # Prefer a short preview of content or note an embed
+        preview = ""
+        if content:
+            preview = str(content)
+        elif "embed" in kwargs and kwargs["embed"] is not None:
+            preview = "embed"
+        else:
+            preview = "(no content)"
+        log_action(
+            "muted_send",
+            f"channel={self._label_fn(self._real)}",
+            preview[:120],
+        )
+        return None  # mimic coroutine
+
+class _MuteMessage:
+    def __init__(self, real_msg, muted_channel):
+        # Keep attributes handlers touch; forward everything else if needed
+        self._real = real_msg
+        self.channel = muted_channel
+        self.author = real_msg.author
+        self.content = real_msg.content
+        self.clean_content = getattr(real_msg, "clean_content", self.content)
+        self.attachments = getattr(real_msg, "attachments", [])
+
+
+
 async def _handle_misc_adapter(intent: Intent, ctx: Dict[str, Any]) -> None:
     message: discord.Message = ctx["message"]
     await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
 
 
 def _user_label(u: Union[discord.Member, discord.User]) -> str:
-    # Prefer display_name (Member), then global_name (User), then @username
-    display = u.display_name if isinstance(u, discord.Member) else getattr(u, "global_name", None)
-    return f"{display} (@{u.name})" if display else f"@{u.name}"
+    return getattr(u, "name", "unknown")
+
 
 
 def _channel_label(ch: discord.abc.Messageable) -> str:
@@ -150,20 +187,28 @@ async def on_message(message: discord.Message):
         "attachments": len(message.attachments) if hasattr(message, "attachments") else 0,
     })
 
-    # Silent mode gate: only admins bypass
-    is_admin = int(message.author.id) in settings.admin_ids
-    if settings.silent_mode and not is_admin:
-        return
-
     if is_spam(message.content):
         return
 
     intent = classify(message.content, channel_id=message.channel.id)
     ctx: Dict[str, Any] = {"bot": bot, "message": message, "channel": message.channel, "author": message.author}
+
+    # Global mute: while silent_mode is ON, only allow the silent_mode toggle intent through.
+    if settings.silent_mode and (not intent or intent.type != "silent_mode"):
+        muted_ch = _MuteChannel(message.channel, _channel_label)
+        muted_msg = _MuteMessage(message, muted_ch)
+        ctx["channel"] = muted_ch
+        ctx["message"] = muted_msg
+        if intent:
+            await router.dispatch(intent, ctx)
+        else:
+            await router.dispatch(Intent("misc", {}), ctx)
+        return
+
+
     if intent:
         await router.dispatch(intent, ctx)
     else:
-        # Your misc handler signature is (message, *, now_ts, allow_in_channels)
         await router.dispatch(Intent("misc", {}), ctx)
 
 

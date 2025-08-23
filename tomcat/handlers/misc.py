@@ -2,6 +2,8 @@ from __future__ import annotations
 import re, random
 import discord
 from typing import Any
+from tomcat.utils.sender import safe_send
+from tomcat.logger import log_action
 
 # Precompile once
 MEOWS = [
@@ -40,7 +42,8 @@ async def handle_misc(message: discord.Message, *, now_ts: float, allow_in_chann
             if not _cool(message.author.id, now_ts):
                 return
             resp = fn()
-            await message.channel.send(resp)
+            await safe_send(message.channel, resp)
+            log_action("handle_misc", f"trigger={rx.pattern}", resp)
             return  # stop after first match
         
 

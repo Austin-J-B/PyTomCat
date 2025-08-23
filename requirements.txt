@@ -6,3 +6,4 @@ google-auth-oauthlib==1.2.0
 google-api-python-client==2.129.0
 beautifulsoup4==4.12.3
 rapidfuzz==3.10.0
+transformers==4.39.3

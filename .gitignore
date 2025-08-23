@@ -5,3 +5,8 @@ logs/*
 credentials/*
 !credentials/service_account.json
 credentials/service_account.json
+
+__pycache__/
+*.pyc
+
+

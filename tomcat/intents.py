@@ -11,6 +11,7 @@ WAKE = re.compile(rf"^\s*{re.escape(settings.tomcat_wake)}[\s,]+", re.I)
 PAT_CAT_SHOW = re.compile(r"show\s+(?:me\s+)?(?P<name>[\w \-']+)$", re.I)
 PAT_FEEDING_STATUS = re.compile(r"(feeding|stations?)\s+(status|today|list)", re.I)
 PAT_SUB_REQUEST = re.compile(r"\b(sub|substitute)\b.*\b(for|at)\b.*", re.I)
+PAT_SILENT = re.compile(r"\b(silent|quiet|no\s*reply)\b", re.I)
 
 @dataclass
 class Intent:

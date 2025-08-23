@@ -1,6 +1,5 @@
 """Channel-first + regex classifier with wake-word support.
-Add DeBERTa fallback later only when classify() returns None.
-"""
+Add DeBERTa fallback later only when classify() returns None."""
 from __future__ import annotations
 import re
 from dataclasses import dataclass
@@ -11,6 +10,7 @@ WAKE = re.compile(rf"^\s*{re.escape(settings.bot_name)}[\s,]+", re.I)
 PAT_CAT_SHOW = re.compile(r"show\s+(?:me\s+)?(?P<name>[\w \-']+)$", re.I)
 PAT_FEEDING_STATUS = re.compile(r"(feeding|stations?)\s+(status|today|list)", re.I)
 PAT_SUB_REQUEST = re.compile(r"\b(sub|substitute)\b.*\b(for|at)\b.*", re.I)
+PAT_SILENT = re.compile(r"silent\s+mode", re.I)
 
 @dataclass
 class Intent:
@@ -39,6 +39,8 @@ def classify(channel_id: int, content: str) -> Optional[Intent]:
             return Intent("cat_show", {"name": m.group("name").strip()})
         if PAT_FEEDING_STATUS.search(body):
             return Intent("feeding_status", {})
+        if PAT_SILENT.search(body):
+            return Intent("silent_mode", {})
 
     # 3) Prefix commands like !members (add as needed)
     if text.startswith(settings.command_prefix):

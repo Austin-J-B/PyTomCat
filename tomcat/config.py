@@ -16,6 +16,11 @@ class Settings:
     command_prefix: str = os.getenv("COMMAND_PREFIX", "!")
     bot_name: str = os.getenv("BOT_NAME", "tomcat")
     timezone: str = os.getenv("TIMEZONE", "America/Chicago")
+    # Parse admin IDs as ints so ctx["author"].id matches
+    admin_ids: list[int] = field(default_factory=lambda: [
+        int(x) for x in _get_env_list("ADMIN_IDS") if x.strip().isdigit()
+    ])
+    silent_mode: bool = field(default_factory=lambda: _get_env_bool("SILENT_MODE"))
 
     # Channels
     ch_due_portal: int | None = int(os.getenv("CH_DUE_PORTAL", "0")) or None
@@ -39,3 +44,7 @@ class Settings:
     misc_channels: set[int] = field(default_factory=set)
 
 settings = Settings()
+
+# Back-compat alias for older modules
+if not hasattr(settings, "bot_name"):
+    setattr(settings, "bot_name", settings.tomcat_wake)

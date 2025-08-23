@@ -9,9 +9,9 @@ from __future__ import annotations
 from typing import Any
 import datetime as dt
 from .sheets_client import sheets_client
-from . .config import settings
+from ..config import settings
 try:
-    from . .utils.text import norm_alnum_lower  # real helper if you have utils/
+    from ..utils.text import norm_alnum_lower  # real helper if you have utils/
 except Exception:
     import re as _re
     def norm_alnum_lower(s: str) -> str:

@@ -17,6 +17,5 @@ class Router:
         if not fn:
             log_action("dispatch_missing", f"intent={intent.type}", "no handler")
             return
-        log_action("dispatch", f"intent={intent.type}", f"handler={fn.__name__}")
         await fn(intent, ctx)
-        log_action("handled", f"intent={intent.type}", "ok")
+

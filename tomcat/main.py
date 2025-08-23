@@ -7,12 +7,13 @@ import discord
 from discord.ext import commands
 from datetime import datetime, timezone
 
-from .handlers.misc import handle_misc as _handle_misc_raw
+from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
 from .config import settings
 from .logger import log_event, log_action  # noqa: F401  #If unused right now
 from .intents import classify, Intent
 from .router import Router
 from .spam import is_spam
+
 
 
 
@@ -36,9 +37,11 @@ from .handlers.dues import (
     init_db as _init_db,
 )
 
-# These two do NOT match; they use custom signatures.
 from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
+
+from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
+
 
 # --- Muted wrappers: run handlers but drop outbound sends ---
 class _MuteChannel:
@@ -130,12 +133,23 @@ async def handle_misc(intent: Intent, ctx: Dict[str, Any]) -> None:
     message: discord.Message = ctx["message"]
     await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
 
+async def handle_cat_profile(intent: Intent, ctx: Dict[str, Any]) -> None:
+    await _handle_cat_show(intent, ctx)
+
+async def handle_cat_photo(intent: Intent, ctx: Dict[str, Any]) -> None:
+    await _handle_cat_photo(intent, ctx)
+
 # ------- Router registration -------
 router.register("cat_show", handle_cat_show)
 router.register("feeding_status", handle_feeding_status)
 router.register("dues_notice", handle_dues_notice)
 router.register("silent_mode", handle_silent_mode)
 router.register("misc", _handle_misc_adapter)
+router.register("cat_profile", handle_cat_profile)
+router.register("cat_photo", handle_cat_photo)
+router.register("cv_detect", handle_cv_detect)
+router.register("cv_crop", handle_cv_crop)
+router.register("cv_identify", handle_cv_identify)
 
 
 # ------- Optional: invite cache you already had -------

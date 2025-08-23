@@ -141,6 +141,51 @@ async def get_recent_photo(full_name: str) -> dict | str:
         "reverse_index": reverse_index,
     }
 
+async def get_most_recent_photo(full_name: str) -> dict | str:
+    """Return the most recent photo for a FULL_NAME using the highest SERIAL value."""
+    if not settings.sheet_vision_id:
+        return "Aux sheet ID not configured. Set SHEET_VISION_ID in .env."
+    gc = sheets_client()
+    ws = gc.open_by_key(settings.sheet_vision_id).worksheet("RecentPics")
+
+    rows = ws.get_all_values()
+    key = norm_alnum_lower(full_name)
+    if not rows or not key:
+        return "No data."
+
+    header, *data = rows
+    matches = [r for r in data if norm_alnum_lower(r[0] if r else "") == key]
+    if not matches:
+        return f"No recent photos for '{full_name}'."
+
+    # Choose the row with max TOTAL (col 2) first, then pick the highest SERIAL among URL/SERIAL pairs
+    pick = max(matches, key=lambda r: int(r[2] or 0) if len(r) > 2 and str(r[2]).isdigit() else 0)
+    best = None
+    best_serial = -1
+    i = 3
+    while i < len(pick):
+        url = pick[i].strip() if i < len(pick) else ""
+        serial = pick[i + 1].strip() if i + 1 < len(pick) else ""
+        try:
+            s_val = int(serial) if serial else -1
+        except Exception:
+            s_val = -1
+        if url and s_val > best_serial:
+            best_serial = s_val
+            best = (url, serial or "Unknown")
+        i += 2
+
+    if not best:
+        return f"No accessible photos found for {full_name}."
+
+    url, serial = best
+    total_available = int(pick[2] or 0) if len(pick) > 2 and str(pick[2]).isdigit() else 0
+    return {
+        "actual_name": full_name,
+        "url": url,
+        "serial": serial,
+        "total_available": total_available,
+    }
 
 async def get_random_photo(full_name: str):
     return await get_recent_photo(full_name)

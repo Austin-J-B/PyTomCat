@@ -1,67 +1,56 @@
-"""Cats feature: "TomCat, show me <cat>"
-- Builds an embed with profile info and latest image
-- Adds a "Show me another" button that swaps in a random photo
-"""
 from __future__ import annotations
 import discord
 from typing import Any
-from . .services.catsheets import get_cat_profile, get_random_photo
+from ..intents import Intent
+from ..services.catsheets import get_cat_profile, get_recent_photo
+from ..logger import log_action  # add at top with the other imports
 
-# ---- UI View with a single button ----
-class CatPhotoView(discord.ui.View):
-    def __init__(self, cat_query: str):
-        super().__init__(timeout=180)
-        self.cat_query = cat_query
 
-    @discord.ui.button(label="Show me another", style=discord.ButtonStyle.primary, custom_id="cat_random_more")
-    async def show_another(self, interaction: discord.Interaction, button: discord.ui.Button):  # type: ignore[override]
-        rp = await get_random_photo(self.cat_query)
-        if isinstance(rp, str):
-            await interaction.response.edit_message(content=rp, embeds=[], attachments=[], view=None)
-            return
-        await interaction.response.edit_message(embed=build_random_photo_embed(rp), view=self)
+def _add_field(embed: discord.Embed, name: str, value: Any, inline: bool = True) -> None:
+    if value is None:
+        return
+    s = str(value).strip()
+    if not s:
+        return
+    embed.add_field(name=name, value=s[:1024], inline=inline)
 
-# ---- Embed builders ----
-def build_profile_embed(info: dict) -> discord.Embed:
-    title = f"__**{info['actual_name']}**__"
-    lines = [
-        f"**Description:** {info.get('physical_description','Unknown')}",
-        f"**Behavior:** {info.get('behavior','Unknown')}",
-        f"**Location:** {info.get('location','Unknown')}",
-        f"**Age Estimate:** {info.get('age_estimate','Unknown')}",
-        f"**TNR Status:** {info.get('tnr_status','Unknown')}",
-    ]
-    if info.get('nicknames'):
-        lines.append(f"**Common Nicknames:** {info['nicknames']}")
-    lines.append(
-        f"**Last Reported:** {info.get('last_seen_date','Unknown')} at {info.get('last_seen_time','Unknown')} by {info.get('last_seen_by','Unknown')}"
-    )
-
-    emb = discord.Embed(title=title, description="\n".join(lines), color=0x2F3136)
-    if info.get('image_url'):
-        emb.set_image(url=info['image_url'])
-    return emb
-
-def build_random_photo_embed(rp: dict) -> discord.Embed:
-    title = f"__**Random Photo of {rp['actual_name']}**__"
-    desc = (
-        f"**Here's a random photo of {rp['actual_name']}**\n"
-        f"(Photo {rp['reverse_index']} out of {rp['total_available']})\n"
-        f"Image: {rp['serial']}"
-    )
-    emb = discord.Embed(title=title, description=desc, color=0x2F3136)
-    emb.set_image(url=rp['url'])
-    return emb
-
-# ---- Handler entrypoint ----
-async def handle_cat_show(intent, ctx: dict[str, Any]):
-    name = (intent.args.get("name", "") or "").strip()
-    channel: discord.abc.Messageable = ctx["channel"]
+async def handle_cat_show(intent: Intent, ctx: dict) -> None:
+    ch: discord.abc.MessageableChannel = ctx["channel"]
+    name = intent.data.get("name", "").strip()
     if not name:
-        await channel.send("Which cat would you like to see?")
+        await ch.send("Who am I showing? Try: `TomCat, show Microwave`")
         return
-    info = await get_cat_profile(name)
-    if isinstance(info, str):
-        await channel.send(info)
+
+    profile = await get_cat_profile(name)
+    if isinstance(profile, str):
+        await ch.send(profile)
         return
-    await channel.send(embed=build_profile_embed(info), view=CatPhotoView(cat_query=name))
+
+    # Try to fetch one recent photo for the actual name
+    img_url = None
+    photo = await get_recent_photo(profile["actual_name"])
+    if isinstance(photo, dict):
+        img_url = photo.get("url")
+
+    embed = discord.Embed(
+        title=profile["actual_name"],
+        description=(profile.get("comments") or "").strip(),
+        color=0x2f95dc,
+    )
+    if img_url:
+        embed.set_image(url=img_url)
+
+    _add_field(embed, "Physical", profile.get("physical_description"))
+    _add_field(embed, "Behavior", profile.get("behavior"))
+    _add_field(embed, "Location", profile.get("location"))
+    _add_field(embed, "Last Seen Date", profile.get("last_seen_date"))
+    _add_field(embed, "Last Seen Time", profile.get("last_seen_time"))
+    _add_field(embed, "Last Seen By", profile.get("last_seen_by"))
+    _add_field(embed, "Age", profile.get("age"))
+    _add_field(embed, "TNR'd", profile.get("tnrd"))
+    _add_field(embed, "TNR Date", profile.get("tnr_date"))
+    _add_field(embed, "Sex", profile.get("sex"))
+    _add_field(embed, "Nicknames", profile.get("nicknames"))
+
+    log_action("handle_cat_show", f"name={profile['actual_name']}", "sending embed")
+    await ch.send(embed=embed)

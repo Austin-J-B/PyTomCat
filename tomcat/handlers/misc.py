@@ -36,11 +36,13 @@ async def handle_misc(message: discord.Message, *, now_ts: float, allow_in_chann
     if "```" in content or "`" in content:
         return
     for rx, fn in TRIGGERS:
-        if rx.search(content):
+        m = rx.search(content)
+        if m:
             if not _cool(message.author.id, now_ts):
                 return
             resp = fn()
-            await message.channel.send(resp)
-            return  # stop after first match
+            await safe_send(message.channel, resp)
+            log_action("handle_misc", f"trigger={m.group(0)}", resp)
+            return
         
 

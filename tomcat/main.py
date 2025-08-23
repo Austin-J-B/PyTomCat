@@ -1,17 +1,22 @@
 from __future__ import annotations
+import asyncio
+import time
+from typing import Any, Dict, Union
+
 import discord
 from discord.ext import commands
 from datetime import datetime, timezone
+
+from .handlers.misc import handle_misc as _handle_misc_raw
 from .config import settings
-from .logger import log_event
+from .logger import log_event, log_action  # noqa: F401  #If unused right now
 from .intents import classify, Intent
 from .router import Router
-from .handlers.cats import handle_cat_show
-from .handlers.feeding import handle_feeding_status
-from .handlers.dues import handle_dues_notice
-import time
-from .handlers.misc import handle_misc
+from .spam import is_spam
 
+
+
+# ------- Discord intents & bot -------
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -20,11 +25,84 @@ intents.reactions = True
 
 bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 router = Router()
+
+# ------- Import real handlers -------
+# Cats / Feeding and Dues already match (intent, ctx) in your tree
+from .handlers.cats import handle_cat_show as _handle_cat_show
+from .handlers.feeding import handle_feeding_status as _handle_feeding_status
+from .handlers.dues import (
+    handle_dues_notice as _handle_dues_notice,
+    process_dues_cycle as _process_dues_cycle,
+    init_db as _init_db,
+)
+
+# These two do NOT match; they use custom signatures.
+from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
+from .handlers.misc import handle_misc as _handle_misc_raw
+
+async def _handle_misc_adapter(intent: Intent, ctx: Dict[str, Any]) -> None:
+    message: discord.Message = ctx["message"]
+    await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
+
+
+def _user_label(u: Union[discord.Member, discord.User]) -> str:
+    # Prefer display_name (Member), then global_name (User), then @username
+    display = u.display_name if isinstance(u, discord.Member) else getattr(u, "global_name", None)
+    return f"{display} (@{u.name})" if display else f"@{u.name}"
+
+
+def _channel_label(ch: discord.abc.Messageable) -> str:
+    # Guild text channel
+    if isinstance(ch, discord.TextChannel):
+        return f"#{ch.name}"
+    # Thread inside a parent channel; parent can be None so guard it
+    if isinstance(ch, discord.Thread):
+        parent = getattr(ch, "parent", None)
+        parent_prefix = f"#{parent.name}/" if parent and getattr(parent, "name", None) else ""
+        return f"{parent_prefix}{ch.name}"
+    # 1:1 DM (recipient is Optional[User])
+    if isinstance(ch, discord.DMChannel):
+        recipient = getattr(ch, "recipient", None)
+        if isinstance(recipient, (discord.User, discord.ClientUser)):
+            rid = recipient.id
+        else:
+            rid = "unknown"
+        return f"DM:{rid}"
+    # Group DM, Stage, Voice, PartialMessageable, whatever else
+    name = getattr(ch, "name", None)
+    return f"#{name}" if isinstance(name, str) and name else ch.__class__.__name__.lower()
+
+
+
+# ------- Adapters to unify handler signatures -------
+async def handle_cat_show(intent: Intent, ctx: Dict[str, Any]) -> None:
+    await _handle_cat_show(intent, ctx)
+
+async def handle_feeding_status(intent: Intent, ctx: Dict[str, Any]) -> None:
+    await _handle_feeding_status(intent, ctx)
+
+async def handle_dues_notice(intent: Intent, ctx: Dict[str, Any]) -> None:
+    await _handle_dues_notice(intent, ctx)
+
+# Your admin handler expects (args, ctx) where args == intent.data
+async def handle_silent_mode(intent: Intent, ctx: Dict[str, Any]) -> None:
+    await _handle_silent_mode_raw(intent.data, ctx)
+
+# Your misc handler expects (message, *, now_ts, allow_in_channels)
+async def handle_misc(intent: Intent, ctx: Dict[str, Any]) -> None:
+    message: discord.Message = ctx["message"]
+    await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
+
+# ------- Router registration -------
 router.register("cat_show", handle_cat_show)
 router.register("feeding_status", handle_feeding_status)
 router.register("dues_notice", handle_dues_notice)
+router.register("silent_mode", handle_silent_mode)
+router.register("misc", _handle_misc_adapter)
 
-invites_cache: dict[int, dict[str, int]] = {}  # guild_id -> {code: uses}
+
+# ------- Optional: invite cache you already had -------
+invites_cache: dict[int, dict[str, int]] = {}
 message_cache: dict[int, str] = {}
 
 async def _refresh_invites(guild: discord.Guild):
@@ -32,145 +110,62 @@ async def _refresh_invites(guild: discord.Guild):
     if not guild.me.guild_permissions.manage_guild:
         print(f"Warning: Missing 'Manage Server' permission in '{guild.name}' to track invites.")
         return
-    try:
-        invites = await guild.invites()
-        invites_cache[guild.id] = {
-            invite.code: invite.uses for invite in invites if invite.uses is not None
-        }
-    except discord.Forbidden:
-        print(f"Error: Could not fetch invites for '{guild.name}' due to missing permissions.")
-    except discord.HTTPException as e:
-        print(f"Error: Failed to fetch invites for '{guild.name}': {e}")
+    invites = await guild.invites()
+    invites_cache[guild.id] = {inv.code: inv.uses or 0 for inv in invites}
 
-
+# ------- Lifecycle -------
 @bot.event
 async def on_ready():
+    print(f"[TomCat] Logged in as {bot.user} in {len(bot.guilds)} guild(s).")
+    # Machine + human “ONLINE” handled by logger.log_event
     log_event({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "event": "ready",
-        "bot": str(bot.user) if bot.user else "Unknown"
+        "event": "online",
+        "user": str(bot.user),
+        "guild_count": len(bot.guilds),
     })
-    # Refresh invites for all guilds
-    for g in bot.guilds:
-        await _refresh_invites(g)
-    print(f"TomCat VI online as {bot.user}")
 
+    async def _dues_loop():
+        while True:
+            try:
+                await _process_dues_cycle(bot)
+            except Exception as e:
+                log_event({"event": "dues_loop_error", "error": str(e)})
+            await asyncio.sleep(7200)
+
+    asyncio.create_task(_dues_loop())
+
+
+# ------- Message entrypoint -------
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
-    now = time.time()
-    # Cache message content for edit tracking
-    message_cache[message.id] = message.content
-    log_event({
-        "ts": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(),
-        "event": "message",
-        "id": message.id,
-        "author_id": message.author.id,
-        "author": message.author.display_name,
-        "channel_id": message.channel.id,
-        "channel": getattr(message.channel, "name", None),
-        "content": message.content,
-    })
-    await handle_misc(message, now_ts=now, allow_in_channels=settings.misc_channels)
-    intent: Intent | None = classify(message.channel.id, message.content)
-    if intent:
-        log_event({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "event": "intent",
-            "type": intent.type,
-            "args": intent.args,
-            "msg_id": message.id
-        })
-        await router.dispatch(intent, {"channel": message.channel, "author": message.author})
-    await bot.process_commands(message)
 
-@bot.event
-async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
-    # Ignore edits from bots to prevent log spam
-    if payload.data.get("author", {}).get("bot", False):
+    # Human + machine log of the incoming message
+    log_event({
+        "event": "message",
+        "author": _user_label(message.author),
+        "channel": _channel_label(message.channel),
+        "content": message.clean_content if isinstance(message.content, str) else "",
+        "attachments": len(message.attachments) if hasattr(message, "attachments") else 0,
+    })
+
+    # Silent mode gate: only admins bypass
+    is_admin = int(message.author.id) in settings.admin_ids
+    if settings.silent_mode and not is_admin:
         return
 
-    before_content = (
-        payload.cached_message.content if payload.cached_message
-        else message_cache.get(payload.message_id, "[Content not cached]")
-    )
-    after_content = payload.data.get("content", "[Content not available]")
-    # Update cache with new content if present
-    if after_content not in ("[Content not available]", None):
-        message_cache[payload.message_id] = after_content
-    log_event({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "event": "message_edit",
-        "id": payload.message_id,
-        "channel_id": payload.channel_id,
-        "before": before_content,
-        "after": after_content,
-    })
+    if is_spam(message.content):
+        return
 
-@bot.event
-async def on_message_delete(message: discord.Message):
-    log_event({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "event": "message_delete",
-        "id": message.id,
-        "channel_id": message.channel.id
-    })
+    intent = classify(message.content, channel_id=message.channel.id)
+    ctx: Dict[str, Any] = {"bot": bot, "message": message, "channel": message.channel, "author": message.author}
+    if intent:
+        await router.dispatch(intent, ctx)
+    else:
+        # Your misc handler signature is (message, *, now_ts, allow_in_channels)
+        await router.dispatch(Intent("misc", {}), ctx)
 
-@bot.event
-async def on_member_join(member: discord.Member):
-    before = invites_cache.get(member.guild.id, {})
-    await _refresh_invites(member.guild)
-    after = invites_cache.get(member.guild.id, {})
-    
-    used_invite_code = None
-    for code, uses in after.items():
-        if uses > before.get(code, 0):
-            used_invite_code = code
-            break
-            
-    log_event({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "event": "member_join",
-        "id": member.id,
-        "name": member.display_name,
-        "invite_code": used_invite_code
-    })
-
-@bot.event
-async def on_member_remove(member: discord.Member):
-    log_event({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "event": "member_remove",
-        "id": member.id,
-        "name": member.display_name
-    })
-
-@bot.event
-async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    user = await bot.fetch_user(payload.user_id)
-    log_event({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "event": "reaction_add",
-        "user_id": payload.user_id,
-        "user_name": user.display_name if user else "Unknown User",
-        "message_id": payload.message_id,
-        "emoji": str(payload.emoji),
-        "channel_id": payload.channel_id,
-    })
-
-@bot.event
-async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
-    user = await bot.fetch_user(payload.user_id)
-    log_event({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "event": "reaction_remove",
-        "user_id": payload.user_id,
-        "user_name": user.display_name if user else "Unknown User",
-        "message_id": payload.message_id,
-        "emoji": str(payload.emoji),
-        "channel_id": payload.channel_id,
-    })
 
 # Optional: parity command (kept tiny)
 @bot.command(name="members")
@@ -184,8 +179,6 @@ async def members(ctx: commands.Context):
     await ctx.send("Members count: (hook up to Members sheet)")
 
 def run():
-    if not settings.discord_token:
-        raise SystemExit("DISCORD_TOKEN missing in .env")
     bot.run(settings.discord_token)
 
 if __name__ == "__main__":

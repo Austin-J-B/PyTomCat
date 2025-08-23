@@ -2,6 +2,14 @@ from __future__ import annotations
 import re, random
 import discord
 from typing import Any
+from ..logger import log_action
+
+try:
+    from ..utils.sender import safe_send  # canonical signature (ch, text) -> Awaitable[None]
+except Exception:
+    async def safe_send(ch, text):
+        await ch.send(text)
+
 
 # Precompile once
 MEOWS = [

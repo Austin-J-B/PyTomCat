@@ -189,3 +189,50 @@ async def get_most_recent_photo(full_name: str) -> dict | str:
 
 async def get_random_photo(full_name: str):
     return await get_recent_photo(full_name)
+
+async def build_profile_embed(query: str) -> dict | str:
+    """
+    Returns a dict compatible with discord.Embed.from_dict or a string error.
+    Uses CatDatabase for metadata and RecentPics for a nice image if available.
+    """
+    prof = await get_cat_profile(query)
+    if isinstance(prof, str):
+        return prof  # error string from get_cat_profile
+
+    # Prefer most-recent photo; fall back to CatDatabase image_url
+    recent = await get_most_recent_photo(prof["actual_name"])
+    img_url = None
+    if isinstance(recent, dict) and recent.get("url"):
+        img_url = recent["url"]
+    elif prof.get("image_url"):
+        img_url = prof["image_url"]
+
+    fields = []
+    def _add(name: str, val: str | None):
+        if val:
+            fields.append({"name": name, "value": str(val), "inline": False})
+
+    # Assemble fields
+    _add("Location", prof.get("location"))
+    _add("Behavior", prof.get("behavior"))
+    _add("Age", prof.get("age"))
+    _add("Sex", prof.get("sex"))
+    _add("TNR Status", prof.get("tnrd"))
+    _add("TNR Date", prof.get("tnr_date"))
+    last_seen_bits = []
+    if prof.get("last_seen_date"): last_seen_bits.append(str(prof["last_seen_date"]))
+    if prof.get("last_seen_time"): last_seen_bits.append(str(prof["last_seen_time"]))
+    if prof.get("last_seen_by"):   last_seen_bits.append(f"by {prof['last_seen_by']}")
+    _add("Last Seen", " ".join(last_seen_bits) if last_seen_bits else None)
+    _add("Nicknames", prof.get("nicknames"))
+    _add("Comments", prof.get("comments"))
+
+    embed = {
+        "title": f"__**{prof['actual_name']}**__",
+        "color": 0x2F3136,
+        "fields": fields,
+        "footer": {"text": "TomCat VI • Profiles"},
+    }
+    if img_url:
+        embed["image"] = {"url": img_url}
+    return embed

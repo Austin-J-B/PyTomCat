@@ -7,15 +7,14 @@ import discord
 from discord.ext import commands
 from datetime import datetime, timezone
 
-from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
 from .config import settings
 from .logger import log_event, log_action  # noqa: F401  #If unused right now
-from .intents import classify, Intent
-from .router import Router
 from .spam import is_spam
+from .intent_router import IntentRouter, Intent
+from .handlers.misc import handle_channel_image_intake as _handle_image_intake, start_profile_scheduler
 
 
-
+intent_router = IntentRouter()
 
 # ------- Discord intents & bot -------
 intents = discord.Intents.default()
@@ -25,12 +24,12 @@ intents.guilds = True
 intents.reactions = True
 
 bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
-router = Router()
 
 # ------- Import real handlers -------
 # Cats / Feeding and Dues already match (intent, ctx) in your tree
-from .handlers.cats import handle_cat_show as _handle_cat_show
-from .handlers.feeding import handle_feeding_status as _handle_feeding_status
+from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
+from .handlers.feeding import start_feeding_scheduler, handle_feeding_inquiry as _handle_feeding_status
+asyncio.create_task(start_feeding_scheduler(bot))
 from .handlers.dues import (
     handle_dues_notice as _handle_dues_notice,
     process_dues_cycle as _process_dues_cycle,
@@ -139,17 +138,6 @@ async def handle_cat_profile(intent: Intent, ctx: Dict[str, Any]) -> None:
 async def handle_cat_photo(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_cat_photo(intent, ctx)
 
-# ------- Router registration -------
-router.register("cat_show", handle_cat_show)
-router.register("feeding_status", handle_feeding_status)
-router.register("dues_notice", handle_dues_notice)
-router.register("silent_mode", handle_silent_mode)
-router.register("misc", _handle_misc_adapter)
-router.register("cat_profile", handle_cat_profile)
-router.register("cat_photo", handle_cat_photo)
-router.register("cv_detect", handle_cv_detect)
-router.register("cv_crop", handle_cv_crop)
-router.register("cv_identify", handle_cv_identify)
 
 
 # ------- Optional: invite cache you already had -------
@@ -182,7 +170,7 @@ async def on_ready():
             except Exception as e:
                 log_event({"event": "dues_loop_error", "error": str(e)})
             await asyncio.sleep(7200)
-
+    asyncio.create_task(start_profile_scheduler(bot))
     asyncio.create_task(_dues_loop())
 
 
@@ -203,28 +191,32 @@ async def on_message(message: discord.Message):
 
     if is_spam(message.content):
         return
+    # Channel → Sheet image intake (unprompted, only in mapped channels)
+    try:
+        if getattr(message, "attachments", None) and settings.channel_sheet_map and int(message.channel.id) in settings.channel_sheet_map:
+         await _handle_image_intake(message)
+    except Exception as e:
+        log_action("image_intake_error", f"channel={getattr(message.channel,'id','?')}", str(e))
 
-    intent = classify(message.content, channel_id=message.channel.id)
-    ctx: Dict[str, Any] = {"bot": bot, "message": message, "channel": message.channel, "author": message.author}
+    # Build ctx once
+    ctx: Dict[str, Any] = {
+        "bot": bot,
+        "message": message,
+        "channel": message.channel,
+        "author": message.author,
+    }
 
-    # Global mute: while silent_mode is ON, only allow the silent_mode toggle intent through.
-    if settings.silent_mode and (not intent or intent.type != "silent_mode"):
+    # Global mute: while silent_mode is ON, route everything through a MuteChannel/Message
+    if settings.silent_mode:
         muted_ch = _MuteChannel(message.channel, _channel_label)
         muted_msg = _MuteMessage(message, muted_ch)
         ctx["channel"] = muted_ch
         ctx["message"] = muted_msg
-        if intent:
-            await router.dispatch(intent, ctx)
-        else:
-            await router.dispatch(Intent("misc", {}), ctx)
+        await intent_router.handle_message(muted_msg, ctx)
         return
 
-
-    if intent:
-        await router.dispatch(intent, ctx)
-    else:
-        await router.dispatch(Intent("misc", {}), ctx)
-
+    # Normal path
+    await intent_router.handle_message(message, ctx)
 
 # Optional: parity command (kept tiny)
 @bot.command(name="members")

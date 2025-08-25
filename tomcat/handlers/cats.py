@@ -1,7 +1,7 @@
 from __future__ import annotations
 import discord
 from typing import Any
-from ..intents import Intent
+from ..intent_router import Intent
 from ..services.catsheets import (
     get_cat_profile,
     get_recent_photo as get_random_photo,

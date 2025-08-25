@@ -141,6 +141,98 @@ async def get_recent_photo(full_name: str) -> dict | str:
         "reverse_index": reverse_index,
     }
 
+async def get_most_recent_photo(full_name: str) -> dict | str:
+    """Return the most recent photo for a FULL_NAME using the highest SERIAL value."""
+    if not settings.sheet_vision_id:
+        return "Aux sheet ID not configured. Set SHEET_VISION_ID in .env."
+    gc = sheets_client()
+    ws = gc.open_by_key(settings.sheet_vision_id).worksheet("RecentPics")
+
+    rows = ws.get_all_values()
+    key = norm_alnum_lower(full_name)
+    if not rows or not key:
+        return "No data."
+
+    header, *data = rows
+    matches = [r for r in data if norm_alnum_lower(r[0] if r else "") == key]
+    if not matches:
+        return f"No recent photos for '{full_name}'."
+
+    # Choose the row with max TOTAL (col 2) first, then pick the highest SERIAL among URL/SERIAL pairs
+    pick = max(matches, key=lambda r: int(r[2] or 0) if len(r) > 2 and str(r[2]).isdigit() else 0)
+    best = None
+    best_serial = -1
+    i = 3
+    while i < len(pick):
+        url = pick[i].strip() if i < len(pick) else ""
+        serial = pick[i + 1].strip() if i + 1 < len(pick) else ""
+        try:
+            s_val = int(serial) if serial else -1
+        except Exception:
+            s_val = -1
+        if url and s_val > best_serial:
+            best_serial = s_val
+            best = (url, serial or "Unknown")
+        i += 2
+
+    if not best:
+        return f"No accessible photos found for {full_name}."
+
+    url, serial = best
+    total_available = int(pick[2] or 0) if len(pick) > 2 and str(pick[2]).isdigit() else 0
+    return {
+        "actual_name": full_name,
+        "url": url,
+        "serial": serial,
+        "total_available": total_available,
+    }
 
 async def get_random_photo(full_name: str):
     return await get_recent_photo(full_name)
+
+async def build_profile_embed(query: str) -> dict | str:
+    """
+    Returns a dict compatible with discord.Embed.from_dict or a string error.
+    Uses CatDatabase for metadata and RecentPics for a nice image if available.
+    """
+    prof = await get_cat_profile(query)
+    if isinstance(prof, str):
+        return prof  # error string from get_cat_profile
+
+    # Prefer most-recent photo; fall back to CatDatabase image_url
+    recent = await get_most_recent_photo(prof["actual_name"])
+    img_url = None
+    if isinstance(recent, dict) and recent.get("url"):
+        img_url = recent["url"]
+    elif prof.get("image_url"):
+        img_url = prof["image_url"]
+
+    fields = []
+    def _add(name: str, val: str | None):
+        if val:
+            fields.append({"name": name, "value": str(val), "inline": False})
+
+    # Assemble fields
+    _add("Location", prof.get("location"))
+    _add("Behavior", prof.get("behavior"))
+    _add("Age", prof.get("age"))
+    _add("Sex", prof.get("sex"))
+    _add("TNR Status", prof.get("tnrd"))
+    _add("TNR Date", prof.get("tnr_date"))
+    last_seen_bits = []
+    if prof.get("last_seen_date"): last_seen_bits.append(str(prof["last_seen_date"]))
+    if prof.get("last_seen_time"): last_seen_bits.append(str(prof["last_seen_time"]))
+    if prof.get("last_seen_by"):   last_seen_bits.append(f"by {prof['last_seen_by']}")
+    _add("Last Seen", " ".join(last_seen_bits) if last_seen_bits else None)
+    _add("Nicknames", prof.get("nicknames"))
+    _add("Comments", prof.get("comments"))
+
+    embed = {
+        "title": f"__**{prof['actual_name']}**__",
+        "color": 0x2F3136,
+        "fields": fields,
+        "footer": {"text": "TomCat VI • Profiles"},
+    }
+    if img_url:
+        embed["image"] = {"url": img_url}
+    return embed

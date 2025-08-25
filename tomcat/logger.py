@@ -8,6 +8,8 @@ LOG_DIR_HUMAN = Path("logs/human")
 LOG_DIR_MACHINE.mkdir(parents=True, exist_ok=True)
 LOG_DIR_HUMAN.mkdir(parents=True, exist_ok=True)
 
+from typing import Any
+
 TZ = ZoneInfo("America/Chicago")
 
 _COLW = {"event": 8, "col1": 25, "col2": 45}
@@ -22,7 +24,7 @@ def _human_line(ts_ct: str, event: str, col1: str = "", col2: str = "", tail: st
         _pad(col1, _COLW["col1"]),
         _pad(col2, _COLW["col2"]),
     ])
-    return head + ((" | " + tail) if tail else "")
+    return head + ((" || " + tail) if tail else "")
 
 
 def log_event(event_data: dict) -> str:
@@ -31,7 +33,7 @@ def log_event(event_data: dict) -> str:
         f.write(json.dumps(event_data, ensure_ascii=False) + "\n")
     
     now = datetime.now(TZ)
-    ts_ct = f"{now:%m/%d/%Y, %I:%M:%S}.{now.microsecond//1000:03d} {'AM' if now.hour < 12 else 'PM'}"
+    ts_ct = f"{now:%m/%d/%Y %I:%M:%S}.{now.microsecond//1000:03d} {'AM' if now.hour < 12 else 'PM'}"
 
     kind = str(event_data.get("event", "event")).lower()
 
@@ -79,3 +81,6 @@ def log_action(name: str, trigger: str, output: str) -> str:
         "trigger": trigger,
         "output": output,
     })
+
+def log_intent(kind: str, confidence: float, **extras: Any) -> str:
+    return log_event({"event": "intent", "kind": kind, "confidence": round(float(confidence), 3), **(extras or {})})

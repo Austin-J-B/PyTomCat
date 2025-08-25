@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
+from typing import Dict
+
 
 load_dotenv()
 
@@ -16,6 +18,48 @@ def _get_env_bool(key: str, default: bool = False) -> bool:
         return default
     return v.strip().lower() in {"1", "true", "yes", "on"}
 
+def _build_channel_sheet_map() -> dict[int, str]:
+    """
+    Build channel->sheetTab map from env.
+    Supports either:
+      - CHANNEL_SHEET_MAP="CH_PICTURES_OF_CATS:TCBPicsInput,CH_REPORT_NEW_CATS:TCBPicsInput,1344745306620694558:TCBVetBillInput"
+        (left side can be an env var name or a raw numeric ID)
+      - Or, if unset, a sane default using named channels.
+    """
+    raw = os.getenv("CHANNEL_SHEET_MAP", "").strip()
+    out: dict[int, str] = {}
+    if raw:
+        out: Dict[int, str] = {}
+        for pair in (p.strip() for p in raw.split(",") if p.strip()):
+            if ":" not in pair:
+                continue
+            k, tab = (s.strip() for s in pair.split(":", 1))
+            chan = os.getenv(k) if not k.isdigit() else k
+            if not chan:
+                continue
+            try:
+                cid = int(chan)
+            except Exception:
+                continue
+            if cid and tab:
+                out[cid] = tab
+        if out:
+            return out
+    # fallback defaults from your named channels
+    def _id(name: str) -> int | None:
+        try:
+            v = int(os.getenv(name, "0"))
+            return v or None
+        except Exception:
+            return None
+    pics = _id("CH_PICTURES_OF_CATS")
+    rpt  = _id("CH_REPORT_NEW_CATS")
+    if pics: out[pics] = "TCBPicsInput"
+    if rpt:  out[rpt]  = "TCBPicsInput"
+    # add more named channels later if you introduce them (e.g., CH_VET_BILLS -> "TCBVetBillInput")
+    return out
+
+
 @dataclass
 class Settings:
     # Discord
@@ -24,13 +68,12 @@ class Settings:
     bot_name: str = os.getenv("BOT_NAME", "tomcat")
     tomcat_wake: str = os.getenv("TOMCAT_WAKE", os.getenv("BOT_NAME", "tomcat"))
     timezone: str = os.getenv("TIMEZONE", "America/Chicago")
-
+    channel_sheet_map: dict[int, str] = field(default_factory=_build_channel_sheet_map)
     # Admins
     admin_ids: list[int] = field(default_factory=lambda: [
-        int(x) for x in _get_env_list("ADMIN_IDS")
-        if x.strip().lstrip("-").isdigit()
+        int(x) for x in _get_env_list("ADMIN_IDS") if x.strip().lstrip("-").isdigit()
     ])
-    silent_mode: bool = field(default_factory=lambda: _get_env_bool("SILENT_MODE"))
+    silent_mode: bool = field(default_factory=lambda: _get_env_bool("SILENT_MODE", False))
 
     # Channels
     ch_due_portal: int | None = int(os.getenv("CH_DUE_PORTAL", "0")) or None
@@ -62,7 +105,64 @@ class Settings:
     # Channels where misc handlers like "meow" are allowed (empty set means everywhere)
     misc_channels: set[int] = field(default_factory=set)
 
+        # ======== CV CONFIG (v5.6 parity; easy to tweak) ========
+    # Paths (drop-and-play). Change these when you retrain/move weights.
+    cv_detect_weights: str = os.getenv(
+        "CV_DETECT_WEIGHTS",
+        r"C:\Users\austi\Documents\GitHub\PyTomCat\weights\NanoModel.pt",
+    )
+    cv_classify_weights: str = os.getenv(
+        "CV_CLASSIFY_WEIGHTS",
+        r"C:\Users\austi\Documents\GitHub\PyTomCat\weights\NanoClassifier.pt",
+    )
+
+    # Optional human-readable class names for the classifier. Leave empty to use Cat{idx}.
+    cv_class_names: list[str] = field(default_factory=lambda: [
+        "Microwave", "Faye", "Bobbie", "Twix", "Citlali", "Angel", "Winston", "Radar", "Eggs", "Dumpster",
+        "Gregory", "Rubber", "Bruno", "Boots", "Princess", "Nefarious", "Eraser", "Eden", "Cassie", "Coronavirus"
+    ])
+
+    # Core knobs (kept at your v5.6 values by default)
+    cv_conf: float = float(os.getenv("CV_CONF", "0.552"))           # detector confidence
+    cv_iou: float = float(os.getenv("CV_IOU", "0.45"))              # NMS IoU
+    cv_detect_imgsz: int = int(os.getenv("CV_DETECT_IMGSZ", "640")) # YOLO inference size
+    cv_clf_imgsz: int = int(os.getenv("CV_CLF_IMGSZ", "640"))       # classifier input size
+    cv_pad_pct: float = float(os.getenv("CV_PAD_PCT", "0.03"))      # crop expansion
+
+    # Safety/limits
+    cv_max_image_dim: int = int(os.getenv("CV_MAX_IMAGE_DIM", "4096"))   # 4K cap on longest side
+    cv_max_download_mb: int = int(os.getenv("CV_MAX_DOWNLOAD_MB", "16")) # attachment size cap
+
+    # Device/precision
+    cv_half: bool = os.getenv("CV_FP16", "1").strip().lower() in {"1","true","yes","on"}
+
+    # Temp folder for downloads (repo-local, not hidden OS temp)
+    cv_temp_dir: str = os.getenv("CV_TEMP_DIR", "./temp_images")
+    # Auto-crop for "show me" / "who is"
+    auto_crop_show_photo: bool = os.getenv("AUTO_CROP_SHOW_PHOTO", "1").strip().lower() in {"1","true","yes","on"}
+    # Hard budget for auto-crop work in handlers (ms). If exceeded, show original image.
+    cv_timeout_ms: int = int(os.getenv("CV_TIMEOUT_MS", "800"))
+
+    # Stored profile message IDs from v5.6 (cat ID -> Discord message ID)
+    profile_messages: dict[str, int] = field(default_factory=lambda: {
+        "1": 1361917184254935093,
+        "2": 1361917363993182368,
+        "4": 1361917392208531518,
+        "5": 1361917398168371280,
+        "6": 1361917404208304309,
+        "7": 1361917410331856976,
+        "9": 1361917519883010269,
+        "17": 1361917533564702791,
+        "67": 1361917567291363348,
+    })
+
+
+
+
+
 settings = Settings()
+
+
 
 # Back-compat touches
 if not settings.tomcat_wake:

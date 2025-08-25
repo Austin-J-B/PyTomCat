@@ -8,6 +8,8 @@ LOG_DIR_HUMAN = Path("logs/human")
 LOG_DIR_MACHINE.mkdir(parents=True, exist_ok=True)
 LOG_DIR_HUMAN.mkdir(parents=True, exist_ok=True)
 
+from typing import Any
+
 TZ = ZoneInfo("America/Chicago")
 
 _COLW = {"event": 8, "col1": 25, "col2": 45}
@@ -79,3 +81,6 @@ def log_action(name: str, trigger: str, output: str) -> str:
         "trigger": trigger,
         "output": output,
     })
+
+def log_intent(kind: str, confidence: float, **extras: Any) -> str:
+    return log_event({"event": "intent", "kind": kind, "confidence": round(float(confidence), 3), **(extras or {})})

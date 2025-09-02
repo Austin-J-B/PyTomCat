@@ -6,6 +6,10 @@ credentials/*
 !credentials/service_account.json
 credentials/service_account.json
 
+weights/
+!weights/.gitkeep
+
+
 __pycache__/
 *.pyc
 

@@ -29,7 +29,6 @@ bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 # Cats / Feeding and Dues already match (intent, ctx) in your tree
 from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
 from .handlers.feeding import start_feeding_scheduler, handle_feeding_inquiry as _handle_feeding_status
-asyncio.create_task(start_feeding_scheduler(bot))
 from .handlers.dues import (
     handle_dues_notice as _handle_dues_notice,
     process_dues_cycle as _process_dues_cycle,
@@ -101,12 +100,7 @@ def _channel_label(ch: discord.abc.Messageable) -> str:
         return f"{parent_prefix}{ch.name}"
     # 1:1 DM (recipient is Optional[User])
     if isinstance(ch, discord.DMChannel):
-        recipient = getattr(ch, "recipient", None)
-        if isinstance(recipient, (discord.User, discord.ClientUser)):
-            rid = recipient.id
-        else:
-            rid = "unknown"
-        return f"DM:{rid}"
+        return "DM"
     # Group DM, Stage, Voice, PartialMessageable, whatever else
     name = getattr(ch, "name", None)
     return f"#{name}" if isinstance(name, str) and name else ch.__class__.__name__.lower()
@@ -163,6 +157,45 @@ async def on_ready():
         "guild_count": len(bot.guilds),
     })
 
+    # Startup health checks (file logs only)
+    async def _health_checks():
+        try:
+            # Check image intake tabs
+            from .handlers.misc import _open_ws as _open_ws_misc
+            for ch_id, tab in (settings.channel_sheet_map or {}).items():
+                try:
+                    ws = _open_ws_misc(tab)
+                    if ws:
+                        log_event({"event":"health","component":"image_tab","status":"ok","channel_id": ch_id, "tab": tab})
+                    else:
+                        log_event({"event":"health","component":"image_tab","status":"missing","channel_id": ch_id, "tab": tab})
+                except Exception as e:
+                    log_event({"event":"health","component":"image_tab","status":"error","channel_id": ch_id, "tab": tab, "error": str(e)})
+        except Exception as e:
+            log_event({"event":"health","component":"image_tab","status":"error","error": str(e)})
+        try:
+            # Check feeding checklist tab
+            from .handlers.feeding import _open_feeding_ws
+            ws = _open_feeding_ws()
+            if ws:
+                log_event({"event":"health","component":"feeding_tab","status":"ok"})
+            else:
+                log_event({"event":"health","component":"feeding_tab","status":"missing"})
+        except Exception as e:
+            log_event({"event":"health","component":"feeding_tab","status":"error","error": str(e)})
+
+    asyncio.create_task(_health_checks())
+
+    # Seed invite caches for all guilds (for join attribution)
+    try:
+        for g in bot.guilds:
+            try:
+                await _refresh_invites(g)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     async def _dues_loop():
         while True:
             try:
@@ -171,6 +204,8 @@ async def on_ready():
                 log_event({"event": "dues_loop_error", "error": str(e)})
             await asyncio.sleep(7200)
     asyncio.create_task(start_profile_scheduler(bot))
+    # start feeding scheduler after the bot is ready and loop is running
+    asyncio.create_task(start_feeding_scheduler(bot))
     asyncio.create_task(_dues_loop())
 
 
@@ -194,9 +229,15 @@ async def on_message(message: discord.Message):
     # Channel → Sheet image intake (unprompted, only in mapped channels)
     try:
         if getattr(message, "attachments", None) and settings.channel_sheet_map and int(message.channel.id) in settings.channel_sheet_map:
-         await _handle_image_intake(message)
+            await _handle_image_intake(message)
     except Exception as e:
         log_action("image_intake_error", f"channel={getattr(message.channel,'id','?')}", str(e))
+
+    # Lightweight fun triggers (e.g., "meow") anywhere; safe_send respects silent mode
+    try:
+        await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
+    except Exception:
+        pass
 
     # Build ctx once
     ctx: Dict[str, Any] = {
@@ -217,6 +258,116 @@ async def on_message(message: discord.Message):
 
     # Normal path
     await intent_router.handle_message(message, ctx)
+
+
+# ------- Edit/Delete logging -------
+@bot.event
+async def on_message_edit(before: discord.Message, after: discord.Message):
+    try:
+        if before.author.bot:
+            return
+        log_event({
+            "event": "message_edit",
+            "author": _user_label(before.author),
+            "channel": _channel_label(before.channel),
+            "before": before.clean_content if isinstance(before.content, str) else "",
+            "after": after.clean_content if isinstance(after.content, str) else "",
+        })
+    except Exception:
+        pass
+
+@bot.event
+async def on_message_delete(message: discord.Message):
+    try:
+        if message.author and message.author.bot:
+            return
+        log_event({
+            "event": "message_delete",
+            "author": _user_label(getattr(message, 'author', type('X', (), {'name':'unknown'})())),
+            "channel": _channel_label(getattr(message, 'channel', type('Y', (), {'name':'unknown'})())),
+            "content": message.clean_content if isinstance(getattr(message, 'content', None), str) else "",
+        })
+    except Exception:
+        pass
+
+
+# ------- Member join/leave + invite tracking -------
+@bot.event
+async def on_member_join(member: discord.Member):
+    try:
+        guild = member.guild
+        # Compute account age in days
+        created = getattr(member, 'created_at', None)
+        from datetime import timezone
+        age_days = None
+        if created:
+            try:
+                now = datetime.now(timezone.utc)
+                age_days = (now - created).days
+            except Exception:
+                age_days = None
+
+        # Detect which invite increased
+        code_used = None
+        inviter_id = None
+        try:
+            before = invites_cache.get(guild.id, {})
+            invites = await guild.invites()
+            after = {inv.code: (inv.uses or 0) for inv in invites}
+            for inv in invites:
+                b = before.get(inv.code, 0)
+                a = after.get(inv.code, 0)
+                if a > b:
+                    code_used = inv.code
+                    inviter_id = getattr(inv.inviter, 'id', None)
+                    break
+            invites_cache[guild.id] = after
+        except Exception:
+            pass
+
+        log_event({
+            "event": "member_join",
+            "user": _user_label(member),
+            "user_id": int(getattr(member, 'id', 0)),
+            "guild": getattr(guild, 'name', ''),
+            "guild_id": int(getattr(guild, 'id', 0)),
+            "account_age_days": age_days,
+            "invite_code": code_used,
+            "inviter_id": inviter_id,
+        })
+    except Exception:
+        pass
+
+@bot.event
+async def on_member_remove(member: discord.Member):
+    try:
+        log_event({
+            "event": "member_leave",
+            "user": _user_label(member),
+            "user_id": int(getattr(member, 'id', 0)),
+            "guild": getattr(member.guild, 'name', ''),
+            "guild_id": int(getattr(member.guild, 'id', 0))
+        })
+    except Exception:
+        pass
+
+@bot.event
+async def on_invite_create(invite: discord.Invite):
+    try:
+        g = invite.guild
+        if g:
+            await _refresh_invites(g)
+    except Exception:
+        pass
+
+@bot.event
+async def on_invite_delete(invite: discord.Invite):
+    try:
+        g = invite.guild
+        if g:
+            await _refresh_invites(g)
+    except Exception:
+        pass
 
 # Optional: parity command (kept tiny)
 @bot.command(name="members")

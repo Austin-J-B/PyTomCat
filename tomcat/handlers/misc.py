@@ -52,13 +52,28 @@ async def _profiles_channel(message: discord.Message, ctx: Dict[str, Any]) -> Me
     return ch if isinstance(ch, Messageable) else None
 
 def _open_ws(worksheet_title: str):
+    """Open a worksheet by title, preferring the Vision sheet but falling back to Catabase.
+    This helps when a tab like TCBPicsInput lives under Catabase, not Vision.
+    """
     gc = sheets_client()
+    # Try Vision/Aux first
     sh_id = settings.sheet_vision_id or settings.aux_spreadsheet_id
-    if not sh_id:
-        log_action("profiles_error", "missing_sheet_id", "")
-        return
-    sh = gc.open_by_key(sh_id)
-    return sh.worksheet(worksheet_title)
+    if sh_id:
+        try:
+            sh = gc.open_by_key(sh_id)
+            return sh.worksheet(worksheet_title)
+        except Exception:
+            pass
+    # Fallback to Catabase
+    cat_id = settings.sheet_catabase_id or settings.cat_spreadsheet_id
+    if cat_id:
+        try:
+            sh2 = gc.open_by_key(cat_id)
+            return sh2.worksheet(worksheet_title)
+        except Exception:
+            pass
+    log_action("image_intake_error", f"tab={worksheet_title}", "no_worksheet")
+    return None
 
 
 async def handle_profiles_create(intent, ctx):
@@ -286,17 +301,13 @@ async def handle_channel_image_intake(message: discord.Message) -> None:
         if ws is None:
             log_action("image_intake_error", f"channel={ch_id}", "no_worksheet")
             return
-        guild_id = getattr(getattr(message.guild, "id", None), "__int__", lambda: None)() or (message.guild.id if message.guild else 0)
-        link = f"https://discord.com/channels/{guild_id}/{message.channel.id}/{message.id}"
-        now = dt.datetime.now().isoformat(timespec="seconds")
+        # Per spec: Column A = direct media link, B = username (the @name), C = timestamp (UTC Z)
+        username = getattr(message.author, 'name', 'user')
+        tsz = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00","Z")
         rows = [[
-            now,
-            f"{getattr(message.author,'name','user')}#{getattr(getattr(message.author,'discriminator',None),'__str__',lambda:'0000')()}",
-            str(message.author.id),
-            str(message.channel.id),
-            link,
             att.url,
-            att.filename or ""
+            username,
+            tsz,
         ] for att in images]
         ws.append_rows(rows, value_input_option=cast(Any,"USER_ENTERED"))
         log_action("image_intake", f"channel={ch_id}", f"rows={len(rows)}")

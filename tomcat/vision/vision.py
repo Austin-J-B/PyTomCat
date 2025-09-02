@@ -85,7 +85,11 @@ def _ensure_classifier() -> None:
         ckpt_path = settings.cv_classify_weights
         if not ckpt_path or not os.path.exists(ckpt_path):
             return  # classifier is optional
-        state = torch.load(ckpt_path, map_location=_device)
+        try:
+            state = torch.load(ckpt_path, map_location=_device, weights_only=True)  # torch>=2.4
+        except TypeError:
+            # Older torch without weights_only
+            state = torch.load(ckpt_path, map_location=_device)
 
         # Infer num_classes from checkpoint if possible
         sd = state.get("state_dict", state) if isinstance(state, dict) else state

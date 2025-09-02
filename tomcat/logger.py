@@ -119,27 +119,47 @@ def log_event(event_data: dict) -> str:
             f"Guild: {event_data.get('guild','')}",
             ""
         )
+    elif kind == "spam":
+        human_line = _human_line(
+            ts_ct,
+            "Spam",
+            f"User: {event_data.get('user','')}",
+            f"Channel: {event_data.get('channel','')}",
+            f"decision={event_data.get('decision','delete')}; reason={event_data.get('reason','rules')}"
+        )
     elif kind == "reaction_add":
+        preview = event_data.get('message_preview')
+        msg_author = event_data.get('message_author')
+        if isinstance(preview, str) and preview:
+            tail = f"emoji={event_data.get('emoji','')}; msg=\"{preview}\"" + (f" by {msg_author}" if msg_author else "")
+        else:
+            tail = f"emoji={event_data.get('emoji','')}; msg={event_data.get('message_id','')}"
         human_line = _human_line(
             ts_ct,
             "React+",
             f"User: {event_data.get('user','')}",
             f"Channel: {event_data.get('channel','')}",
-            f"emoji={event_data.get('emoji','')}; msg={event_data.get('message_id','')}"
+            tail,
         )
     elif kind == "reaction_remove":
+        preview = event_data.get('message_preview')
+        msg_author = event_data.get('message_author')
+        if isinstance(preview, str) and preview:
+            tail = f"emoji={event_data.get('emoji','')}; msg=\"{preview}\"" + (f" by {msg_author}" if msg_author else "")
+        else:
+            tail = f"emoji={event_data.get('emoji','')}; msg={event_data.get('message_id','')}"
         human_line = _human_line(
             ts_ct,
             "React-",
             f"User: {event_data.get('user','')}",
             f"Channel: {event_data.get('channel','')}",
-            f"emoji={event_data.get('emoji','')}; msg={event_data.get('message_id','')}"
+            tail,
         )
     elif kind == "member_update":
         human_line = _human_line(
             ts_ct,
             "Roles",
-            f"User: {event_data.get('user','')} ({event_data.get('user_id','')})",
+            f"User: {event_data.get('user','')}",
             f"Guild: {event_data.get('guild','')}",
             f"added={event_data.get('roles_added','[]')}; removed={event_data.get('roles_removed','[]')}"
         )

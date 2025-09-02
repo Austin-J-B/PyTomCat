@@ -221,6 +221,18 @@ class Settings:
     feed_lookback_minutes_before: int = int(os.getenv("FEED_LOOKBACK_MINUTES_BEFORE", "5"))
     feed_pending_minutes_after: int = int(os.getenv("FEED_PENDING_MINUTES_AFTER", "5"))
 
+    # ======== Spam detection config ========
+    # Role names that should never be flagged as spam (case-insensitive contains match)
+    trusted_role_names: list[str] = field(default_factory=lambda: [
+        "due paying members", "Server Booster"
+    ])
+    # Minimum account age in days to skip spam checks
+    spam_min_account_days: int = int(os.getenv("SPAM_MIN_ACCOUNT_DAYS", "30"))
+    # NLP spam threshold if ONNX model is configured
+    spam_nlp_conf: float = float(os.getenv("SPAM_NLP_CONF", "0.9"))
+    # Optional: user to ping on spam alerts (falls back to first admin)
+    spam_alert_user_id: int | None = int(os.getenv("SPAM_ALERT_USER_ID", "0")) or None
+
     # ======== Feeding scheduler maps (authoritative) ========
     # Provide simple name→user_id mapping and per-station weekly assignments.
     # Station assignments are lists of 7 names ordered Sun..Sat. Example defaults below.
@@ -238,7 +250,7 @@ class Settings:
         "Morgan": 856586084943396879,
         "Anabelle": 808757369478840371,
         "Zahara": 1004778582855389244,
-        "Bryan": 204682859217158144,
+        "Bryan": 204682859217158144,#hatshura
         "Jaeden": 417059337257877505, 
         "Kitadan": 427867525225906176,
         "Felix":694664394495361195, 

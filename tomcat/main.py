@@ -214,6 +214,7 @@ async def on_ready():
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
+        
 
     # Human + machine log of the incoming message
     log_event({
@@ -224,7 +225,50 @@ async def on_message(message: discord.Message):
         "attachments": len(message.attachments) if hasattr(message, "attachments") else 0,
     })
 
-    if is_spam(message.content):
+    # Spam protection (text + heuristics + NLP backstop for new/untrusted accounts)
+    from .spam import check_spam
+    spam_flag, reason = check_spam(message, settings)
+    if spam_flag:
+        # Log and notify in logging channel, then delete the message
+        try:
+            # Delete spam message (best-effort)
+            try:
+                await message.delete()
+                decision = "deleted"
+            except Exception:
+                decision = "kept"
+
+            # Write log line
+            log_event({
+                "event": "spam",
+                "user": _user_label(message.author),
+                "channel": _channel_label(message.channel),
+                "content": message.clean_content if isinstance(message.content, str) else "",
+                "decision": decision,
+                "reason": reason,
+            })
+
+            # Notify moderators in CH_LOGGING
+            log_ch_id = getattr(settings, 'ch_logging', None)
+            if log_ch_id:
+                ch = message.guild.get_channel(int(log_ch_id)) if message.guild else None
+                if not ch:
+                    ch = bot.get_channel(int(log_ch_id))
+                if ch and hasattr(ch, 'send'):
+                    alert_uid = getattr(settings, 'spam_alert_user_id', None) or (getattr(settings, 'admin_ids', []) or [None])[0]
+                    mention = f"<@{int(alert_uid)}>" if alert_uid else ""
+                    uname = f"@{getattr(message.author,'name','unknown-user')}"
+                    body = (
+                        "Spam Message Detected\n"
+                        f"User: {uname} ({getattr(message.author,'id','')})\n"
+                        "Message:\n"
+                        f"{message.content or ''}\n\n"
+                        f"{mention}"
+                    ).strip()
+                    from .utils.sender import safe_send
+                    await safe_send(ch, body)
+        except Exception:
+            pass
         return
     # Channel → Sheet image intake (unprompted, only in mapped channels)
     try:
@@ -369,6 +413,92 @@ async def on_invite_delete(invite: discord.Invite):
     except Exception:
         pass
 
+
+# ------- Reactions and role changes logging -------
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    try:
+        # Ignore bot reactions
+        if payload.user_id == getattr(bot.user, 'id', None):
+            return
+        ch = bot.get_channel(int(payload.channel_id))
+        msg = None
+        preview = ""
+        author_name = ""
+        if ch and hasattr(ch, 'fetch_message'):
+            try:
+                msg = await ch.fetch_message(int(payload.message_id))
+                content = msg.clean_content if isinstance(getattr(msg, 'content', None), str) else ""
+                preview = content[:40] + ("..." if len(content) > 40 else "")
+                author_name = _user_label(getattr(msg, 'author', None))
+            except Exception:
+                pass
+        log_event({
+            "event": "reaction_add",
+            "user": _user_label(getattr(payload, 'member', None)) or str(payload.user_id),
+            "channel": _channel_label(ch) if ch else str(payload.channel_id),
+            "message_id": int(payload.message_id),
+            "emoji": str(payload.emoji),
+            "message_preview": preview,
+            "message_author": author_name,
+        })
+    except Exception:
+        pass
+
+@bot.event
+async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
+    try:
+        ch = bot.get_channel(int(payload.channel_id))
+        msg = None
+        preview = ""
+        author_name = ""
+        if ch and hasattr(ch, 'fetch_message'):
+            try:
+                msg = await ch.fetch_message(int(payload.message_id))
+                content = msg.clean_content if isinstance(getattr(msg, 'content', None), str) else ""
+                preview = content[:40] + ("..." if len(content) > 40 else "")
+                author_name = _user_label(getattr(msg, 'author', None))
+            except Exception:
+                pass
+        log_event({
+            "event": "reaction_remove",
+            "user": _user_label(getattr(payload, 'member', None)) or str(payload.user_id),
+            "channel": _channel_label(ch) if ch else str(payload.channel_id),
+            "message_id": int(payload.message_id),
+            "emoji": str(payload.emoji),
+            "message_preview": preview,
+            "message_author": author_name,
+        })
+    except Exception:
+        pass
+
+@bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    try:
+        # Compare role IDs
+        before_ids = {int(r.id) for r in getattr(before, 'roles', [])}
+        after_ids = {int(r.id) for r in getattr(after, 'roles', [])}
+        added_ids = list(after_ids - before_ids)
+        removed_ids = list(before_ids - after_ids)
+        if not added_ids and not removed_ids:
+            return
+        def _names(ids):
+            out = []
+            for rid in ids:
+                role = after.guild.get_role(rid)
+                out.append(getattr(role, 'name', str(rid)))
+            return out
+        log_event({
+            "event": "member_update",
+            "user": _user_label(after),
+            "user_id": int(getattr(after,'id',0)),
+            "guild": getattr(after.guild, 'name', ''),
+            "roles_added": _names(added_ids),
+            "roles_removed": _names(removed_ids),
+        })
+    except Exception:
+        pass
+
 # Optional: parity command (kept tiny)
 @bot.command(name="members")
 async def members(ctx: commands.Context):
@@ -385,4 +515,3 @@ def run():
 
 if __name__ == "__main__":
     run()
-

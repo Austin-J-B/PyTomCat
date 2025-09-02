@@ -610,12 +610,14 @@ class IntentRouter:
         if in_feeding and (SUB_VERB.search(text) or FEED_REQUEST_RE.search(text)):
             stations = self._extract_all_entities(text, want="station")
             dates = self._extract_dates(text)
+            if not stations:
+                stations = self._stations_from_schedule(row["user_id"], dates)
             conf = 0.9 if stations and dates else 0.75
             ev = IntentEvent(
                 type="sub_request", confidence=conf,
                 channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                 text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                station=stations[0] if stations else None, dates=dates or None
+                station=(stations[0] if stations else None), stations=(stations or None), dates=dates or None
             )
             trace.append("intent:sub_request")
             self._traces[row["message_id"]] = trace
@@ -733,11 +735,12 @@ class IntentRouter:
                     )
                 if nlp_intent == "sub_request" and in_feeding:
                     dates = self._extract_dates(text) or None
+                    st_list = [station] if station else self._stations_from_schedule(row["user_id"], dates)
                     return IntentEvent(
                         type="sub_request", confidence=max(nlp_prob, 0.8),
                         channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                         text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        station=station, dates=dates
+                        station=(st_list[0] if st_list else None), stations=(st_list or None), dates=dates
                     )
 
         # Default: none
@@ -769,7 +772,17 @@ class IntentRouter:
             return
 
         if event.type == "sub_request":
-            await feeding.handle_sub_request_event(event, ctx)
+            if getattr(event, 'stations', None) and len(event.stations) > 1:
+                for st in event.stations:
+                    e2 = IntentEvent(
+                        type="sub_request", confidence=event.confidence,
+                        channel_id=event.channel_id, user_id=event.user_id, message_id=event.message_id,
+                        text=event.text, has_image=event.has_image, attachment_ids=event.attachment_ids,
+                        station=st, dates=event.dates
+                    )
+                    await feeding.handle_sub_request_event(e2, ctx)
+            else:
+                await feeding.handle_sub_request_event(event, ctx)
             return
 
         if event.type == "sub_accept":

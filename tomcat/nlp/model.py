@@ -83,6 +83,11 @@ class NLPModel:
                 best, best_p = cand, p
         return best, float(best_p)
 
+    # Basic spam scorer via zero-shot: returns probability that text is spam
+    def predict_spam(self, text: str) -> float:
+        hyp = "This message is spam."
+        return float(self._mnli_entailment_prob(text, hyp))
+
     # ---------- helpers ----------
     def _mnli_entailment_prob(self, premise: str, hypothesis: str) -> float:
         try:

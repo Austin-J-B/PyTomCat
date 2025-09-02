@@ -10,7 +10,9 @@ from typing import Dict, Any, Optional, List
 
 from ..config import settings
 from ..logger import log_action
-from ..intents import Intent
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..intent_router import Intent  # type: ignore
 from ..vision import vision as V
 
 # ---------- helpers ----------
@@ -52,13 +54,14 @@ async def _cleanup(paths: List[str]):
             pass
 
 # ---------- public handlers ----------
-async def handle_cv_detect(intent: Intent, ctx: Dict[str, Any]) -> None:
+async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     message: discord.Message = ctx["message"]
     ch: discord.abc.MessageableChannel = ctx["channel"]
 
     att = _first_image(message)
     if not att:
-        await ch.send("Attach an image or reply to an image, then say `TomCat, detect`.")
+        if not ctx.get("silent_on_no_image"):
+            await ch.send("Attach an image or reply to an image, then say `TomCat, detect`.")
         return
 
     tmp = []
@@ -72,6 +75,7 @@ async def handle_cv_detect(intent: Intent, ctx: Dict[str, Any]) -> None:
             color=0x2F3136,  # same slate-gray as the other embeds
         )
         emb.set_image(url="attachment://detected.jpg")
+        await ch.send(embed=emb, file=file)
 
 
     except ValueError as ve:
@@ -82,13 +86,14 @@ async def handle_cv_detect(intent: Intent, ctx: Dict[str, Any]) -> None:
     finally:
         await _cleanup(tmp)
 
-async def handle_cv_crop(intent: Intent, ctx: Dict[str, Any]) -> None:
+async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     message: discord.Message = ctx["message"]
     ch: discord.abc.MessageableChannel = ctx["channel"]
 
     att = _first_image(message)
     if not att:
-        await ch.send("Attach an image or reply to an image, then say `TomCat, crop`.")
+        if not ctx.get("silent_on_no_image"):
+            await ch.send("Attach an image or reply to an image, then say `TomCat, crop`.")
         return
 
     tmp = []
@@ -104,8 +109,7 @@ async def handle_cv_crop(intent: Intent, ctx: Dict[str, Any]) -> None:
         if len(crops) == 1:
             file = discord.File(io.BytesIO(crops[0]), filename="crop.jpg")
             emb = discord.Embed(
-                title="Crop",
-                description="Expanded crop around the detected cat.",
+                title="Cropped photo",
                 color=0x2F3136
             )
             emb.set_image(url="attachment://crop.jpg")
@@ -126,13 +130,14 @@ async def handle_cv_crop(intent: Intent, ctx: Dict[str, Any]) -> None:
     finally:
         await _cleanup(tmp)
 
-async def handle_cv_identify(intent: Intent, ctx: Dict[str, Any]) -> None:
+async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     message: discord.Message = ctx["message"]
     ch: discord.abc.MessageableChannel = ctx["channel"]
 
     att = _first_image(message)
     if not att:
-        await ch.send("Attach an image or reply to an image, then say `TomCat, identify`.")
+        if not ctx.get("silent_on_no_image"):
+            await ch.send("Attach an image or reply to an image, then say `TomCat, identify`.")
         return
 
     tmp = []

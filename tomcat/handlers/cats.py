@@ -1,7 +1,9 @@
 from __future__ import annotations
 import discord
 from typing import Any
-from ..intent_router import Intent
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..intent_router import Intent  # type: ignore
 from ..services.catsheets import (
     get_cat_profile,
     get_recent_photo as get_random_photo,
@@ -29,18 +31,53 @@ class PhotoView(discord.ui.View):
 
     @discord.ui.button(label="Show me another", style=discord.ButtonStyle.primary)
     async def another(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # self.cat_name is the FULL_NAME from CatDatabase (e.g., "2. Twix").
         pick2 = await get_random_photo(self.cat_name)
         if isinstance(pick2, str):
-            await interaction.response.edit_message(content=pick2, embed=None, view=None)
+            await interaction.response.edit_message(content=pick2, embed=None, attachments=[], view=None)
             return
-        e2 = discord.Embed(
-            title=self.cat_name,
-            description=f"Random photo (serial {pick2.get('serial','?')})",
-            color=0x2f95dc,
+        # Build embed like the original random photo style
+        full = self.cat_name
+        display = _display_name(full)
+        title = f"__**Random Photo of {display}**__"
+        desc = (
+            f"**Here's a random photo of {display}**\n"
+            f"(Photo {pick2.get('reverse_index','?')} out of {pick2.get('total_available','?')})\n"
+            f"Image: {pick2.get('serial','Unknown')}"
         )
-        if pick2.get("url"):
-            e2.set_image(url=pick2["url"])
-        await interaction.response.edit_message(embed=e2, view=self)
+        e2 = discord.Embed(title=title, description=desc, color=0x2F3136)
+
+        # Try single-cat crop with timeout
+        img_bytes_for_embed: Optional[bytes] = None
+        tmp: Optional[str] = None
+        img_url = pick2.get("url")
+        if img_url:
+            try:
+                tmp = await _download_to_temp(img_url, settings.cv_temp_dir)
+                raw = Path(tmp).read_bytes()
+                def _crop_once(raw_bytes: bytes) -> Optional[bytes]:
+                    crops = V.crop(raw_bytes)
+                    return crops[0] if len(crops) == 1 else None
+                img_bytes_for_embed = await asyncio.wait_for(
+                    asyncio.to_thread(_crop_once, raw), timeout=(settings.cv_timeout_ms / 1000.0)
+                )
+            except Exception:
+                img_bytes_for_embed = None
+            finally:
+                if tmp:
+                    try:
+                        os.remove(tmp)
+                    except Exception:
+                        pass
+
+        if img_bytes_for_embed:
+            file = discord.File(io.BytesIO(img_bytes_for_embed), filename="crop.jpg")
+            e2.set_image(url="attachment://crop.jpg")
+            await interaction.response.edit_message(embed=e2, attachments=[file], view=self)
+        else:
+            if img_url:
+                e2.set_image(url=img_url)
+            await interaction.response.edit_message(embed=e2, attachments=[], view=self)
 
 
 def _add_field(embed: discord.Embed, name: str, value: Any, inline: bool = True) -> None:
@@ -51,7 +88,7 @@ def _add_field(embed: discord.Embed, name: str, value: Any, inline: bool = True)
         return
     embed.add_field(name=name, value=s[:1024], inline=inline)
 
-async def handle_cat_show(intent: Intent, ctx: dict) -> None:
+async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
     ch: discord.abc.MessageableChannel = ctx["channel"]
     name = intent.data.get("name", "").strip()
     if not name:
@@ -82,7 +119,9 @@ async def handle_cat_show(intent: Intent, ctx: dict) -> None:
 
             def _crop_once(raw_bytes: bytes) -> Optional[bytes]:
                 crops = V.crop(raw_bytes)
-                return crops[0] if crops else None
+                if len(crops) == 1:
+                    return crops[0]
+                return None
 
             cropped_bytes = await asyncio.wait_for(
                 asyncio.to_thread(_crop_once, raw), timeout=(settings.cv_timeout_ms / 1000.0)
@@ -149,7 +188,7 @@ async def _download_to_temp(url: str, dest_dir: str) -> str:
     return path
 
 
-async def handle_cat_photo(intent: Intent, ctx: dict) -> None:
+async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
     ch: discord.abc.MessageableChannel = ctx["channel"]
     name = intent.data.get("name", "").strip()
     if not name:
@@ -180,7 +219,9 @@ async def handle_cat_photo(intent: Intent, ctx: dict) -> None:
 
             def _crop_once(raw_bytes: bytes) -> Optional[bytes]:
                 crops = V.crop(raw_bytes)
-                return crops[0] if crops else None
+                if len(crops) == 1:
+                    return crops[0]
+                return None
 
             img_bytes_for_embed = await asyncio.wait_for(
                 asyncio.to_thread(_crop_once, raw), timeout=(settings.cv_timeout_ms / 1000.0)
@@ -205,15 +246,16 @@ async def handle_cat_photo(intent: Intent, ctx: dict) -> None:
     if img_bytes_for_embed:
         file = discord.File(io.BytesIO(img_bytes_for_embed), filename="crop.jpg")
         embed.set_image(url="attachment://crop.jpg")
-        await ch.send(embed=embed, file=file)
+        # Pass FULL_NAME (actual) so the button can fetch correctly from RecentPics
+        await ch.send(embed=embed, file=file, view=PhotoView(actual))
     else:
         if img_url:
             embed.set_image(url=img_url)
-        await ch.send(embed=embed)
+        await ch.send(embed=embed, view=PhotoView(actual))
 
 
 
 # Optional: tiny wrapper to expose a strict "who is" alias if you want a separate name
-async def handle_cat_profile(intent: Intent, ctx: dict) -> None:
+async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
     # Reuse your existing bio handler
     await handle_cat_show(intent, ctx)

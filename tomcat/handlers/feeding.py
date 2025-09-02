@@ -12,6 +12,8 @@ import discord
 
 from ..config import settings
 from ..logger import log_action
+from ..services.sheets_client import sheets_client
+from ..aliases import resolve_station_or_cat
 from ..utils.sender import safe_send
 
 # Optional TZ support
@@ -22,15 +24,11 @@ except Exception:
 
 CENTRAL_TZ = ZoneInfo("America/Chicago") if ZoneInfo else None
 
-# ------------- paths for local data -------------
-DATA_DIR = os.path.join("data")
-LOG_DIR = os.path.join("logging")
-SUBS_FILE = os.path.join(LOG_DIR, "subs.jsonl")
-SCHEDULE_FILE = os.path.join(DATA_DIR, "schedule.json")
-USERS_FILE = os.path.join(DATA_DIR, "users.json")
-
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(LOG_DIR, exist_ok=True)
+# ------------- subs log -------------
+# Single append-only JSONL file under logs/subs
+SUBS_DIR = os.path.join("logs", "subs")
+os.makedirs(SUBS_DIR, exist_ok=True)
+SUBS_FILE = os.path.join(SUBS_DIR, "subs.jsonl")
 
 # ------------- simple data types ----------------
 @dataclass
@@ -88,10 +86,16 @@ def _rewrite_jsonl(path: str, rows: List[dict]) -> None:
 
 # ------------- helpers: schedule/users ----------
 def _resolve_user_ids(names: List[str]) -> List[int]:
-    users = _load_json(USERS_FILE, {})
+    """Resolve a list of display names to Discord user IDs via settings.user_id_map.
+    Accepts either names or numeric strings.
+    """
+    cfg_map = getattr(settings, "user_id_map", {}) or {}
+    # normalize keys to simple form
+    norm_map = {str(k).strip(): int(v) for k, v in cfg_map.items() if str(v).isdigit() or isinstance(v, int)}
     ids: List[int] = []
     for n in names:
-        uid = users.get(n) or users.get(n.strip("@"))
+        n1 = str(n).strip()
+        uid = norm_map.get(n1) or norm_map.get(n1.strip("@"))
         if isinstance(uid, int):
             ids.append(uid)
         else:
@@ -103,51 +107,154 @@ def _resolve_user_ids(names: List[str]) -> List[int]:
     return ids
 
 def _read_schedule_for_weekday(weekday_name: str) -> Dict[str, List[int]]:
-    sched = _load_json(SCHEDULE_FILE, {})
-    day = sched.get(weekday_name, {})
+    """Read schedule from settings.feeding_schedule in station→7-day format.
+    Expected format in config:
+      feeding_schedule = {
+         "Business": ["Chris","Chris","Chris","Megan","Megan","Megan","Ben"],  # Sun..Sat
+         "HOP": [...],
+      }
+    Returns mapping {station_display: [user_id]} for the specific weekday.
+    """
+    cfg: Dict[str, List[str]] = getattr(settings, "feeding_schedule", {}) or {}
+    wk_names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
+    idx = 0
+    low = (weekday_name or "").lower()
+    for i, w in enumerate(wk_names):
+        if low.startswith(w.lower()):
+            idx = i
+            break
     out: Dict[str, List[int]] = {}
-    for station, names in day.items():
-        lst = names if isinstance(names, list) else [names]
-        out[station] = _resolve_user_ids(lst)
+    for station, seq in cfg.items():
+        if not isinstance(seq, list) or not seq:
+            continue
+        if len(seq) != 7:
+            log_action("schedule_warn", f"station={station}", f"len={len(seq)} != 7; cycling")
+        name = seq[idx % len(seq)]
+        ids = _resolve_user_ids([name]) if name is not None else []
+        out[station] = ids
     return out
 
 # ------------- Google Sheets glue (safe stubs) ---
 def _get_feeding_checklist_sheet_id() -> Optional[str]:
-    # If you have this in settings, expose it here.
-    return getattr(settings, "sheet_feeding_checklist_id", None) or getattr(settings, "sheet_feeding_id", None)
+    # We store the checklist in the Vision sheet under tab "FeedingStationChecklist"
+    return getattr(settings, "sheet_vision_id", None) or getattr(settings, "aux_spreadsheet_id", None)
+
+def _open_feeding_ws():
+    sid = _get_feeding_checklist_sheet_id()
+    if not sid:
+        log_action("feeding_sheet", "missing_sheet_id", "")
+        return None
+    try:
+        gc = sheets_client()
+        sh = gc.open_by_key(sid)
+        return sh.worksheet("FeedingStationChecklist")
+    except Exception as e:
+        log_action("feeding_sheet", "open_error", str(e))
+        return None
+
+def _station_header_map(ws) -> Dict[str, int]:
+    """Return {display_name: col_index_1based} from header row (Row 1)."""
+    try:
+        header = ws.row_values(1)
+    except Exception as e:
+        log_action("feeding_sheet", "header_error", str(e))
+        return {}
+    out: Dict[str, int] = {}
+    for i, name in enumerate(header, start=1):
+        nm = str(name or "").strip()
+        if nm:
+            out[nm] = i
+    return out
+
+def _parse_date_str(s: str) -> Optional[str]:
+    """Parse common date formats to ISO YYYY-MM-DD."""
+    try:
+        # YYYY-MM-DD
+        if s and len(s) >= 8 and s[4] == '-' and s[7] == '-':
+            return str(datetime.fromisoformat(s).date())
+    except Exception:
+        pass
+    # M/D/YYYY or MM/DD/YYYY
+    try:
+        parts = [p for p in str(s).replace(" ", "").split("/") if p]
+        if len(parts) == 3 and len(parts[2]) == 4:
+            m = int(parts[0]); d = int(parts[1]); y = int(parts[2])
+            return date(y, m, d).isoformat()
+    except Exception:
+        pass
+    return None
+
+def _find_date_row(ws, date_iso: str) -> Optional[int]:
+    """Find row index (1-based) where Column A equals date_iso (ISO)."""
+    try:
+        col = ws.col_values(1)  # date column
+    except Exception as e:
+        log_action("feeding_sheet", "date_col_error", str(e))
+        return None
+    for idx, val in enumerate(col[1:], start=2):  # skip header cell A1
+        if _parse_date_str(val or "") == date_iso:
+            return idx
+    return None
 
 async def _mark_checkbox_in_sheet(station: str, date_iso: str) -> bool:
+    """Mark the (station, date) cell TRUE in the FeedingStationChecklist tab.
+    Header row (1) has stations; first column (A) has dates; body is checkboxes.
     """
-    Wire this to your actual Google Sheets logic.
-    For now, we log success and pretend it's done to avoid blocking development.
-    """
+    ws = _open_feeding_ws()
+    if ws is None:
+        return False
     try:
-        # TODO: integrate with sheets client:
-        # from .sheets_client import get_client
-        # gc = get_client()
-        # sheet = gc.open_by_key(_get_feeding_checklist_sheet_id()).worksheet("FeedingStationChecklist")
-        # ... find row for station and column for date ...
-        # sheet.update_cell(row, col, True)
-        log_action("sheet_mark", f"station={station} date={date_iso}", "ok (stub)")
+        header = _station_header_map(ws)
+        # if station isn't exact, try resolving via aliases
+        disp = station
+        if disp not in header:
+            resolved = resolve_station_or_cat(station, want="station")
+            if resolved and resolved in header:
+                disp = resolved
+        col = header.get(disp)
+        row = _find_date_row(ws, date_iso)
+        if not col or not row:
+            log_action("sheet_mark_error", f"station={station} date={date_iso}", "missing_row_or_col")
+            return False
+        ws.update_cell(row, col, True)
+        log_action("sheet_mark", f"station={disp} date={date_iso}", "ok")
         return True
     except Exception as e:
         log_action("sheet_mark_error", f"station={station} date={date_iso}", str(e))
         return False
 
 async def _list_unfed_stations_today() -> List[str]:
+    """Return station display names that are NOT checked for today's date.
+    Station names come from header row; today row comes from Column A.
     """
-    Return a list of station names that have NOT been marked fed today.
-    Replace stub with real Sheets read. If absent, return [] to avoid spam.
-    """
-    sheet_id = _get_feeding_checklist_sheet_id()
-    if not sheet_id:
-        log_action("unfed_list", "sheet=None", "skipped (no sheet configured)")
+    ws = _open_feeding_ws()
+    if ws is None:
         return []
     try:
-        # TODO: read the sheet and compute unfed; for now we return []
-        return []
+        today_iso = _today_iso()
+        header = _station_header_map(ws)
+        row = _find_date_row(ws, today_iso)
+        if not row:
+            log_action("unfed_list", f"date={today_iso}", "date_row_not_found")
+            # If date absent, treat all as unfed to be safe
+            return [name for name, col in header.items() if col != 1]
+        # Read entire row values once
+        vals = ws.row_values(row)
+        unfed: List[str] = []
+        for name, col in header.items():
+            if col == 1:
+                continue  # date column
+            v = vals[col-1] if col-1 < len(vals) else ""
+            fed = False
+            if isinstance(v, bool):
+                fed = bool(v)
+            else:
+                fed = str(v).strip().upper() == "TRUE"
+            if not fed:
+                unfed.append(name)
+        return unfed
     except Exception as e:
-        log_action("unfed_list_error", "sheet=err", str(e))
+        log_action("unfed_list_error", "read", str(e))
         return []
 
 async def handle_feeding_inquiry(intent, ctx: Dict[str, Any]) -> None:
@@ -168,7 +275,7 @@ async def handle_feeding_inquiry(intent, ctx: Dict[str, Any]) -> None:
     lines.append("**Feeding status (today)**")
     lines.append(f"**Fed:** {', '.join(fed) if fed else 'none'}")
     lines.append(f"**Unfed:** {', '.join(unfed) if unfed else 'none'}")
-    await ch.send("\n".join(lines))
+    await safe_send(ch, "\n".join(lines))
 
 
 # ------------- public handler entry points -------
@@ -194,14 +301,6 @@ async def handle_feed_update_event(event, ctx: Dict[str, Any]) -> None:
         ok = await _mark_checkbox_in_sheet(station, d)
         ok_all = ok_all and ok
 
-    # Optional: add a ✅ reaction to the message when not muted
-    try:
-        msg = ctx.get("message")
-        if msg and hasattr(msg, "add_reaction"):
-            await msg.add_reaction("✅")
-    except Exception:
-        pass
-
     status = "ok" if ok_all else "partial"
     log_action("feed_update", f"station={station}; dates={','.join(dates)}", status)
 
@@ -211,6 +310,7 @@ async def handle_sub_request_event(event, ctx: Dict[str, Any]) -> None:
     Assumes event.station may be None and event.dates may be None.
     """
     rec = {
+        "kind": "sub_request",
         "id": f"sub-{event.message_id}",
         "station": event.station,
         "dates": event.dates or [],
@@ -224,62 +324,28 @@ async def handle_sub_request_event(event, ctx: Dict[str, Any]) -> None:
     _append_jsonl(SUBS_FILE, rec)
     log_action("sub_request", f"station={event.station}; dates={event.dates}", "logged")
 
-    # Build accept/decline view
-    class SubView(discord.ui.View):
-        def __init__(self, requester_id: int, station: Optional[str], dates: List[str]):
-            super().__init__(timeout=3600)  # 1 hour window
-            self.requester_id = requester_id
-            self.station = station
-            self.dates = dates
-
-        async def interaction_check(self, interaction: discord.Interaction) -> bool:
-            # requester cannot accept their own sub request
-            if interaction.user and interaction.user.id == self.requester_id:
-                await interaction.response.send_message("You can’t accept your own request.", ephemeral=True)
-                return False
-            return True
-
-        @discord.ui.button(label="I can cover", style=discord.ButtonStyle.success)
-        async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await _accept_latest_open_sub_in_channel(event.channel_id, interaction.user.id)
-            try:
-                await interaction.response.send_message("You’re marked as the sub. Thanks!", ephemeral=True)
-            except Exception:
-                pass
-            self.stop()
-
-        @discord.ui.button(label="Can’t", style=discord.ButtonStyle.secondary)
-        async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
-            try:
-                await interaction.response.send_message("No worries.", ephemeral=True)
-            except Exception:
-                pass
-
-    # Only send if not muted; if muted, log that we would have sent
-    embed = discord.Embed(
-        title="Sub request",
-        description=f"Requester: <@{event.user_id}>\n"
-                    f"Station: **{event.station or 'Unknown'}**\n"
-                    f"Dates: {', '.join(event.dates or ['unspecified'])}",
-        color=0x2F3136,
-    )
-    view = SubView(requester_id=event.user_id, station=event.station, dates=event.dates or [])
-
-    try:
-        await ctx["channel"].send(embed=embed, view=view)
-        log_action("sub_request_ui", f"station={event.station}", "sent")
-    except Exception:
-        log_action("sub_request_ui", f"station={event.station}", "suppressed")
+    # No UI; subs are fully silent by design
 
 async def handle_sub_accept_event(event, ctx: Dict[str, Any]) -> None:
     """
     Someone said 'sure/I can cover'. Assign them to the most recent open request in this channel.
     """
-    ok = await _accept_latest_open_sub_in_channel(event.channel_id, event.user_id)
-    log_action("sub_accept", f"user={event.user_id}", "ok" if ok else "no_open_request")
+    accepted_id = await _accept_latest_open_sub_in_channel(event.channel_id, event.user_id)
+    if accepted_id:
+        _append_jsonl(SUBS_FILE, {
+            "kind": "sub_accept",
+            "sub_id": accepted_id,
+            "assignee": event.user_id,
+            "channel_id": event.channel_id,
+            "message_id": event.message_id,
+            "ts": _now_iso(),
+        })
+        log_action("sub_accept", f"user={event.user_id}", "ok")
+    else:
+        log_action("sub_accept", f"user={event.user_id}", "no_open_request")
 
 # ------------- persistence for subs ------------
-async def _accept_latest_open_sub_in_channel(channel_id: int, assignee_id: int) -> bool:
+async def _accept_latest_open_sub_in_channel(channel_id: int, assignee_id: int) -> Optional[str]:
     rows = _read_jsonl(SUBS_FILE)
     # scan from bottom for requested in this channel
     for i in range(len(rows) - 1, -1, -1):
@@ -287,11 +353,14 @@ async def _accept_latest_open_sub_in_channel(channel_id: int, assignee_id: int) 
         if r.get("channel_id") == channel_id and r.get("status") == "requested":
             r["status"] = "accepted"
             r["assignee"] = assignee_id
+            # If no dates were specified, assume today
+            if not r.get("dates"):
+                r["dates"] = [ _today_iso() ]
             r["updated_at"] = _now_iso()
             rows[i] = r
             _rewrite_jsonl(SUBS_FILE, rows)
-            return True
-    return False
+            return str(r.get("id")) if r.get("id") else None
+    return None
 
 # ------------- scheduler: 8:00 pm ping ----------
 async def start_feeding_scheduler(bot: discord.Client) -> None:
@@ -315,7 +384,7 @@ async def _sleep_until_local_time(hour: int, minute: int):
     await asyncio.sleep((target - now).total_seconds())
 
 async def _run_8pm_check(bot: discord.Client) -> None:
-    # compute unfed stations from sheet (stub now)
+    # compute unfed stations from sheet
     unfed = await _list_unfed_stations_today()
     if not unfed:
         log_action("feeding_8pm", "unfed=0", "nothing_to_ping")
@@ -326,32 +395,13 @@ async def _run_8pm_check(bot: discord.Client) -> None:
     weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
     sched = _read_schedule_for_weekday(weekday)
 
+    # (optional) validation of station names deferred by request
+
     # Build a message that pings the right people
-    lines: List[str] = ["**Unfed stations today**"]
-    mentions: List[str] = []
-    subs = _read_jsonl(SUBS_FILE)
-    today_iso = today.isoformat()
+    lines = await build_8pm_lines(bot, unfed=unfed, sched=sched, mention=True)
 
-    for st in unfed:
-        # Is there an accepted sub for today for this station?
-        assignees: List[int] = []
-        for r in reversed(subs):
-            if r.get("station") == st and r.get("status") == "accepted" and today_iso in (r.get("dates") or []):
-                aid = r.get("assignee")
-                if isinstance(aid, int):
-                    assignees.append(aid)
-                    break
-        # fallback to default schedule
-        if not assignees:
-            assignees = sched.get(st, [])
-        if assignees:
-            m = " ".join(f"<@{uid}>" for uid in assignees)
-            mentions.append(m)
-            lines.append(f"• **{st}** → {m}")
-        else:
-            lines.append(f"• **{st}** → _(no one assigned)_")
-
-    channel_id = getattr(settings, "feeding_alert_channel_id", None)
+    # Use feeding team channel for alerts
+    channel_id = getattr(settings, "ch_feeding_team", None)
     if not channel_id:
         log_action("feeding_8pm", "channel=None", "skipped (no alert channel configured)")
         return
@@ -361,7 +411,7 @@ async def _run_8pm_check(bot: discord.Client) -> None:
         log_action("feeding_8pm", f"channel={channel_id}", "not_found")
         return
 
-    msg = "\n".join(lines)
+    msg = lines
     from discord.abc import Messageable
     from ..utils.sender import safe_send
 
@@ -373,4 +423,53 @@ async def _run_8pm_check(bot: discord.Client) -> None:
             log_action("feeding_8pm", f"channel={channel_id}; type={type(ch).__name__}", "not_messageable")
     except Exception as e:
         log_action("feeding_8pm_error", f"unfed={len(unfed)}", str(e))
+
+async def build_8pm_lines(bot: discord.Client, *, unfed: Optional[List[str]] = None, sched: Optional[Dict[str, List[int]]] = None, mention: bool = True) -> str:
+    """Build the text for the 8pm message. mention=True uses <@id> tags; else shows @username/ID.
+    If unfed/sched not provided, computes them.
+    """
+    if unfed is None:
+        unfed = await _list_unfed_stations_today()
+    today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
+    if sched is None:
+        weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
+        sched = _read_schedule_for_weekday(weekday)
+    subs = _read_jsonl(SUBS_FILE)
+    today_iso = today.isoformat()
+
+    def _fmt(uid: int) -> str:
+        if mention:
+            return f"<@{uid}>"
+        u = bot.get_user(uid)
+        return f"@{getattr(u,'name',str(uid))}"
+
+    lines: List[str] = ["**Currently unfed stations**"]
+    for st in unfed:
+        # accepted sub for today?
+        assignees: List[int] = []
+        for r in reversed(subs):
+            if r.get("station") == st and r.get("status") == "accepted" and today_iso in (r.get("dates") or []):
+                aid = r.get("assignee")
+                if isinstance(aid, int):
+                    assignees.append(aid)
+                    break
+        if not assignees:
+            assignees = sched.get(st, [])
+        if assignees:
+            lines.append(f"• **{st}** → {' '.join(_fmt(uid) for uid in assignees)}")
+        else:
+            lines.append(f"• **{st}** → Unassigned.")
+    return "\n".join(lines)
+
+async def handle_manual_8pm_preview(intent, ctx: Dict[str, Any]) -> None:
+    """Admin-only: post a dry-run of the 8pm message to the current channel (no pings)."""
+    author = ctx["author"]
+    uid = int(getattr(author, 'id', 0))
+    if uid not in (getattr(settings, 'admin_ids', []) or []):
+        log_action("manual_8pm_denied", f"user={uid}", "not_admin")
+        return
+    bot = ctx.get("bot")
+    msg = await build_8pm_lines(bot, mention=False)
+    await safe_send(ctx["channel"], msg)
+    log_action("manual_8pm", f"by={uid}", "preview_sent")
 

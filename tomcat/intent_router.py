@@ -23,7 +23,7 @@ except Exception:
 
 # ---- handlers we’ll dispatch to ----------------------------------------------
 # Cats: “show me …” and “who is …”
-from .handlers.cats import handle_cat_photo, handle_cat_show, handle_self_intro
+from .handlers.cats import handle_cat_photo, handle_cat_show
 # Vision CV: detect / crop / identify (we already added these earlier)
 from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
 # Feeding: import the handlers module inside this package
@@ -86,23 +86,11 @@ class IntentEvent:
 MachineRow = Dict[str, Any]
 
 TOMCAT_PREFIX = re.compile(r"^\s*(tom\s*cat|tomcat|tom-kat|tom\s*kat)[\s,:-]*", re.I)
-# "show me" intent: broaden to include send/give/get and photo/picture variants.
-# Matches phrases like:
-#   - show me <cat>
-#   - send/give/get (me) (a|another|random) (photo|picture)(s) of <cat>
-#   - (photo|picture)(s) of <cat>
-SHOW_PAT = re.compile(
-    r"(" 
-    r"(?:show|send|give|get)\s*(?:me)?\s*(?:a|another|random)?\s*(?:photo|picture|pic|image|shot)?s?\s*(?:of)?|"  # verbs
-    r"(?:photo|picture|pic|image|shot)s?\s+of"  # noun-first: "pictures of <cat>"
-    r")",
-    re.I,
-)
+SHOW_PAT = re.compile(r"\b(show\s*me|show)\b", re.I)
 WHO_PAT  = re.compile(r"\b(who\s+is|who\s*’s|who\s*s|whois)\b", re.I)
 IDENT_PAT= re.compile(r"\b(identify|id|classify|classification)\b", re.I)
 DETECT_PAT = re.compile(r"\bdetect\b", re.I)
 CROP_PAT   = re.compile(r"\bcrop\b", re.I)
-SELF_INTRO_RE = re.compile(r"^\s*who\s*(?:is|'s)\s*(?:tom\s*cat|tomcat|thomas\s*cat)\s*\??\s*$", re.I)
 
 FEED_REQUEST_RE = re.compile(r"\b(can|could|would)\s+(someone|anyone)\s+feed\b", re.I)
 FEED_VERB = re.compile(r"\b(fed|feed(?:ed)?|filled|topped(?:\s*off)?)\b", re.I)
@@ -364,14 +352,6 @@ class IntentRouter:
             # strip wake tokens
             text_wo = self._strip_wake_tokens(text, message)
             # Silent mode command: requires TomCat prefix
-            # Self-intro: "who is tomcat" / "who's tomcat"
-            if SELF_INTRO_RE.search(text_wo):
-                return IntentEvent(
-                    type="self_intro", confidence=1.0,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
             m = SILENT_CMD.search(text_wo)
             if m:
                 return IntentEvent(
@@ -762,23 +742,6 @@ class IntentRouter:
                         text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
                         station=(st_list[0] if st_list else None), stations=(st_list or None), dates=dates
                     )
-            # Allow NLP to help with "show me" and "who is" when addressed
-            if addressed and nlp_intent in {"show_photo", "who_is"} and nlp_prob >= CONF_MID:
-                cat = self._extract_best_entity(text, want="cat", allow_model=True)
-                if cat and nlp_intent == "show_photo":
-                    return IntentEvent(
-                        type="show_photo", confidence=max(nlp_prob, 0.85),
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        cat_name=cat
-                    )
-                if cat and nlp_intent == "who_is":
-                    return IntentEvent(
-                        type="who_is", confidence=max(nlp_prob, 0.85),
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        cat_name=cat
-                    )
 
         # Default: none
         self._traces[row["message_id"]] = trace
@@ -798,10 +761,6 @@ class IntentRouter:
 
         if event.type == "who_is" and event.cat_name:
             await handle_cat_show(_intent("cat_show", {"name": event.cat_name}), ctx)
-            return
-
-        if event.type == "self_intro":
-            await handle_self_intro(_intent("self_intro", {}), ctx)
             return
 
         if event.type == "cv_identify":

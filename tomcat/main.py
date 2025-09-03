@@ -126,9 +126,6 @@ async def handle_misc(intent: Intent, ctx: Dict[str, Any]) -> None:
     message: discord.Message = ctx["message"]
     await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
 
-async def handle_cat_profile(intent: Intent, ctx: Dict[str, Any]) -> None:
-    await _handle_cat_show(intent, ctx)
-
 async def handle_cat_photo(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_cat_photo(intent, ctx)
 

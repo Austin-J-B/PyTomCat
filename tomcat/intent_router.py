@@ -9,7 +9,7 @@ from collections import deque, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from typing import Any, Deque, Dict, List, Optional, Tuple
-
+#easter egg. hi
 import discord
 
 # ---- config / logging --------------------------------------------------------

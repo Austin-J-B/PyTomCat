@@ -254,8 +254,3 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
         await ch.send(embed=embed, view=PhotoView(actual))
 
 
-
-# Optional: tiny wrapper to expose a strict "who is" alias if you want a separate name
-async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
-    # Reuse your existing bio handler
-    await handle_cat_show(intent, ctx)

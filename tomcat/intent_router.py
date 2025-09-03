@@ -28,7 +28,7 @@ from .handlers.cats import handle_cat_photo, handle_cat_show, handle_self_intro
 from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
 # Feeding: import the handlers module inside this package
 from .handlers import feeding  # type: ignore
-#BALLS5
+
 from .handlers.misc import (
     handle_profiles_create,
     handle_profile_update_one,

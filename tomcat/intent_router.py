@@ -123,6 +123,7 @@ FEEDING_UPDATE_RE = re.compile(r"^feeding\s+update\s*$", re.I)
 MANUAL_8PM_RE = re.compile(r"^manual\s+8\s*pm\s+update\s*$", re.I)
 CHECK_LAST_EMAIL_RE = re.compile(r"\bcheck\s+(?:the\s+)?last\s+email\b", re.I)
 AUTH_CODE_RE = re.compile(r"\bauth\s+(?:code|url)\s+(.+)$", re.I)
+LOG_PAST_EMAILS_RE = re.compile(r"\blog(?:\s+the)?\s+past\s+(\d+)\s+emails\b", re.I)
 
 CREATE_PROFILES_RE = re.compile(r"^create\s+profiles?\s+(\d+)(?:\s+through\s+(\d+))?$", re.I)
 UPDATE_PROFILE_RE  = re.compile(r"^update\s+profile\s+(\d+)$", re.I)
@@ -378,6 +379,20 @@ class IntentRouter:
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="gmail_check_last", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            # Admin-only: "log the past N emails"
+            m_log = LOG_PAST_EMAILS_RE.search(text_wo)
+            if m_log:
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return IntentEvent(
+                    type="gmail_log_recent", confidence=0.99,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
@@ -864,6 +879,18 @@ class IntentRouter:
             auth = m.group(1).strip() if m else ""
             from .handlers.dues import handle_gmail_auth_code
             await handle_gmail_auth_code(_intent("gmail_auth_code", {"auth": auth}), ctx)
+            return
+
+        if event.type == "gmail_log_recent":
+            # Parse count from the message; default to 10
+            text_wo = self._strip_wake_tokens((event.text or ""), message)
+            m = LOG_PAST_EMAILS_RE.search(text_wo)
+            try:
+                count = int(m.group(1)) if m else 10
+            except Exception:
+                count = 10
+            from .handlers.dues import handle_log_recent_emails
+            await handle_log_recent_emails(_intent("gmail_log_recent", {"count": count}), ctx)
             return
         
         if event.type == "profiles_create":

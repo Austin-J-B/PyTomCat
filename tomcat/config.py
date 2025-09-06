@@ -233,6 +233,9 @@ class Settings:
     # Optional: user to ping on spam alerts (falls back to first admin)
     spam_alert_user_id: int | None = int(os.getenv("SPAM_ALERT_USER_ID", "0")) or None
 
+    # ======== Gmail / Email logging ========
+    gmail_enabled: bool = _get_env_bool("GMAIL_ENABLED", False)
+
     # ======== Feeding scheduler maps (authoritative) ========
     # Provide simple name→user_id mapping and per-station weekly assignments.
     # Station assignments are lists of 7 names ordered Sun..Sat. Example defaults below.

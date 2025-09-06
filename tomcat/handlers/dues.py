@@ -1,6 +1,12 @@
 from __future__ import annotations
 import os
 import asyncio
+import json
+from datetime import datetime, timezone
+try:
+    from zoneinfo import ZoneInfo  # py>=3.9
+except Exception:
+    ZoneInfo = None  # type: ignore
 from typing import Any, Dict, Optional
 
 from ..logger import log_event, log_action
@@ -24,8 +30,23 @@ def _env(key: str, default: Optional[str] = None) -> Optional[str]:
 
 def _paths() -> tuple[str, str]:
     cred = _env("GMAIL_CREDENTIALS_PATH", "credentials/gmail_oauth_client.json") or "credentials/gmail_oauth_client.json"
-    token = _env("GMAIL_TOKEN_PATH", "gmail_token.json") or "gmail_token.json"
+    # Default token now lives under credentials/
+    token = _env("GMAIL_TOKEN_PATH", "credentials/gmail_token.json") or "credentials/gmail_token.json"
     return cred, token
+
+def _maybe_migrate_token(target_path: str) -> str:
+    """If an old token file exists at ./gmail_token.json and the target does not, move it.
+    Returns the path that should be used after migration.
+    """
+    try:
+        old = "gmail_token.json"
+        if not os.path.exists(target_path) and os.path.exists(old):
+            os.makedirs(os.path.dirname(target_path) or ".", exist_ok=True)
+            import shutil
+            shutil.move(old, target_path)
+        return target_path
+    except Exception:
+        return target_path
 
 _PENDING_OAUTH: Dict[int, Any] = {}
 
@@ -43,6 +64,7 @@ async def _build_gmail_service(channel) -> Any:
     from google.auth.transport.requests import Request
 
     cred_path, token_path = _paths()
+    token_path = _maybe_migrate_token(token_path)
     creds: Optional[Credentials] = None  # type: ignore
 
     # Load existing token if present
@@ -82,6 +104,18 @@ async def _build_gmail_service(channel) -> Any:
     return await asyncio.to_thread(lambda: build("gmail", "v1", credentials=creds))
 
 
+# ----- time helpers -----------------------------------------------------------
+def _now_iso() -> str:
+    tz = None
+    if ZoneInfo is not None:
+        try:
+            tz = ZoneInfo(getattr(settings, "timezone", "America/Chicago"))
+        except Exception:
+            tz = None
+    now = datetime.now(tz) if tz else datetime.now()
+    return now.isoformat()
+
+
 # ---- Public handler ----------------------------------------------------------
 
 async def handle_check_last_email(intent, ctx) -> None:
@@ -109,8 +143,14 @@ async def handle_check_last_email(intent, ctx) -> None:
         headers = {h.get("name", ""): h.get("value", "") for h in (payload.get("headers", []) or [])}
         subject = headers.get("Subject", "(no subject)")
         from_hdr = headers.get("From", "(unknown sender)")
+        snippet = msg.get("snippet", "") if isinstance(msg, dict) else ""
         await safe_send(ch, f"Last email:\nSubject: {subject}\nFrom: {from_hdr}")
-        log_event({"event": "gmail_last_email", "subject": subject, "from": from_hdr})
+        log_event({
+            "event": "gmail_last_email",
+            "subject": subject,
+            "from": from_hdr,
+            "snippet": snippet,
+        })
     except FileNotFoundError as e:
         await safe_send(ch, f"Gmail not configured: {e}")
         log_action("gmail_error", "config", str(e))
@@ -149,6 +189,12 @@ async def handle_gmail_auth_code(intent, ctx) -> None:
         await asyncio.to_thread(flow.fetch_token, code=code)
         # Save token
         _, token_path = _paths()
+        token_path = _maybe_migrate_token(token_path)
+        # Ensure directory exists before writing
+        try:
+            os.makedirs(os.path.dirname(token_path) or ".", exist_ok=True)
+        except Exception:
+            pass
         try:
             with open(token_path, "w", encoding="utf-8") as f:
                 f.write(flow.credentials.to_json())
@@ -165,4 +211,229 @@ async def handle_gmail_auth_code(intent, ctx) -> None:
     except Exception as e:
         await safe_send(ch, f"Auth error: {e}")
         log_action("gmail_auth_error", type(e).__name__, str(e))
+
+
+# ---- Email logging (periodic + manual) --------------------------------------
+
+import base64
+from typing import List, Dict
+from bs4 import BeautifulSoup  # type: ignore
+
+EMAILS_DIR = "logs/emails"
+INDEX_FILE = f"{EMAILS_DIR}/index.jsonl"
+_EMAIL_LOG_LOCK = asyncio.Lock()
+
+def _ensure_email_dirs():
+    try:
+        os.makedirs(EMAILS_DIR, exist_ok=True)
+    except Exception:
+        pass
+
+def _load_logged_ids() -> set[str]:
+    _ensure_email_dirs()
+    ids: set[str] = set()
+    try:
+        if os.path.exists(INDEX_FILE):
+            with open(INDEX_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                        mid = str(obj.get("id", ""))
+                        if mid:
+                            ids.add(mid)
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    return ids
+
+def _append_index(mid: str, seen: set[str] | None = None):
+    _ensure_email_dirs()
+    try:
+        # avoid duplicates in index file
+        if seen is None:
+            # light-weight read to skip duplicate writes
+            existing = _load_logged_ids()
+            if mid in existing:
+                return
+        with open(INDEX_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"id": mid, "logged_at": _now_iso()}) + "\n")
+    except Exception:
+        pass
+
+def _decode_part(data: str) -> str:
+    try:
+        # Gmail uses base64url
+        raw = base64.urlsafe_b64decode(data.encode("utf-8"))
+        return raw.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+def _extract_text_content(msg: Dict[str, Any]) -> str:
+    # Prefer text/plain; fallback to text/html stripped; else snippet
+    payload = msg.get("payload") or {}
+    def _walk(p) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        if not isinstance(p, dict):
+            return out
+        parts = p.get("parts") or []
+        for part in parts:
+            out.append(part)
+            out.extend(_walk(part))
+        return out
+    parts = _walk(payload)
+    # Single-part messages may put body directly on payload
+    if not parts:
+        parts = [payload]
+    text = ""
+    html = ""
+    for part in parts:
+        mime = (part.get("mimeType") or "").lower()
+        body = part.get("body") or {}
+        data = body.get("data")
+        if not data:
+            continue
+        if mime.startswith("text/plain"):
+            text = _decode_part(data)
+            break
+        if mime.startswith("text/html") and not html:
+            html = _decode_part(data)
+    if not text and html:
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            text = soup.get_text(separator="\n")
+        except Exception:
+            text = html
+    if not text:
+        text = msg.get("snippet", "")
+    return text or ""
+
+_MONTH_NAMES = {
+    1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+    7: "Jul", 8: "Aug", 9: "Sept", 10: "Oct", 11: "Nov", 12: "Dec",
+}
+
+async def _write_email_log_row(obj: Dict[str, Any]):
+    _ensure_email_dirs()
+    # Write into monthly NDJSON: e.g., 2025-Sept.ndjson
+    ts = obj.get("ts_received") or obj.get("ts_logged") or _now_iso()
+    try:
+        # Parse to get year and month; handle Z timezone suffix
+        ts_clean = ts.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(ts_clean)
+    except Exception:
+        dt = datetime.now()
+    mon_name = _MONTH_NAMES.get(dt.month, f"{dt.month:02d}")
+    path = os.path.join(EMAILS_DIR, f"{dt.year}-{mon_name}.ndjson")
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+
+async def _log_emails_batch(svc, messages: List[Dict[str, Any]], delay_sec: float = 10.0) -> int:
+    """Fetch full messages and append to logs/emails/*.ndjson for any not yet logged.
+    Returns count logged.
+    """
+    async with _EMAIL_LOG_LOCK:
+        # Build a working set of already logged IDs and de-duplicate input
+        logged = _load_logged_ids()
+        seen: set[str] = set(logged)
+        uniq: List[Dict[str, Any]] = []
+        for m in messages:
+            mid = str(m.get("id"))
+            if not mid:
+                continue
+            if mid in {str(x.get("id")) for x in uniq}:
+                continue
+            uniq.append(m)
+
+        count = 0
+        total = len(uniq)
+        for m in uniq:
+            mid = str(m.get("id"))
+            if not mid or mid in seen:
+                continue
+            full = await asyncio.to_thread(lambda: svc.users().messages().get(userId="me", id=mid, format="full").execute())
+            payload = full.get("payload", {})
+            headers = {h.get("name", ""): h.get("value", "") for h in (payload.get("headers", []) or [])}
+            subject = headers.get("Subject", "(no subject)")
+            from_hdr = headers.get("From", "(unknown sender)")
+            internal_date_ms = int(full.get("internalDate", 0)) if str(full.get("internalDate", "")).isdigit() else 0
+            ts_received = datetime.utcfromtimestamp(internal_date_ms/1000).isoformat() + "Z" if internal_date_ms else None
+            content = _extract_text_content(full)
+            row = {
+                "event": "email_received",
+                "id": mid,
+                "subject": subject,
+                "from": from_hdr,
+                "ts_received": ts_received,
+                "ts_logged": _now_iso(),
+                "content": content,
+            }
+            await _write_email_log_row(row)
+            _append_index(mid, seen)
+            seen.add(mid)
+            count += 1
+            if delay_sec and count < total:
+                await asyncio.sleep(delay_sec)
+        return count
+
+async def start_gmail_logging_scheduler(bot) -> None:
+    """Every ~4 hours, log any newly received emails in the last 4 hours."""
+    while True:
+        try:
+            async with _EMAIL_LOG_LOCK:
+                # Prefer logging channel for auth prompts if needed
+                ch = None
+                try:
+                    from ..config import settings as _settings
+                    ch_id = getattr(_settings, "ch_logging", None)
+                    if ch_id:
+                        ch = bot.get_channel(int(ch_id))
+                except Exception:
+                    ch = None
+                svc = await _build_gmail_service(ch or getattr(bot, "user", None))
+                # 4h window; exclude sent mail
+                q = "in:inbox -from:me newer_than:4h"
+                res = await asyncio.to_thread(lambda: svc.users().messages().list(userId="me", q=q, maxResults=100, includeSpamTrash=False).execute())
+                msgs = res.get("messages", []) if isinstance(res, dict) else []
+                if msgs:
+                    n = await _log_emails_batch(svc, msgs, delay_sec=10.0)
+                    log_action("gmail_log_scheduler", f"found={len(msgs)}", f"logged={n}")
+        except RuntimeError:
+            # likely gmail_auth_pending; do nothing until authorized
+            log_action("gmail_log_scheduler", "auth", "pending")
+        except Exception as e:
+            log_action("gmail_log_scheduler_error", "", str(e))
+        # Sleep ~4 hours
+        await asyncio.sleep(4 * 60 * 60)
+
+async def handle_log_recent_emails(intent, ctx) -> None:
+    """Manual: TomCat, log the past N emails (received)."""
+    ch = ctx["channel"]
+    try:
+        n = int(intent.data.get("count") or 10)
+        async with _EMAIL_LOG_LOCK:
+            svc = await _build_gmail_service(ch)
+            q = os.getenv("GMAIL_LAST_QUERY", "in:inbox -from:me")
+            res = await asyncio.to_thread(lambda: svc.users().messages().list(userId="me", q=q, maxResults=n, includeSpamTrash=False).execute())
+            msgs = res.get("messages", []) if isinstance(res, dict) else []
+            if not msgs:
+                await safe_send(ch, "No emails found to log.")
+                return
+            # Compute how many of these are already logged
+            existing = _load_logged_ids()
+            candidates = [m for m in msgs if str(m.get("id")) and str(m.get("id")) not in existing]
+            # Log in reverse chronological so logs read smoothly
+            logged = await _log_emails_batch(svc, list(msgs)[::-1], delay_sec=2.0)
+        already = max(0, len(candidates) - logged)
+        suffix = f" (skipped {already} already logged)" if already else ""
+        await safe_send(ch, f"Logged {logged} email(s){suffix}.")
+        log_action("gmail_log_manual", f"req={n}", f"logged={logged}; skipped={already}")
+    except RuntimeError:
+        log_action("gmail_log_manual", "auth", "pending")
+    except Exception as e:
+        await safe_send(ch, f"Gmail error: {e}")
+        log_action("gmail_log_manual_error", "", str(e))
 

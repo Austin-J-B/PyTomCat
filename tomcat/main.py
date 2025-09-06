@@ -29,11 +29,7 @@ bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 # Cats / Feeding and Dues already match (intent, ctx) in your tree
 from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
 from .handlers.feeding import start_feeding_scheduler, handle_feeding_inquiry as _handle_feeding_status
-from .handlers.dues import (
-    handle_dues_notice as _handle_dues_notice,
-    process_dues_cycle as _process_dues_cycle,
-    init_db as _init_db,
-)
+# Dues: no background scheduler; admin-only Gmail test is routed directly from the router
 
 from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
@@ -115,7 +111,8 @@ async def handle_feeding_status(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_feeding_status(intent, ctx)
 
 async def handle_dues_notice(intent: Intent, ctx: Dict[str, Any]) -> None:
-    await _handle_dues_notice(intent, ctx)
+    # Deprecated placeholder; kept for compatibility if referenced elsewhere
+    pass
 
 # Your admin handler expects (args, ctx) where args == intent.data
 async def handle_silent_mode(intent: Intent, ctx: Dict[str, Any]) -> None:
@@ -196,17 +193,9 @@ async def on_ready():
     except Exception:
         pass
 
-    async def _dues_loop():
-        while True:
-            try:
-                await _process_dues_cycle(bot)
-            except Exception as e:
-                log_event({"event": "dues_loop_error", "error": str(e)})
-            await asyncio.sleep(7200)
     asyncio.create_task(start_profile_scheduler(bot))
     # start feeding scheduler after the bot is ready and loop is running
     asyncio.create_task(start_feeding_scheduler(bot))
-    asyncio.create_task(_dues_loop())
 
 
 # ------- Message entrypoint -------

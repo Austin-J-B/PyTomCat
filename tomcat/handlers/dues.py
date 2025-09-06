@@ -1,170 +1,168 @@
 from __future__ import annotations
 import os
-import sqlite3
-import re
-from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
+import asyncio
+from typing import Any, Dict, Optional
 
-# Local package imports must be relative inside "tomcat"
-from ..config import settings
 from ..logger import log_event, log_action
-from ..services.sheets_client import sheets_client as get_client
+from ..config import settings
+
 try:
-    from ..utils.sender import safe_send  # canonical signature: (ch, text) -> Awaitable[None]
+    from ..utils.sender import safe_send  # (channel, content, **kwargs)
 except Exception:
-    async def safe_send(ch, text):  # fallback
-        await ch.send(text)
+    async def safe_send(ch, text, **kwargs):
+        await ch.send(text, **kwargs)
 
-# Optional deps used only when Gmail ingest is enabled
-# Do NOT import transformers here; it shouts about missing PyTorch/TensorFlow.
-from bs4 import BeautifulSoup  # ok at import time
-from rapidfuzz import fuzz      # ok at import time
+# ---- Gmail auth helpers ------------------------------------------------------
 
-DB_PATH = "dues.sqlite3"
-DUES_CURRENCY = getattr(settings, "dues_currency", "USD")
-GMAIL_ENABLED = bool(getattr(settings, "gmail_enabled", False))
-GMAIL_CREDENTIALS_PATH = getattr(settings, "gmail_credentials_path", "")
-GMAIL_TOKEN_PATH = getattr(settings, "gmail_token_path", "gmail_token.json")
-GMAIL_QUERY = getattr(settings, "gmail_query", "from:(paypal.com OR cash.app OR venmo.com) newer_than:30d")
+GMAIL_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+]
 
-@dataclass
-class Payment:
-    txn_id: str
-    provider: str
-    amount: int  # cents
-    currency: str
-    payer_name: str
-    payer_email: str
-    payer_handle: str
-    memo: str
-    ts_epoch: int
-    source: str
-    status: str
-    matched_user_id: Optional[str] = None
-    match_score: Optional[float] = None
+def _env(key: str, default: Optional[str] = None) -> Optional[str]:
+    v = os.getenv(key)
+    return v if v is not None else default
 
-def init_db() -> None:
-    with sqlite3.connect(DB_PATH) as c:
-        c.execute(
-            """CREATE TABLE IF NOT EXISTS payments(
-                txn_id TEXT PRIMARY KEY,
-                provider TEXT,
-                amount_cents INTEGER,
-                currency TEXT,
-                payer_name TEXT,
-                payer_email TEXT,
-                payer_handle TEXT,
-                memo TEXT,
-                ts_epoch INTEGER,
-                source TEXT,
-                status TEXT,
-                matched_user_id TEXT,
-                match_score REAL
-            )"""
-        )
+def _paths() -> tuple[str, str]:
+    cred = _env("GMAIL_CREDENTIALS_PATH", "credentials/gmail_oauth_client.json") or "credentials/gmail_oauth_client.json"
+    token = _env("GMAIL_TOKEN_PATH", "gmail_token.json") or "gmail_token.json"
+    return cred, token
 
-def _fetch_gmail_emails() -> list[dict]:
-    if not GMAIL_ENABLED:
-        return []
-    # Lazy import Google libs so starting the bot doesn't require them
-    from google.oauth2.credentials import Credentials
+_PENDING_OAUTH: Dict[int, Any] = {}
+
+def _new_flow():
     from google_auth_oauthlib.flow import InstalledAppFlow
+    cred_path, _ = _paths()
+    flow = InstalledAppFlow.from_client_secrets_file(cred_path, scopes=GMAIL_SCOPES)
+    return flow
+
+
+async def _build_gmail_service(channel) -> Any:
+    """Build a Gmail service; if auth is needed, post the URL and wait for approval via Discord code."""
+    from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
+    from google.auth.transport.requests import Request
 
-    scopes = ["https://www.googleapis.com/auth/gmail.readonly"]
-    creds = None
-    if os.path.exists(GMAIL_TOKEN_PATH):
-        creds = Credentials.from_authorized_user_file(GMAIL_TOKEN_PATH, scopes)
-    if not creds:
-        if not GMAIL_CREDENTIALS_PATH:
-            return []
-        flow = InstalledAppFlow.from_client_secrets_file(GMAIL_CREDENTIALS_PATH, scopes)
-        creds = flow.run_local_server(port=0)
-        with open(GMAIL_TOKEN_PATH, "w", encoding="utf-8") as f:
-            f.write(creds.to_json())
+    cred_path, token_path = _paths()
+    creds: Optional[Credentials] = None  # type: ignore
 
-    svc = build("gmail", "v1", credentials=creds)
-    res = svc.users().messages().list(userId="me", q=GMAIL_QUERY, maxResults=20).execute()
-    ids = [m["id"] for m in res.get("messages", [])]
-    out = []
-    for mid in ids:
-        msg = svc.users().messages().get(userId="me", id=mid, format="full").execute()
-        payload = msg.get("payload", {})
-        headers = {h["name"].lower(): h["value"] for h in payload.get("headers", [])}
-        snippet = msg.get("snippet", "")
-        out.append({"id": mid, "headers": headers, "snippet": snippet, "raw": msg})
-    return out
-
-def _parse_payment_from_email(e: dict) -> Optional[Payment]:
-    snippet = e.get("snippet", "") or ""
-    amt = None
-    m = re.search(r"\$([0-9]+(?:\.[0-9]{2})?)", snippet)
-    if m:
-        amt = int(round(float(m.group(1)) * 100))
-    if not amt:
-        return None
-    when = int(datetime.now(timezone.utc).timestamp())
-    return Payment(
-        txn_id=e.get("id", ""),
-        provider="email",
-        amount=amt,
-        currency=DUES_CURRENCY,
-        payer_name="Unknown",
-        payer_email=e.get("headers", {}).get("from", ""),
-        payer_handle="",
-        memo=snippet[:200],
-        ts_epoch=when,
-        source=f"gmail:{when}",
-        status="captured",
-    )
-
-async def handle_dues_notice(intent, ctx) -> None:
-    ch = ctx["channel"]
-    await safe_send(ch, "Dues notice handler is stubbed. Enable Gmail ingest or wire a real provider.")
-
-def _open_or_create_worksheet(sh, title: str):
-    try:
-        return sh.worksheet(title)
-    except Exception:
-        # Create the worksheet with a small grid and basic headers
+    # Load existing token if present
+    if os.path.exists(token_path):
         try:
-            ws = sh.add_worksheet(title=title, rows=100, cols=8)
-            ws.append_row(["kind", "ts_iso", "status", "count"])
-            return ws
-        except Exception as e:
-            # Bubble the original title to your log_event caller
-            raise
+            creds = Credentials.from_authorized_user_file(token_path, GMAIL_SCOPES)
+        except Exception:
+            creds = None
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            await asyncio.to_thread(creds.refresh, Request())
+        except Exception:
+            creds = None
+
+    # Fresh authorization if needed
+    if not creds:
+        if not os.path.exists(cred_path):
+            raise FileNotFoundError(f"Missing OAuth client file at {cred_path}")
+        # Start a manual flow and ask the admin to paste the code or full redirect URL back in Discord
+        flow = _new_flow()
+        port = int(os.getenv("GMAIL_LOCAL_PORT", "8765") or "8765")
+        flow.redirect_uri = f"http://localhost:{port}/"
+        auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
+        _PENDING_OAUTH[int(getattr(getattr(channel, 'guild', None), 'id', 0)) or 0] = flow  # also stash globally per guild
+        _PENDING_OAUTH[-1] = flow  # fallback/global
+        try:
+            await safe_send(channel, (
+                "Gmail authorization needed. Open and approve, then reply: 'TomCat, auth code <code>' or 'TomCat, auth url <full URL>'.\n"
+                f"URL:\n{auth_url}"
+            ))
+            log_action("gmail_auth_url", "", auth_url)
+        except Exception:
+            pass
+        raise RuntimeError("gmail_auth_pending")
+
+    # Build the service
+    return await asyncio.to_thread(lambda: build("gmail", "v1", credentials=creds))
 
 
-async def process_dues_cycle(bot) -> None:
-    init_db()
-    emails = _fetch_gmail_emails()
-    with sqlite3.connect(DB_PATH) as c:
-        cur = c.cursor()
-        for e in emails:
-            p = _parse_payment_from_email(e)
-            if not p:
-                continue
-            cur.execute(
-                """INSERT OR IGNORE INTO payments(
-                    txn_id, provider, amount_cents, currency,
-                    payer_name, payer_email, payer_handle, memo,
-                    ts_epoch, source, status, matched_user_id, match_score
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    p.txn_id, p.provider, p.amount, p.currency,
-                    p.payer_name, p.payer_email, p.payer_handle, p.memo,
-                    p.ts_epoch, p.source, p.status, p.matched_user_id, p.match_score
-                ),
-            )
-        wrote = c.total_changes
+# ---- Public handler ----------------------------------------------------------
 
-    if not settings.sheet_vision_id:
-        return
-    gc = get_client()
-    sh = gc.open_by_key(settings.sheet_vision_id)
-    ws = _open_or_create_worksheet(sh, "Membership Application List")
-    now = datetime.now(timezone.utc).isoformat()
-    ws.append_row(["dues_cycle", now, "processed", wrote])
+async def handle_check_last_email(intent, ctx) -> None:
+    """Admin test: fetch the most recent email's Subject and From and post it.
+    Honors silent mode via safe_send. Logs actions to human/machine logs.
+    """
+    ch = ctx["channel"]
+    try:
+        svc = await _build_gmail_service(ch)
+        # Fetch latest received (not sent) message metadata only
+        query = os.getenv("GMAIL_LAST_QUERY", "in:inbox -from:me")
+        res = await asyncio.to_thread(
+            lambda: svc.users().messages().list(userId="me", q=query, maxResults=1, includeSpamTrash=False).execute()
+        )
+        msgs = res.get("messages", []) if isinstance(res, dict) else []
+        if not msgs:
+            await safe_send(ch, "No received messages found.")
+            log_action("gmail_no_messages", "", "empty")
+            return
+        mid = msgs[0].get("id")
+        msg = await asyncio.to_thread(
+            lambda: svc.users().messages().get(userId="me", id=mid, format="metadata", metadataHeaders=["Subject", "From"]).execute()
+        )
+        payload = msg.get("payload", {}) if isinstance(msg, dict) else {}
+        headers = {h.get("name", ""): h.get("value", "") for h in (payload.get("headers", []) or [])}
+        subject = headers.get("Subject", "(no subject)")
+        from_hdr = headers.get("From", "(unknown sender)")
+        await safe_send(ch, f"Last email:\nSubject: {subject}\nFrom: {from_hdr}")
+        log_event({"event": "gmail_last_email", "subject": subject, "from": from_hdr})
+    except FileNotFoundError as e:
+        await safe_send(ch, f"Gmail not configured: {e}")
+        log_action("gmail_error", "config", str(e))
+    except RuntimeError as e:
+        # Likely gmail_auth_pending
+        log_action("gmail_pending", "", str(e))
+    except Exception as e:
+        await safe_send(ch, f"Gmail error: {e}")
+        log_action("gmail_error", type(e).__name__, str(e))
+
+
+async def handle_gmail_auth_code(intent, ctx) -> None:
+    """Complete the OAuth flow using a pasted code or full redirect URL from Discord."""
+    ch = ctx["channel"]
+    user = ctx.get("author")
+    raw = (intent.data or {}).get("auth") or ""
+    try:
+        from urllib.parse import urlparse, parse_qs
+        # Extract code from either a direct code or a full redirect URL
+        code = raw.strip()
+        if code.startswith("http"):
+            qs = parse_qs(urlparse(code).query)
+            code = (qs.get("code") or [""])[0]
+        if not code:
+            await safe_send(ch, "Could not find an authorization code. Please paste the code or the full redirect URL.")
+            return
+        # Get the pending flow (prefer guild key, else global)
+        flow = _PENDING_OAUTH.get(int(getattr(getattr(ch, 'guild', None), 'id', 0)) or 0) or _PENDING_OAUTH.get(-1)
+        if not flow:
+            # Start a new flow if none pending
+            flow = _new_flow()
+        # Use the same redirect URI convention
+        port = int(os.getenv("GMAIL_LOCAL_PORT", "8765") or "8765")
+        flow.redirect_uri = f"http://localhost:{port}/"
+        # Exchange code for tokens
+        await asyncio.to_thread(flow.fetch_token, code=code)
+        # Save token
+        _, token_path = _paths()
+        try:
+            with open(token_path, "w", encoding="utf-8") as f:
+                f.write(flow.credentials.to_json())
+        except Exception:
+            pass
+        # Clear pending
+        try:
+            _PENDING_OAUTH.pop(int(getattr(getattr(ch, 'guild', None), 'id', 0)) or 0, None)
+            _PENDING_OAUTH.pop(-1, None)
+        except Exception:
+            pass
+        await safe_send(ch, "Gmail authorized. You can now run: 'TomCat, check the last email'.")
+        log_action("gmail_auth_complete", f"by={getattr(user,'id',0)}", "ok")
+    except Exception as e:
+        await safe_send(ch, f"Auth error: {e}")
+        log_action("gmail_auth_error", type(e).__name__, str(e))
 

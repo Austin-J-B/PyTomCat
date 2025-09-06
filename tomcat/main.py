@@ -30,6 +30,7 @@ bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
 from .handlers.feeding import start_feeding_scheduler, handle_feeding_inquiry as _handle_feeding_status
 # Dues: no background scheduler; admin-only Gmail test is routed directly from the router
+from .handlers.dues import start_gmail_logging_scheduler
 
 from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
@@ -196,6 +197,12 @@ async def on_ready():
     asyncio.create_task(start_profile_scheduler(bot))
     # start feeding scheduler after the bot is ready and loop is running
     asyncio.create_task(start_feeding_scheduler(bot))
+    # Start Gmail logging scheduler if enabled
+    try:
+        if getattr(settings, "gmail_enabled", False):
+            asyncio.create_task(start_gmail_logging_scheduler(bot))
+    except Exception:
+        pass
 
 
 # ------- Message entrypoint -------

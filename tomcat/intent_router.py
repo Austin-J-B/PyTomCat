@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from typing import Any, Deque, Dict, List, Optional, Tuple
 #easter egg. hi
+'''to-do:
+    cache "show me" pics. Instead of it taking like >5 seconds per pic, we just grab a random pic
+    from the previous 50 pics as usual, and also run our CV detection on it. 
+    Then, we just save it in temp_images or something. So when someone asks for a pic, we very
+    quickly bring up that one and then queue another. Maybe 2 at a time. idk. 
+'''
 import discord
 
 # ---- config / logging --------------------------------------------------------
@@ -34,6 +40,7 @@ from .handlers.misc import (
     handle_profile_update_one,
     handle_profiles_update_all,
 )
+from .handlers.dues import handle_check_last_email
 
 # ---- Aliases and optional NLP ------------------------------------------------
 from .aliases import resolve_station_or_cat, alias_vocab
@@ -114,6 +121,8 @@ SILENT_CMD = re.compile(r"\bsilent\s*mode\s+(on|off)\b", re.I)
 WHO_THIS_RE = re.compile(r"(?:^|\b)(?:who(?:'s|\s+is)|what(?:'s|\s+is))\s+(?:this|that)\s*(?:cat)?\??$", re.I)
 FEEDING_UPDATE_RE = re.compile(r"^feeding\s+update\s*$", re.I)
 MANUAL_8PM_RE = re.compile(r"^manual\s+8\s*pm\s+update\s*$", re.I)
+CHECK_LAST_EMAIL_RE = re.compile(r"\bcheck\s+(?:the\s+)?last\s+email\b", re.I)
+AUTH_CODE_RE = re.compile(r"\bauth\s+(?:code|url)\s+(.+)$", re.I)
 
 CREATE_PROFILES_RE = re.compile(r"^create\s+profiles?\s+(\d+)(?:\s+through\s+(\d+))?$", re.I)
 UPDATE_PROFILE_RE  = re.compile(r"^update\s+profile\s+(\d+)$", re.I)
@@ -358,6 +367,33 @@ class IntentRouter:
                     type="silent_mode", confidence=1.0,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            # Admin-only: "check the last email"
+            if CHECK_LAST_EMAIL_RE.search(text_wo):
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return IntentEvent(
+                    type="gmail_check_last", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            m_auth = AUTH_CODE_RE.search(text_wo)
+            if m_auth:
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return IntentEvent(
+                    type="gmail_auth_code", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                    # slot: reuse cat_name to carry code? better: we don't change dataclass, pass via text, we can reparse in handler
                 )
 
             # "who is this?" → prefer attached/reply image; else last 30s; else set pending and stay quiet
@@ -815,6 +851,19 @@ class IntentRouter:
         if event.type == "cv_crop":
             via_reply = bool(getattr(message, "reference", None))
             await handle_cv_crop(_intent("cv_crop", {}), {**ctx, "message": message, "silent_on_no_image": via_reply})
+            return
+        
+        if event.type == "gmail_check_last":
+            await handle_check_last_email(_intent("gmail_check_last", {}), ctx)
+            return
+
+        if event.type == "gmail_auth_code":
+            # Extract the code/url from the original text (preserve case!) after stripping wake tokens
+            text_wo = self._strip_wake_tokens((event.text or ""), message)
+            m = AUTH_CODE_RE.search(text_wo)
+            auth = m.group(1).strip() if m else ""
+            from .handlers.dues import handle_gmail_auth_code
+            await handle_gmail_auth_code(_intent("gmail_auth_code", {"auth": auth}), ctx)
             return
         
         if event.type == "profiles_create":

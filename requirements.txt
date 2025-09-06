@@ -15,5 +15,5 @@ beautifulsoup4>=4.12.0
 opencv-python-headless>=4.9.0.80
 ultralytics>=8.2.0
 # CUDA-enabled PyTorch (CUDA 12.1 wheels)
-torch>=2.3.0+cu121
-torchvision>=0.18.0+cu121
+#torch>=2.3.0+cu121
+#torchvision>=0.18.0+cu121

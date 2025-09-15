@@ -9,9 +9,11 @@ gmail_token.json
 
 weights/
 !weights/.gitkeep
-
-
+CCC megasheet - Membership Application List.csv
+TomCatVision - RecentPics.csv
 __pycache__/
 *.pyc
+
+cache/
 
 

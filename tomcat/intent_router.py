@@ -124,6 +124,12 @@ MANUAL_8PM_RE = re.compile(r"^manual\s+8\s*pm\s+update\s*$", re.I)
 CHECK_LAST_EMAIL_RE = re.compile(r"\bcheck\s+(?:the\s+)?last\s+email\b", re.I)
 AUTH_CODE_RE = re.compile(r"\bauth\s+(?:code|url)\s+(.+)$", re.I)
 LOG_PAST_EMAILS_RE = re.compile(r"\blog(?:\s+the)?\s+past\s+(\d+)\s+emails\b", re.I)
+DUE_CHECK_RE = re.compile(r"\bcheck\s+due\s+payments\b", re.I)
+EXPORT_DUES_RE = re.compile(r"\bexport\s+due(?:s)?\s+portal\b", re.I)
+DUES_PERKS_RE = re.compile(r"\brun\s+dues\s+perks\b", re.I)
+RECACHE_SHOW_RE = re.compile(r"\brecache\s+(?:show|photo|photos|cache|cats?)\b", re.I)
+RECACHE_ONE_RE = re.compile(r"\brecache\s+(.+?)\s+photos?\b", re.I)
+REMOVE_ROLE_RE = re.compile(r"\b(?:remove|clear|strip)\s+(?:the\s+)?role\s+(\d{5,20})(?:\s+from\s+(?:everyone|all))?\b", re.I)
 
 CREATE_PROFILES_RE = re.compile(r"^create\s+profiles?\s+(\d+)(?:\s+through\s+(\d+))?$", re.I)
 UPDATE_PROFILE_RE  = re.compile(r"^update\s+profile\s+(\d+)$", re.I)
@@ -409,6 +415,70 @@ class IntentRouter:
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
                     # slot: reuse cat_name to carry code? better: we don't change dataclass, pass via text, we can reparse in handler
+                )
+
+            # Admin-only dues check
+            if DUE_CHECK_RE.search(text_wo):
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return IntentEvent(
+                    type="dues_check", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            # Dues perks: run perks (emails + usernames)
+            if DUES_PERKS_RE.search(text_wo):
+                return IntentEvent(
+                    type="dues_perks", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            # Admin-only: remove a specific role from everyone
+            m_role = REMOVE_ROLE_RE.search(text_wo)
+            if m_role:
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return IntentEvent(
+                    type="role_remove_all", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            # Admin-only: export dues portal (full channel dump)
+            if EXPORT_DUES_RE.search(text_wo):
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return IntentEvent(
+                    type="dues_export_portal", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            # Admin-only: recache show-photo cache (all or one cat)
+            m_one = RECACHE_ONE_RE.search(text_wo)
+            if m_one or RECACHE_SHOW_RE.search(text_wo):
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                name = (m_one.group(1).strip() if m_one else None)
+                return IntentEvent(
+                    type="show_cache_recache", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                    cat_name=name
                 )
 
             # "who is this?" → prefer attached/reply image; else last 30s; else set pending and stay quiet
@@ -882,6 +952,11 @@ class IntentRouter:
             return
 
         if event.type == "gmail_log_recent":
+            # Debug trace for dispatch
+            try:
+                log_action("intent_dispatch", f"type=gmail_log_recent msg={event.message_id}", "begin")
+            except Exception:
+                pass
             # Parse count from the message; default to 10
             text_wo = self._strip_wake_tokens((event.text or ""), message)
             m = LOG_PAST_EMAILS_RE.search(text_wo)
@@ -891,6 +966,20 @@ class IntentRouter:
                 count = 10
             from .handlers.dues import handle_log_recent_emails
             await handle_log_recent_emails(_intent("gmail_log_recent", {"count": count}), ctx)
+            try:
+                log_action("intent_dispatch", f"type=gmail_log_recent msg={event.message_id}", f"done count={count}")
+            except Exception:
+                pass
+            return
+
+        if event.type == "dues_check":
+            from .handlers.dues import handle_check_dues
+            await handle_check_dues(_intent("dues_check", {}), {**ctx, "bot": ctx.get("bot")})
+            return
+
+        if event.type == "dues_export_portal":
+            from .handlers.dues import handle_export_dues_portal
+            await handle_export_dues_portal(_intent("dues_export_portal", {}), {**ctx, "bot": ctx.get("bot")})
             return
         
         if event.type == "profiles_create":
@@ -909,6 +998,30 @@ class IntentRouter:
 
         if event.type == "profiles_update_all":
             await handle_profiles_update_all(_intent("profiles_update_all", {}), ctx)
+            return
+
+        if event.type == "dues_perks":
+            from .handlers.dues import handle_run_dues_perks
+            await handle_run_dues_perks(_intent("dues_perks", {}), {**ctx, "bot": ctx.get("bot")})
+            return
+
+        if event.type == "role_remove_all":
+            # Extract role id from message text
+            text_wo = self._strip_wake_tokens((event.text or ""), message)
+            m = REMOVE_ROLE_RE.search(text_wo)
+            role_id = int(m.group(1)) if m else 0
+            if role_id:
+                from .handlers.admin import handle_remove_role_from_all
+                await handle_remove_role_from_all({"role_id": role_id}, {**ctx, "bot": ctx.get("bot")})
+            return
+
+        if event.type == "show_cache_recache":
+            # Admin-only handler to recache show photos
+            from .handlers.admin import handle_recache_show_cache
+            args = {}
+            if hasattr(event, 'cat_name') and event.cat_name:
+                args = {"name": event.cat_name}
+            await handle_recache_show_cache(args, {**ctx, "bot": ctx.get("bot")})
             return
 
         if event.type == "silent_mode":

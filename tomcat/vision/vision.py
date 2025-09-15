@@ -272,7 +272,8 @@ def crop(image_bytes: bytes) -> List[bytes]:
         cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, *img.size)
         crop_img = img.crop((cx1, cy1, cx2, cy2))
         crops.append(_jpeg_bytes(crop_img, quality=92))
-    log_action("viz_crop", f"crops={len(crops)}", "ok")
+    if getattr(settings, 'cv_log_crop', True):
+        log_action("viz_crop", f"crops={len(crops)}", "ok")
     return crops
 
 

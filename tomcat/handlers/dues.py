@@ -357,10 +357,24 @@ def _parse_portal_message(msg) -> Dict[str, Any]:
 
 def _is_explicit_payment_message(text: str) -> bool:
     t = " " + (text or '').lower() + " "
-    has_paid = " paid " in t or " paid," in t or " paid." in t or " paid!" in t
-    provider = any(k in t for k in ["venmo","paypal","cash app","cashapp","cash-app","in person","cash","zelle","zelled"]) 
-    via_through = (" via " in t or " through " in t) and provider
-    return (has_paid and provider) or via_through
+    provider = any(k in t for k in [
+        "venmo", "paypal", "cash app", "cashapp", "cash-app", "in person", "cash", "zelle", "zelled"
+    ])
+    if not provider:
+        return False
+    # Strong signals
+    if any(p in t for p in [" paid ", " paid,", " paid.", " paid!", " sent ", " sent.", " sent,", " donated "]):
+        return True
+    # Common phrasings that were previously missed, e.g., "used cashapp"
+    if " used " in t:
+        return True
+    # Provider-verbed variants: "venmoed", "cashapped", "zelle'd"
+    if any(v in t for v in ["venmoed", "cashapped", "cashapp'd", "zelle'd", "zelled"]):
+        return True
+    # "via/through <provider>"
+    if (" via " in t or " through " in t):
+        return True
+    return False
 
 # --- Sheet ingress (via Sheets API) ---
 
@@ -722,7 +736,274 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
             log_action('mavorgs_invite_update_error', 'sheet', str(e))
         except Exception:
             pass
+    return False, f"Error updating sheet: {e}"
+
+async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -> tuple[bool, str]:
+    """Mark 'Verified' TRUE for rows whose email is in provided list and, if given, semester matches.
+    Input: list of (email, semester_or_None).
+    Returns (ok, message).
+    """
+    emails_with_sem = [((e or '').strip().lower(), (s or '').strip() if s else None) for e, s in emails_with_sem if e]
+    if not emails_with_sem:
+        return False, "No emails to mark."
+    try:
+        from ..services.sheets_client import sheets_client as _sc
+        sid = getattr(settings, 'sheet_megasheet_id', None)
+        if not sid:
+            return False, "Missing sheet id for membership megasheet."
+        ws_name = getattr(settings,'membership_ws_title','Membership Application List')
+        ws = _sc().open_by_key(sid).worksheet(ws_name)
+        rows = ws.get_all_values()
+        if not rows:
+            return False, "Sheet is empty."
+        def hkey(s: str) -> str:
+            return re.sub(r"[^a-z]+", "", (s or '').lower())
+        header_idx = 0
+        # Try to locate a better header row within first 30
+        target_keys = {'email','verified','semester'}
+        best_hits = -1
+        for i in range(min(30, len(rows))):
+            rk = {hkey(c) for c in rows[i] if c}
+            hits = len(rk & target_keys)
+            if hits > best_hits and hits >= 1:
+                best_hits = hits
+                header_idx = i
+        header = rows[header_idx]
+        idx = {hkey(h): i for i, h in enumerate(header)}
+        i_email = idx.get('email', -1)
+        i_ver   = idx.get('verified', -1)
+        i_sem   = idx.get('semester', -1)
+        if i_email < 0 or i_ver < 0:
+            return False, "Could not find Email or Verified columns."
+        # Build lookup set
+        lookup: dict[str, set[str]] = {}
+        for e, s in emails_with_sem:
+            if not e: continue
+            lookup.setdefault(e, set()).add((s or '').strip())
+        # Prepare Cell updates similar to _mark_mavorg_invites
+        from gspread.cell import Cell  # type: ignore
+        cells: list[Cell] = []
+        marked = 0
+        for ri, row in enumerate(rows[header_idx+1:], start=header_idx+2):
+            email_val = (row[i_email] if i_email < len(row) else '').strip().lower()
+            if not email_val or email_val not in lookup:
+                continue
+            want = lookup[email_val]
+            if i_sem >= 0 and want and '' not in want:
+                cur_sem = (row[i_sem] if i_sem < len(row) else '').strip()
+                if cur_sem not in want:
+                    continue
+            cur_ver = (row[i_ver] if i_ver < len(row) else '').strip().lower()
+            if cur_ver in {'true','yes','y','1','x','✅'}:
+                continue
+            cells.append(Cell(row=ri, col=i_ver+1, value='TRUE'))
+            marked += 1
+        if not cells:
+            return True, "No rows needed marking as Verified."
+        # Chunked updates with backoff like invites
+        BATCH = 200
+        done = 0
+        for i in range(0, len(cells), BATCH):
+            chunk = cells[i:i+BATCH]
+            try:
+                ws.update_cells(chunk, value_input_option='USER_ENTERED')
+                done += len(chunk)
+            except Exception as e2:
+                log_action('mavorgs_verify_update_error', f"batch={i}//{BATCH}", str(e2))
+                delay = 1.0
+                for cell in chunk:
+                    for attempt in range(5):
+                        try:
+                            ws.update_cell(cell.row, cell.col, cell.value)
+                            done += 1
+                            break
+                        except Exception as e3:
+                            msg = str(e3).lower()
+                            if 'quota' in msg or '429' in msg:
+                                await asyncio.sleep(delay)
+                                delay = min(delay * 2.0, 8.0)
+                                continue
+                            log_action('mavorgs_verify_update_error', f"r={cell.row} c={cell.col}", str(e3))
+                            break
+            await asyncio.sleep(0.8)
+        return True, f"Marked Verified for {done} row(s)."
+    except Exception as e:
+        try:
+            log_action('mavorgs_verify_update_error', 'sheet', str(e))
+        except Exception:
+            pass
         return False, f"Error updating sheet: {e}"
+
+async def _delete_portal_messages(bot, ids: list[int]) -> int:
+    """Delete messages by id from the dues portal channel. Returns count deleted."""
+    if not ids:
+        return 0
+    try:
+        ch_id = int(getattr(settings, 'ch_due_portal', 0) or 0)
+    except Exception:
+        ch_id = 0
+    if not ch_id:
+        return 0
+    ch = getattr(bot, 'get_channel', lambda _id: None)(ch_id)
+    if not ch:
+        return 0
+    deleted = 0
+    for mid in ids:
+        try:
+            msg = await ch.fetch_message(int(mid))
+            if msg:
+                await msg.delete()
+                deleted += 1
+        except Exception:
+            continue
+    return deleted
+
+async def handle_update_dues_members(intent, ctx) -> None:
+    """Analyze dues, auto-verify high-confidence entries, clean up, then run dues perks.
+
+    Steps:
+    - Run the same analysis as dues_check and post the standard summary lines.
+    - For each row with score >= 1.20, with a corroborating provider email, and not flagged cash/donation:
+        * Mark Verified=TRUE for that row (by email+semester)
+        * Delete the original dues-portal message
+    - Then run the 'dues perks' flow (emails list, matched usernames, roles, invites prompt).
+    - Finally, post a short list of entries that were skipped for review (low confidence or cash/donation).
+    """
+    ch = ctx.get('channel')
+    bot = ctx.get('bot')
+    if not ch or not bot:
+        return
+    # 1) Analyze and post the same summary as handle_check_dues
+    placeholder = None
+    try:
+        placeholder = await ch.send('Analyzing dues…')
+    except Exception:
+        placeholder = None
+    rows = await _analyze_dues(bot)
+    def _conf_label(score: float) -> str:
+        if score >= 1.20: return 'high confidence'
+        if score >= 0.90: return 'medium-high'
+        if score >= 0.60: return 'review'
+        return 'low'
+    lines = []
+    for rec in rows[-15:]:
+        best_mem = rec.get('primary_member') or {}
+        best_email = rec.get('primary_email')
+        auth = rec.get('author') or ''
+        disp = rec.get('author_display') or auth
+        if rec.get('flag_reason') in {'cash','donation'} and not best_email:
+            fn = best_mem.get('full_name') or 'No associated form entry found'
+            lines.append(f"- Discord: {auth} ({disp}), Real Name: {fn}, Payment App Username: —, Score = FLAGGED FOR REVIEW")
+            continue
+        if not best_mem:
+            lines.append(f"- Discord: {auth} ({disp}), Real Name: No associated form entry found, Payment App Username: —, Score = 0 (No match found)")
+            continue
+        name = best_mem.get('full_name') or 'No associated form entry found'
+        pay_from_email = (rec.get('payment_username_email') or '—')
+        score = float(rec.get('score_total') or 0.0)
+        lines.append(f"- Discord: {auth} ({disp}), Real Name: {name}, Payment App Username: {pay_from_email}, Score = {score:.2f} ({_conf_label(score)})")
+    header = "Dues check results (last 15):\n"
+    if placeholder:
+        await placeholder.edit(content=header + ("\n".join(lines[:15]) if lines else ""))
+    else:
+        await safe_send(ch, header + ("\n".join(lines[:15]) if lines else ""))
+
+    # 2) Auto-verify high-confidence entries and delete their portal messages
+    eligible: list[dict] = []
+    for rec in rows:
+        sc = float(rec.get('score_total') or 0.0)
+        S = rec.get('primary_member') or {}
+        E = rec.get('primary_email') or None
+        if sc < 1.20:
+            continue
+        if rec.get('flag_reason') in {'cash','donation'}:
+            continue
+        if not (S and E):
+            continue
+        prov = ((_provider_from_email((E.get('from') or ''), (E.get('subject') or ''), (E.get('content') or ''))) or '').lower()
+        if prov not in {'venmo','cashapp','paypal'}:
+            continue
+        # Enforce email time window relative to the discord message timestamp
+        try:
+            from datetime import datetime
+            msg_ts = datetime.fromisoformat(str(rec.get('ts')).replace('Z','+00:00'))
+        except Exception:
+            msg_ts = None
+        try:
+            email_ts = datetime.fromisoformat(((E.get('ts_received') or E.get('ts_logged') or '')).replace('Z','+00:00'))
+        except Exception:
+            email_ts = None
+        if msg_ts and email_ts:
+            delta_days = abs((email_ts.replace(tzinfo=None) - msg_ts.replace(tzinfo=None)).days)
+            wnd = int(getattr(settings, 'dues_email_window_days', 5) or 5)
+            if delta_days > wnd:
+                continue
+        # Require amount == 15 or email mentions dues/due in subject/body
+        subj = (E.get('subject') or '')
+        body = (E.get('content') or '')
+        text = f"{subj} {body}"
+        amt = _extract_amount(text)
+        if not ((amt is not None and int(round(amt)) == 15) or re.search(r"\bdue[s]?\b", text, re.I)):
+            continue
+        eligible.append(rec)
+
+    # Mark Verified for eligible emails (email + semester)
+    emails_with_sem: list[tuple[str, str | None]] = []
+    for rec in eligible:
+        S = rec['primary_member']
+        em = (S.get('email') or '').strip().lower()
+        sem = (S.get('semester') or '').strip() or None
+        if em:
+            emails_with_sem.append((em, sem))
+    if emails_with_sem:
+        ok, msg = await _mark_verified_emails(emails_with_sem)
+        try:
+            log_action('dues_auto_verify', f"count={len(emails_with_sem)}", msg)
+        except Exception:
+            pass
+        # Invalidate membership cache so perks sees fresh Verified flags
+        try:
+            global _MEMBERSHIP_ROWS_CACHE, _MEMBERSHIP_ROWS_TS
+            _MEMBERSHIP_ROWS_CACHE = None
+            _MEMBERSHIP_ROWS_TS = 0.0
+        except Exception:
+            pass
+
+    # Delete portal messages for eligible
+    ids = [int(rec.get('message_id') or 0) for rec in eligible if int(rec.get('message_id') or 0)]
+    if ids:
+        deleted = await _delete_portal_messages(bot, ids)
+        try:
+            log_action('dues_auto_cleanup', f'deleted={deleted}', '')
+        except Exception:
+            pass
+
+    # 3) Run the standard dues perks flow (emails list, usernames, roles, invite prompt)
+    try:
+        await handle_run_dues_perks(intent, ctx)
+    except Exception as e:
+        try:
+            log_action('dues_update_perks_error', '', str(e))
+        except Exception:
+            pass
+
+    # 4) Report entries left for manual review
+    review_lines: list[str] = []
+    for rec in rows:
+        sc = float(rec.get('score_total') or 0.0)
+        if rec in eligible:
+            continue
+        reason = None
+        if rec.get('flag_reason') in {'cash','donation'}:
+            reason = rec.get('flag_reason')
+        elif sc < 1.20:
+            reason = f"score={sc:.2f}"
+        if reason:
+            auth = rec.get('author') or ''
+            name = (rec.get('primary_member') or {}).get('full_name') or rec.get('name_guess') or '(unknown)'
+            review_lines.append(f"- {auth} → {name} ({reason})")
+    if review_lines:
+        await safe_send(ch, "Manual review needed for:\n" + "\n".join(review_lines[:30]))
 
 async def _ensure_guild_members(guild) -> list:
     try:
@@ -1452,6 +1733,13 @@ def _payment_username_from_email(em: dict) -> str | None:
         m2 = re.search(r"([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,2})", subj)
         if m2:
             return m2.group(1)
+    # Generic fallbacks when provider-specific patterns fail
+    m = re.search(r"\b([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})\b\s+sent\s+you\s+\$?\d", subj, re.I)
+    if m:
+        return m.group(1).strip()
+    m2 = re.search(r"\b([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})\b\s+paid\s+you\b", subj, re.I)
+    if m2:
+        return m2.group(1).strip()
     return None
 
 # --- NLP hooks (kept available, but not required for scoring) ---
@@ -1609,18 +1897,21 @@ async def _fetch_portal_messages(bot) -> list:
         return []
     msgs = []
     skip = max(0, int(getattr(settings,'dues_scan_skip_oldest',3) or 0))
-    limit = int(getattr(settings,'dues_scan_limit',0) or 0)
+    conf_limit = int(getattr(settings,'dues_scan_limit',0) or 0)
+    # Bound history read to keep the command snappy. If DUES_SCAN_LIMIT=0, default to 500.
+    limit = conf_limit if conf_limit > 0 else 500
     try:
-        async for m in ch.history(limit=None, oldest_first=True):
-            msgs.append(m)
+        # Fetch newest-first then reverse to chronological for downstream logic
+        fetched = []
+        async for m in ch.history(limit=limit, oldest_first=False):
+            fetched.append(m)
+        msgs = list(reversed(fetched))
     except Exception as e:
         log_action('dues_portal_history_error', f'ch={ch_id}', str(e))
         return []
     if len(msgs) <= skip:
         return []
     msgs = msgs[skip:]
-    if limit and limit > 0:
-        msgs = msgs[-limit:]
     return msgs
 
 # ---- main ----
@@ -1703,16 +1994,17 @@ async def _analyze_dues(bot) -> List[dict]:
     per_msg_candidates: Dict[int, dict] = {}
     email_to_candidates: Dict[str, List[Tuple[float, int]]] = {}
 
-    # Pre-map membership rows to actual guild members using the robust matcher
-    guild, guild_members = await _guild_and_members(bot)
+    # Pre-map membership rows to actual guild members (optional heavy step)
     member_to_rows: Dict[int, List[Tuple[dict, int]]] = {}
-    if guild and guild_members:
-        m_matched, m_possible, _m_unmatched = _match_membership_rows_to_members(members, guild_members)
-        for rec in m_matched:
-            mid = int(getattr(rec['member'], 'id', 0) or 0)
-            if not mid:
-                continue
-            member_to_rows.setdefault(mid, []).append((rec['row'], int(rec['score'])))
+    if not getattr(settings, 'dues_fast_map', True):
+        guild, guild_members = await _guild_and_members(bot)
+        if guild and guild_members:
+            m_matched, m_possible, _m_unmatched = _match_membership_rows_to_members(members, guild_members)
+            for rec in m_matched:
+                mid = int(getattr(rec['member'], 'id', 0) or 0)
+                if not mid:
+                    continue
+                member_to_rows.setdefault(mid, []).append((rec['row'], int(rec['score'])))
 
     for m, p in parsed_msgs:
         # Member candidates (membership rows)
@@ -1845,16 +2137,24 @@ async def _analyze_dues(bot) -> List[dict]:
             if E_final.get('amount') is not None:
                 reasons.append(f"email_amount={E_final['amount']:.2f}")
 
-        # Flags for cash/donation-in-kind
+        # Flags for cash/donation-in-kind (relaxed when we have a matching provider email)
         flag_reason = None
         if S:
             paid_where = (S.get('paid_where') or '').lower()
             kind = (S.get('kind') or '').lower()
-            if re.search(r"\b(cash|in\s*person)\b", paid_where):
+            # Avoid false positives on 'cash app'
+            if re.search(r"\bcash\b(?!\s*app)", paid_where) or re.search(r"\bin\s*person\b", paid_where):
                 flag_reason = 'cash'
             elif 'donat' in kind and 'dues' not in kind:
                 if 'verif' not in kind:
                     flag_reason = 'donation'
+        # If we have a solid provider email and typical dues amount, clear flags
+        if rec.get('email_best') or E_final:
+            eprov = (E_final or {}).get('provider') if E_final else (rec.get('email_best') or {}).get('provider')
+            eamt = (E_final or {}).get('amount') if E_final else (rec.get('email_best') or {}).get('amount')
+            subj = ((E_final or {}).get('raw') or {}).get('subject', '') if (E_final or rec.get('email_best')) else ''
+            if eprov in {'venmo','cashapp','paypal'} and (eamt is None or int(round(eamt or 0)) in _ALLOWED_AMOUNTS or 'dues' in subj.lower()):
+                flag_reason = None
 
         results.append({
             'event': 'dues_portal_analysis',
@@ -1921,7 +2221,8 @@ async def handle_check_dues(intent, ctx) -> None:
             best_email = rec.get('primary_email')
             auth = rec.get('author') or ''
             disp = rec.get('author_display') or auth
-            if rec.get('flag_reason') in {'cash','donation'}:
+            # Only hard-flag if we have no corroborating provider email attached
+            if rec.get('flag_reason') in {'cash','donation'} and not best_email:
                 fn = best_mem.get('full_name') or 'No associated form entry found'
                 lines.append(f"- Discord: {auth} ({disp}), Real Name: {fn}, Payment App Username: —, Score = FLAGGED FOR REVIEW")
                 continue

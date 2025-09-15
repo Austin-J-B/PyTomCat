@@ -269,6 +269,9 @@ class Settings:
     membership_ws_title: str = os.getenv("MEMBERSHIP_WS_TITLE", "Membership Application List")
     dues_nlp_enabled: bool = _get_env_bool("DUES_NLP_ENABLED", False)
     dues_nlp_max_calls: int = int(os.getenv("DUES_NLP_MAX_CALLS", "50"))
+    # Cat aliases/profile TTLs
+    cat_aliases_ttl_sec: int = int(os.getenv("CAT_ALIASES_TTL_SEC", "7200") or "7200")
+    cat_profile_ttl_sec: int = int(os.getenv("CAT_PROFILE_TTL_SEC", "3600") or "3600")
     dues_member_max_candidates: int = int(os.getenv("DUES_MEMBER_MAX_CANDIDATES", "300"))
 
     # ======== Feeding scheduler maps (authoritative) ========

@@ -13,6 +13,7 @@ from ..logger import log_action
 import re
 import os, io, asyncio, aiohttp
 from ..vision import vision as V
+from ..services.show_cache import pop_one_cached, ensure_cat_cache
 from pathlib import Path
 from typing import Optional
 from ..config import settings
@@ -24,6 +25,7 @@ def _display_name(full: str) -> str:
     """Drop leading 'ID. ' from names like '1. Microwave'."""
     return re.sub(r"^\s*\d+\.\s*", "", str(full or "")).strip()
 
+
 class PhotoView(discord.ui.View):
     def __init__(self, cat_name: str):
         super().__init__(timeout=None)  # no expiry while the bot is running
@@ -31,12 +33,42 @@ class PhotoView(discord.ui.View):
 
     @discord.ui.button(label="Show me another", style=discord.ButtonStyle.primary)
     async def another(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # self.cat_name is the FULL_NAME from CatDatabase (e.g., "2. Twix").
+        # Defer immediately to avoid 3s interaction timeout
+        try:
+            await interaction.response.defer(thinking=False)
+        except Exception:
+            pass
+        # Try cache first for speed
+        cached_bytes, meta = await pop_one_cached(self.cat_name)
+        if cached_bytes:
+            ex = set()
+            try:
+                if isinstance(meta, dict) and meta.get('serial'):
+                    import re as _re
+                    ex.add(_re.sub(r"[^0-9]", "", str(meta['serial'])))
+            except Exception:
+                pass
+            asyncio.create_task(ensure_cat_cache(self.cat_name, settings.show_cache_per_cat, exclude_serials=ex))
+            display = _display_name(self.cat_name)
+            title = f"__**Random Photo of {display}**__"
+            serial = meta.get('serial','Unknown') if isinstance(meta, dict) else 'Unknown'
+            rev = meta.get('reverse_index','?') if isinstance(meta, dict) else '?'
+            tot = meta.get('total_available','?') if isinstance(meta, dict) else '?'
+            desc = (
+                f"**Here's a random photo of {display}**\n"
+                f"(Photo {rev} out of {tot})\n"
+                f"Image: {serial}"
+            )
+            e2 = discord.Embed(title=title, description=desc, color=0x2F3136)
+            file = discord.File(io.BytesIO(cached_bytes), filename="cache.jpg")
+            e2.set_image(url="attachment://cache.jpg")
+            await interaction.followup.edit_message(message_id=interaction.message.id, embed=e2, attachments=[file], view=self)
+            return
+        # Else pull a random recent photo
         pick2 = await get_random_photo(self.cat_name)
         if isinstance(pick2, str):
-            await interaction.response.edit_message(content=pick2, embed=None, attachments=[], view=None)
+            await interaction.followup.edit_message(message_id=interaction.message.id, content=pick2, embed=None, attachments=[], view=None)
             return
-        # Build embed like the original random photo style
         full = self.cat_name
         display = _display_name(full)
         title = f"__**Random Photo of {display}**__"
@@ -46,8 +78,6 @@ class PhotoView(discord.ui.View):
             f"Image: {pick2.get('serial','Unknown')}"
         )
         e2 = discord.Embed(title=title, description=desc, color=0x2F3136)
-
-        # Try single-cat crop with timeout
         img_bytes_for_embed: Optional[bytes] = None
         tmp: Optional[str] = None
         img_url = pick2.get("url")
@@ -69,15 +99,14 @@ class PhotoView(discord.ui.View):
                         os.remove(tmp)
                     except Exception:
                         pass
-
         if img_bytes_for_embed:
             file = discord.File(io.BytesIO(img_bytes_for_embed), filename="crop.jpg")
             e2.set_image(url="attachment://crop.jpg")
-            await interaction.response.edit_message(embed=e2, attachments=[file], view=self)
+            await interaction.followup.edit_message(message_id=interaction.message.id, embed=e2, attachments=[file], view=self)
         else:
             if img_url:
                 e2.set_image(url=img_url)
-            await interaction.response.edit_message(embed=e2, attachments=[], view=self)
+            await interaction.followup.edit_message(message_id=interaction.message.id, embed=e2, attachments=[], view=self)
 
 
 def _add_field(embed: discord.Embed, name: str, value: Any, inline: bool = True) -> None:
@@ -95,81 +124,83 @@ async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
         await ch.send("Who am I showing? Try: `TomCat, show Microwave`")
         return
 
-    profile = await get_cat_profile(name)
-    if isinstance(profile, str):
-        await ch.send(profile)
+    # Try cached photo first for speed without hitting Sheets
+    cached_bytes: Optional[bytes] = None
+    cached_meta = None
+    cached_bytes, cached_meta = await pop_one_cached(name, use_sheet=False)
+    if cached_bytes:
+        # Send immediate embed; enrich from cached sidecar profile if available (no live sheet)
+        display = _display_name(cached_meta.get('display_name') or name) if isinstance(cached_meta, dict) else _display_name(name)
+        title = f"__**Random Photo of {display}**__"
+        desc = f"**Here's a random photo of {display}**\n(Photo {cached_meta.get('reverse_index','?')} out of {cached_meta.get('total_available','?')})\nImage: {cached_meta.get('serial','Unknown')}" if isinstance(cached_meta, dict) else None
+        embed = discord.Embed(title=title, description=desc or "", color=0x2F3136)
+        # No extra profile fields in the caption
+        file = discord.File(io.BytesIO(cached_bytes), filename="cache.jpg")
+        embed.set_image(url="attachment://cache.jpg")
+        await ch.send(embed=embed, file=file)
+
+        # Refill cache in background (exclude served serial)
+        async def _refill():
+            ex = set()
+            try:
+                if isinstance(cached_meta, dict) and cached_meta.get('serial'):
+                    import re as _re
+                    ex.add(_re.sub(r"[^0-9]", "", str(cached_meta['serial'])))
+            except Exception:
+                pass
+            try:
+                asyncio.create_task(ensure_cat_cache(cached_meta.get('full_name') or name, settings.show_cache_per_cat, exclude_serials=ex))
+            except Exception:
+                pass
+        asyncio.create_task(_refill())
         return
-    actual = profile["actual_name"]
-    display = _display_name(actual)
 
-    # Prefer catabase image; else fall back to most recent from RecentPics
-    img_url = profile.get("image_url")
-    if not (isinstance(img_url, str) and img_url.startswith("http")):
-        recent = await get_latest_photo(actual)
-        if isinstance(recent, dict) and recent.get("url"):
-            img_url = recent["url"]
-
-    # Try fast auto-crop (get bytes first; we’ll decide how to send after building embed)
-    cropped_bytes: Optional[bytes] = None
+    # Fallback: fetch a random recent photo and send simple caption
+    pick = await get_random_photo(name)
+    if isinstance(pick, str):
+        # Try resolving via profile, then retry once with actual name
+        profile = await get_cat_profile(name)
+        if isinstance(profile, dict):
+            pick = await get_random_photo(profile.get('actual_name') or name)
+        if isinstance(pick, str):
+            await ch.send(pick)
+            return
+    display = _display_name(pick.get('actual_name') or name)
+    title = f"__**Random Photo of {display}**__"
+    desc = (
+        f"**Here's a random photo of {display}**\n"
+        f"(Photo {pick.get('reverse_index','?')} out of {pick.get('total_available','?')})\n"
+        f"Image: {pick.get('serial','Unknown')}"
+    )
+    embed = discord.Embed(title=title, description=desc, color=0x2F3136)
+    img_url = pick.get('url')
+    img_bytes_for_embed: Optional[bytes] = None
+    tmp: Optional[str] = None
     if settings.auto_crop_show_photo and img_url:
-        tmp = None
         try:
             tmp = await _download_to_temp(img_url, settings.cv_temp_dir)
             raw = Path(tmp).read_bytes()
-
             def _crop_once(raw_bytes: bytes) -> Optional[bytes]:
                 crops = V.crop(raw_bytes)
-                if len(crops) == 1:
-                    return crops[0]
-                return None
-
-            cropped_bytes = await asyncio.wait_for(
+                return crops[0] if len(crops) == 1 else None
+            img_bytes_for_embed = await asyncio.wait_for(
                 asyncio.to_thread(_crop_once, raw), timeout=(settings.cv_timeout_ms / 1000.0)
             )
         except Exception:
-            cropped_bytes = None
+            img_bytes_for_embed = None
         finally:
             if tmp:
                 try:
                     os.remove(tmp)
                 except Exception:
                     pass
-
-    physical = profile.get("physical_description") or "Unknown"
-    behavior = profile.get("behavior") or "Unknown"
-    location = profile.get("location") or "Unknown"
-    age = profile.get("age") or "Unknown"
-    tnrd = profile.get("tnrd") or "Unknown"
-    nick = profile.get("nicknames")
-    last_date = profile.get("last_seen_date") or "Unknown"
-    last_time = profile.get("last_seen_time") or "Unknown"
-    last_by = profile.get("last_seen_by") or "Unknown"
-
-    description = (
-        f"**Description:** {physical}\n"
-        f"**Behavior:** {behavior}\n"
-        f"**Location:** {location}\n"
-        f"**Age Estimate:** {age}\n"
-        f"**TNR Status:** {tnrd}"
-        + (f"\n**Common Nicknames:** {nick}" if nick else "")
-        + f"\n**Last Reported:** {last_date} at {last_time} by {last_by}"
-    ).strip()
-
-    embed = discord.Embed(
-        title=f"__**{display}**__",
-        description=description,
-        color=0x2F3136,
-    )
-
-    if cropped_bytes:
-        file = discord.File(io.BytesIO(cropped_bytes), filename="crop.jpg")
+    if img_bytes_for_embed:
+        file = discord.File(io.BytesIO(img_bytes_for_embed), filename="crop.jpg")
         embed.set_image(url="attachment://crop.jpg")
-        log_action("handle_cat_show", f"name={actual}", "sending embed (cropped)")
         await ch.send(embed=embed, file=file)
     else:
         if img_url:
             embed.set_image(url=img_url)
-        log_action("handle_cat_show", f"name={actual}", "sending embed")
         await ch.send(embed=embed)
 
 
@@ -195,21 +226,39 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
         await ch.send("Who am I showing? Try: `TomCat, show me Microwave`")
         return
 
-    profile = await get_cat_profile(name)
-    if isinstance(profile, str):
-        await ch.send(profile)
-        return
-    actual = profile["actual_name"]
-    display = _display_name(actual)
-
-    pick = await get_random_photo(actual)
-    if isinstance(pick, str):
-        await ch.send(pick)
-        return
-
-    img_url = pick.get("url")
-    img_bytes_for_embed: Optional[bytes] = None
-    tmp: Optional[str] = None
+    # Try cache first without hitting Sheets
+    cached_bytes2, cached_meta2 = await pop_one_cached(name, use_sheet=False)
+    if cached_bytes2:
+        ex2 = set()
+        try:
+            if isinstance(cached_meta2, dict) and cached_meta2.get('serial'):
+                import re as _re
+                ex2.add(_re.sub(r"[^0-9]", "", str(cached_meta2['serial'])))
+        except Exception:
+            pass
+        asyncio.create_task(ensure_cat_cache(cached_meta2.get('full_name') if isinstance(cached_meta2, dict) else name, settings.show_cache_per_cat, exclude_serials=ex2))
+        img_url = None
+        img_bytes_for_embed: Optional[bytes] = cached_bytes2
+        tmp: Optional[str] = None
+        total_avail = cached_meta2.get('total_available','?') if isinstance(cached_meta2, dict) else '?'
+        reverse_idx = cached_meta2.get('reverse_index','?') if isinstance(cached_meta2, dict) else '?'
+        serial = cached_meta2.get('serial','cached') if isinstance(cached_meta2, dict) else 'cached'
+        display = _display_name(cached_meta2.get('display_name') or name) if isinstance(cached_meta2, dict) else _display_name(name)
+    else:
+        # Fallback to sheet-backed path
+        profile = await get_cat_profile(name)
+        if isinstance(profile, str):
+            await ch.send(profile)
+            return
+        actual = profile["actual_name"]
+        display = _display_name(actual)
+        pick = await get_random_photo(actual)
+        if isinstance(pick, str):
+            await ch.send(pick)
+            return
+        img_url = pick.get("url")
+        img_bytes_for_embed: Optional[bytes] = None
+        tmp: Optional[str] = None
 
     # Try fast auto-crop if enabled
     if settings.auto_crop_show_photo and img_url:
@@ -236,18 +285,26 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
                     pass
 
     title = f"__**Random Photo of {display}**__"
-    desc = (
-        f"**Here's a random photo of {display}**\n"
-        f"(Photo {pick.get('reverse_index','?')} out of {pick.get('total_available','?')})\n"
-        f"Image: {pick.get('serial','Unknown')}"
-    )
+    if cached_bytes2:
+        desc = (
+            f"**Here's a random photo of {display}**\n"
+            f"(Photo {reverse_idx} out of {total_avail})\n"
+            f"Image: {serial}"
+        )
+    else:
+        desc = (
+            f"**Here's a random photo of {display}**\n"
+            f"(Photo {pick.get('reverse_index','?')} out of {pick.get('total_available','?')})\n"
+            f"Image: {pick.get('serial','Unknown')}"
+        )
     embed = discord.Embed(title=title, description=desc, color=0x2F3136)
 
     if img_bytes_for_embed:
         file = discord.File(io.BytesIO(img_bytes_for_embed), filename="crop.jpg")
         embed.set_image(url="attachment://crop.jpg")
-        # Pass FULL_NAME (actual) so the button can fetch correctly from RecentPics
-        await ch.send(embed=embed, file=file, view=PhotoView(actual))
+        # Pass FULL_NAME: use cached_meta's full_name when cached, else actual
+        full_for_button = (cached_meta2.get('full_name') if isinstance(cached_meta2, dict) else None) or (actual if not cached_bytes2 else name)
+        await ch.send(embed=embed, file=file, view=PhotoView(full_for_button))
     else:
         if img_url:
             embed.set_image(url=img_url)

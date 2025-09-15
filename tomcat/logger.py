@@ -43,14 +43,23 @@ def _human_line(ts_ct: str, event: str, col1: str = "", col2: str = "", tail: st
 
 
 def log_event(event_data: dict) -> str:
-    # Write machine log (raw NDJSON)
-    with open(LOG_DIR_MACHINE / f"{datetime.now(TZ):%Y-%m-%d}.ndjson", "a", encoding="utf-8") as f:
+    # Write machine log (raw NDJSON) under monthly folder
+    now_dt = datetime.now(TZ)
+    month_dir_m = LOG_DIR_MACHINE / f"{now_dt:%Y-%m}"
+    month_dir_h = LOG_DIR_HUMAN / f"{now_dt:%Y-%m}"
+    month_dir_m.mkdir(parents=True, exist_ok=True)
+    month_dir_h.mkdir(parents=True, exist_ok=True)
+    with open(month_dir_m / f"{now_dt:%Y-%m-%d}.ndjson", "a", encoding="utf-8") as f:
         f.write(json.dumps(event_data, ensure_ascii=False) + "\n")
     
-    now = datetime.now(TZ)
+    now = now_dt
     ts_ct = f"{now:%m/%d/%Y %I:%M:%S}.{now.microsecond//1000:03d} {'AM' if now.hour < 12 else 'PM'}"
 
     kind = str(event_data.get("event", "event")).lower()
+
+    # Suppress verbose dues debug in human logs; still written to machine NDJSON above
+    if kind == "dues_debug":
+        return ""
 
     if kind == "message":
         content = event_data.get("content")
@@ -203,7 +212,7 @@ def log_event(event_data: dict) -> str:
         data_copy.pop("ts", None)
         human_line = _human_line(ts_ct, "Event", "", "", json.dumps(data_copy, ensure_ascii=False))
 
-    with open(LOG_DIR_HUMAN / f"{datetime.now(TZ):%Y-%m-%d}.log", "a", encoding="utf-8") as f:
+    with open(month_dir_h / f"{now_dt:%Y-%m-%d}.log", "a", encoding="utf-8") as f:
         f.write(human_line + "\n")
     return human_line
 

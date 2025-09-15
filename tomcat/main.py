@@ -12,6 +12,7 @@ from .logger import log_event, log_action  # noqa: F401  #If unused right now
 from .spam import is_spam
 from .intent_router import IntentRouter, Intent
 from .handlers.misc import handle_channel_image_intake as _handle_image_intake, start_profile_scheduler
+from .services.show_cache import warm_cache_on_boot
 
 
 intent_router = IntentRouter()
@@ -30,7 +31,7 @@ bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
 from .handlers.feeding import start_feeding_scheduler, handle_feeding_inquiry as _handle_feeding_status
 # Dues: no background scheduler; admin-only Gmail test is routed directly from the router
-from .handlers.dues import start_gmail_logging_scheduler
+from .handlers.dues import start_gmail_logging_scheduler, start_dues_scheduler
 
 from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
@@ -195,12 +196,19 @@ async def on_ready():
         pass
 
     asyncio.create_task(start_profile_scheduler(bot))
+    # Warm the show-photo cache in background
+    try:
+        asyncio.create_task(warm_cache_on_boot())
+    except Exception:
+        pass
     # start feeding scheduler after the bot is ready and loop is running
     asyncio.create_task(start_feeding_scheduler(bot))
     # Start Gmail logging scheduler if enabled
     try:
         if getattr(settings, "gmail_enabled", False):
             asyncio.create_task(start_gmail_logging_scheduler(bot))
+        if getattr(settings, "dues_enabled", True):
+            asyncio.create_task(start_dues_scheduler(bot))
     except Exception:
         pass
 

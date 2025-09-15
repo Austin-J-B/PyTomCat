@@ -188,10 +188,26 @@ class Settings:
 
     # Temp folder for downloads (repo-local, not hidden OS temp)
     cv_temp_dir: str = os.getenv("CV_TEMP_DIR", "./temp_images")
+    # Verbose crop logging (disable during bulk cache fills)
+    cv_log_crop: bool = _get_env_bool("CV_LOG_CROP", True)
     # Auto-crop for "show me" / "who is"
     auto_crop_show_photo: bool = os.getenv("AUTO_CROP_SHOW_PHOTO", "1").strip().lower() in {"1","true","yes","on"}
     # Hard budget for auto-crop work in handlers (ms). If exceeded, show original image.
     cv_timeout_ms: int = int(os.getenv("CV_TIMEOUT_MS", "6000"))
+
+    # Show-photo cache (for fast "show me" responses)
+    show_cache_dir: str = os.getenv("SHOW_CACHE_DIR", "./cache/show_photos")
+    show_cache_per_cat: int = int(os.getenv("SHOW_CACHE_PER_CAT", "5") or "5")
+    show_cache_prefill_on_boot: bool = _get_env_bool("SHOW_CACHE_PREFILL_ON_BOOT", True)
+    show_cache_warm_concurrency: int = int(os.getenv("SHOW_CACHE_WARM_CONCURRENCY", "2") or "2")
+    show_cache_warm_limit: int = int(os.getenv("SHOW_CACHE_WARM_LIMIT", "0") or "0")  # 0 = all
+    # Optional: downscale/compress cached JPEGs to speed sending (0 disables)
+    show_cache_resize_max_dim: int = int(os.getenv("SHOW_CACHE_RESIZE_MAX_DIM", "0") or "0")
+    show_cache_jpeg_quality: int = int(os.getenv("SHOW_CACHE_JPEG_QUALITY", "88") or "88")
+    # Use a small TTL to reuse RecentPics sheet rows in-process and avoid repeated network calls
+    show_sheet_recentpics_ttl_sec: int = int(os.getenv("SHOW_SHEET_RECENTPICS_TTL_SEC", "300") or "300")
+    # Optionally skip auto-crop during cache fill to speed up
+    show_cache_crop_on_fill: bool = _get_env_bool("SHOW_CACHE_CROP_ON_FILL", True)
 
     # CV pairing windows (tunable without code)
     cv_lookback_seconds_before: int = int(os.getenv("CV_LOOKBACK_SECONDS_BEFORE", "30"))
@@ -235,6 +251,23 @@ class Settings:
 
     # ======== Gmail / Email logging ========
     gmail_enabled: bool = _get_env_bool("GMAIL_ENABLED", False)
+    gmail_log_manual_delay_sec: float = float(os.getenv("GMAIL_LOG_MANUAL_DELAY_SEC", "0.25"))
+    gmail_log_scheduler_delay_sec: float = float(os.getenv("GMAIL_LOG_SCHEDULER_DELAY_SEC", "10.0"))
+
+    # ======== Dues matching / portal ========
+    dues_enabled: bool = _get_env_bool("DUES_ENABLED", True)
+    dues_email_window_days: int = int(os.getenv("DUES_EMAIL_WINDOW_DAYS", "3"))
+    dues_scan_skip_oldest: int = int(os.getenv("DUES_SCAN_SKIP_OLDEST", "3"))
+    dues_scan_limit: int = int(os.getenv("DUES_SCAN_LIMIT", "0"))  # 0 = no limit (all)
+    # Cache membership sheet reads briefly to avoid 429s on repeated runs
+    dues_membership_ttl_sec: int = int(os.getenv("DUES_MEMBERSHIP_TTL_SEC", "300") or "300")
+    dues_allowed_amounts: list[int] = field(default_factory=lambda: [
+        int(x) for x in _get_env_list("DUES_ALLOWED_AMOUNTS") if x.strip().lstrip("-").isdigit()
+    ] or [15, 20, 25])
+    membership_ws_title: str = os.getenv("MEMBERSHIP_WS_TITLE", "Membership Application List")
+    dues_nlp_enabled: bool = _get_env_bool("DUES_NLP_ENABLED", False)
+    dues_nlp_max_calls: int = int(os.getenv("DUES_NLP_MAX_CALLS", "50"))
+    dues_member_max_candidates: int = int(os.getenv("DUES_MEMBER_MAX_CANDIDATES", "300"))
 
     # ======== Feeding scheduler maps (authoritative) ========
     # Provide simple name→user_id mapping and per-station weekly assignments.

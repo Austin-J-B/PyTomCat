@@ -309,7 +309,12 @@ async def handle_channel_image_intake(message: discord.Message) -> None:
             username,
             tsz,
         ] for att in images]
-        ws.append_rows(rows, value_input_option=cast(Any,"USER_ENTERED"))
+        # Force append into columns A:C so values do not drift to F:H when prior columns have formatting
+        ws.append_rows(
+            rows,
+            value_input_option=cast(Any, "USER_ENTERED"),
+            table_range="A:C",
+        )
         log_action("image_intake", f"channel={ch_id}", f"rows={len(rows)}")
     except Exception as e:
         log_action("image_intake_error", f"channel={ch_id}", str(e))

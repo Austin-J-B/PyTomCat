@@ -259,6 +259,8 @@ class Settings:
     dues_email_window_days: int = int(os.getenv("DUES_EMAIL_WINDOW_DAYS", "3"))
     dues_scan_skip_oldest: int = int(os.getenv("DUES_SCAN_SKIP_OLDEST", "3"))
     dues_scan_limit: int = int(os.getenv("DUES_SCAN_LIMIT", "0"))  # 0 = no limit (all)
+    # Use a lighter, heuristic mapping in dues_check to avoid heavy fuzzy across all members
+    dues_fast_map: bool = _get_env_bool("DUES_FAST_MAP", True)
     # Cache membership sheet reads briefly to avoid 429s on repeated runs
     dues_membership_ttl_sec: int = int(os.getenv("DUES_MEMBERSHIP_TTL_SEC", "300") or "300")
     dues_allowed_amounts: list[int] = field(default_factory=lambda: [

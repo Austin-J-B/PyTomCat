@@ -129,7 +129,8 @@ EXPORT_DUES_RE = re.compile(r"\bexport\s+due(?:s)?\s+portal\b", re.I)
 DUES_PERKS_RE = re.compile(r"\brun\s+dues\s+perks\b", re.I)
 DUES_UPDATE_RE = re.compile(r"\bupdate\s+due[-\s]?pay(?:ing)?\s+members\b", re.I)
 RECACHE_SHOW_RE = re.compile(r"\brecache\s+(?:show|photo|photos|cache|cats?)\b", re.I)
-RECACHE_ONE_RE = re.compile(r"\brecache\s+(.+?)\s+photos?\b", re.I)
+RECACHE_ONE_RE = re.compile(r"\brecache\s+(.+?)(?:\s+photos?)?\b", re.I)
+RECACHE_CATABASE_RE = re.compile(r"\brecache\s+(?:catabase|cat\s*database|names)\b", re.I)
 REMOVE_ROLE_RE = re.compile(r"\b(?:remove|clear|strip)\s+(?:the\s+)?role\s+(\d{5,20})(?:\s+from\s+(?:everyone|all))?\b", re.I)
 
 CREATE_PROFILES_RE = re.compile(r"^create\s+profiles?\s+(\d+)(?:\s+through\s+(\d+))?$", re.I)
@@ -475,6 +476,19 @@ class IntentRouter:
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="dues_export_portal", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            # Admin-only: recache catabase profiles/names (check this BEFORE show-photo recache)
+            if RECACHE_CATABASE_RE.search(text_wo):
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return IntentEvent(
+                    type="recache_catabase", confidence=0.99,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
@@ -895,7 +909,9 @@ class IntentRouter:
             return
 
         if event.type == "who_is" and event.cat_name:
-            await handle_cat_show(_intent("cat_show", {"name": event.cat_name}), ctx)
+            # Use profile-rich handler for "who is" so it includes details
+            from .handlers.cats import handle_cat_profile as _handle_profile
+            await _handle_profile(_intent("cat_profile", {"name": event.cat_name}), ctx)
             return
 
         if event.type == "cv_identify":
@@ -1041,6 +1057,11 @@ class IntentRouter:
             if hasattr(event, 'cat_name') and event.cat_name:
                 args = {"name": event.cat_name}
             await handle_recache_show_cache(args, {**ctx, "bot": ctx.get("bot")})
+            return
+
+        if event.type == "recache_catabase":
+            from .handlers.admin import handle_recache_catabase
+            await handle_recache_catabase({}, {**ctx, "bot": ctx.get("bot")})
             return
 
         if event.type == "silent_mode":

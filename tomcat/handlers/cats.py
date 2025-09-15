@@ -8,15 +8,17 @@ from ..services.catsheets import (
     get_cat_profile,
     get_recent_photo as get_random_photo,
     get_most_recent_photo as get_latest_photo,
+    build_profile_embed as _build_profile_embed,
 )
 from ..logger import log_action 
 import re
 import os, io, asyncio, aiohttp
 from ..vision import vision as V
-from ..services.show_cache import pop_one_cached, ensure_cat_cache
+from ..services.show_cache import pop_one_cached, ensure_cat_cache, latest_cached_bytes
 from pathlib import Path
 from typing import Optional
 from ..config import settings
+from ..services import profile_cache as PC
 
 
 
@@ -223,7 +225,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
     ch: discord.abc.MessageableChannel = ctx["channel"]
     name = intent.data.get("name", "").strip()
     if not name:
-        await ch.send("Who am I showing? Try: `TomCat, show me Microwave`")
+        await ch.send("Which cat? Ex: `TomCat, show me Microwave`")
         return
 
     # Try cache first without hitting Sheets
@@ -314,5 +316,81 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
 
 # Optional: tiny wrapper to expose a strict "who is" alias if you want a separate name
 async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
-    # Reuse your existing bio handler
-    await handle_cat_show(intent, ctx)
+    ch: discord.abc.MessageableChannel = ctx["channel"]
+    name = intent.data.get("name", "").strip()
+    if not name:
+        await ch.send("Which cat? Ex: `TomCat, who is Microwave`")
+        return
+    # Prefer cached profile snapshot to avoid live sheet; fall back to sheet builder
+    prof = PC.get_profile(name)
+    if not prof:
+        emb = await _build_profile_embed(name)
+        if isinstance(emb, str):
+            await ch.send(emb)
+            return
+        try:
+            e = discord.Embed.from_dict(emb)
+        except Exception:
+            title = emb.get('title') if isinstance(emb, dict) else f"__**{name}**__"
+            e = discord.Embed(title=title or f"__**{name}**__", color=0x2F3136)
+            for f in (emb.get('fields') or []):
+                try:
+                    e.add_field(name=f.get('name'), value=f.get('value'), inline=f.get('inline', False))
+                except Exception:
+                    continue
+            img = emb.get('image', {}).get('url') if isinstance(emb.get('image'), dict) else None
+            if img:
+                e.set_image(url=img)
+        await ch.send(embed=e)
+        return
+    # Build embed from cached profile with classic text layout
+    actual = prof.get('actual_name') or name
+    display = re.sub(r"^\s*\d+\.\s*", "", str(actual))
+    e = discord.Embed(title=f"__**{display}**__", color=0x2F3136)
+    lines = []
+
+    desc = prof.get("physical_description") or prof.get("physical") or None
+    if desc:
+        lines.append(f"**Description:** {desc}")
+    beh = prof.get("behavior")
+    if beh:
+        lines.append(f"**Behavior:** {beh}")
+    loc = prof.get("location")
+    if loc:
+        lines.append(f"**Location:** {loc}")
+    age = prof.get("birthday_estimate") or prof.get("age")
+    if age:
+        lines.append(f"**Age Estimate:** {age}")
+    sex = prof.get("sex")
+    if sex:
+        lines.append(f"**Sex:** {sex}")
+    tnrd = prof.get("tnrd")
+    if tnrd:
+        lines.append(f"**TNR Status:** {tnrd}")
+    tnd = prof.get("tnr_date")
+    if tnd:
+        lines.append(f"**TNR Date:** {tnd}")
+    last_bits = []
+    if prof.get("last_seen_date"): last_bits.append(str(prof["last_seen_date"]))
+    if prof.get("last_seen_time"): last_bits.append(str(prof["last_seen_time"]))
+    if prof.get("last_seen_by"):   last_bits.append(f"by {prof['last_seen_by']}")
+    if last_bits:
+        lines.append("**Last Reported:** " + " ".join(last_bits))
+    nicks = prof.get("nicknames")
+    if nicks:
+        lines.append(f"**Common Nicknames:** {nicks}")
+    comm = prof.get("comments")
+    if comm:
+        lines.append(f"**Comments:** {comm}")
+    e.description = "\n".join(lines)
+    # Image: prefer most-recent cached JPEG to avoid Sheets; else profile image_url; else skip
+    img_bytes = latest_cached_bytes(actual) or None
+    if img_bytes:
+        file = discord.File(io.BytesIO(img_bytes), filename="recent.jpg")
+        e.set_image(url="attachment://recent.jpg")
+        await ch.send(embed=e, file=file)
+        return
+    img_url = prof.get("image_url")
+    if img_url:
+        e.set_image(url=img_url)
+    await ch.send(embed=e)

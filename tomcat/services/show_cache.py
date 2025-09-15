@@ -26,6 +26,38 @@ def _cat_id_from_full(full_name: str) -> Optional[int]:
     except Exception:
         return None
 
+def latest_cached_bytes(full_name: str) -> Optional[bytes]:
+    """Return bytes of the most recent cached JPG for this cat (highest sn), or None if missing."""
+    cid = _cat_id_from_full(full_name)
+    if cid is None:
+        # Try to resolve via sidecar name index
+        if not _NAME_INDEX:
+            _build_name_index()
+        key = _norm(full_name)
+        if key in _NAME_INDEX:
+            cid = _NAME_INDEX[key]
+    if cid is None:
+        return None
+    cdir = _cache_dir_for(cid)
+    if not os.path.isdir(cdir):
+        return None
+    best = None
+    best_sn = -1
+    for fn in os.listdir(cdir):
+        if not fn.lower().endswith('.jpg'):
+            continue
+        m = re.search(r"sn(\d+)", fn)
+        sn = int(m.group(1)) if m else -1
+        if sn > best_sn:
+            best_sn = sn
+            best = os.path.join(cdir, fn)
+    if not best:
+        return None
+    try:
+        return Path(best).read_bytes()
+    except Exception:
+        return None
+
 async def _download_bytes(url: str, timeout_sec: float = 6.0) -> Optional[bytes]:
     try:
         timeout = aiohttp.ClientTimeout(total=timeout_sec)

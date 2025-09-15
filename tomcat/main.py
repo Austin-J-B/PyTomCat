@@ -13,6 +13,7 @@ from .spam import is_spam
 from .intent_router import IntentRouter, Intent
 from .handlers.misc import handle_channel_image_intake as _handle_image_intake, start_profile_scheduler
 from .services.show_cache import warm_cache_on_boot
+from .services.profile_cache import start_profile_cache_scheduler
 
 
 intent_router = IntentRouter()
@@ -209,6 +210,11 @@ async def on_ready():
             asyncio.create_task(start_gmail_logging_scheduler(bot))
         if getattr(settings, "dues_enabled", True):
             asyncio.create_task(start_dues_scheduler(bot))
+    except Exception:
+        pass
+    # Start catabase profile cache scheduler
+    try:
+        asyncio.create_task(start_profile_cache_scheduler())
     except Exception:
         pass
 

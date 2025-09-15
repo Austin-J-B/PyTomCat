@@ -6,6 +6,8 @@ from ..config import settings
 from ..logger import log_action
 from ..services.show_cache import ensure_cat_cache
 from ..services.catsheets import sheets_client  # type: ignore
+from ..services import profile_cache as PC
+from .. import aliases as ALIAS
 
 async def handle_silent_mode(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
     author = ctx["author"]
@@ -193,3 +195,37 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
         await message.channel.send(f"Recache complete for {total} cats.")
     except Exception:
         pass
+
+
+async def handle_recache_catabase(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
+    """Admin-only: Refresh the Catabase cache and write the CSV snapshot.
+    Also refreshes the dynamic alias map so new names resolve immediately.
+    """
+    message: discord.Message = ctx["message"]
+    author = ctx["author"]
+    is_admin = int(getattr(author, 'id', 0)) in (getattr(settings, 'admin_ids', []) or []) or \
+               getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+    if not is_admin:
+        log_action("recache_catabase_denied", f"user={author.id}", "unauthorized")
+        return
+    try:
+        await message.channel.send("Refreshing Catabase profiles and names…")
+    except Exception:
+        pass
+    try:
+        n = await PC.refresh_async()
+        # Force-refresh dynamic aliases so router sees new names immediately
+        try:
+            ALIAS.refresh_aliases_now()
+        except Exception:
+            pass
+        try:
+            await message.channel.send(f"Catabase refreshed: {n} profiles.")
+        except Exception:
+            pass
+    except Exception as e:
+        try:
+            await message.channel.send(f"Catabase refresh error: {e}")
+        except Exception:
+            pass
+        log_action("recache_catabase_error", "", str(e))

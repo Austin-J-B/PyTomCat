@@ -1,5 +1,5 @@
 """Google Sheets client via gspread.
-Share your sheets with the service account email.
+Share the sheets with the service account email.
 """
 from __future__ import annotations
 from gspread.auth import service_account
@@ -13,6 +13,7 @@ _SCOPES = [
 _client = None
 
 def sheets_client():
+    """Return a cached gspread client configured for the service account."""
     global _client
     if _client:
         return _client

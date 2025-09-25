@@ -1,148 +1,240 @@
-TomCat VI — Discord Bot for Campus Cat Coalition
-================================================
+# TomCat VI
 
-TomCat is a Discord bot that coordinates feeding, cat profiles, computer vision, and logging for our server. This repo is the Python rewrite ("TomCat VI") with a strong focus on: clean intent routing, conservative NLP, silent-by-default automation, and rich file logs you can treat as the bot’s memory.
+TomCat VI is the Campus Cat Coalition’s Discord automation suite. The bot keeps
+feeding operations on schedule, documents dues and donations, runs computer
+vision lookups, and provides a “memory” of everything that happens in the server
+through rich log files. The codebase embraces a router-first architecture with
+small, composable handlers so every feature stays easy to reason about.
 
-Overview
---------
-- Router-first design: `tomcat/intent_router.py` is the brain. Every message is normalized, addressed detection runs, then rules → aliases/fuzzy → optional NLP backstops decide the intent. Dispatch fans out to slim handlers.
-- Silent-by-default: TomCat only speaks when addressed (wake word, @mention, or DM), except for allowed channels like `#feeding-team` where specific flows (e.g., subs/feeds) can run quietly.
-- File-first logs: Human-readable daily log + machine NDJSON. Health checks at boot, rich audit trails for message edits/deletes, member joins/leaves, role changes, reactions, intent decisions, spam, etc.
-- Safety & robustness: spam gate with heuristics + fuzzy + optional DeBERTa; invite attribution on joins; safe_send wrapper honors global silent mode.
-- CV integration: show/crop/detect/identify with YOLO + classifier, on single-cat crops only. GPU is supported via CUDA PyTorch.
+---
 
-Directory Map
--------------
-- `tomcat/main.py` — Discord client, lifecycle, logging, spam checks, health checks, and plumbing.
-- `tomcat/intent_router.py` — Intent detection + dispatch. Handles wake/mention/DM, CV pairing windows, feeding/subs routing, and admin commands.
-- `tomcat/handlers/` — Slim, single-purpose handlers.
-  - `cats.py` — Profiles and “show me a photo of …” with optional single-cat crop and a “Show me another” button that edits in place.
-  - `feeding.py` — Feed updates (sheet mark), sub requests/accepts (log-only), 8pm alerts, schedule and user map, and the manual 8pm preview.
-  - `vision.py` — CV: detect/crop/identify using YOLO + classifier; safe JPEG utilities.
-  - `misc.py` — Small fun or utility triggers, profile builder, image-intake to Sheets.
-  - `dues.py`, `admin.py` — Dues stub and admin toggles (e.g., silent mode).
-- `tomcat/aliases.py` — Cat + station names, nicknames, and deterministic resolvers (whole word and unambiguous partials — stopwords excluded for stations).
-- `tomcat/spam.py` — Heuristics + fuzzy + optional DeBERTa spam scorer with trust exceptions.
-- `tomcat/nlp/model.py` — Optional ONNX wrapper for zero-shot intent/entity scoring and a spam entailment scorer.
-- `tomcat/services/` — Google Sheets clients and CatDatabase/RecentPics helpers.
-- `tomcat/vision/` — CV engine: YOLO detector, classifier, drawing and cropping.
-- `logs/` — Output logs: human (readable) + machine (NDJSON), plus `logs/subs/subs.jsonl` for sub requests.
+## What TomCat Does
 
-Philosophy
-----------
-1) Router as the brain
-   - Normalize text and context → detect addressing (wake word/mention/DM) → rules/aliases/fuzzy → optional NLP backstop.
-   - Confidence-first: we err on the side of silence. NLP is used only when addressed or in specific channels and above configured thresholds.
+- **Intent-driven conversations** – every message is normalized, evaluated for
+  wake words/mentions, matched through aliases/fuzzy/NLP, and routed to a handler.
+- **Feeding coordination** – logs “fed” updates in the checklist sheet, tracks
+  substitution requests, posts nightly 8 PM reminders, and keeps a monthly subs log.
+- **Finance automation** – harvests Gmail payment notifications, separates dues
+  from other income/expenses, writes rows to Google Sheets, and posts sandbox
+  summaries for ambiguous donations.
+- **Cat profiles & photos** – serves profile embeds, random photos, and optional
+  YOLO-backed crops; maintains a local cache so follow-up requests stay fast.
+- **Computer vision** – detect/crop/identify workflows using Ultralytics YOLO and
+  a lightweight classifier, with pending attachments handled automatically.
+- **Spam mitigation** – regex heuristics, fuzzy phrase matching, and an optional
+  DeBERTa MNLI model; moderators can ban straight from the alert reaction.
+- **Audit trail** – human-readable daily logs plus machine NDJSON for every
+  message, edit, reaction, role change, health check, and financial event.
 
-2) Silent automation
-   - Feeding image intake and subs logging: silent. 8pm alerts go to a known channel. Manual previews are admin-only.
+---
 
-3) Logs as “memory”
-   - TomCat writes everything important to file logs: messages, edits, deletes, joins/leaves, roles, reactions, intents, health checks, spam decisions. This enables auditing and future analytics without a database.
+## Architecture at a Glance
 
-Core Features
--------------
-- Cats & Photos
-  - “TomCat, who is Microwave” — profile embed.
-  - “TomCat, show me Microwave” — random photo (auto-crop if exactly one cat detected). “Show me another” edits in place.
+```
+Discord -> intent_router -> handler modules -> services/utils -> external APIs
+```
 
-- Computer Vision
-  - “TomCat, identify/detect/crop” — pairs with an attached image, a reply-to image, or your most recent image (short window). If no image yet, sets a pending and fires when you upload.
-  - Crops only when a single cat is detected; otherwise returns the original.
+- **`tomcat/main.py`** – bootstraps the Discord client, installs event hooks,
+  runs startup health checks, and kicks off background schedulers (feeding,
+  Gmail logging, profile cache warmers). A safe `safe_send` wrapper enforces the
+  global silent mode when needed.
+- **`tomcat/intent_router.py`** – the brain. Detects addressing, keeps short-term
+  context (pending CV/sub events), applies alias/fuzzy matching, optionally calls
+  the ONNX NLP backstop, and dispatches to slim handlers.
+- **Handlers** (`tomcat/handlers/`) – self-contained workflows:
+  - `cats.py` (profiles & show-photo UI), `feeding.py` (checklist, subs, 8 PM),
+    `finance.py` (non-dues intake), `dues.py` (membership pipeline & Gmail logger),
+    `vision.py` (Discord-side CV), `misc.py` (image intake + utility triggers),
+    `admin.py` (silent mode, cache rebuilds), `spam.py` (alert flow).
+- **Services** (`tomcat/services/`) – Google Sheets client, profile cache,
+  show-photo cache, and CatDatabase readers.
+- **Utilities** (`tomcat/utils/`) – fuzzy matching, payment provider detection,
+  datetime helpers, Discord-safe send wrapper.
 
-- Feeding Team
-  - Feed updates: verbs (“fed/filled/topped off …”) mark the sheet’s checkbox. Multi-station updates supported.
-  - Subs: “can someone cover …” in feeding channels logs a sub request silently. If no station is named, TomCat infers stations from the requester’s schedule for the requested dates. Accepts are recognized with broad but safe phrasing (“I can”, “I’ll take it”, “I’ve got it”, “sure”).
-  - Status: “TomCat, who has/hasn’t been fed today?” returns Fed/Unfed lists (no pings).
-  - 8pm alert: pings accepted subs for today; otherwise scheduled feeders; “Unassigned.” when none. Admin-only “TomCat, manual 8pm update” posts a dry run (no pings).
+Schedulers run inside long-lived locks to avoid duplicate work. Gmail logging and
+finance ingestion share the same email index so a message is never processed
+twice. Feeding, duties, and finance actions all write to the `logs/` tree so the
+bot remains stateless beyond files.
 
-- Image Sourcing
-  - Channel → Sheets intake: maps channels to tab names. We try Vision first, then Catabase (e.g., “TCBPicsInput”). Writes rows as `[URL, @username, timestampZ]`.
+---
 
-- Spam Protection
-  - Heuristics (phones, emails, “first come first serve”, “DM me if interested”, free giveaways), fuzzy phrases, and a zero-shot spam entailment scorer.
-  - Trust rules: skip detection for accounts older than N days or those with trusted roles (configured).
-  - Action: deletes the message (best effort), logs a Spam line (reason and decision), and posts a mod alert in CH_LOGGING mentioning SPAM_ALERT_USER_ID (or first admin).
+## Repository Layout
 
-- Invite Tracking & Admin Logs
-  - Seeds invite usage cache on startup; on member join, diffs invite usage and logs invite code and inviter. Logs reactions, role changes, edits, deletes in human-friendly lines.
+| Path                         | Purpose |
+|------------------------------|---------|
+| `tomcat/main.py`             | Discord entrypoint and lifecycle management |
+| `tomcat/intent_router.py`    | Intent parsing, context windows, dispatch |
+| `tomcat/handlers/`           | Individual features (feeding, dues, finance, CV, etc.) |
+| `tomcat/services/`           | Google Sheets helpers, profile/show caches |
+| `tomcat/utils/`              | Shared helpers (fuzzy, payments, datetime, sender) |
+| `tomcat/vision/`             | Ultralytics YOLO + classifier inference utilities |
+| `logs/`                      | Human/Machine logs plus monthly subs ledgers |
+| `weights/`                   | YOLO classifier/detector weights (ignored by git) |
+| `.env`                       | Runtime configuration (see below) |
 
-Configuration (.env)
---------------------
-- Discord
-  - DISCORD_TOKEN=…
-  - COMMAND_PREFIX=!
-  - TOMCAT_WAKE=TomCat
-  - TIMEZONE=America/Chicago
-  - ADMIN_IDS=comma,separated,ids
-  - CH_FEEDING_TEAM=…, CH_TOMCAT_SANDBOX=…
-  - CH_PICTURES_OF_CATS=…, CH_REPORT_NEW_CATS=…
-  - CH_LOGGING=…
-  - CHANNEL_SHEET_MAP="CH_PICTURES_OF_CATS:TCBPicsInput,CH_REPORT_NEW_CATS:TCBPicsInput,…"
-  - allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
+---
 
-- Google Sheets
-  - GOOGLE_SERVICE_ACCOUNT_JSON=./credentials/service_account.json
-  - SHEET_CATABASE_ID=…
-  - SHEET_VISION_ID=…  (FeedingStationChecklist lives here)
+## Requirements & Dependencies
 
-- NLP/CV
-  - NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
-  - NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
-  - CV_DETECT_WEIGHTS=weights/NanoModel.pt
-  - CV_CLASSIFY_WEIGHTS=weights/NanoClassifier.pt
-  - CV_TIMEOUT_MS=2000  (budget for quick one-shot crop on “show me”)
+`requirements.txt` targets CUDA 12.1 builds suitable for Nvidia GPUs
+ Highlights:
 
-- Feeding schedule
-  - user_id_map = {"Chris": 6244…, …}
-  - feeding_schedule = { "Business": ["Chris","Chris","Chris","Megan","Megan","Megan","Ben"], … }  # Sun..Sat by name
+- **Discord stack:** `discord.py`, `aiohttp`, `python-dotenv`.
+- **Google APIs:** `gspread`, `google-api-python-client`, `google-auth-*`.
+- **NLP:** `onnxruntime`, `tokenizers` (for zero-shot MNLI + spam entailment).
+- **CV:** `ultralytics`, `opencv-python-headless`, `torch`, `torchvision` with
+  CUDA 12.1 wheels.
+- **Parsing:** `numpy`, `Pillow`, `rapidfuzz`, `beautifulsoup4`, `requests`.
 
-- Spam
-  - SPAM_MIN_ACCOUNT_DAYS=30
-  - SPAM_ALERT_USER_ID=<your id>
-  - trusted_role_names in config.py (defaults include “due paying”, “member”, “officer”)
+PyTorch wheels are referenced via `--extra-index-url https://download.pytorch.org/whl/cu121`.
+If you are installing on a CPU-only system, remove the extra index line and swap
+in the CPU wheels (`torch==2.3.1`, `torchvision==0.18.1`).
 
-Running the Bot
----------------
+---
 
-Prereqs
-- Python 3.11/3.12
-- NVIDIA GPU with CUDA 12.1 drivers for CV acceleration
-- A Google service account JSON with access to your sheets
+## Prerequisites
 
-Windows (PowerShell / VS Code Terminal)
-1) Clone repo and cd into it.
-2) Create venv and activate:
-   - `python -m venv .venv`
-   - `.\.venv\Scripts\Activate.ps1`
-3) Install requirements (includes CUDA12.1 torch wheels):
-   - `pip install -U pip`
-   - `pip install -r requirements.txt`
-4) Set up .env with your tokens, sheet IDs, and channel IDs.
-5) (Optional) Set YOLO config dir to avoid warnings:
-   - `$env:YOLO_CONFIG_DIR = "$pwd\.ultra"; mkdir .ultra` (if not exists)
-6) Run:
-   - `python -m tomcat.main`
+- Python **3.11** (recommended) or 3.10. Python 3.12 works with the pinned
+  `tokenizers`/PyTorch builds, but 3.11 has the broadest wheel coverage.
+- NVIDIA drivers supporting CUDA 12.1 (Windows) or CUDA toolkit/driver available
+  under WSL for the 1050 Ti.
+- Google Cloud project with a Gmail API OAuth client + Google Sheets service
+  account; share your Sheets with the service account email.
+- Discord bot application created in the developer portal with `MESSAGE CONTENT`
+  intent enabled.
 
-WSL Ubuntu (bash)
-1) `python3 -m venv .venv && source .venv/bin/activate`
-2) `pip install -U pip`
-3) `pip install -r requirements.txt`
-4) Ensure `.env` is populated and `credentials/service_account.json` exists.
-5) (Optional) `export YOLO_CONFIG_DIR=$PWD/.ultra && mkdir -p .ultra`
-6) `python -m tomcat.main`
+---
 
-Troubleshooting
----------------
-- Missing Pillow/Ultralytics/Torch: re-run `pip install -r requirements.txt`.
-- GPU not used: verify `nvidia-smi` shows your GPU in WSL; ensure CUDA12.1 torch wheels installed (requirements.txt includes `--extra-index-url` for cu121), and that the driver is current.
-- Sheets 403/worksheet missing: confirm the service account email has been shared to the sheet. Check `CHANNEL_SHEET_MAP` tab names exist (we try Vision first, then Catabase).
-- No responses: check your wake word (“TomCat,”) or use an @mention. Silent mode suppresses replies globally; disable if needed.
-- Logs: tail `logs/human/*.log` and `logs/machine/*.ndjson` while testing.
+## Installation
 
-Contributing
-------------
-- Keep handlers small and composable. If an intent grows, anchor it in the router and push the work into a handler.
-- Prefer silent logging to UI. Use file logs as the source of truth.
-- Add or tune aliases and nicknames locally (no sheet dependency) for deterministic behavior; let NLP backstop, not lead.
+1. **Clone & enter the repo**
+   ```bash
+   git clone https://https://github.com/Austin-J-B/PyTomCat.git
+   cd PyTomCat
+   ```
 
+2. **Create a virtual environment**
+   ```bash
+   python -m venv .venv
+   # Windows PowerShell
+   .\.venv\Scripts\Activate.ps1
+   # or WSL/Linux/macOS
+   source .venv/bin/activate
+   ```
+
+3. **Upgrade pip and install dependencies**
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+   > If you do not have a CUDA-capable GPU, edit `requirements.txt` and replace
+   > the `torch`/`torchvision` entries with CPU builds before running the command.
+
+4. **Download runtime assets**
+
+   | Asset | Purpose | Destination |
+   |-------|---------|-------------|
+   | `deberta-v3-small` ONNX + tokenizer | Spam/NLP fallback | `weights/deberta-v3-small-mnli.onnx`<br>`weights/deberta-v3-small-mnli.tokenizer.json` |
+   | YOLO detector (`NanoModel.pt`) | CV detection pass | `weights/NanoModel.pt` |
+   | YOLO classifier (`NanoClassifier.pt`) | Cat classifier head | `weights/NanoClassifier.pt` |
+
+   Example (using `huggingface_hub` CLI for DeBERTa):
+   ```bash
+   pip install huggingface_hub
+   huggingface-cli download microsoft/deberta-v3-small \
+       --include "*.onnx" "*.tokenizer.json" --local-dir weights \
+       --local-dir-use-symlinks False
+   mv weights/inference.onnx weights/deberta-v3-small-mnli.onnx
+   mv weights/tokenizer.json weights/deberta-v3-small-mnli.tokenizer.json
+   ```
+
+   Place your YOLO weights in `weights/` (copy from an existing deployment or
+   your training artifacts). The repo ships with `.gitkeep` only, so you must
+   supply the actual `.pt` files.
+
+5. **Prepare configuration**
+   - Copy `.env` (or create it) and fill in:
+     - `DISCORD_TOKEN`, `BOT_NAME`, `COMMAND_PREFIX`
+     - Channel IDs (`CH_FEEDING_TEAM`, `CH_TOMCAT_SANDBOX`, `CH_LOGGING`, etc.)
+     - Google spreadsheet IDs (`SHEET_MEGASHEET_ID`, `SHEET_CATABASE_ID`, …)
+     - Gmail OAuth paths (credentials/token JSON)
+     - Feeding schedule + user ID maps in `tomcat/config.py`
+   - Share your Google sheets with the service account email in
+     `GOOGLE_SERVICE_ACCOUNT_JSON`.
+
+6. **Optional: configure Ultralytics cache**
+   ```bash
+   mkdir -p .ultra
+   export YOLO_CONFIG_DIR=$PWD/.ultra  # or set in PowerShell: $env:YOLO_CONFIG_DIR = "$pwd\.ultra"
+   ```
+
+7. **Run TomCat**
+   ```bash
+   python -m tomcat.main
+   ```
+
+---
+
+## Configuration Cheat Sheet (`.env`)
+
+The `.env` file is heavily commented in-repo. Key groups:
+
+- **Gmail** – enable/disable ingestion, OAuth client/token paths, local OAuth redirect port.
+- **Dues** – enable dues automation, accepted amounts, email look-back window,
+  scanning limits, NLP toggle, membership cache TTL.
+- **Discord** – bot/user IDs and command prefix (also see channel IDs and admin IDs).
+- **Caches** – cat profile and alias TTLs.
+
+See `tomcat/config.py` for additional defaults (channels, roles, feeding schedule).
+
+---
+
+## Operations & Logs
+
+- **Human log**: `logs/human/YYYY-MM-DD.log` – timeline of messages, intents,
+  feeding actions, finance results, spam alerts, etc.
+- **Machine log**: `logs/machine/YYYY-MM/YYYY-MM-DD.ndjson` – structured events
+  ready for downstream analytics.
+- **Subs log**: `logs/subs/YYYY/YYYY-MM.jsonl` – per-month substitution requests.
+- **Finance index**: `logs/finance/index.jsonl` – prevents duplicate processing.
+
+Schedulers:
+- Gmail logging every ~4 hours (`start_gmail_logging_scheduler`).
+- Feeding 8 PM reminder task (`start_feeding_scheduler`).
+- Profile cache refresh and show-photo warmup tasks.
+
+Use these logs to verify automation on first boot. For testing, run manual
+commands such as `TomCat, log the past 5 emails` or `TomCat, manual 8pm update`.
+
+---
+
+## Development Tips
+
+- Keep business logic isolated inside handlers/services; the router should only
+  orchestrate detection and dispatch.
+- Whenever you add Sheets interaction, route through `sheets_client()` so the
+  service account session stays cached.
+- Extend aliases via `tomcat/aliases.py` for deterministic matches before
+  leaning on NLP. Add fuzzy thresholds carefully to avoid cross-cat confusion.
+- Honor silent mode via `safe_send`; never call `channel.send` directly.
+- Run `python3 -m py_compile $(git ls-files '*.py')` before committing.
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| Bot silent everywhere | Check `.env` `DISCORD_TOKEN`, ensure silent mode is not enabled (`TomCat, silent mode off`). |
+| Gmail auth pending | Trigger `TomCat, check the last email`; follow the OAuth link and respond with the code. |
+| Sheets 403/worksheet missing | Share sheet with service account; verify tab names in `CHANNEL_SHEET_MAP`. |
+| CV requests fail | Make sure `weights/NanoModel.pt` & `weights/NanoClassifier.pt` exist and the GPU drivers are installed. |
+| NLP fallback disabled | Provide the DeBERTa ONNX/tokenizer pair in `weights/` or set `DUES_NLP_ENABLED=false`. |
+| Torch install fails | Update NVIDIA drivers; if still failing, fall back to CPU wheels (edit `requirements.txt`). |
+
+---
+
+TomCat VI is production-ready but still human-friendly. All automation leaves a
+paper trail; most state is file-based, so restoring from backup is as easy as
+copying the `logs/` and `weights/` folders alongside your `.env` and credentials.
+Happy herding! 🐈

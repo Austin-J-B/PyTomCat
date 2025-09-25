@@ -1,3 +1,5 @@
+"""Dues ingestion + Gmail logging pipeline for CCC membership tracking."""
+
 from __future__ import annotations
 import os
 import re
@@ -14,6 +16,8 @@ from typing import Any, Dict, Optional, List, Tuple
 
 from ..logger import log_event, log_action
 from ..config import settings
+from ..utils.payments import detect_provider
+from . import finance
 
 try:
     from ..utils.sender import safe_send  # (channel, content, **kwargs)
@@ -117,6 +121,7 @@ def _now_iso() -> str:
 # ============================
 
 async def handle_check_last_email(intent, ctx) -> None:
+    """Admin command: echo the newest Gmail inbox message."""
     ch = ctx["channel"]
     try:
         svc = await _build_gmail_service(ch)
@@ -155,6 +160,7 @@ async def handle_check_last_email(intent, ctx) -> None:
         log_action("gmail_error", type(e).__name__, str(e))
 
 async def handle_gmail_auth_code(intent, ctx) -> None:
+    """Complete the OAuth flow after an admin pastes the Gmail auth code."""
     ch = ctx["channel"]
     user = ctx.get("author")
     raw = (intent.data or {}).get("auth") or ""
@@ -171,7 +177,7 @@ async def handle_gmail_auth_code(intent, ctx) -> None:
         if not flow:
             flow = _new_flow()
         port = int(os.getenv("GAIL_LOCAL_PORT", "8765") or "8765")
-        # typo fix: keep compatibility with previous env var
+        # Maintain compatibility with env var spelled GAIL_LOCAL_PORT
         port = int(os.getenv("GMAIL_LOCAL_PORT", str(port)) or str(port))
         flow.redirect_uri = f"http://localhost:{port}/"
         await asyncio.to_thread(flow.fetch_token, code=code)
@@ -217,8 +223,12 @@ os.makedirs(DUES_DIR, exist_ok=True)
 DUES_INDEX = os.path.join(DUES_DIR, "index.jsonl")
 
 # ----------- Normalization & Regexes -----------
-_PROVIDER_RE = re.compile(r"\b(paypal|venmo|cash\s?app|cashapp|zelle|in\s*person|cash|irl)\b", re.I)
+_PROVIDER_RE = re.compile(
+    r"\b(paypal|venmo(?:ed)?|cash\s?app(?:ed|d)?|cashapp(?:ed|d)?|cash-app(?:ed|d)?|zelle(?:d|'d)?|in\s*person|cash|irl)\b",
+    re.I,
+)
 _AMOUNT_RE = re.compile(r"(?<!\d)\$?\s*(\d{1,4}(?:\.\d{2})?)(?!\d)")
+_MONEY_RE = re.compile(r"-?\d+(?:\.\d+)?")
 _VENMO_HANDLE_RE = re.compile(r"@[A-Za-z0-9._-]{2,32}")
 _CASHAPP_RE = re.compile(r"\$[A-Za-z][A-Za-z0-9_]{0,19}")
 _PAID_PHRASE_RE = re.compile(r"\b(paid (?:on|via|through|to)|sent you|paid you|i paid|i just paid)\b", re.I)
@@ -270,10 +280,17 @@ def _jaccard_tokens(a: str, b: str) -> float:
 _DEF_PROVIDER_MAP = {
     "cash app": "cashapp",
     "cashapp": "cashapp",
+    "cashappd": "cashapp",
+    "cashapped": "cashapp",
     "cash-app": "cashapp",
+    "cash-appd": "cashapp",
+    "cash-apped": "cashapp",
     "paypal": "paypal",
     "venmo": "venmo",
+    "venmoed": "venmo",
     "zelle": "zelle",
+    "zelled": "zelle",
+    "zelle'd": "zelle",
     "inperson": "cash",
     "cash": "cash",
 }
@@ -284,6 +301,66 @@ def _norm_provider(text: str) -> str:
         if k in t:
             return v
     return ""
+
+_AMOUNT_POSITIVE_HINTS = (
+    "paid",
+    "sent",
+    "payment",
+    "donation",
+    "donated",
+    "dues",
+    "membership",
+    "received",
+    "transfer",
+    "credit",
+    "contribution",
+    "support",
+    "venmo",
+    "paypal",
+    "cashapp",
+    "cash app",
+    "zelle",
+    "zelled",
+)
+_AMOUNT_NEGATIVE_HINTS = (
+    "spent",
+    "statement",
+    "invoice",
+    "receipt",
+    "charge",
+    "order",
+)
+
+
+def _amount_candidates(text: str) -> list[float]:
+    vals: list[float] = []
+    if not text:
+        return vals
+    lower = text.lower()
+    for match in _AMOUNT_RE.finditer(text):
+        num_start, num_end = match.span(1)
+        prefix = text[max(0, num_start - 3):num_start]
+        suffix = text[num_end:min(len(text), num_end + 3)]
+        has_dollar = ('$' in prefix) or ('$' in suffix)
+        context = lower[max(0, num_start - 20):min(len(text), num_end + 20)]
+        has_positive = any(hint in context for hint in _AMOUNT_POSITIVE_HINTS)
+        has_negative = any(hint in context for hint in _AMOUNT_NEGATIVE_HINTS)
+        if not (has_dollar or has_positive):
+            continue
+        if has_negative and not has_positive:
+            continue
+        try:
+            vals.append(float(match.group(1)))
+        except Exception:
+            continue
+    # De-duplicate while preserving order
+    seen = set()
+    ordered: list[float] = []
+    for v in vals:
+        if v not in seen:
+            seen.add(v)
+            ordered.append(v)
+    return ordered
 
 # --- Portal parsing & filter ---
 
@@ -311,7 +388,7 @@ def _parse_portal_message(msg) -> Dict[str, Any]:
             provider = 'cash'
         else:
             provider = p
-    amounts = [float(a) for a in _AMOUNT_RE.findall(text) if a]
+    amounts = _amount_candidates(text)
     venmo_handles = _VENMO_HANDLE_RE.findall(text)
     cash_handles = _CASHAPP_RE.findall(text)
 
@@ -337,6 +414,8 @@ def _parse_portal_message(msg) -> Dict[str, Any]:
         head = text.split(',', 1)[0].strip()
         if re.match(r"[A-Za-z].+\s+[A-Za-z].+", head):
             name = head
+    if name and 'http' in name.lower():
+        name = None
 
     author_obj = getattr(msg, 'author', None)
     author_username = getattr(author_obj, 'name', '')
@@ -365,7 +444,7 @@ def _is_explicit_payment_message(text: str) -> bool:
     # Strong signals
     if any(p in t for p in [" paid ", " paid,", " paid.", " paid!", " sent ", " sent.", " sent,", " donated "]):
         return True
-    # Common phrasings that were previously missed, e.g., "used cashapp"
+    # Common phrasings seen in payment emails, e.g., "used cashapp"
     if " used " in t:
         return True
     # Provider-verbed variants: "venmoed", "cashapped", "zelle'd"
@@ -406,7 +485,7 @@ def _load_membership_rows():
             'discordusername','discordhandle','discord','discordname','discordtag','discordid',
             'paymentusername','paymenthandle','payhandle','paymentuser','paymenttag',
             'paidwhere','paidvia','provider','method','wherepaid',
-            'duesordonation','duesdonation','type','reason','category',
+            'duesordonation','duesdonation','type','reason','category','donation','donations',
             'verified','isverified','email','semester'
         }
         header_idx = 0
@@ -437,6 +516,7 @@ def _load_membership_rows():
         i_sem  = col(['semester'])
         i_ver  = col(['verified','isverified'])
         i_inv  = col(['mavorgsinvite','invite','mavorgs'])
+        i_don  = col(['donation','donations','donationamount','donation?'])
         out = []
         for r in data:
             def get(i):
@@ -455,6 +535,7 @@ def _load_membership_rows():
                 'semester': get(i_sem),
                 'verified': _truthy(get(i_ver)) if i_ver >= 0 else False,
                 'mavorgs_invite': _truthy(get(i_inv)) if i_inv >= 0 else False,
+                'donation_amount': get(i_don),
             }
             if any(bool(v) for v in row.values()):
                 out.append(row)
@@ -738,6 +819,27 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
             pass
     return False, f"Error updating sheet: {e}"
 
+def _parse_money_value(text: str) -> Optional[float]:
+    if not text:
+        return None
+    try:
+        cleaned = text.replace(',', '')
+        match = _MONEY_RE.search(cleaned)
+        if not match:
+            return None
+        return float(match.group(0))
+    except Exception:
+        return None
+
+
+def _format_money_value(amount: float) -> str:
+    try:
+        rounded = round(float(amount), 2)
+    except Exception:
+        rounded = float(amount)
+    return f"${rounded:.2f}"
+
+
 async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -> tuple[bool, str]:
     """Mark 'Verified' TRUE for rows whose email is in provided list and, if given, semester matches.
     Input: list of (email, semester_or_None).
@@ -834,6 +936,141 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
             pass
         return False, f"Error updating sheet: {e}"
 
+
+async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float]]) -> tuple[bool, str]:
+    """Set the donation column to the provided amount (email+semester scoped)."""
+    cleaned: list[tuple[str, Optional[str], float]] = []
+    for email, sem, amount in entries:
+        email_norm = (email or '').strip().lower()
+        if not email_norm:
+            continue
+        try:
+            amt = float(amount)
+        except Exception:
+            continue
+        if amt <= 0:
+            continue
+        sem_norm = _norm_sem_label(sem or '') if sem else None
+        cleaned.append((email_norm, sem_norm, round(amt, 2)))
+    if not cleaned:
+        return False, "No donation updates required."
+
+    # Deduplicate by (email, semester)
+    desired: Dict[tuple[str, str], float] = {}
+    for email_norm, sem_norm, amt in cleaned:
+        key = (email_norm, sem_norm or '')
+        if key not in desired:
+            desired[key] = amt
+
+    try:
+        from ..services.sheets_client import sheets_client as _sc
+        sid = getattr(settings, 'sheet_megasheet_id', None)
+        if not sid:
+            return False, "Missing sheet id for membership megasheet."
+        ws_name = getattr(settings, 'membership_ws_title', 'Membership Application List')
+        ws = _sc().open_by_key(sid).worksheet(ws_name)
+        rows = ws.get_all_values()
+        if not rows:
+            return False, "Sheet is empty."
+
+        def hkey(s: str) -> str:
+            return re.sub(r"[^a-z]+", "", (s or '').lower())
+
+        header_idx = 0
+        target_keys = {'email', 'donation', 'donations', 'donationamount'}
+        best_hits = -1
+        for i in range(min(30, len(rows))):
+            rk = {hkey(c) for c in rows[i] if c}
+            hits = len(rk & target_keys)
+            if hits > best_hits and hits >= 1:
+                best_hits = hits
+                header_idx = i
+
+        header = rows[header_idx]
+        idx = {hkey(h): i for i, h in enumerate(header)}
+        i_email = idx.get('email', -1)
+        i_don = idx.get('donation', -1)
+        if i_don < 0:
+            i_don = idx.get('donations', -1)
+        if i_don < 0:
+            i_don = idx.get('donationamount', -1)
+        if i_don < 0:
+            i_don = idx.get('donation?', -1)
+        i_sem = idx.get('semester', -1)
+        if i_email < 0 or i_don < 0:
+            return False, "Could not find Email or Donation columns."
+
+        from gspread.cell import Cell  # type: ignore
+
+        cells: list[Cell] = []
+        applied: set[tuple[str, str]] = set()
+        for ri, row in enumerate(rows[header_idx + 1:], start=header_idx + 2):
+            email_val = (row[i_email] if i_email < len(row) else '').strip().lower()
+            if not email_val:
+                continue
+            sem_val = _norm_sem_label(row[i_sem]) if (i_sem >= 0 and i_sem < len(row) and row[i_sem]) else None
+            candidate_keys = []
+            if sem_val:
+                candidate_keys.append((email_val, sem_val))
+            candidate_keys.append((email_val, ''))
+
+            chosen_key: Optional[tuple[str, str]] = None
+            amt_target: Optional[float] = None
+            for key in candidate_keys:
+                if key in desired and key not in applied:
+                    amt_target = desired[key]
+                    chosen_key = key
+                    break
+            if chosen_key is None or amt_target is None:
+                continue
+
+            current_val = (row[i_don] if i_don < len(row) else '').strip()
+            current_amt = _parse_money_value(current_val)
+            if current_amt is not None and abs(current_amt - amt_target) <= 0.01:
+                applied.add(chosen_key)
+                continue
+
+            value = _format_money_value(amt_target)
+            cells.append(Cell(row=ri, col=i_don + 1, value=value))
+            applied.add(chosen_key)
+
+        if not cells:
+            return True, "No donation cells required changes."
+
+        BATCH = 200
+        updated = 0
+        for i in range(0, len(cells), BATCH):
+            chunk = cells[i:i + BATCH]
+            try:
+                ws.update_cells(chunk, value_input_option='USER_ENTERED')
+                updated += len(chunk)
+            except Exception as e:
+                log_action('dues_donation_update_error', f"batch={i}//{BATCH}", str(e))
+                delay = 1.0
+                for cell in chunk:
+                    for attempt in range(5):
+                        try:
+                            ws.update_cell(cell.row, cell.col, cell.value)
+                            updated += 1
+                            break
+                        except Exception as e2:
+                            msg = str(e2).lower()
+                            if 'quota' in msg or '429' in msg:
+                                await asyncio.sleep(delay)
+                                delay = min(delay * 2.0, 8.0)
+                                continue
+                            log_action('dues_donation_update_error', f"r={cell.row} c={cell.col}", str(e2))
+                            break
+            await asyncio.sleep(0.8)
+
+        return True, f"Updated donations for {updated} row(s)."
+    except Exception as e:
+        try:
+            log_action('dues_donation_update_error', 'sheet', str(e))
+        except Exception:
+            pass
+        return False, f"Error updating donations: {e}"
+
 async def _delete_portal_messages(bot, ids: list[int]) -> int:
     """Delete messages by id from the dues portal channel. Returns count deleted."""
     if not ids:
@@ -859,6 +1096,7 @@ async def _delete_portal_messages(bot, ids: list[int]) -> int:
     return deleted
 
 async def handle_update_dues_members(intent, ctx) -> None:
+    """Reconcile dues spreadsheet entries with Discord member info."""
     """Analyze dues, auto-verify high-confidence entries, clean up, then run dues perks.
 
     Steps:
@@ -873,6 +1111,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
     bot = ctx.get('bot')
     if not ch or not bot:
         return
+    global _MEMBERSHIP_ROWS_CACHE, _MEMBERSHIP_ROWS_TS
     # 1) Analyze and post the same summary as handle_check_dues
     placeholder = None
     try:
@@ -910,6 +1149,9 @@ async def handle_update_dues_members(intent, ctx) -> None:
 
     # 2) Auto-verify high-confidence entries and delete their portal messages
     eligible: list[dict] = []
+    donation_updates: list[tuple[str, Optional[str], float]] = []
+    base_due = float(getattr(settings, 'dues_base_amount', 15.0) or 15.0)
+    tol = float(getattr(settings, 'dues_amount_tolerance', 0.01) or 0.01)
     for rec in rows:
         sc = float(rec.get('score_total') or 0.0)
         S = rec.get('primary_member') or {}
@@ -943,8 +1185,21 @@ async def handle_update_dues_members(intent, ctx) -> None:
         body = (E.get('content') or '')
         text = f"{subj} {body}"
         amt = _extract_amount(text)
-        if not ((amt is not None and int(round(amt)) == 15) or re.search(r"\bdue[s]?\b", text, re.I)):
+        has_dues_word = bool(_DUES_WORD_RE.search(text))
+        if amt is None:
             continue
+        if amt + tol < base_due:
+            continue
+        if amt > base_due + tol and not has_dues_word:
+            continue
+        donation_extra = 0.0
+        if has_dues_word and amt > base_due + tol:
+            donation_extra = round(max(0.0, amt - base_due), 2)
+        if donation_extra > 0.0:
+            rec['donation_extra'] = donation_extra
+            email_for_donation = (S.get('email') or '').strip().lower()
+            if email_for_donation:
+                donation_updates.append((email_for_donation, (S.get('semester') or '').strip() or None, donation_extra))
         eligible.append(rec)
 
     # Mark Verified for eligible emails (email + semester)
@@ -962,12 +1217,8 @@ async def handle_update_dues_members(intent, ctx) -> None:
         except Exception:
             pass
         # Invalidate membership cache so perks sees fresh Verified flags
-        try:
-            global _MEMBERSHIP_ROWS_CACHE, _MEMBERSHIP_ROWS_TS
-            _MEMBERSHIP_ROWS_CACHE = None
-            _MEMBERSHIP_ROWS_TS = 0.0
-        except Exception:
-            pass
+        _MEMBERSHIP_ROWS_CACHE = None
+        _MEMBERSHIP_ROWS_TS = 0.0
 
     # Delete portal messages for eligible
     ids = [int(rec.get('message_id') or 0) for rec in eligible if int(rec.get('message_id') or 0)]
@@ -977,6 +1228,17 @@ async def handle_update_dues_members(intent, ctx) -> None:
             log_action('dues_auto_cleanup', f'deleted={deleted}', '')
         except Exception:
             pass
+
+    # Update donation amounts for high-confidence dues + donation emails
+    if donation_updates:
+        ok_don, msg_don = await _update_donation_amounts(donation_updates)
+        try:
+            log_action('dues_auto_donation', f"count={len(donation_updates)}", msg_don)
+        except Exception:
+            pass
+        if ok_don:
+            _MEMBERSHIP_ROWS_CACHE = None
+            _MEMBERSHIP_ROWS_TS = 0.0
 
     # 3) Run the standard dues perks flow (emails list, usernames, roles, invite prompt)
     try:
@@ -1390,6 +1652,7 @@ def _find_sandbox_channel(bot):
         return None
 
 async def handle_run_dues_perks(intent, ctx) -> None:
+    """Grant membership perks to users whose dues are verified."""
     """Reply with UTA emails of verified members for the current semester, then a second reply with matched Discord usernames.
 
     - Semester: Spring (Jan-Jun) or Fall (Jul-Dec), current year.
@@ -1531,7 +1794,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         if err_lines:
             await safe_send(sandbox, "Dues Perks Issues\n" + "\n".join(err_lines))
 
-    # 4) Status messages for confident matches (to sandbox for now), 1.1s apart
+    # 4) Status messages for confident matches (posted to sandbox), 1.1s apart
     confident = []
     dup_keys = dups
     for rec in matched:
@@ -1693,15 +1956,13 @@ def _provider_from_email(frm: str, subj: str, body: str) -> Optional[str]:
     return None
 
 def _extract_amount(text: str) -> Optional[float]:
-    vals = [v for v in _AMOUNT_RE.findall(text or '')]
+    candidates = _amount_candidates(text)
+    if not candidates:
+        return None
     best = None
-    for v in vals:
-        try:
-            x = float(v)
-            if best is None or x > best:
-                best = x
-        except Exception:
-            pass
+    for val in candidates:
+        if best is None or val > best:
+            best = val
     return best
 
 def _payment_username_from_email(em: dict) -> str | None:
@@ -2189,6 +2450,7 @@ async def _analyze_dues(bot) -> List[dict]:
 # ============================
 
 async def handle_check_dues(intent, ctx) -> None:
+    """Show a quick dues status summary for a given member."""
     if not getattr(settings, 'dues_enabled', True):
         await safe_send(ctx['channel'], 'Dues checking is disabled in settings.')
         return
@@ -2273,6 +2535,7 @@ async def handle_check_dues(intent, ctx) -> None:
 # ============================
 
 async def start_dues_scheduler(bot) -> None:
+    """Kick off the periodic dues reconciliation job."""
     if not getattr(settings, 'dues_enabled', True):
         return
     target_h, target_m = 3, 0
@@ -2523,6 +2786,7 @@ async def _log_emails_batch(svc, messages: List[Dict[str, Any]], delay_sec: floa
 
 
 async def start_gmail_logging_scheduler(bot) -> None:
+    """Poll Gmail on a schedule, logging emails and triggering finance processing."""
     """Every ~4 hours, log any newly received emails in the last 4 hours."""
     while True:
         try:
@@ -2562,6 +2826,10 @@ async def start_gmail_logging_scheduler(bot) -> None:
                         delay = float(getattr(_settings, 'gmail_log_scheduler_delay_sec', 10.0) or 10.0)
                         n = await _log_emails_batch(svc, list(msgs)[::-1], delay_sec=delay)
                         log_action("gmail_log_scheduler", f"found={len(msgs)}", f"logged={n}")
+                        try:
+                            await finance.process_financial_emails(bot)
+                        except Exception as e:
+                            log_action('finance_process_error', 'scheduler', str(e))
                 finally:
                     try:
                         _EMAIL_LOG_LOCK.release()
@@ -2578,6 +2846,7 @@ async def start_gmail_logging_scheduler(bot) -> None:
 
 
 async def handle_log_recent_emails(intent, ctx) -> None:
+    """Manually force logging of the latest Gmail messages."""
     """Manual: TomCat, log the past N emails (received)."""
     ch = ctx["channel"]
     try:
@@ -2627,6 +2896,12 @@ async def handle_log_recent_emails(intent, ctx) -> None:
         suffix = f" (skipped {already} already logged)" if already else ""
         await safe_send(ch, f"Logged {logged} email(s){suffix}.")
         log_action("gmail_log_manual", f"req={n}", f"logged={logged}; skipped={already}")
+        try:
+            bot = ctx.get("bot")
+            if bot:
+                await finance.process_financial_emails(bot)
+        except Exception as e:
+            log_action('finance_process_error', 'manual', str(e))
 
         # Flip the reaction from 👍 to ✅ (best-effort)
         try:
@@ -2652,6 +2927,7 @@ async def handle_log_recent_emails(intent, ctx) -> None:
 
 
 async def handle_export_dues_portal(intent, ctx) -> None:
+    """Fetch and archive the latest dues portal export."""
     """Dump the dues portal channel to NDJSON with parsed fields for offline analysis."""
     bot = ctx.get('bot')
     ch = ctx.get('channel')

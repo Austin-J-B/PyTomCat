@@ -1,3 +1,5 @@
+"""Feeding log handlers: subs, checklist updates, and reminder workflow."""
+
 # tomcat/feeding.py
 from __future__ import annotations
 
@@ -6,7 +8,7 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import discord
 
@@ -25,10 +27,11 @@ except Exception:
 CENTRAL_TZ = ZoneInfo("America/Chicago") if ZoneInfo else None
 
 # ------------- subs log -------------
-# Single append-only JSONL file under logs/subs
-SUBS_DIR = os.path.join("logs", "subs")
-os.makedirs(SUBS_DIR, exist_ok=True)
-SUBS_FILE = os.path.join(SUBS_DIR, "subs.jsonl")
+# Monthly JSONL files under logs/subs/<year>/<year-month>.jsonl
+SUBS_ROOT = os.path.join("logs", "subs")
+os.makedirs(SUBS_ROOT, exist_ok=True)
+SUBS_LEGACY_FILE = os.path.join(SUBS_ROOT, "subs.jsonl")
+_SUBS_LOCK = asyncio.Lock()
 
 # ------------- simple data types ----------------
 @dataclass
@@ -45,26 +48,82 @@ class SubRecord:
 
 # ------------- helpers: time/date ---------------
 def _today_iso() -> str:
+    """Return today's date string using the configured timezone."""
     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
     return now.date().isoformat()
 
 def _now_iso() -> str:
+    """Return an ISO timestamp with timezone awareness if available."""
     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
     return now.isoformat()
 
 # ------------- helpers: files/json --------------
 def _load_json(path: str, default):
+    """Read a JSON file, returning default on error."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return default
 
-def _append_jsonl(path: str, obj: dict) -> None:
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(obj) + "\n")
+def _sub_month_key_from_datetime(dt: datetime) -> str:
+    """Convert a datetime into the YYYY-MM month key."""
+    return f"{dt.year}-{dt.month:02d}"
 
-def _read_jsonl(path: str) -> List[dict]:
+
+def _sub_month_key_from_date(date_iso: str) -> Optional[str]:
+    """Parse an ISO date string into the subs month key."""
+    try:
+        dt = datetime.fromisoformat(date_iso)
+        return _sub_month_key_from_datetime(dt)
+    except Exception:
+        return None
+
+
+def _sub_log_path_from_key(key: str) -> str:
+    """Return the jsonl log path for a month key, creating folders."""
+    try:
+        year_str, month_str = key.split("-", 1)
+        year = int(year_str)
+        month = int(month_str)
+    except Exception:
+        raise ValueError(f"Invalid sub log month key: {key}")
+    folder = os.path.join(SUBS_ROOT, f"{year}")
+    os.makedirs(folder, exist_ok=True)
+    return os.path.join(folder, f"{year}-{month:02d}.jsonl")
+
+
+def _recent_month_keys(span: int = 2) -> List[str]:
+    """Return month keys for the current month and previous span-1 months."""
+    now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+    keys: List[str] = []
+    year, month = now.year, now.month
+    for offset in range(span):
+        y = year
+        m = month - offset
+        while m <= 0:
+            m += 12
+            y -= 1
+        keys.append(f"{y}-{m:02d}")
+    return keys
+
+
+def _all_sub_month_keys() -> List[str]:
+    """List every month that currently has a subs log."""
+    keys: set[str] = set()
+    if os.path.exists(SUBS_ROOT):
+        for entry in os.listdir(SUBS_ROOT):
+            year_path = os.path.join(SUBS_ROOT, entry)
+            if not os.path.isdir(year_path):
+                continue
+            for fname in os.listdir(year_path):
+                if fname.endswith(".jsonl"):
+                    keys.add(fname[:-6])
+    return sorted(keys)
+
+
+def _read_sub_file(path: str, month_key: Optional[str]) -> List[dict]:
+    """Read a monthly subs jsonl and return parsed records."""
     out: List[dict] = []
     if not os.path.exists(path):
         return out
@@ -74,15 +133,115 @@ def _read_jsonl(path: str) -> List[dict]:
             if not line:
                 continue
             try:
-                out.append(json.loads(line))
+                row = json.loads(line)
             except Exception:
                 continue
+            if month_key and not row.get("log_month"):
+                row["log_month"] = month_key
+            if row.get("station"):
+                row["station"] = _canonical_station(row.get("station")) or row.get("station")
+            if row.get("dates"):
+                row["dates"] = _normalize_dates(row.get("dates"))
+            out.append(row)
     return out
 
-def _rewrite_jsonl(path: str, rows: List[dict]) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        for r in rows:
-            f.write(json.dumps(r) + "\n")
+
+def _write_sub_file(path: str, rows: List[dict]) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row) + "\n")
+    os.replace(tmp_path, path)
+
+
+def _append_sub_record(record: dict, month_key: Optional[str] = None) -> None:
+    if not month_key:
+        month_key = record.get("log_month")
+    if not month_key:
+        month_key = _derive_month_key(record)
+    record["log_month"] = month_key
+    path = _sub_log_path_from_key(month_key)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+def _normalize_dates(dates: Iterable[str]) -> List[str]:
+    out: List[str] = []
+    for raw in dates or []:
+        if not raw:
+            continue
+        if isinstance(raw, str):
+            iso = _parse_date_str(raw)
+            if not iso:
+                try:
+                    iso = datetime.fromisoformat(raw.replace('Z', '+00:00')).date().isoformat()
+                except Exception:
+                    iso = None
+        else:
+            iso = None
+            try:
+                iso = datetime.fromisoformat(str(raw)).date().isoformat()
+            except Exception:
+                pass
+        if iso:
+            out.append(iso)
+    return sorted(set(out))
+
+
+def _month_key_for_dates(dates: Iterable[str]) -> Optional[str]:
+    for iso in _normalize_dates(dates):
+        key = _sub_month_key_from_date(iso)
+        if key:
+            return key
+    return None
+
+
+def _derive_month_key(record: dict, default: Optional[str] = None) -> str:
+    key = _month_key_for_dates(record.get("dates") or [])
+    if key:
+        return key
+    for field in ("created_at", "updated_at", "ts"):
+        val = record.get(field)
+        if not val:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(val).replace('Z', '+00:00'))
+            return _sub_month_key_from_datetime(dt)
+        except Exception:
+            continue
+    if default:
+        return default
+    now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+    return _sub_month_key_from_datetime(now)
+
+
+def _load_sub_files(month_keys: Optional[List[str]] = None, include_legacy: bool = True) -> List[Tuple[str, List[dict]]]:
+    files: List[Tuple[str, List[dict]]] = []
+    seen: set[str] = set()
+    keys = month_keys or _recent_month_keys()
+    for key in keys:
+        try:
+            path = _sub_log_path_from_key(key)
+        except ValueError:
+            continue
+        rows = _read_sub_file(path, key)
+        files.append((path, rows))
+        seen.add(path)
+    if include_legacy and os.path.exists(SUBS_LEGACY_FILE):
+        rows = _read_sub_file(SUBS_LEGACY_FILE, None)
+        files.append((SUBS_LEGACY_FILE, rows))
+        seen.add(SUBS_LEGACY_FILE)
+    if month_keys is None:
+        for extra in _all_sub_month_keys():
+            path = _sub_log_path_from_key(extra)
+            if path in seen:
+                continue
+            rows = _read_sub_file(path, extra)
+            files.append((path, rows))
+            seen.add(path)
+    return files
 
 # ------------- helpers: schedule/users ----------
 def _resolve_user_ids(names: List[str]) -> List[int]:
@@ -91,19 +250,44 @@ def _resolve_user_ids(names: List[str]) -> List[int]:
     """
     cfg_map = getattr(settings, "user_id_map", {}) or {}
     # normalize keys to simple form
-    norm_map = {str(k).strip(): int(v) for k, v in cfg_map.items() if str(v).isdigit() or isinstance(v, int)}
+    norm_map: Dict[str, int] = {}
+    for k, v in cfg_map.items():
+        try:
+            uid = int(v)
+        except (TypeError, ValueError):
+            continue
+        key = str(k).strip()
+        if not key:
+            continue
+        variants = {
+            key,
+            key.lower(),
+            key.strip("@"),
+            key.strip("@").lower(),
+        }
+        for var in variants:
+            if var:
+                norm_map[var] = uid
+
     ids: List[int] = []
     for n in names:
+        if n is None:
+            continue
         n1 = str(n).strip()
-        uid = norm_map.get(n1) or norm_map.get(n1.strip("@"))
-        if isinstance(uid, int):
+        if not n1 or n1.lower() == "none":
+            continue
+        uid = None
+        for cand in (n1, n1.lower(), n1.strip("@"), n1.strip("@").lower()):
+            if cand in norm_map:
+                uid = norm_map[cand]
+                break
+        if uid is not None:
             ids.append(uid)
-        else:
-            # allow numeric strings too
-            try:
-                ids.append(int(str(uid)))
-            except Exception:
-                pass
+            continue
+        try:
+            ids.append(int(n1))
+        except Exception:
+            continue
     return ids
 
 def _read_schedule_for_weekday(weekday_name: str) -> Dict[str, List[int]]:
@@ -125,14 +309,35 @@ def _read_schedule_for_weekday(weekday_name: str) -> Dict[str, List[int]]:
             break
     out: Dict[str, List[int]] = {}
     for station, seq in cfg.items():
+        station_disp = _canonical_station(station) or str(station).strip()
+        if not station_disp:
+            continue
         if not isinstance(seq, list) or not seq:
+            out.setdefault(station_disp, [])
             continue
         if len(seq) != 7:
             log_action("schedule_warn", f"station={station}", f"len={len(seq)} != 7; cycling")
         name = seq[idx % len(seq)]
-        ids = _resolve_user_ids([name]) if name is not None else []
-        out[station] = ids
+        ids = []
+        if name not in (None, "", "None"):
+            ids = _resolve_user_ids([name])
+        existing = out.get(station_disp, [])
+        merged = list(dict.fromkeys(existing + ids)) if ids else existing
+        out[station_disp] = merged
     return out
+
+
+def _canonical_station(station: Optional[str]) -> Optional[str]:
+    text = (station or "").strip()
+    if not text:
+        return None
+    try:
+        resolved = resolve_station_or_cat(text, want="station")
+    except Exception:
+        resolved = None
+    if resolved:
+        return resolved
+    return text
 
 # ------------- Google Sheets glue (safe stubs) ---
 def _get_feeding_checklist_sheet_id() -> Optional[str]:
@@ -196,6 +401,25 @@ def _find_date_row(ws, date_iso: str) -> Optional[int]:
             return idx
     return None
 
+
+def _ensure_date_row(ws, date_iso: str, header: Optional[Dict[str, int]] = None) -> Optional[int]:
+    header = header or _station_header_map(ws)
+    row = _find_date_row(ws, date_iso)
+    if row:
+        return row
+    max_col = max(header.values()) if header else 1
+    values: List[Any] = [None] * max(1, max_col)
+    values[0] = date_iso
+    for idx in range(1, len(values)):
+        values[idx] = False
+    try:
+        ws.append_row(values, value_input_option="USER_ENTERED")
+        log_action("feeding_sheet", "add_row", date_iso)
+    except Exception as e:
+        log_action("feeding_sheet", "add_row_error", str(e))
+        return None
+    return _find_date_row(ws, date_iso)
+
 async def _mark_checkbox_in_sheet(station: str, date_iso: str) -> bool:
     """Mark the (station, date) cell TRUE in the FeedingStationChecklist tab.
     Header row (1) has stations; first column (A) has dates; body is checkboxes.
@@ -205,16 +429,20 @@ async def _mark_checkbox_in_sheet(station: str, date_iso: str) -> bool:
         return False
     try:
         header = _station_header_map(ws)
-        # if station isn't exact, try resolving via aliases
-        disp = station
-        if disp not in header:
-            resolved = resolve_station_or_cat(station, want="station")
-            if resolved and resolved in header:
-                disp = resolved
+        disp = _canonical_station(station) or station
         col = header.get(disp)
-        row = _find_date_row(ws, date_iso)
-        if not col or not row:
-            log_action("sheet_mark_error", f"station={station} date={date_iso}", "missing_row_or_col")
+        if not col:
+            for name in header.keys():
+                if name.lower() == disp.lower():
+                    col = header[name]
+                    disp = name
+                    break
+        if not col:
+            log_action("sheet_mark_error", f"station={station} date={date_iso}", "missing_column")
+            return False
+        row = _ensure_date_row(ws, date_iso, header)
+        if not row:
+            log_action("sheet_mark_error", f"station={station} date={date_iso}", "row_create_failed")
             return False
         ws.update_cell(row, col, True)
         log_action("sheet_mark", f"station={disp} date={date_iso}", "ok")
@@ -233,11 +461,10 @@ async def _list_unfed_stations_today() -> List[str]:
     try:
         today_iso = _today_iso()
         header = _station_header_map(ws)
-        row = _find_date_row(ws, today_iso)
+        row = _ensure_date_row(ws, today_iso, header)
         if not row:
             log_action("unfed_list", f"date={today_iso}", "date_row_not_found")
-            # If date absent, treat all as unfed to be safe
-            return [name for name, col in header.items() if col != 1]
+            return []
         # Read entire row values once
         vals = ws.row_values(row)
         unfed: List[str] = []
@@ -251,15 +478,18 @@ async def _list_unfed_stations_today() -> List[str]:
             else:
                 fed = str(v).strip().upper() == "TRUE"
             if not fed:
-                unfed.append(name)
+                disp = _canonical_station(name) or name
+                if disp not in unfed:
+                    unfed.append(disp)
         return unfed
     except Exception as e:
         log_action("unfed_list_error", "read", str(e))
         return []
 
 async def handle_feeding_inquiry(intent, ctx: Dict[str, Any]) -> None:
+    """Respond with today's feeding completions and outstanding stations."""
     ch = ctx["channel"]
-    # Get today’s stations from your schedule (fallback to keys union if needed)
+    # Get today’s stations from the configured schedule (fallback to keys union if needed)
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
     weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
     today_sched = _read_schedule_for_weekday(weekday)  # {station: [user_ids]}
@@ -272,7 +502,7 @@ async def handle_feeding_inquiry(intent, ctx: Dict[str, Any]) -> None:
     fed = [s for s in stations if s not in set(unfed)]
 
     lines = []
-    lines.append("**Feeding status (today)**")
+    lines.append("**Feeding status**")
     lines.append(f"**Fed:** {', '.join(fed) if fed else 'none'}")
     lines.append(f"**Unfed:** {', '.join(unfed) if unfed else 'none'}")
     await safe_send(ch, "\n".join(lines))
@@ -285,8 +515,11 @@ async def handle_feed_update_event(event, ctx: Dict[str, Any]) -> None:
     We mark all given dates as fed in the Sheet (stubbed) and log.
     """
     ch: discord.abc.MessageableChannel = ctx["channel"]
-    station = event.station or "Unknown"
-    dates = event.dates or [_today_iso()]
+    station_raw = event.station or ""
+    station = _canonical_station(station_raw) or (station_raw or "Unknown")
+    dates = _normalize_dates(event.dates or [])
+    if not dates:
+        dates = [_today_iso()]
 
     # Channel gating: only accept in allowed feeding channels if configured
     allowed: List[int] = getattr(settings, "allowed_feeding_channel_ids", []) or getattr(settings, "allowed_feeding_channels", [])
@@ -309,20 +542,37 @@ async def handle_sub_request_event(event, ctx: Dict[str, Any]) -> None:
     Log a sub request locally and post a small accept/decline UI.
     Assumes event.station may be None and event.dates may be None.
     """
-    rec = {
-        "kind": "sub_request",
-        "id": f"sub-{event.message_id}",
-        "station": event.station,
-        "dates": event.dates or [],
-        "requester": event.user_id,
-        "assignee": None,
-        "status": "requested",
-        "channel_id": event.channel_id,
-        "message_id": event.message_id,
-        "created_at": _now_iso(),
-    }
-    _append_jsonl(SUBS_FILE, rec)
-    log_action("sub_request", f"station={event.station}; dates={event.dates}", "logged")
+    station = _canonical_station(event.station) or (event.station or "")
+    dates = _normalize_dates(event.dates or [])
+    if not dates:
+        dates = [_today_iso()]
+    now_iso = _now_iso()
+
+    async with _SUBS_LOCK:
+        files = _load_sub_files(_recent_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
+        if _update_existing_sub_request(files, station, dates, event, now_iso):
+            return
+
+        files = _load_sub_files(_all_sub_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
+        if _update_existing_sub_request(files, station, dates, event, now_iso):
+            return
+
+        month_key = _month_key_for_dates(dates) or _sub_month_key_from_datetime(datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now())
+        rec = {
+            "kind": "sub_request",
+            "id": f"sub-{event.message_id}",
+            "station": station,
+            "dates": dates,
+            "requester": event.user_id,
+            "assignee": None,
+            "status": "requested",
+            "channel_id": event.channel_id,
+            "message_id": event.message_id,
+            "created_at": now_iso,
+            "log_month": month_key,
+        }
+        _append_sub_record(rec, month_key)
+        log_action("sub_request", f"station={station}; dates={','.join(dates)}", "logged")
 
     # No UI; subs are fully silent by design
 
@@ -332,38 +582,95 @@ async def handle_sub_accept_event(event, ctx: Dict[str, Any]) -> None:
     """
     accepted_id = await _accept_latest_open_sub_in_channel(event.channel_id, event.user_id)
     if accepted_id:
-        _append_jsonl(SUBS_FILE, {
+        accept_record = {
             "kind": "sub_accept",
             "sub_id": accepted_id,
             "assignee": event.user_id,
             "channel_id": event.channel_id,
             "message_id": event.message_id,
             "ts": _now_iso(),
-        })
+        }
+        async with _SUBS_LOCK:
+            month_key = _derive_month_key(accept_record)
+            accept_record["log_month"] = month_key
+            _append_sub_record(accept_record, month_key)
         log_action("sub_accept", f"user={event.user_id}", "ok")
     else:
         log_action("sub_accept", f"user={event.user_id}", "no_open_request")
 
 # ------------- persistence for subs ------------
 async def _accept_latest_open_sub_in_channel(channel_id: int, assignee_id: int) -> Optional[str]:
-    rows = _read_jsonl(SUBS_FILE)
-    # scan from bottom for requested in this channel
-    for i in range(len(rows) - 1, -1, -1):
-        r = rows[i]
-        if r.get("channel_id") == channel_id and r.get("status") == "requested":
-            r["status"] = "accepted"
-            r["assignee"] = assignee_id
-            # If no dates were specified, assume today
-            if not r.get("dates"):
-                r["dates"] = [ _today_iso() ]
-            r["updated_at"] = _now_iso()
-            rows[i] = r
-            _rewrite_jsonl(SUBS_FILE, rows)
-            return str(r.get("id")) if r.get("id") else None
+    """Helper that marks the newest open sub request as filled."""
+    async with _SUBS_LOCK:
+        files = _load_sub_files(_recent_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
+        accepted = _accept_sub_in_files(files, channel_id, assignee_id)
+        if accepted:
+            return accepted
+        # Fallback to full history if not found in recent months
+        files = _load_sub_files(_all_sub_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
+        return _accept_sub_in_files(files, channel_id, assignee_id)
+
+
+def _accept_sub_in_files(files: List[Tuple[str, List[dict]]], channel_id: int, assignee_id: int) -> Optional[str]:
+    today_iso = _today_iso()
+    now_iso = _now_iso()
+    for path, rows in files:
+        for idx in range(len(rows) - 1, -1, -1):
+            record = rows[idx]
+            if record.get("channel_id") != channel_id or record.get("status") != "requested":
+                continue
+            record["status"] = "accepted"
+            record["assignee"] = assignee_id
+            record_dates = _normalize_dates(record.get("dates") or [])
+            if not record_dates:
+                record_dates = [today_iso]
+            record["dates"] = record_dates
+            record["station"] = _canonical_station(record.get("station")) or record.get("station")
+            record["updated_at"] = now_iso
+            record["log_month"] = record.get("log_month") or _derive_month_key(record)
+            rows[idx] = record
+            _write_sub_file(path, rows)
+            return str(record.get("id")) if record.get("id") else None
     return None
+
+
+def _update_existing_sub_request(
+    files: List[Tuple[str, List[dict]]],
+    station: str,
+    dates: List[str],
+    event,
+    now_iso: str,
+) -> bool:
+    for path, rows in files:
+        for idx in range(len(rows) - 1, -1, -1):
+            record = rows[idx]
+            if record.get("status") != "requested":
+                continue
+            record_station = _canonical_station(record.get("station")) or record.get("station")
+            if record_station != station:
+                continue
+            existing_dates = _normalize_dates(record.get("dates") or [])
+            if not set(existing_dates) & set(dates):
+                continue
+            merged_dates = sorted(set(existing_dates) | set(dates))
+            record.update({
+                "station": station,
+                "dates": merged_dates,
+                "requester": event.user_id,
+                "channel_id": event.channel_id,
+                "message_id": event.message_id,
+                "updated_at": now_iso,
+            })
+            record["log_month"] = record.get("log_month") or _derive_month_key(record)
+            rows[idx] = record
+            _write_sub_file(path, rows)
+            log_action("sub_request", f"station={station}; dates={','.join(merged_dates)}", "updated")
+            return True
+    return False
 
 # ------------- scheduler: 8:00 pm ping ----------
 async def start_feeding_scheduler(bot: discord.Client) -> None:
+    """Kick off the nightly reminder loop that pings unfed stations."""
     async def _runner():
         while True:
             try:
@@ -377,6 +684,7 @@ async def start_feeding_scheduler(bot: discord.Client) -> None:
     asyncio.create_task(_runner())
 
 async def _sleep_until_local_time(hour: int, minute: int):
+    """Suspend until the next scheduled run in the configured timezone."""
     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
@@ -384,6 +692,7 @@ async def _sleep_until_local_time(hour: int, minute: int):
     await asyncio.sleep((target - now).total_seconds())
 
 async def _run_8pm_check(bot: discord.Client) -> None:
+    """Build and send the 8PM summary of remaining feed duties."""
     # compute unfed stations from sheet
     unfed = await _list_unfed_stations_today()
     if not unfed:
@@ -434,7 +743,11 @@ async def build_8pm_lines(bot: discord.Client, *, unfed: Optional[List[str]] = N
     if sched is None:
         weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
         sched = _read_schedule_for_weekday(weekday)
-    subs = _read_jsonl(SUBS_FILE)
+    async with _SUBS_LOCK:
+        files = _load_sub_files(_recent_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
+        subs: List[dict] = []
+        for _, rows in files:
+            subs.extend(rows)
     today_iso = today.isoformat()
 
     def _fmt(uid: int) -> str:
@@ -472,4 +785,3 @@ async def handle_manual_8pm_preview(intent, ctx: Dict[str, Any]) -> None:
     msg = await build_8pm_lines(bot, mention=False)
     await safe_send(ctx["channel"], msg)
     log_action("manual_8pm", f"by={uid}", "preview_sent")
-

@@ -1,3 +1,5 @@
+"""Background refresh + access layer for cat profile cache files."""
+
 from __future__ import annotations
 import os, re, json, asyncio, time
 from typing import Optional, Dict, Any, List
@@ -10,17 +12,21 @@ _TS: float = 0.0
 _COUNT: int = 0
 
 def _norm(s: str) -> str:
+    """Normalize strings for case-insensitive lookup."""
     return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
 
 def _display_from_full(full: str) -> str:
+    """Convert spreadsheet full name into display form."""
     return re.sub(r"^\s*\d+\.\s*", "", str(full or "")).strip()
 
 def _snapshot_path() -> str:
+    """Return local path for the cached profile snapshot."""
     base = os.path.join("cache", "catabase")
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, "profiles.json")
 
 def _load_snapshot() -> None:
+    """Load the on-disk snapshot if present."""
     global _CACHE, _TS
     try:
         with open(_snapshot_path(), 'r', encoding='utf-8') as f:
@@ -32,6 +38,7 @@ def _load_snapshot() -> None:
         _TS = 0.0
 
 def _load_from_csv() -> None:
+    """Hydrate cache from the bundled CSV fallback."""
     """Build cache from the local CSV snapshot if available."""
     global _CACHE, _TS
     try:
@@ -96,6 +103,7 @@ def _load_from_csv() -> None:
         pass
 
 def _save_snapshot() -> None:
+    """Persist the current cache to disk for restarts."""
     try:
         with open(_snapshot_path(), 'w', encoding='utf-8') as f:
             json.dump({"ts": time.time(), "profiles": _CACHE}, f)
@@ -103,12 +111,14 @@ def _save_snapshot() -> None:
         pass
 
 def _ttl_sec() -> int:
+    """Return how long the cache stays fresh before a refresh."""
     try:
         return int(getattr(settings, 'cat_profile_ttl_sec', 3600) or 3600)
     except Exception:
         return 3600
 
 def refresh_sync() -> int:
+    """Synchronously refresh the cache; returns number of profiles."""
     """Refresh the in-process cache from the CatDatabase sheet. Returns count on success, 0 on failure."""
     sid = getattr(settings, 'sheet_catabase_id', None)
     if not sid:
@@ -192,9 +202,11 @@ def refresh_sync() -> int:
     return 0
 
 async def refresh_async() -> int:
+    """Async wrapper that runs refresh_sync off the event loop."""
     return await asyncio.to_thread(refresh_sync)
 
 async def start_profile_cache_scheduler() -> None:
+    """Loop that periodically refreshes the profile snapshot."""
     """Periodically refresh the profile cache based on TTL."""
     while True:
         try:
@@ -204,9 +216,11 @@ async def start_profile_cache_scheduler() -> None:
         await asyncio.sleep(_ttl_sec())
 
 def cached_count() -> int:
+    """Return how many profiles are currently cached."""
     return int(_COUNT)
 
 def _ensure_loaded() -> None:
+    """Lazy-load the cache if nothing has been loaded yet."""
     global _CACHE, _TS
     if not _CACHE:
         _load_snapshot()
@@ -214,6 +228,7 @@ def _ensure_loaded() -> None:
         _load_from_csv()
 
 def get_profile(name: str) -> Optional[Dict[str, Any]]:
+    """Fetch a profile dict from cache, refreshing if stale."""
     _ensure_loaded()
     # Refresh if stale based on TTL
     if (time.monotonic() - _TS) > _ttl_sec():

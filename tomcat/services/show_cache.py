@@ -1,3 +1,5 @@
+"""Local filesystem cache for show-photo responses."""
+
 from __future__ import annotations
 import os, re, io, asyncio
 from typing import Optional, List, Tuple
@@ -14,10 +16,12 @@ from .catsheets import sheets_client  # type: ignore
 
 
 def _cache_dir_for(cat_id: int) -> str:
+    """Return the filesystem path for a given cat cache directory."""
     base = settings.show_cache_dir
     return os.path.join(base, f"{cat_id:03d}")
 
 def _cat_id_from_full(full_name: str) -> Optional[int]:
+    """Extract the numeric prefix from a full cat name."""
     m = re.match(r"\s*(\d+)[\.|\s]", full_name or "")
     if not m:
         return None
@@ -27,6 +31,7 @@ def _cat_id_from_full(full_name: str) -> Optional[int]:
         return None
 
 def latest_cached_bytes(full_name: str) -> Optional[bytes]:
+    """Load the newest cached JPEG bytes for a cat if present."""
     """Return bytes of the most recent cached JPG for this cat (highest sn), or None if missing."""
     cid = _cat_id_from_full(full_name)
     if cid is None:
@@ -59,6 +64,7 @@ def latest_cached_bytes(full_name: str) -> Optional[bytes]:
         return None
 
 async def _download_bytes(url: str, timeout_sec: float = 6.0) -> Optional[bytes]:
+    """Fetch raw bytes from a show-photo URL with a timeout."""
     try:
         timeout = aiohttp.ClientTimeout(total=timeout_sec)
         async with aiohttp.ClientSession(timeout=timeout) as sess:
@@ -69,6 +75,7 @@ async def _download_bytes(url: str, timeout_sec: float = 6.0) -> Optional[bytes]
         return None
 
 def _maybe_crop_single(raw: bytes) -> Optional[bytes]:
+    """Run the vision cropper and return the single crop if available."""
     try:
         # Temporarily suppress viz_crop logs during bulk cache fills
         from ..config import settings as _settings
@@ -88,11 +95,13 @@ _RECENTPICS_ROWS: Optional[List[List[str]]] = None
 _RECENTPICS_TS: float = 0.0
 
 def _set_recentpics_rows(rows: Optional[List[List[str]]]) -> None:
+    """Seed the in-memory view of RecentPics."""
     global _RECENTPICS_ROWS, _RECENTPICS_TS
     _RECENTPICS_ROWS = rows
     _RECENTPICS_TS = time.monotonic()
 
 async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
+    """Return cached (url, display) entries for a cat from RecentPics."""
     """Return URL/SERIAL pairs from RecentPics for a given FULL_NAME."""
     try:
         # Use in-process TTL cache of RecentPics rows
@@ -139,6 +148,7 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
         return []
 
 def _existing_serials(cat_dir: str) -> set[str]:
+    """List serial numbers already cached for a directory."""
     os.makedirs(cat_dir, exist_ok=True)
     serials: set[str] = set()
     for fn in os.listdir(cat_dir):
@@ -148,6 +158,7 @@ def _existing_serials(cat_dir: str) -> set[str]:
     return serials
 
 async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, exclude_serials: Optional[set[str]] = None) -> int:
+    """Guarantee at least min_count cached photos for a cat, downloading as needed."""
     """Ensure at least min_count images exist for the cat; returns total count after fill."""
     min_count = int(min_count or settings.show_cache_per_cat)
     cid = _cat_id_from_full(full_name)
@@ -268,9 +279,11 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
 _NAME_INDEX: dict[str, int] = {}
 
 def _norm(s: str) -> str:
+    """Normalize strings for case-insensitive matching."""
     return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
 
 def _build_name_index() -> None:
+    """Populate the alias index from RecentPics rows."""
     global _NAME_INDEX
     _NAME_INDEX = {}
     base = settings.show_cache_dir
@@ -297,6 +310,7 @@ def _build_name_index() -> None:
             continue
 
 def _resolve_cat_id(query: str) -> Optional[int]:
+    """Resolve a fuzzy cat query into an ID using the alias index."""
     m = re.match(r"\s*(\d+)[\.|\s]", query or "")
     if m:
         try:
@@ -314,6 +328,7 @@ def _resolve_cat_id(query: str) -> Optional[int]:
     return None
 
 async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Optional[bytes], Optional[dict]]:
+    """Return and remove one cached image entry, optionally refilling from Sheets."""
     cid = _cat_id_from_full(full_name)
     if cid is None:
         cid = _resolve_cat_id(full_name)
@@ -364,6 +379,7 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
     return data, meta
 
 async def warm_cache_on_boot() -> None:
+    """Background task that primes caches for frequently requested cats."""
     if not settings.show_cache_prefill_on_boot:
         return
     try:

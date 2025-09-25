@@ -1,3 +1,5 @@
+"""Structured logging helpers fan messages to disk and stdout."""
+
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import json
@@ -43,6 +45,7 @@ def _human_line(ts_ct: str, event: str, col1: str = "", col2: str = "", tail: st
 
 
 def log_event(event_data: dict) -> str:
+    """Write to machine (ndjson) and human-readable log files."""
     # Write machine log (raw NDJSON) under monthly folder
     now_dt = datetime.now(TZ)
     month_dir_m = LOG_DIR_MACHINE / f"{now_dt:%Y-%m}"
@@ -218,6 +221,7 @@ def log_event(event_data: dict) -> str:
 
 
 def log_action(name: str, trigger: str, output: str) -> str:
+    """Emit an action log entry with structured columns for quick scanning."""
     return log_event({
         "event": "action",
         "name": name,
@@ -226,4 +230,5 @@ def log_action(name: str, trigger: str, output: str) -> str:
     })
 
 def log_intent(kind: str, confidence: float, **extras: Any) -> str:
+    """Shortcut for logging high-level intent classification results."""
     return log_event({"event": "intent", "kind": kind, "confidence": round(float(confidence), 3), **(extras or {})})

@@ -1,3 +1,5 @@
+"""Parse inbound Discord messages into structured intents for handlers."""
+
 # tomcat/intent_router.py
 from __future__ import annotations
 import asyncio
@@ -44,6 +46,7 @@ from .handlers.dues import handle_check_last_email
 
 # ---- Aliases and optional NLP ------------------------------------------------
 from .aliases import resolve_station_or_cat, alias_vocab
+from .utils.fuzzy import fuzzy_ratio
 from .nlp.model import NLPModel  # returns None if not available
 
 # ---- Time zone handling (America/Chicago) -----------------------------------
@@ -61,18 +64,78 @@ except Exception:
     _BOT_ID_INT = 0
 BOT_MENTION_RE = re.compile(rf"<@!?{_BOT_ID_INT}>") if _BOT_ID_INT else None
 
+WAKE_WORDS = [
+    "tomcat",
+    "tom cat",
+    "tom-cat",
+    "thomas cat",
+    "tommy cat",
+    "tomcat,",
+    "tomcat.",
+    "tomcat!",
+    "tomcat?",
+    "tom cat,",
+    "tom cat.",
+]
+WAKE_THRESHOLD = 82
+
+
+def _first_token(text: str) -> Tuple[str, str]:
+    """Split the first whitespace-delimited token off a message."""
+    m = re.match(r"^\s*([^\s]+)(.*)$", text or "")
+    if not m:
+        return "", text or ""
+    return m.group(1), m.group(2)
+
+
+def _normalize_wake_token(token: str) -> str:
+    """Lowercase and strip punctuation so wake words can be compared."""
+    return re.sub(r"[^a-z0-9]", "", (token or "").lower())
+
+
+def _matches_wake_word(text: str) -> bool:
+    """Return True when the message text starts with the bot wake word."""
+    if TOMCAT_PREFIX.search(text):
+        return True
+    token, _ = _first_token(text)
+    candidate = _normalize_wake_token(token)
+    if not candidate:
+        return False
+    for wake in WAKE_WORDS:
+        target = _normalize_wake_token(wake)
+        if fuzzy_ratio(candidate, target) >= WAKE_THRESHOLD:
+            return True
+    return False
+
+
+def _strip_wake_word(text: str) -> str:
+    """Remove the wake word prefix so routers can parse the command body."""
+    if TOMCAT_PREFIX.search(text):
+        return TOMCAT_PREFIX.sub("", text, count=1).lstrip(" \t\n,:-").strip()
+    token, rest = _first_token(text)
+    candidate = _normalize_wake_token(token)
+    if not candidate:
+        return text
+    for wake in WAKE_WORDS:
+        target = _normalize_wake_token(wake)
+        if fuzzy_ratio(candidate, target) >= WAKE_THRESHOLD:
+            return rest.lstrip(" \t\n,:-")
+    return text
+
 # ==============================================================================
 # Intent event and router
 # ==============================================================================
 
 
 class Intent:
+    """Lightweight intent struct passed into downstream handlers."""
     def __init__(self, type: str, data: Dict[str, Any]):
         self.type = type
         self.data = data
 
 @dataclass
 class IntentEvent:
+    """Internal representation of a message + parsed metadata."""
     type: str                      # "show_photo" | "who_is" | "cv_identify" | "cv_detect" | "cv_crop" | "feed_update" | "sub_request" | "sub_accept" | "none"
     confidence: float
     channel_id: int
@@ -212,6 +275,7 @@ class ClarifyView(discord.ui.View):
 # ------------------------------------------------------------------------------
 
 class IntentRouter:
+    """Route Discord messages through the NLP/alias pipelines to handlers."""
     def __init__(self):
         # ring buffer: per (channel_id, user_id) last ~100 rows
         self._buf: Dict[Tuple[int,int], Deque[MachineRow]] = defaultdict(lambda: deque(maxlen=100))
@@ -345,6 +409,7 @@ class IntentRouter:
     async def _analyze_with_context(self, row: MachineRow, message: discord.Message) -> Optional[IntentEvent]:
         trace: List[str] = []
         text = row["text_norm"]
+        raw_text = row.get("text", message.content or "")
         has_image = row["has_image"]
         # Feeding channels: union of ch_feeding_team and allowed_feeding_channel_ids
         feed_ids = set(int(x) for x in (getattr(settings, "allowed_feeding_channel_ids", []) or []))
@@ -357,10 +422,10 @@ class IntentRouter:
         in_feeding = int(row["channel_id"]) in feed_ids if feed_ids else False
 
         # Treat wake signals: mention, wake word, or DM as addressed to the bot
-        addressed = bool(TOMCAT_PREFIX.search(text) or self._is_dm(message) or self._is_bot_mentioned(message))
+        addressed = bool(_matches_wake_word(raw_text) or self._is_dm(message) or self._is_bot_mentioned(message))
         if self._is_dm(message):
             trace.append("wake:dm")
-        elif TOMCAT_PREFIX.search(text):
+        elif _matches_wake_word(raw_text):
             trace.append("wake:prefix")
         elif self._is_bot_mentioned(message):
             trace.append("wake:mention")
@@ -368,7 +433,7 @@ class IntentRouter:
         # 1) TomCat commands first (show / who / identify) when addressed
         if addressed:
             # strip wake tokens
-            text_wo = self._strip_wake_tokens(text, message)
+            text_wo = self._strip_wake_tokens(raw_text, message)
             # Silent mode command: requires TomCat prefix
             m = SILENT_CMD.search(text_wo)
             if m:
@@ -589,7 +654,7 @@ class IntentRouter:
 
 
 
-            # Feeding inquiry: now requires addressing (wake/mention/DM)
+            # Feeding inquiry requires addressing (wake/mention/DM)
             if FEEDING_CHECK_RE.search(text_wo):
                 return IntentEvent(
                     type="feeding_status", confidence=0.95,
@@ -632,7 +697,7 @@ class IntentRouter:
             # cv: identify
             if IDENT_PAT.search(text_wo):
                 # cv identify/detect/crop need an image. Accept if:
-                # - attachment present now
+                # - attachment already present
                 # - message is a reply (handler will resolve image from the referenced message)
                 # - last image by same user in the same channel within 30 seconds
                 if has_image:
@@ -803,7 +868,7 @@ class IntentRouter:
                 station_only_list = [best]
         if station_only_list and in_feeding:
             # If they included "fed" above we already returned. This is the “mike” alone case.
-            # If there’s an image now, accept. Else, look back (5m). Else set pending.
+            # If an image is attached, accept. Else, look back (5m). Else set pending.
             if has_image:
                 return IntentEvent(
                     type="feed_update", confidence=0.9,
@@ -904,7 +969,7 @@ class IntentRouter:
 
         # Commands
         if event.type == "show_photo" and event.cat_name:
-            # reuse your cats handler
+            # reuse the cats handler
             await handle_cat_photo(_intent("cat_photo", {"name": event.cat_name}), ctx)
             return
 
@@ -1013,7 +1078,7 @@ class IntentRouter:
             return
         
         if event.type == "profiles_create":
-            m = CREATE_PROFILES_RE.search(TOMCAT_PREFIX.sub("", event.text, count=1).strip())
+            m = CREATE_PROFILES_RE.search(self._strip_wake_tokens(event.text or "", message))
             if m:
                 start_id = int(m.group(1))
                 end_id = int(m.group(2) or m.group(1))
@@ -1021,7 +1086,7 @@ class IntentRouter:
                 return
 
         if event.type == "profile_update_one":
-            m = UPDATE_PROFILE_RE.search(TOMCAT_PREFIX.sub("", event.text, count=1).strip())
+            m = UPDATE_PROFILE_RE.search(self._strip_wake_tokens(event.text or "", message))
             if m:
                 await handle_profile_update_one(_intent("profile_update_one", {"cat_id": m.group(1)}), ctx)
                 return
@@ -1065,15 +1130,20 @@ class IntentRouter:
             return
 
         if event.type == "silent_mode":
-            # Admin-only; no chatter on success, because silent mode rules.
+            # Admin-only; acknowledge with 👍 so the user knows it was applied.
             author = message.author
-            perms = getattr(getattr(author, "guild_permissions", None), "administrator", False)
-            m = SILENT_CMD.search(TOMCAT_PREFIX.sub("", event.text, count=1))
+            is_admin = (int(getattr(author, 'id', 0)) in (getattr(settings, 'admin_ids', []) or [])) or \
+                       getattr(getattr(author, "guild_permissions", None), "administrator", False)
+            m = SILENT_CMD.search(self._strip_wake_tokens(event.text or "", message))
             on_str = m.group(1).lower() if m else ""
             on = (on_str == "on")
-            if perms:
+            if is_admin:
                 settings.silent_mode = on
                 log_action("silent_mode", f"by={author.id}", "on" if on else "off")
+                try:
+                    await message.add_reaction("👍")
+                except Exception:
+                    pass
             else:
                 log_action("silent_mode_denied", f"by={author.id}", "not_admin")
             return
@@ -1249,7 +1319,7 @@ class IntentRouter:
         return dt.date().isoformat()
 
     def _extract_dates(self, text: str) -> List[str]:
-        """Basic rules you requested: yesterday/last night, this/next weekday, 21st-28th."""
+        """Basic date rules: yesterday/last night, this/next weekday, 21st-28th."""
         text = text.lower()
         today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
         out: List[date] = []
@@ -1273,7 +1343,7 @@ class IntentRouter:
         if m:
             word = m.group(2)[:3]
             target = self._next_weekday(today, WEEKDAYS[word])
-            # force “this friday” to mean next occurrence, per your rule
+            # interpret “this friday” as the next occurrence, matching the configured rule
             out.append(target)
 
         # numeric range “21st to 28th”, “21-28”
@@ -1378,7 +1448,9 @@ class IntentRouter:
 
     # ---------- addressing helpers ----------
     def _is_dm(self, message: discord.Message) -> bool:
-        return isinstance(getattr(message, "channel", None), discord.DMChannel)
+        ch = getattr(message, "channel", None)
+        real_ch = getattr(ch, "_real", ch)
+        return isinstance(real_ch, discord.DMChannel)
 
     def _is_bot_mentioned(self, message: discord.Message) -> bool:
         if _BOT_ID_INT:
@@ -1396,8 +1468,8 @@ class IntentRouter:
                 pass
         return False
 
-    def _strip_wake_tokens(self, text_norm: str, message: discord.Message) -> str:
-        s = TOMCAT_PREFIX.sub("", text_norm, count=1).strip()
+    def _strip_wake_tokens(self, text_raw: str, message: discord.Message) -> str:
+        s = _strip_wake_word(text_raw or "")
         if _BOT_ID_INT:
             try:
                 s = re.sub(rf"\s*<@!?{_BOT_ID_INT}>\s*[:,\-]*\s*", " ", s).strip()

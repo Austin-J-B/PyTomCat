@@ -1,5 +1,8 @@
+"""Spam heuristics, NLP backstop, and trusted-member exemptions."""
+
 import re
-from typing import Optional
+from collections import defaultdict
+from typing import Optional, Tuple
 
 SPAM_PATTERNS = [
     re.compile(r"free\s+.*(mac\s*book|macbook|iphone|ps\s*5|playstation)\b", re.I),
@@ -24,8 +27,23 @@ except Exception:
         return phrase.lower() in (text or "").lower()
 
 _nlp_cached = None
+_MESSAGE_COUNTS: dict[Tuple[int, int], int] = defaultdict(int)
+
+
+def _message_count_key(message) -> Tuple[int, int]:
+    """Produce a (guild_id, user_id) tuple for per-user spam heuristics."""
+    try:
+        guild_id = int(getattr(getattr(message, 'guild', None), 'id', 0) or 0)
+    except Exception:
+        guild_id = 0
+    try:
+        user_id = int(getattr(getattr(message, 'author', None), 'id', 0) or 0)
+    except Exception:
+        user_id = 0
+    return (guild_id, user_id)
 
 def _nlp_predict_spam(settings, text: str) -> float:
+    """Run the optional NLP model and return a spam probability."""
     global _nlp_cached
     if _nlp_cached is None:
         try:
@@ -41,11 +59,44 @@ def _nlp_predict_spam(settings, text: str) -> float:
     except Exception:
         return 0.0
 
-def _is_trusted_member(message, settings) -> Optional[str]:
+def _has_privileged_role(member, settings) -> Optional[str]:
+    """Check for role-based exemptions and explain the trust reason."""
+    try:
+        roles = getattr(member, 'roles', []) or []
+        trusted_list = [s.lower() for s in (getattr(settings, 'trusted_role_names', []) or [])]
+        for r in roles:
+            name = str(getattr(r, 'name', '')).lower()
+            if any(token in name for token in trusted_list):
+                return "trusted_role"
+    except Exception:
+        pass
+    return None
+
+
+def _is_trusted_member(message, settings, *, prior_count: int = 0) -> Optional[str]:
+    """Apply role/account-age/message-count gates before running spam rules."""
     try:
         member = getattr(message, 'author', None)
         if not member:
             return False
+        try:
+            if getattr(member, 'guild_permissions', None):
+                perms = member.guild_permissions
+                if getattr(perms, 'administrator', False):
+                    return "trusted_admin"
+                if getattr(perms, 'manage_guild', False) or getattr(perms, 'ban_members', False):
+                    return "trusted_moderator"
+        except Exception:
+            pass
+        admin_ids = {int(x) for x in (getattr(settings, 'admin_ids', []) or [])}
+        try:
+            if admin_ids and int(getattr(member, 'id', 0)) in admin_ids:
+                return "trusted_admin"
+        except Exception:
+            pass
+        msg_threshold = int(getattr(settings, 'spam_trust_message_threshold', 50) or 50)
+        if prior_count >= msg_threshold:
+            return "trusted_message_count"
         # Account age gate
         if getattr(member, 'created_at', None) is not None:
             from datetime import datetime, timezone
@@ -53,20 +104,22 @@ def _is_trusted_member(message, settings) -> Optional[str]:
             if age_days >= int(getattr(settings, 'spam_min_account_days', 30) or 30):
                 return "trusted_age"
         # Trusted roles
-        trusted_list = [s.lower() for s in (getattr(settings, 'trusted_role_names', []) or [])]
-        for r in getattr(member, 'roles', []) or []:
-            rname = str(getattr(r, 'name', '')).lower()
-            if any(t in rname for t in trusted_list):
-                return "trusted_role"
+        role_reason = _has_privileged_role(member, settings)
+        if role_reason:
+            return role_reason
         return None
     except Exception:
         return False
 
 def check_spam(message, settings) -> tuple[bool, str]:
+    """Main spam check: returns (is_spam, reason)."""
     text = (getattr(message, 'content', None) or '').strip()
     if not text:
         return (False, "empty")
-    trust = _is_trusted_member(message, settings)
+    key = _message_count_key(message)
+    prior_count = _MESSAGE_COUNTS.get(key, 0)
+    _MESSAGE_COUNTS[key] = prior_count + 1
+    trust = _is_trusted_member(message, settings, prior_count=prior_count)
     if trust:
         return (False, trust)
     # Strong indicators
@@ -102,11 +155,3 @@ def check_spam(message, settings) -> tuple[bool, str]:
             reason = "nlp"
         return (True, reason)
     return (False, "none")
-
-def is_spam(text: str) -> bool:
-    # Legacy check for any callers using plain text
-    if not text:
-        return False
-    if EMAIL_RE.search(text) or PHONE_RE.search(text):
-        return True
-    return any(p.search(text or "") for p in SPAM_PATTERNS)

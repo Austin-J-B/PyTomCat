@@ -1,3 +1,5 @@
+"""Handlers that answer cat lookup requests and manage show-photo embeds."""
+
 from __future__ import annotations
 import discord
 from typing import Any
@@ -29,6 +31,7 @@ def _display_name(full: str) -> str:
 
 
 class PhotoView(discord.ui.View):
+    """Reusable view that lets users page through cached cat photos."""
     def __init__(self, cat_name: str):
         super().__init__(timeout=None)  # no expiry while the bot is running
         self.cat_name = cat_name
@@ -112,6 +115,7 @@ class PhotoView(discord.ui.View):
 
 
 def _add_field(embed: discord.Embed, name: str, value: Any, inline: bool = True) -> None:
+    """Helper that conditionally adds trimmed embed fields."""
     if value is None:
         return
     s = str(value).strip()
@@ -120,10 +124,11 @@ def _add_field(embed: discord.Embed, name: str, value: Any, inline: bool = True)
     embed.add_field(name=name, value=s[:1024], inline=inline)
 
 async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
+    """Serve a random photo and profile snapshot for the requested cat."""
     ch: discord.abc.MessageableChannel = ctx["channel"]
     name = intent.data.get("name", "").strip()
     if not name:
-        await ch.send("Who am I showing? Try: `TomCat, show Microwave`")
+        await ch.send("Which cat would you like to see? Ex: `TomCat, show Microwave`")
         return
 
     # Try cached photo first for speed without hitting Sheets
@@ -208,6 +213,7 @@ async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
 
 
 async def _download_to_temp(url: str, dest_dir: str) -> str:
+    """Fetch an image URL to a temp file so crops can run locally."""
     os.makedirs(dest_dir, exist_ok=True)
     fname = url.split("?")[0].split("/")[-1] or "photo.jpg"
     path = os.path.join(dest_dir, f"show_{hash(url)}_{fname}")
@@ -222,10 +228,11 @@ async def _download_to_temp(url: str, dest_dir: str) -> str:
 
 
 async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
+    """Send a single photo embed with manual paging buttons."""
     ch: discord.abc.MessageableChannel = ctx["channel"]
     name = intent.data.get("name", "").strip()
     if not name:
-        await ch.send("Which cat? Ex: `TomCat, show me Microwave`")
+        await ch.send("Which cat would you like to see? Ex: `TomCat, show me Microwave`")
         return
 
     # Try cache first without hitting Sheets
@@ -316,10 +323,11 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
 
 # Optional: tiny wrapper to expose a strict "who is" alias if you want a separate name
 async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
+    """Render a cat profile card sourced from cached Sheets data."""
     ch: discord.abc.MessageableChannel = ctx["channel"]
     name = intent.data.get("name", "").strip()
     if not name:
-        await ch.send("Which cat? Ex: `TomCat, who is Microwave`")
+        await ch.send("Which cat would you like to see? Ex: `TomCat, who is Microwave`")
         return
     # Prefer cached profile snapshot to avoid live sheet; fall back to sheet builder
     prof = PC.get_profile(name)

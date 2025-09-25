@@ -1,8 +1,13 @@
 # tomcat/aliases.py
+"""Centralized alias + fuzzy matching helpers for cats and feeding stations."""
+
 from __future__ import annotations
+import csv
+import os
 import re
-from typing import Dict, List, Optional, Iterable, Tuple
 import time
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple
 try:
     # Sheets + config available in this runtime; used for dynamic aliases
     from .config import settings  # type: ignore
@@ -11,11 +16,15 @@ except Exception:
     settings = None  # type: ignore
     sheets_client = None  # type: ignore
 
+from .utils.fuzzy import best_match, fuzzy_ratio
+
+# Module-level caches keep nickname lookups inexpensive across handler calls.
+
 # One canonical place for both cat and station aliases.
-# Fill these with your real data pulled from v5.6 config.js.
+# Populate these with data pulled from v5.6 config.js.
 # All keys must be lowercase; values are canonical display strings.
 
-# Canonical cat names from prior version. We keep aliases minimal for now (self name + normalized variants).
+# Canonical cat names; keep aliases minimal (self name plus normalized variants).
 CAT_NAMES: List[str] = [
     "Microwave", "Twix", "Ford F-150", "Eggs", "Eraser", "Snickers", "Hershey", "Pencil", "Melvin", "Alaska",
     "Laufey", "Faye", "Lionel", "Pencil 2", "Snowball", "Marley", "Bobbie", "Porkchop", "Rolo", "Citlali",
@@ -87,6 +96,11 @@ try:
     _DYN_TTL_SEC = int(getattr(settings, 'cat_aliases_ttl_sec', 60*60*2) or 7200)
 except Exception:
     _DYN_TTL_SEC = 60 * 60 * 2  # default 2 hours
+
+_FALLBACK_CAT_ALIAS_MAP: Dict[str, str] = {}
+_FALLBACK_CAT_ALIAS_PAIRS: List[Tuple[str, str]] = []
+_FALLBACK_CAT_MTIME: float = -1.0
+_FALLBACK_CSV_PATHS: List[Path] = [Path("Catabase - CatDatabase.csv")]
 
 def _parse_full_name_to_display(full: str) -> Optional[str]:
     if not full:
@@ -206,13 +220,79 @@ def _refresh_dyn_aliases(force: bool = False) -> None:
         _DYN_DISPLAY = {}
         _DYN_LAST_TS = now
 
+
+def _ensure_fallback_cat_aliases() -> None:
+    """Populate fallback aliases from the local CSV when dynamic sources miss."""
+    global _FALLBACK_CAT_ALIAS_MAP, _FALLBACK_CAT_ALIAS_PAIRS, _FALLBACK_CAT_MTIME
+    for path in _FALLBACK_CSV_PATHS:
+        try:
+            mtime = os.path.getmtime(path)
+        except FileNotFoundError:
+            continue
+        if _FALLBACK_CAT_ALIAS_MAP and _FALLBACK_CAT_MTIME == mtime:
+            return
+        alias_map: Dict[str, str] = {}
+        with path.open("r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            for row in reader:
+                if not row:
+                    continue
+                disp = _parse_full_name_to_display(row[0])
+                if not disp:
+                    continue
+                variants = set(_alias_variants(disp))
+                variants.add(_normalize(disp))
+                for alias in variants:
+                    alias_norm = (alias or "").strip().lower()
+                    if not alias_norm:
+                        continue
+                    alias_map.setdefault(alias_norm, disp)
+        if alias_map:
+            _FALLBACK_CAT_ALIAS_MAP = alias_map
+            _FALLBACK_CAT_ALIAS_PAIRS = [(alias, name) for alias, name in alias_map.items()]
+            _FALLBACK_CAT_MTIME = mtime
+            return
+    # No CSV available; clear cache so future attempts retry
+    _FALLBACK_CAT_ALIAS_MAP = {}
+    _FALLBACK_CAT_ALIAS_PAIRS = []
+    _FALLBACK_CAT_MTIME = -1.0
+
+
+def _fallback_lookup_cat(text_norm: str, tokens: Iterable[str]) -> Optional[str]:
+    """Attempt to resolve cat names using fallback CSV aliases when needed."""
+    _ensure_fallback_cat_aliases()
+    if not _FALLBACK_CAT_ALIAS_MAP:
+        return None
+
+    candidate_order: List[str] = []
+    for tok in tokens:
+        norm_tok = (tok or "").strip().lower()
+        if norm_tok and norm_tok not in candidate_order:
+            candidate_order.append(norm_tok)
+
+    norm_full = (text_norm or "").strip().lower()
+    if norm_full and norm_full not in candidate_order:
+        candidate_order.append(norm_full)
+
+    for cand in candidate_order:
+        if cand in _FALLBACK_CAT_ALIAS_MAP:
+            return _FALLBACK_CAT_ALIAS_MAP[cand]
+
+    for cand in candidate_order:
+        match = best_match(cand, _FALLBACK_CAT_ALIAS_PAIRS, threshold=86)
+        if match:
+            return match[0]
+
+    return None
+
 _STATION_ALIASES = {
     # Prior config stations
     "west hall": ["west hall", "west", "hall"],
     "maintenance": ["maintenance", "maint"],
     "business": ["business", "coba"],
     "the greens": ["the greens", "greens", "green", "grink", "grinks"],
-    "hop": ["hop", "pecan", "thwop", "thop", "heights"],  # Heights on Pecan
+    "hop": ["hop", "pecan", "thwop", "thop", "heights", "hops"],  # Heights on Pecan
     "lot 50": ["lot 50", "lot50", "l50", "lot"],
     "mary kay and zen": ["mary kay and zen", "mkz", "zen", "mary kay", "mary", "kay"],
     # Some stations are also cat names in the list; include them if they are real stations too
@@ -238,21 +318,13 @@ STOPWORDS = {"the", "a", "an", "station", "lot", "hall"}
 
 
 def alias_vocab() -> Dict[str, List[str]]:
-    # Refresh dynamic aliases periodically
     _refresh_dyn_aliases(force=False)
-    # Merge dynamic cats (primary) with static fallback
-    disp = {**_DISPLAY}
-    for k, v in _DYN_DISPLAY.items():
-        disp[k] = v
-    cat_keys = set(list(_CAT_ALIASES.keys())) | set(list(_DYN_DISPLAY.keys()))
-    cats = sorted({ disp.get(k, k.capitalize()) for k in cat_keys })
-    stations = sorted({ disp.get(k, k.capitalize()) for k in _STATION_ALIASES.keys() })
-    all_names = sorted({ disp.get(k, k.capitalize()) for k in set(list(cat_keys) + list(_STATION_ALIASES.keys())) })
-    return {
-        "cats": cats,
-        "stations": stations,
-        "all": all_names,
-    }
+    cat_keys = set(_CAT_ALIASES.keys()) | set(_DYN_CAT_ALIASES.keys())
+    station_keys = set(_STATION_ALIASES.keys())
+    cats = sorted({ _display_for(k) for k in cat_keys })
+    stations = sorted({ _display_for(k) for k in station_keys })
+    all_names = sorted({ _display_for(k) for k in (cat_keys | station_keys) })
+    return {"cats": cats, "stations": stations, "all": all_names}
 
 def refresh_aliases_now() -> None:
     """Force a refresh of dynamic cat aliases from the sheet or CSV."""
@@ -271,107 +343,124 @@ def _words(s: str) -> List[str]:
 def _normalize(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
 
+
+def _display_for(key: str) -> str:
+    key_norm = (key or "").lower()
+    if key_norm in _DYN_DISPLAY:
+        return _DYN_DISPLAY[key_norm]
+    return _DISPLAY.get(key_norm, key.title())
+
+
+def _merged_cat_aliases() -> Dict[str, List[str]]:
+    table = {k: list(v) for k, v in _CAT_ALIASES.items()}
+    for key, aliases in _DYN_CAT_ALIASES.items():
+        table[key] = list(aliases)
+    return table
+
+
+def _merged_station_aliases() -> Dict[str, List[str]]:
+    return {k: list(v) for k, v in _STATION_ALIASES.items()}
+
+
+def _alias_pairs(table: Dict[str, List[str]]) -> List[Tuple[str, str]]:
+    pairs: List[Tuple[str, str]] = []
+    for key, aliases in table.items():
+        seen: set[str] = set()
+        for alias in list(aliases) + [key]:
+            alias_norm = (alias or "").strip()
+            if not alias_norm:
+                continue
+            lowered = alias_norm.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            pairs.append((alias_norm, key))
+    return pairs
+
+
+def _resolve_exact_or_prefix(table: Dict[str, List[str]], text_norm: str, tokens: Iterable[str]) -> Optional[str]:
+    for key, aliases in table.items():
+        for alias in list(aliases) + [key]:
+            alias_norm = (alias or "").strip()
+            if alias_norm and re.search(rf"\b{re.escape(alias_norm)}\b", text_norm):
+                return key
+
+    key_tokens: Dict[str, List[str]] = {}
+    for key, aliases in table.items():
+        toks: List[str] = []
+        for alias in aliases:
+            toks.extend(_words(alias))
+        key_tokens[key] = list({t for t in toks if t})
+
+    hits: Dict[str, int] = {}
+    for tok in tokens:
+        if len(tok) < 3:
+            continue
+        matched = [key for key, toks in key_tokens.items() if any(t.startswith(tok) for t in toks)]
+        if len(matched) == 1:
+            key = matched[0]
+            hits[key] = hits.get(key, 0) + 1
+    if len(hits) == 1:
+        return next(iter(hits.keys()))
+    return None
+
+
 def resolve_station_or_cat(text: str, want: str) -> Optional[str]:
-    """Deterministic resolution: whole-word alias first; else unambiguous prefix of an alias token.
-    Supports partial nicknames like 'micro' → Microwave, 'tito' → Garfield.
-    """
-    # Ensure dynamic aliases are fresh enough
     _refresh_dyn_aliases(force=False)
     text_norm = _normalize(text)
-    tokens = set(_words(text_norm))
+    tokens = [tok for tok in _words(text_norm) if tok not in STOPWORDS]
 
-    def _resolve(table: Dict[str, List[str]]) -> Optional[str]:
-        # 1) whole-word alias match
-        for key, vals in table.items():
-            for v in vals:
-                if v and re.search(rf"\b{re.escape(v)}\b", text_norm):
-                    return _DISPLAY.get(key, key.capitalize())
-        # 2) unambiguous prefix of alias tokens (length ≥3)
-        hits: Dict[str, int] = {}
-        # Precompute token lists per key
-        key_tokens: Dict[str, List[str]] = {}
-        for key, vals in table.items():
-            toks: List[str] = []
-            for v in vals:
-                toks.extend(_words(v))
-            key_tokens[key] = list({t for t in toks if t})
+    table = _merged_cat_aliases() if want == "cat" else _merged_station_aliases()
+    key = _resolve_exact_or_prefix(table, text_norm, tokens)
+    if key:
+        return _display_for(key)
 
-        for tok in tokens:
-            if len(tok) < 3:
-                continue
-            matched_keys = []
-            for key, toks in key_tokens.items():
-                if any(t.startswith(tok) for t in toks):
-                    matched_keys.append(key)
-            if len(matched_keys) == 1:
-                k = matched_keys[0]
-                hits[k] = hits.get(k, 0) + 1
-        if len(hits) == 1:
-            only = next(iter(hits.keys()))
-            return _DISPLAY.get(only, only.capitalize())
-        return None
+    alias_candidates = _alias_pairs(table)
+    candidates = [text_norm] + tokens
+    for cand in candidates:
+        if not cand or len(cand) < 2:
+            continue
+        match = best_match(cand, alias_candidates, threshold=82)
+        if match:
+            return _display_for(match[0])
 
     if want == "cat":
-        # Combine dynamic + static; dynamic wins on key conflict
-        table: Dict[str, List[str]] = {**_CAT_ALIASES}
-        for k, v in _DYN_CAT_ALIASES.items():
-            table[k] = v
-        return _resolve(table)
-    else:
-        return _resolve(_STATION_ALIASES)
+        fallback = _fallback_lookup_cat(text_norm, tokens)
+        if fallback:
+            return fallback
+    return None
+
 
 def resolve_stations(text: str) -> List[str]:
-    """
-    Return unique canonical station display names found in text.
-    Deterministic matching:
-      1) Whole-word alias or key match
-      2) Unambiguous prefix match (3–6 chars) across alias set
-    Fuzzy matching lives upstream in the intent router.
-    """
-    t = f" {_norm(text)} "
+    _refresh_dyn_aliases(force=False)
+    text_norm = _norm(text)
+    tokens = [tok for tok in _words(text) if tok not in STOPWORDS]
+    table = _merged_station_aliases()
+
     found: List[str] = []
+    found_keys: set[str] = set()
+    padded = f" {text_norm} "
 
-    # 1) exact/alias hits first
-    for key, aliases in _STATION_ALIASES.items():
-        cands = [key] + list(aliases)
-        for a in cands:
-            a_norm = _norm(a)
-            if a_norm and f" {a_norm} " in t:
-                found.append(_DISPLAY.get(key, key.capitalize()))
+    for key, aliases in table.items():
+        for alias in list(aliases) + [key]:
+            alias_norm = _norm(alias)
+            if alias_norm and f" {alias_norm} " in padded:
+                if key not in found_keys:
+                    found_keys.add(key)
+                    found.append(_display_for(key))
                 break
 
-    # 2) unique prefix hits for unresolved keys
-    already = set(found)
-    tokens = set(tok for tok in _words(text) if tok not in STOPWORDS)
-    for key, aliases in _STATION_ALIASES.items():
-        disp = _DISPLAY.get(key, key.capitalize())
-        if disp in already:
-            continue
-        cands = [key] + list(aliases)
-        cand_tokens = [t for w in cands for t in _words(w) if t and t not in STOPWORDS]
-        prefixes = { t[: max(3, min(len(t), 6)) ] for t in cand_tokens }
-        hits = [tok for tok in tokens if any(tok.startswith(pfx) for pfx in prefixes)]
-        if not hits:
-            continue
-        # ensure unambiguous
-        ambiguous = False
-        for other, other_aliases in _STATION_ALIASES.items():
-            if other == key:
-                continue
-            other_cands = [other] + list(other_aliases)
-            other_tokens = [t for w in other_cands for t in _words(w) if t and t not in STOPWORDS]
-            other_pfx = { t[: max(3, min(len(t), 6)) ] for t in other_tokens }
-            if any(tok.startswith(p) for tok in hits for p in other_pfx):
-                ambiguous = True
-                break
-        if not ambiguous:
+    for tok in tokens:
+        disp = resolve_station_or_cat(tok, "station")
+        if disp and disp not in found:
             found.append(disp)
 
-    # dedupe preserving order
-    seen = set()
-    out: List[str] = []
-    for name in found:
-        if name not in seen:
-            seen.add(name)
-            out.append(name)
-    return out
+    if not found:
+        alias_candidates = _alias_pairs(table)
+        for cand in tokens:
+            match = best_match(cand, alias_candidates, threshold=82)
+            if match:
+                disp = _display_for(match[0])
+                if disp not in found:
+                    found.append(disp)
+    return found

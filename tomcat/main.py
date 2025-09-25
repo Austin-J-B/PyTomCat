@@ -1,3 +1,5 @@
+"""Discord bot bootstrap: intents, startup tasks, and router wiring."""
+
 from __future__ import annotations
 import asyncio
 import time
@@ -8,8 +10,7 @@ from discord.ext import commands
 from datetime import datetime, timezone
 
 from .config import settings
-from .logger import log_event, log_action  # noqa: F401  #If unused right now
-from .spam import is_spam
+from .logger import log_event, log_action  # noqa: F401  # imported for shared use
 from .intent_router import IntentRouter, Intent
 from .handlers.misc import handle_channel_image_intake as _handle_image_intake, start_profile_scheduler
 from .services.show_cache import warm_cache_on_boot
@@ -17,6 +18,8 @@ from .services.profile_cache import start_profile_cache_scheduler
 
 
 intent_router = IntentRouter()
+
+SPAM_ALERTS: Dict[int, Dict[str, int]] = {}
 
 # ------- Discord intents & bot -------
 intents = discord.Intents.default()
@@ -28,7 +31,7 @@ intents.reactions = True
 bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 
 # ------- Import real handlers -------
-# Cats / Feeding and Dues already match (intent, ctx) in your tree
+# Cats / Feeding and Dues handlers already use the (intent, ctx) signature
 from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
 from .handlers.feeding import start_feeding_scheduler, handle_feeding_inquiry as _handle_feeding_status
 # Dues: no background scheduler; admin-only Gmail test is routed directly from the router
@@ -42,6 +45,7 @@ from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identif
 
 # --- Muted wrappers: run handlers but drop outbound sends ---
 class _MuteChannel:
+    """Proxy channel object that logs outbound messages instead of sending."""
     def __init__(self, real, label_fn):
         self._real = real
         self._label_fn = label_fn
@@ -66,29 +70,43 @@ class _MuteChannel:
         )
         return None  # mimic coroutine
 
+    def __getattr__(self, name):
+        # Delegate unknown attributes/methods to the real channel
+        return getattr(self._real, name)
+
 class _MuteMessage:
+    """Lightweight message proxy used when silent mode blocks replies."""
     def __init__(self, real_msg, muted_channel):
         # Keep attributes handlers touch; forward everything else if needed
         self._real = real_msg
         self.channel = muted_channel
         self.author = real_msg.author
+        # Preserve common identifiers used by router/handlers
+        self.id = getattr(real_msg, "id", None)
+        self.guild = getattr(real_msg, "guild", None)
         self.content = real_msg.content
         self.clean_content = getattr(real_msg, "clean_content", self.content)
         self.attachments = getattr(real_msg, "attachments", [])
 
+    def __getattr__(self, name):
+        # Delegate any other attributes to the real discord.Message
+        return getattr(self._real, name)
 
 
 async def _handle_misc_adapter(intent: Intent, ctx: Dict[str, Any]) -> None:
+    """Bridge router intent signature into the legacy misc handler."""
     message: discord.Message = ctx["message"]
     await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
 
 
 def _user_label(u: Union[discord.Member, discord.User]) -> str:
+    """Return a human readable label for logging/alerts."""
     return getattr(u, "name", "unknown")
 
 
 
 def _channel_label(ch: discord.abc.Messageable) -> str:
+    """Pretty-print channels/threads for logs and muted output."""
     # Guild text channel
     if isinstance(ch, discord.TextChannel):
         return f"#{ch.name}"
@@ -117,11 +135,11 @@ async def handle_dues_notice(intent: Intent, ctx: Dict[str, Any]) -> None:
     # Deprecated placeholder; kept for compatibility if referenced elsewhere
     pass
 
-# Your admin handler expects (args, ctx) where args == intent.data
+# Admin handler expects (args, ctx) where args == intent.data
 async def handle_silent_mode(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_silent_mode_raw(intent.data, ctx)
 
-# Your misc handler expects (message, *, now_ts, allow_in_channels)
+# Misc handler expects (message, *, now_ts, allow_in_channels)
 async def handle_misc(intent: Intent, ctx: Dict[str, Any]) -> None:
     message: discord.Message = ctx["message"]
     await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
@@ -149,6 +167,7 @@ async def _refresh_invites(guild: discord.Guild):
 # ------- Lifecycle -------
 @bot.event
 async def on_ready():
+    """Discord callback fired once the bot connects."""
     print(f"[TomCat] Logged in as {bot.user} in {len(bot.guilds)} guild(s).")
     # Machine + human “ONLINE” handled by logger.log_event
     log_event({
@@ -222,9 +241,10 @@ async def on_ready():
 # ------- Message entrypoint -------
 @bot.event
 async def on_message(message: discord.Message):
+    """Main message hook: run anti-spam and route intents."""
     if message.author.bot:
         return
-        
+
 
     # Human + machine log of the incoming message
     log_event({
@@ -273,10 +293,27 @@ async def on_message(message: discord.Message):
                         f"User: {uname} ({getattr(message.author,'id','')})\n"
                         "Message:\n"
                         f"{message.content or ''}\n\n"
-                        f"{mention}"
+                        f"{mention}\n"
+                        "Click the ❌ reaction below to ban this user."
                     ).strip()
-                    from .utils.sender import safe_send
-                    await safe_send(ch, body)
+                    alert_msg = None
+                    if getattr(settings, "silent_mode", False):
+                        snippet = body.replace("\n", " ")[:120]
+                        log_action("send_suppressed", f"ch={getattr(ch,'id',None)}", snippet)
+                    else:
+                        try:
+                            alert_msg = await ch.send(body)
+                        except Exception as send_exc:
+                            log_action("spam_alert_error", f"ch={getattr(ch,'id',None)}", str(send_exc))
+                    if alert_msg:
+                        try:
+                            await alert_msg.add_reaction('❌')
+                            target_id = int(getattr(message.author, 'id', 0) or 0)
+                            guild_id = int(getattr(message.guild, 'id', 0) or 0)
+                            if target_id:
+                                SPAM_ALERTS[alert_msg.id] = {"user_id": target_id, "guild_id": guild_id}
+                        except Exception as react_exc:
+                            log_action("spam_alert_react_error", "add_reaction", str(react_exc))
         except Exception:
             pass
         return
@@ -310,13 +347,68 @@ async def on_message(message: discord.Message):
         await intent_router.handle_message(muted_msg, ctx)
         return
 
-    # Normal path
     await intent_router.handle_message(message, ctx)
+
+
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    """Handle reaction-based workflows (feeding + spam ban)."""
+    if payload.user_id == getattr(bot.user, 'id', None):
+        return
+    data = SPAM_ALERTS.get(payload.message_id)
+    if not data:
+        return
+    emoji_str = str(payload.emoji)
+    if emoji_str not in {'❌', '✖', '✖️'}:
+        return
+    guild_id = payload.guild_id or data.get('guild_id', 0)
+    guild = bot.get_guild(guild_id) if guild_id else None
+    if not guild:
+        return
+    # Prevent the accused user from banning themselves via reaction
+    if payload.user_id == data.get('user_id'):
+        return
+    try:
+        member = guild.get_member(payload.user_id) or await guild.fetch_member(payload.user_id)
+    except Exception:
+        member = None
+    if not member:
+        return
+    admin_ids = {int(x) for x in (getattr(settings, 'admin_ids', []) or [])}
+    can_ban = False
+    if payload.user_id in admin_ids:
+        can_ban = True
+    else:
+        ban_role_tokens = [s.lower() for s in (getattr(settings, 'spam_ban_role_names', []) or [])]
+        for role in getattr(member, 'roles', []) or []:
+            rname = str(getattr(role, 'name', '')).lower()
+            if any(tok in rname for tok in ban_role_tokens):
+                can_ban = True
+                break
+    if not can_ban:
+        return
+    target_id = data.get('user_id')
+    if not target_id:
+        return
+    try:
+        target_member = guild.get_member(target_id) or await guild.fetch_member(target_id)
+    except Exception:
+        target_member = None
+    try:
+        if target_member:
+            await guild.ban(target_member, reason="Spam reaction ban")
+        else:
+            await guild.ban(discord.Object(id=target_id), reason="Spam reaction ban")
+        log_action('spam_ban', f"guild={guild_id}", f"user={target_id}")
+        SPAM_ALERTS.pop(payload.message_id, None)
+    except Exception as ban_exc:
+        log_action('spam_ban_error', f"guild={guild_id}", str(ban_exc))
 
 
 # ------- Edit/Delete logging -------
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
+    """Re-run router when users edit messages."""
     try:
         if before.author.bot:
             return
@@ -332,6 +424,7 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
 
 @bot.event
 async def on_message_delete(message: discord.Message):
+    """Log deleted messages for moderation context."""
     try:
         if message.author and message.author.bot:
             return
@@ -348,6 +441,7 @@ async def on_message_delete(message: discord.Message):
 # ------- Member join/leave + invite tracking -------
 @bot.event
 async def on_member_join(member: discord.Member):
+    """Track invite usage and log onboarding events."""
     try:
         guild = member.guild
         # Compute account age in days
@@ -394,6 +488,7 @@ async def on_member_join(member: discord.Member):
 
 @bot.event
 async def on_member_remove(member: discord.Member):
+    """Log when members leave so invite stats stay accurate."""
     try:
         log_event({
             "event": "member_leave",
@@ -407,6 +502,7 @@ async def on_member_remove(member: discord.Member):
 
 @bot.event
 async def on_invite_create(invite: discord.Invite):
+    """Update the invite cache when new invites appear."""
     try:
         g = invite.guild
         if g:
@@ -416,6 +512,7 @@ async def on_invite_create(invite: discord.Invite):
 
 @bot.event
 async def on_invite_delete(invite: discord.Invite):
+    """Remove cached invites when Discord deletes them."""
     try:
         g = invite.guild
         if g:
@@ -457,6 +554,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 
 @bot.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
+    """Keep spam alert reactions tidy when moderators undo them."""
     try:
         ch = bot.get_channel(int(payload.channel_id))
         msg = None

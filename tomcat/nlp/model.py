@@ -1,3 +1,5 @@
+"""Lightweight wrappers around the cached spam NLP model."""
+
 from __future__ import annotations
 from typing import Optional, Tuple, List, Dict, Any
 import math
@@ -18,12 +20,14 @@ _DEFAULT_LABELS = [
 
 class NLPModel:
     def __init__(self, session, tokenizer, labels: List[str]):
+        """Store the ONNX session, tokenizer, and label vocabulary."""
         self.session = session
         self.tokenizer = tokenizer
         self.intent_labels = labels or _DEFAULT_LABELS
 
     @staticmethod
     def maybe_load(settings) -> Optional["NLPModel"]:
+        """Attempt to load the ONNX model/tokenizer; return None if unavailable."""
         model_path = getattr(settings, "nlp_model_path", None)
         tok_path = getattr(settings, "nlp_tokenizer_path", None)
         if not model_path or not tok_path:
@@ -42,6 +46,7 @@ class NLPModel:
 
     # ---------- public API ----------
     def predict_intent(self, text: str) -> Tuple[str, float]:
+        """Score the message against intent hypotheses and return the best match."""
         # Zero‑shot over our label set using MNLI: score entailment for each label hypothesis.
         labels = [
             ("show_photo", [
@@ -75,6 +80,7 @@ class NLPModel:
         return best_label, float(best_p)
 
     def score_entity(self, text: str, vocab: List[str]) -> Tuple[str, float]:
+        """Pick the highest-probability entity from a candidate vocab."""
         best = ""; best_p = 0.0
         for cand in vocab:
             hyp = f"The message is about {cand}."
@@ -85,11 +91,13 @@ class NLPModel:
 
     # Basic spam scorer via zero-shot: returns probability that text is spam
     def predict_spam(self, text: str) -> float:
+        """Return the entailment probability that a message is spam."""
         hyp = "This message is spam."
         return float(self._mnli_entailment_prob(text, hyp))
 
     # ---------- helpers ----------
     def _mnli_entailment_prob(self, premise: str, hypothesis: str) -> float:
+        """Run the MNLI model and return the entailment probability."""
         try:
             enc = self.tokenizer.encode(premise, hypothesis)  # type: ignore
             ids = enc.ids

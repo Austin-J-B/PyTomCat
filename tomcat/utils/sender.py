@@ -1,3 +1,5 @@
+"""Safe send helper that guards Discord HTTP errors and rate limits."""
+
 from __future__ import annotations
 from typing import Any
 import discord

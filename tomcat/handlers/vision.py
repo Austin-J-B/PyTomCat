@@ -1,3 +1,5 @@
+"""Computer-vision Discord commands (identify, crop, detect)."""
+
 # tomcat/handlers/vision.py
 from __future__ import annotations
 import os
@@ -17,6 +19,7 @@ from ..vision import vision as V
 
 # ---------- helpers ----------
 async def _download_attachment(att: discord.Attachment) -> str:
+    """Save a Discord attachment locally and return the temp path."""
     # Size gate before download
     if att.size and settings.cv_max_download_mb and (att.size > settings.cv_max_download_mb * 1024 * 1024):
         raise ValueError(f"Attachment too large ({att.size} bytes). Max {settings.cv_max_download_mb} MB.")
@@ -31,6 +34,7 @@ async def _download_attachment(att: discord.Attachment) -> str:
     return path
 
 def _first_image(message: discord.Message) -> Optional[discord.Attachment]:
+    """Pick the first image attachment from a message if any."""
     # Prefer image attachments in this message; then check referenced message if any
     for a in getattr(message, "attachments", []) or []:
         if (a.content_type or "").startswith("image/"):
@@ -43,10 +47,12 @@ def _first_image(message: discord.Message) -> Optional[discord.Attachment]:
     return None
 
 async def _read_bytes(path: str) -> bytes:
+    """Async helper to read a file off the event loop."""
     with open(path, "rb") as f:
         return f.read()
 
 async def _cleanup(paths: List[str]):
+    """Remove temp files without raising on failure."""
     for p in paths:
         try:
             os.remove(p)
@@ -55,13 +61,14 @@ async def _cleanup(paths: List[str]):
 
 # ---------- public handlers ----------
 async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
+    """Run object detection on an image and report bounding boxes."""
     message: discord.Message = ctx["message"]
     ch: discord.abc.MessageableChannel = ctx["channel"]
 
     att = _first_image(message)
     if not att:
         if not ctx.get("silent_on_no_image"):
-            await ch.send("Attach an image or reply to an image, then say `TomCat, detect`.")
+            await ch.send("Attach an image in your message or reply to an image, then say `TomCat, detect`.")
         return
 
     tmp = []
@@ -72,6 +79,7 @@ async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
 
         file = discord.File(io.BytesIO(boxed), filename="detected.jpg")
         emb = discord.Embed(
+            title="Detected cat outlined below",
             color=0x2F3136,  # same slate-gray as the other embeds
         )
         emb.set_image(url="attachment://detected.jpg")
@@ -87,13 +95,14 @@ async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         await _cleanup(tmp)
 
 async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
+    """Crop the first detected cat and send the result back."""
     message: discord.Message = ctx["message"]
     ch: discord.abc.MessageableChannel = ctx["channel"]
 
     att = _first_image(message)
     if not att:
         if not ctx.get("silent_on_no_image"):
-            await ch.send("Attach an image or reply to an image, then say `TomCat, crop`.")
+            await ch.send("Attach an image in your message or reply to an image, then say `TomCat, crop`.")
         return
 
     tmp = []
@@ -120,7 +129,7 @@ async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
                 for i, b in enumerate(crops, start=1):
                     z.writestr(f"crop_{i}.jpg", b)
             buf.seek(0)
-            await ch.send("Multiple cats detected. Here are the crops:", file=discord.File(buf, filename="crops.zip"))
+            await ch.send("Multiple cats were detected in this photo. Here are the crops:", file=discord.File(buf, filename="crops.zip"))
 
     except ValueError as ve:
         await ch.send(str(ve))
@@ -131,19 +140,20 @@ async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         await _cleanup(tmp)
 
 async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
+    """Identify which known cat appears in an uploaded photo."""
     message: discord.Message = ctx["message"]
     ch: discord.abc.MessageableChannel = ctx["channel"]
 
     att = _first_image(message)
     if not att:
         if not ctx.get("silent_on_no_image"):
-            await ch.send("Attach an image or reply to an image, then say `TomCat, identify`.")
+            await ch.send("Attach an image in your message or reply to an image, then say `TomCat, identify`.")
         return
 
     tmp = []
     reply_msg: Optional[discord.Message] = None
     try:
-        reply_msg = await ch.send("Processing image…")
+        reply_msg = await ch.send("Processing image")
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
         out = await asyncio.to_thread(V.identify, data)

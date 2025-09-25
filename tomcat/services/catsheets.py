@@ -1,6 +1,6 @@
 """Typed helpers for CatDatabase + RecentPics tabs.
 
-Expected headers (by column index) inspired by your current sheet:
+Expected headers (by column index) based on the current sheet:
 - CatDatabase: ["67. Microwave", ID_HELPER, LAST_SEEN_DATE, LAST_SEEN_TIME, LAST_SEEN_BY, (spacer), MOST_RECENT_IMAGE_URL,
   LOCATION, PHYSICAL_DESCRIPTION, BIRTHDAY_ESTIMATE, BEHAVIOR, TNRD?, TNR_DATE, SEX, COMMON_NICKNAMES, COMMENTS]
 - RecentPics: [FULL_NAME (e.g., "67. Microwave"), <unused>, TOTAL, URL1, SERIAL1, URL2, SERIAL2, ...]
@@ -37,6 +37,7 @@ IDX = {
 }
 
 async def get_cat_profile(query: str) -> dict | str:
+    """Return profile metadata for a cat or a friendly error string."""
     """Return a dict for a cat profile or a string error message."""
     if not settings.sheet_catabase_id:
         return "Catabase sheet ID not configured. Set SHEET_CATABASE_ID in .env."
@@ -99,6 +100,7 @@ async def get_cat_profile(query: str) -> dict | str:
     }
 
 async def get_recent_photo(full_name: str) -> dict | str:
+    """Fetch the most recent photo row for a given cat."""
     """Pick one recent photo for a given FULL_NAME from RecentPics tab."""
     if not settings.sheet_vision_id:
         return "Aux sheet ID not configured. Set SHEET_VISION_ID in .env."
@@ -142,6 +144,7 @@ async def get_recent_photo(full_name: str) -> dict | str:
     }
 
 async def get_most_recent_photo(full_name: str) -> dict | str:
+    """Shortcut for retrieving the single latest photo entry."""
     """Return the most recent photo for a FULL_NAME using the highest SERIAL value."""
     if not settings.sheet_vision_id:
         return "Aux sheet ID not configured. Set SHEET_VISION_ID in .env."
@@ -188,9 +191,11 @@ async def get_most_recent_photo(full_name: str) -> dict | str:
     }
 
 async def get_random_photo(full_name: str):
+    """Pick a random photo record for variety in responses."""
     return await get_recent_photo(full_name)
 
 async def build_profile_embed(query: str) -> dict | str:
+    """Construct the embeds used for the "who is" command."""
     """
     Returns a dict compatible with discord.Embed.from_dict or a string error.
     Uses CatDatabase for metadata and RecentPics for a nice image if available.

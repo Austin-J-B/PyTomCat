@@ -1,6 +1,8 @@
-# TomCat VI — Python scaffold
+"""Vision package exposes computer-vision helpers for Discord handlers."""
+
 __all__ = ["run"]
 
+
 def run():
-	"""Placeholder run function."""
-	pass
+    """Stub retained for backwards compatibility with older imports."""
+    pass

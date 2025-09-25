@@ -1,3 +1,5 @@
+"""Utilities for running YOLO detection/classification for TomCat."""
+
 # tomcat/vision/vision.py
 from __future__ import annotations
 import io
@@ -21,7 +23,7 @@ from ..logger import log_action
 
 # ---------- Constants aligned to v5.6 ----------
 _PURPLE = "#4C007F"
-_DEFAULT_CONF = 0.552  # your max-F1
+_DEFAULT_CONF = 0.552  # tuned for maximum F1
 
 # ---------- Internal state (typed loosely to keep Pylance calm) ----------
 _yolo: Optional[Any] = None
@@ -33,6 +35,7 @@ _font: Optional[Any] = None  # FreeTypeFont vs ImageFont stubs vary; keep it Any
 
 
 def _pick_device() -> torch.device:
+    """Choose CUDA if available, else fall back to CPU."""
     if torch.cuda.is_available():
         return torch.device("cuda")
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
@@ -41,6 +44,7 @@ def _pick_device() -> torch.device:
 
 
 def _load_font() -> Any:
+    """Load a PIL font for drawing labels."""
     """Return a font object; exact type varies by Pillow build."""
     global _font
     if _font is not None:
@@ -53,12 +57,14 @@ def _load_font() -> Any:
 
 
 def _ensure_device_only() -> None:
+    """Lazy initialize the torch device once."""
     global _device, _half
     if _device is None:
         _device = _pick_device()
         _half = bool(settings.cv_half) and _device.type == "cuda"
 
 def _ensure_detector() -> None:
+    """Load YOLO detector weights if they are not already resident."""
     global _yolo
     _ensure_device_only()
     if _yolo is not None:
@@ -76,6 +82,7 @@ def _ensure_detector() -> None:
     _yolo = y
 
 def _ensure_classifier() -> None:
+    """Load the classifier model if not yet loaded."""
     """Load classifier lazily; never crash detector if classifier is bad."""
     global _clf
     _ensure_device_only()
@@ -134,18 +141,21 @@ def _ensure_classifier() -> None:
 
 
 def _get_yolo() -> Any:
+    """Instantiate the Ultralytics YOLO model with cached config."""
     _ensure_detector()
     assert _yolo is not None, "YOLO failed to load"
     return _yolo
 
 
 def _jpeg_bytes(img: Image.Image, quality: int = 90) -> bytes:
+    """Serialize a PIL image to JPEG bytes."""
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality, optimize=True)
     return buf.getvalue()
 
 
 def _enforce_max_dim(img: Image.Image) -> None:
+    """Clamp huge images to the configured max dimension."""
     limit = int(getattr(settings, "cv_max_image_dim", 0) or 0)
     if limit <= 0:
         return  # no cap
@@ -158,6 +168,7 @@ def _enforce_max_dim(img: Image.Image) -> None:
 
 
 def _resize_for_detect(img: Image.Image, detect_size: int) -> Tuple[Image.Image, float, float]:
+    """Resize input for detection while tracking scale ratios."""
     w, h = img.size
     if w <= 0 or h <= 0:
         return img, 1.0, 1.0
@@ -172,6 +183,7 @@ def _resize_for_detect(img: Image.Image, detect_size: int) -> Tuple[Image.Image,
 
 
 def _expand_box(x1: float, y1: float, x2: float, y2: float, pad_pct: float, w: int, h: int) -> Tuple[int, int, int, int]:
+    """Grow detection boxes by a padding percentage while clamping image bounds."""
     bw = x2 - x1
     bh = y2 - y1
     pad_x = bw * pad_pct
@@ -196,11 +208,15 @@ class IdentifyResult:
 
 
 def _draw_boxes(img: Image.Image, dets: List[Det]) -> Image.Image:
+    """Render bounding boxes and labels onto an image with adaptive thickness."""
     draw = ImageDraw.Draw(img)
     font = _load_font()
+    # Adaptive line width: thicker on very large images (e.g., 4K)
+    max_dim = max(img.size)
+    width = 6 if max_dim >= 2000 else 3
     for idx, d in enumerate(dets, start=1):
         x1, y1, x2, y2 = d.xyxy
-        draw.rectangle([x1, y1, x2, y2], outline=_PURPLE, width=3)
+        draw.rectangle([x1, y1, x2, y2], outline=_PURPLE, width=width)
         label = f"{idx}"
         # textbbox may not exist on very old Pillow; fallback to textsize
         try:
@@ -217,6 +233,7 @@ def _draw_boxes(img: Image.Image, dets: List[Det]) -> Image.Image:
 
 
 def _run_yolo(img: Image.Image) -> List[Det]:
+    """Execute the YOLO detector on a PIL image."""
     """Run YOLO on a PIL image, returning boxes scaled to the original image coordinates."""
     yolo = _get_yolo()
     det_img, sx, sy = _resize_for_detect(img, settings.cv_detect_imgsz)
@@ -251,6 +268,7 @@ def _run_yolo(img: Image.Image) -> List[Det]:
 
 
 def detect(image_bytes: bytes) -> bytes:
+    """Return the original image annotated with detection boxes."""
     """Return annotated JPEG with purple boxes for each cat. Raises ValueError on 4K+ images."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     _enforce_max_dim(img)
@@ -262,6 +280,7 @@ def detect(image_bytes: bytes) -> bytes:
 
 
 def crop(image_bytes: bytes) -> List[bytes]:
+    """Return cropped regions for each detected cat."""
     """Return list of JPEG crops expanded by pad_pct per v5.6."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     _enforce_max_dim(img)
@@ -278,6 +297,7 @@ def crop(image_bytes: bytes) -> List[bytes]:
 
 
 def _prep_tensor(pil: Image.Image) -> Tensor:
+    """Convert a PIL image into a normalized torch tensor."""
     """Resize square and convert to a Tensor. v5.6 parity: no ImageNet normalization."""
     from torchvision.transforms import Compose, Resize, ToTensor  # local import to avoid global hard deps
     size = settings.cv_clf_imgsz
@@ -292,6 +312,7 @@ def _prep_tensor(pil: Image.Image) -> Tensor:
 
 
 def identify(image_bytes: bytes) -> IdentifyResult:
+    """Classify the cat in an image using the trained classifier."""
     """Draw boxes and run classifier on each crop. Returns boxed JPEG + per-box guesses."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     _enforce_max_dim(img)
@@ -333,4 +354,3 @@ def identify(image_bytes: bytes) -> IdentifyResult:
     boxed = _jpeg_bytes(annotated, quality=90)
     log_action("viz_identify", f"boxes={len(dets)} guesses={len(results)}", "ok")
     return IdentifyResult(boxed_jpeg=boxed, results=results)
-

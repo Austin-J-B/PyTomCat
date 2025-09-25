@@ -89,7 +89,7 @@ def _build_channel_sheet_map() -> dict[int, str]:
                 out[cid] = tab
         if out:
             return out
-    # fallback defaults from your named channels
+    # fallback defaults from the configured channel names
     def _id(name: str) -> int | None:
         try:
             v = int(os.getenv(name, "0"))
@@ -136,11 +136,11 @@ class Settings:
 
     # Google service account
     google_service_account_json: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "credentials/service_account.json")
-    # Keep your older name too
+    # Retain the legacy name as well
     google_sa_json: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "credentials/service_account.json")
 
     # Sheets (support both old and new env names)
-    # Old names in your .env: SHEET_CATABASE_ID, SHEET_VISION_ID, SHEET_MEGASHEET_ID
+    # Legacy names in .env: SHEET_CATABASE_ID, SHEET_VISION_ID, SHEET_MEGASHEET_ID
     sheet_catabase_id: str | None = os.getenv("SHEET_CATABASE_ID") or os.getenv("CAT_SPREADSHEET_ID")
     sheet_vision_id: str | None = os.getenv("SHEET_VISION_ID") or os.getenv("AUX_SPREADSHEET_ID")
     sheet_megasheet_id: str | None = os.getenv("SHEET_MEGASHEET_ID")
@@ -172,7 +172,7 @@ class Settings:
         "Gregory", "Rubber", "Bruno", "Boots", "Princess", "Nefarious", "Eraser", "Eden", "Cassie", "Coronavirus"
     ])
 
-    # Core knobs (kept at your v5.6 values by default)
+    # Core knobs (defaults mirror v5.6 values)
     cv_conf: float = float(os.getenv("CV_CONF", "0.552"))           # detector confidence
     cv_iou: float = float(os.getenv("CV_IOU", "0.45"))              # NMS IoU
     cv_detect_imgsz: int = int(os.getenv("CV_DETECT_IMGSZ", "640")) # YOLO inference size
@@ -240,7 +240,10 @@ class Settings:
     # ======== Spam detection config ========
     # Role names that should never be flagged as spam (case-insensitive contains match)
     trusted_role_names: list[str] = field(default_factory=lambda: [
-        "due paying members", "Server Booster"
+        "due paying members", "server booster", "officers", "active feeders"
+    ])
+    spam_ban_role_names: list[str] = field(default_factory=lambda: [
+        "officers"
     ])
     # Minimum account age in days to skip spam checks
     spam_min_account_days: int = int(os.getenv("SPAM_MIN_ACCOUNT_DAYS", "30"))
@@ -276,44 +279,66 @@ class Settings:
 
     # ======== Feeding scheduler maps (authoritative) ========
     # Provide simple name→user_id mapping and per-station weekly assignments.
-    # Station assignments are lists of 7 names ordered Sun..Sat. Example defaults below.
+    # Station assignments are lists of 7 names ordered Sun..Sat.
+
     user_id_map: Dict[str, int] = field(default_factory=lambda: {
-        "Nicole": 1308894473228648536 ,
-        "Lynn": 699720057764446221  ,
-        "Atlas": 528421517592363008 ,
-        "CiCi": 342386549532524544, 
-        "Roach": 674640043289083944 ,
-        "Elusive": 751926923583553656 ,
-        "Miranda": 474329968936091648 ,
-        "Ben": 972653971728633896  , 
-        "Brooke": 1014214516764053614 , 
-        "Alex": 564615306027335681, 
+        # existing
+        "Nicole": 1308894473228648536,
+        "Lynn": 699720057764446221,
+        "Atlas": 528421517592363008,
+        "CiCi": 342386549532524544,
+        "Roach": 674640043289083944,
+        "Elusive": 751926923583553656,
+        "Miranda": 474329968936091648,
+        "Ben": 972653971728633896,
+        "Brooke": 1014214516764053614,
+        "Alex": 564615306027335681,
         "Morgan": 856586084943396879,
         "Anabelle": 808757369478840371,
         "Zahara": 1004778582855389244,
-        "Bryan": 204682859217158144,#hatshura
-        "Jaeden": 417059337257877505, 
+        "Bryan": 204682859217158144,  # hatshura
+        "Jaeden": 417059337257877505,
         "Kitadan": 427867525225906176,
-        "Felix":694664394495361195, 
-        "Izzy": 891876061313380425, 
+        "Felix": 694664394495361195,
+        "Izzy": 891876061313380425,
         "Kaz": 356861356051529750,
+        "Thorin": 980567857849045032, #not_d3fault_1429
+        "Acacia": 543969877619245068, #spitonme
+        "Rinne": 63085459886055424,  #petrichor
+        "Emmaleigh": 338109126808829953, #emiximez
+        "Alexa": 518999622916505633,  #marieealexa
+        "Bunny": 609945813128445974,  #bubblebee5866
+        "Abigail": 568451921828904962,#abstractly_
+        "Zoe": 749751349679358064,    #zoe.cronin
+        "Isabella": 963624067078971402,#lemonelon_
+        "Julia": 760947102280319008,  #iliekwatchingnarutoowo
+        "Micaela": 741877766030491678,#mica.aaa
+        "Peter": 750387156920303798,  #bluedragon5864
+        "Victoria": 732664872172519464, #ratcorn.
+        "Brian": 642133560685494282,  #frostfire312
+        "Sophia": 690727460924424212, #Le_nuit_sans_fin
+        "Charlotte": 748739000914935828, #phat_cat_207
+        "Autumn": 1410304461707940022, #autumn065829
+        "Michael": 426919280378904588, #orphean_
+        "Loren": 413721884107210753,  #baseketballin
+        "Lucas": 802391113050226708,  #lifeye
+        "Emma": 722682931704889345,   #emlenisgremlin
+        "Jack": 1037772447509917717,   #.bettercalljack
+        "Megan": 788886705276846140,  #vasyline
     })
 
-
-    feeding_schedule: Dict[str, list[str]] = field(default_factory=lambda: {
-        #In order of           Sun     Mon    Tues     Wed    Thur     Fri    Sat     
-        #put just: 'None' with no apostrophe/quotation marks. Just the word None. If a 
-        # station is not assigned   
-        "Microwave":         ["Miranda","Nicole","Lynn","Atlas","Cici","Roach","Elusive"],
-        "Snickers":          ["Elusive","Ben","Brooke","Cici","Cici","Cici","Elusive"],
-        "Business":          ["Elusive","Alex","Morgan","Atlas","Anabelle","Zahara","Elusive"],
-        "The Greens":        ["Jaeden","Bryan","Brooke","Atlas","Brooke","Jaeden","Elusive"],
-        "HOP":               ["Jaeden","Bryan","Bryan","Anabelle","Anabelle","Jaeden","Jaeden"],
-        "Lot 50":            ["Miranda","Bryan","Bryan","Miranda","Miranda","Zahara","Miranda"],
-        "Mary Kay and Zen":  ["Kitadan","Ben","Kitadan","Kitadan","Ben","Ben",None],
-        "West Hall":         ["Miranda","Felix","Izzy","Roach","Roach","Roach","Kaz"],
-        "Maintenance":       ["Kaz","Izzy","Izzy","Izzy","Morgan",None,"Kaz"],
-    })
+feeding_schedule: Dict[str, list[str]] = field(default_factory=lambda: {
+    # In order: Sun, Mon, Tue, Wed, Thu, Fri, Sat
+    "Microwave":         ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
+    "Snickers":          ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
+    "Business":          ["Atlas", "Alexa", "Morgan", "Bunny", "Abigail", "Zoe", "Elusive"],
+    "The Greens":        ["Jaeden", "Isabella", "Julia", "Micaela", "Brooke", "Peter", "Elusive"],
+    "HOP":               ["Jaeden", "Victoria", "Anabelle", "Brian", "Sophia", "Victoria", "Sophia"],
+    "Lot 50":            ["Miranda", "Brian", "Bryan", "Brian", "Bryan", "Zahara", "Miranda"],
+    "Mary Kay and Zen":  ["Kitadan", "Emma", "Kitadan", "Kitadan", "Jack", "Jack", "Jack"],
+    "West Hall":         ["Loren", "Charlotte", "Autumn", "Michael", "Loren", "Roach", "Emmaleigh"],
+    "Maintenance":       ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"],
+})
 
 
 

@@ -1,3 +1,5 @@
+"""Administrative Discord commands for TomCat (role cleanup, cache resets, etc.)."""
+
 from __future__ import annotations
 import asyncio, os, shutil
 import discord
@@ -25,6 +27,7 @@ async def handle_silent_mode(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
         pass
 
 
+# Guild-scoped admin actions target the primary CCC server.
 TARGET_GUILD_ID = 551082419768393729
 
 async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:

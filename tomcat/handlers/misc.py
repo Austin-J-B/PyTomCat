@@ -1,3 +1,5 @@
+"""Catch-all reactions, channel logging helpers, and misc user commands."""
+
 from __future__ import annotations
 import re, random
 import discord
@@ -41,6 +43,7 @@ def _cool(user_id: int, now: float) -> bool:
     return True
 
 async def _profiles_channel(message: discord.Message, ctx: Dict[str, Any]) -> Messageable | None:
+    """Resolve which log channel a profile command should output to."""
     ch_id = getattr(settings, "ch_member_names", None)
     if not ch_id:
         log_action("profiles_error", "missing_ch_member_names", "")
@@ -77,6 +80,7 @@ def _open_ws(worksheet_title: str):
 
 
 async def handle_profiles_create(intent, ctx):
+    """Create a new profile worksheet tab when staff request it."""
     """TomCat, create profile(s) <startId> [through <endId>]"""
     msg: discord.Message = ctx["message"]
     author = ctx["author"]
@@ -152,6 +156,7 @@ async def handle_profiles_create(intent, ctx):
         log_action("profile_create_failed_ids", f"count={len(failed)}", ",".join(failed))
 
 async def handle_profile_update_one(intent, ctx):
+    """Update a single profile row based on user-provided fields."""
     """TomCat, update profile <id>"""
     msg: discord.Message = ctx["message"]
     author = ctx["author"]
@@ -216,6 +221,7 @@ async def handle_profile_update_one(intent, ctx):
             pass
 
 async def handle_profiles_update_all(intent, ctx):
+    """Refresh cached profile data for every cat."""
     """TomCat, update all profiles"""
     msg: discord.Message = ctx["message"]
     author = ctx["author"]
@@ -271,6 +277,7 @@ async def handle_profiles_update_all(intent, ctx):
         log_action("profile_update_failed_ids", f"count={len(failed)}", ",".join(failed))
 
 async def start_profile_scheduler(bot):
+    """Kick off background tasks that sync the profile cache."""
     # run daily at ~02:10 local
     target_h, target_m = 2, 10
     while True:
@@ -288,6 +295,7 @@ async def start_profile_scheduler(bot):
             log_action("profiles_scheduler_error", "", str(e))
 
 async def handle_channel_image_intake(message: discord.Message) -> None:
+    """Log attachments dropped into intake channels to the right Sheets tab."""
     ch_id = getattr(message.channel, "id", None)
     tab = settings.channel_sheet_map.get(int(ch_id)) if ch_id else None
     if not tab:
@@ -324,6 +332,7 @@ async def handle_channel_image_intake(message: discord.Message) -> None:
 
 
 async def handle_misc(message: discord.Message, *, now_ts: float, allow_in_channels: set[int] | None = None):
+    """Fallback handler for lightweight keywords and reactions."""
     if message.author.bot:
         return
     if allow_in_channels and message.channel.id not in allow_in_channels:

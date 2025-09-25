@@ -97,7 +97,7 @@ in the CPU wheels (`torch==2.3.1`, `torchvision==0.18.1`).
 - Python **3.11** (recommended) or 3.10. Python 3.12 works with the pinned
   `tokenizers`/PyTorch builds, but 3.11 has the broadest wheel coverage.
 - NVIDIA drivers supporting CUDA 12.1 (Windows) or CUDA toolkit/driver available
-  under WSL for the 1050 Ti.
+  under WSL
 - Google Cloud project with a Gmail API OAuth client + Google Sheets service
   account; share your Sheets with the service account email.
 - Discord bot application created in the developer portal with `MESSAGE CONTENT`
@@ -107,52 +107,34 @@ in the CPU wheels (`torch==2.3.1`, `torchvision==0.18.1`).
 
 ## Installation
 
-1. **Clone & enter the repo**
+1. **Clone the repository**
    ```bash
-   git clone https://https://github.com/Austin-J-B/PyTomCat.git
+   git clone https://github.com/Austin-J-B/PyTomCat.git
    cd PyTomCat
    ```
 
-2. **Create a virtual environment**
+2. **Run the setup script**
    ```bash
-   python -m venv .venv
-   # Windows PowerShell
-   .\.venv\Scripts\Activate.ps1
-   # or WSL/Linux/macOS
-   source .venv/bin/activate
+   scripts\setup.cmd
    ```
-
-3. **Upgrade pip and install dependencies**
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
+   This script will automatically:
+   - Create and activate a virtual environment
+   - Install all required dependencies
+   - Download and convert the DeBERTa model to ONNX format
+   - Test the installation
+   
    > If you do not have a CUDA-capable GPU, edit `requirements.txt` and replace
-   > the `torch`/`torchvision` entries with CPU builds before running the command.
+   > the `torch`/`torchvision` entries with CPU builds before running the script.
 
-4. **Download runtime assets**
+3. **Add YOLO weights**
+   
+   Place the following files in the `weights/` directory:
+   - `NanoModel.pt` - YOLO detector for CV detection
+   - `NanoClassifier.pt` - Cat classifier head
+   
+   These files must be copied from an existing deployment or your training artifacts.
 
-   | Asset | Purpose | Destination |
-   |-------|---------|-------------|
-   | `deberta-v3-small` ONNX + tokenizer | Spam/NLP fallback | `weights/deberta-v3-small-mnli.onnx`<br>`weights/deberta-v3-small-mnli.tokenizer.json` |
-   | YOLO detector (`NanoModel.pt`) | CV detection pass | `weights/NanoModel.pt` |
-   | YOLO classifier (`NanoClassifier.pt`) | Cat classifier head | `weights/NanoClassifier.pt` |
-
-   Example (using `huggingface_hub` CLI for DeBERTa):
-   ```bash
-   pip install huggingface_hub
-   huggingface-cli download microsoft/deberta-v3-small \
-       --include "*.onnx" "*.tokenizer.json" --local-dir weights \
-       --local-dir-use-symlinks False
-   mv weights/inference.onnx weights/deberta-v3-small-mnli.onnx
-   mv weights/tokenizer.json weights/deberta-v3-small-mnli.tokenizer.json
-   ```
-
-   Place your YOLO weights in `weights/` (copy from an existing deployment or
-   your training artifacts). The repo ships with `.gitkeep` only, so you must
-   supply the actual `.pt` files.
-
-5. **Prepare configuration**
+4. **Prepare configuration**
    - Copy `.env` (or create it) and fill in:
      - `DISCORD_TOKEN`, `BOT_NAME`, `COMMAND_PREFIX`
      - Channel IDs (`CH_FEEDING_TEAM`, `CH_TOMCAT_SANDBOX`, `CH_LOGGING`, etc.)

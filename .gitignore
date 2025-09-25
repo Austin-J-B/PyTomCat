@@ -4,10 +4,10 @@ logs/*
 !logs/machine/.gitkeep
 ## Secrets and OAuth material live outside of version control.
 #.env
-credentials/*
-!credentials/service_account.json
-credentials/service_account.json
-gmail_token.json
+#credentials/*
+#!credentials/service_account.json
+#credentials/service_account.json
+#gmail_token.json
 
 ## Model weights and other large artifacts
 weights/

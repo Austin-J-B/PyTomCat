@@ -314,7 +314,18 @@ _DISPLAY = {
     "mary kay and zen": "Mary Kay and Zen",
 }
 
-STOPWORDS = {"the", "a", "an", "station", "lot", "hall"}
+STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "if", "so", "to", "for", "of", "in",
+    "on", "at", "by", "with", "from", "as", "is", "are", "was", "were", "be",
+    "been", "being", "it", "its", "it's", "this", "that", "these", "those", "not",
+    "no", "nor", "all", "any", "can", "could", "should", "would", "will", "just",
+    "really", "very", "there", "here", "then", "than", "into", "over", "after",
+    "before", "out", "up", "down", "again", "once", "why", "what", "who", "when",
+    "where", "which", "while", "do", "does", "did", "have", "has", "had", "we",
+    "us", "our", "ours", "you", "your", "yours", "i", "me", "my", "mine", "they",
+    "them", "their", "theirs", "he", "him", "his", "she", "her", "hers", "lot",
+    "hall"
+}
 
 
 def alias_vocab() -> Dict[str, List[str]]:
@@ -362,41 +373,72 @@ def _merged_station_aliases() -> Dict[str, List[str]]:
     return {k: list(v) for k, v in _STATION_ALIASES.items()}
 
 
-def _alias_pairs(table: Dict[str, List[str]]) -> List[Tuple[str, str]]:
+def _alias_pairs(table: Dict[str, List[str]], include_stopword_aliases: bool = False) -> List[Tuple[str, str]]:
     pairs: List[Tuple[str, str]] = []
     for key, aliases in table.items():
         seen: set[str] = set()
         for alias in list(aliases) + [key]:
-            alias_norm = (alias or "").strip()
+            alias_norm = _norm(alias)
             if not alias_norm:
                 continue
-            lowered = alias_norm.lower()
-            if lowered in seen:
+            if alias_norm in STOPWORDS and not include_stopword_aliases:
                 continue
-            seen.add(lowered)
+            alias_tokens = [tok for tok in _words(alias) if tok]
+            if alias_tokens and not include_stopword_aliases and all(tok in STOPWORDS for tok in alias_tokens):
+                continue
+            if alias_norm in seen:
+                continue
+            seen.add(alias_norm)
             pairs.append((alias_norm, key))
     return pairs
 
 
-def _resolve_exact_or_prefix(table: Dict[str, List[str]], text_norm: str, tokens: Iterable[str]) -> Optional[str]:
+def _token_matches_alias(token: str, alias_token: str) -> bool:
+    if not token or not alias_token:
+        return False
+    if token == alias_token:
+        return True
+    if len(token) >= 4 and alias_token.startswith(token):
+        return True
+    return False
+
+
+def _resolve_exact_or_prefix(
+    table: Dict[str, List[str]],
+    text_norm: str,
+    tokens: Iterable[str],
+    include_stopword_aliases: bool = False,
+) -> Optional[str]:
     for key, aliases in table.items():
         for alias in list(aliases) + [key]:
-            alias_norm = (alias or "").strip()
-            if alias_norm and re.search(rf"\b{re.escape(alias_norm)}\b", text_norm):
+            alias_norm = _norm(alias)
+            if not alias_norm:
+                continue
+            if alias_norm in STOPWORDS and not include_stopword_aliases:
+                continue
+            alias_tokens = [tok for tok in _words(alias) if tok]
+            if alias_tokens and not include_stopword_aliases and all(tok in STOPWORDS for tok in alias_tokens):
+                continue
+            if re.search(rf"\b{re.escape(alias_norm)}\b", text_norm):
                 return key
 
     key_tokens: Dict[str, List[str]] = {}
     for key, aliases in table.items():
         toks: List[str] = []
-        for alias in aliases:
-            toks.extend(_words(alias))
-        key_tokens[key] = list({t for t in toks if t})
+        for alias in list(aliases) + [key]:
+            for tok in _words(alias):
+                if not tok:
+                    continue
+                if tok in STOPWORDS and not include_stopword_aliases:
+                    continue
+                toks.append(tok)
+        key_tokens[key] = list(dict.fromkeys(toks))
 
     hits: Dict[str, int] = {}
     for tok in tokens:
-        if len(tok) < 3:
+        if len(tok) < 3 or (tok in STOPWORDS and not include_stopword_aliases):
             continue
-        matched = [key for key, toks in key_tokens.items() if any(t.startswith(tok) for t in toks)]
+        matched = [key for key, toks in key_tokens.items() if any(_token_matches_alias(tok, t) for t in toks)]
         if len(matched) == 1:
             key = matched[0]
             hits[key] = hits.get(key, 0) + 1
@@ -405,20 +447,25 @@ def _resolve_exact_or_prefix(table: Dict[str, List[str]], text_norm: str, tokens
     return None
 
 
-def resolve_station_or_cat(text: str, want: str) -> Optional[str]:
+def resolve_station_or_cat(text: str, want: str, include_stopword_aliases: bool = False) -> Optional[str]:
     _refresh_dyn_aliases(force=False)
     text_norm = _normalize(text)
-    tokens = [tok for tok in _words(text_norm) if tok not in STOPWORDS]
+    raw_tokens = _words(text_norm)
+    tokens = [tok for tok in raw_tokens if tok] if include_stopword_aliases else [tok for tok in raw_tokens if tok not in STOPWORDS]
 
     table = _merged_cat_aliases() if want == "cat" else _merged_station_aliases()
-    key = _resolve_exact_or_prefix(table, text_norm, tokens)
+    key = _resolve_exact_or_prefix(table, text_norm, tokens, include_stopword_aliases=include_stopword_aliases)
     if key:
         return _display_for(key)
 
-    alias_candidates = _alias_pairs(table)
+    alias_candidates = _alias_pairs(table, include_stopword_aliases=include_stopword_aliases)
     candidates = [text_norm] + tokens
     for cand in candidates:
-        if not cand or len(cand) < 2:
+        if not cand:
+            continue
+        if not include_stopword_aliases and cand in STOPWORDS:
+            continue
+        if len(cand) < 4 and not include_stopword_aliases:
             continue
         match = best_match(cand, alias_candidates, threshold=82)
         if match:
@@ -431,10 +478,11 @@ def resolve_station_or_cat(text: str, want: str) -> Optional[str]:
     return None
 
 
-def resolve_stations(text: str) -> List[str]:
+def resolve_stations(text: str, *, include_stopword_aliases: bool = False) -> List[str]:
     _refresh_dyn_aliases(force=False)
     text_norm = _norm(text)
-    tokens = [tok for tok in _words(text) if tok not in STOPWORDS]
+    raw_tokens = _words(text)
+    tokens = [tok for tok in raw_tokens if tok] if include_stopword_aliases else [tok for tok in raw_tokens if tok not in STOPWORDS]
     table = _merged_station_aliases()
 
     found: List[str] = []
@@ -444,20 +492,31 @@ def resolve_stations(text: str) -> List[str]:
     for key, aliases in table.items():
         for alias in list(aliases) + [key]:
             alias_norm = _norm(alias)
-            if alias_norm and f" {alias_norm} " in padded:
+            if not alias_norm:
+                continue
+            if alias_norm in STOPWORDS and not include_stopword_aliases:
+                continue
+            alias_tokens = [tok for tok in _words(alias) if tok]
+            if alias_tokens and not include_stopword_aliases and all(tok in STOPWORDS for tok in alias_tokens):
+                continue
+            if f" {alias_norm} " in padded:
                 if key not in found_keys:
                     found_keys.add(key)
                     found.append(_display_for(key))
                 break
 
     for tok in tokens:
-        disp = resolve_station_or_cat(tok, "station")
+        disp = resolve_station_or_cat(tok, "station", include_stopword_aliases=include_stopword_aliases)
         if disp and disp not in found:
             found.append(disp)
 
     if not found:
-        alias_candidates = _alias_pairs(table)
+        alias_candidates = _alias_pairs(table, include_stopword_aliases=include_stopword_aliases)
         for cand in tokens:
+            if (cand in STOPWORDS or len(cand) < 4) and not include_stopword_aliases:
+                continue
+            if not cand:
+                continue
             match = best_match(cand, alias_candidates, threshold=82)
             if match:
                 disp = _display_for(match[0])

@@ -48,10 +48,18 @@ async def _profiles_channel(message: discord.Message, ctx: Dict[str, Any]) -> Me
     if not ch_id:
         log_action("profiles_error", "missing_ch_member_names", "")
         return None
-    ch = message.guild.get_channel(ch_id) if message.guild else None
+    guild = getattr(message, "guild", None)
+    ch = guild.get_channel(ch_id) if guild else None
     if not ch:
         bot = ctx.get("bot")
         ch = bot.get_channel(ch_id) if bot else None
+        if not ch and bot:
+            # Fallback: walk guild cache to resolve the channel by ID
+            for g in getattr(bot, "guilds", []):
+                candidate = g.get_channel(ch_id)
+                if candidate:
+                    ch = candidate
+                    break
     return ch if isinstance(ch, Messageable) else None
 
 def _open_ws(worksheet_title: str):
@@ -351,4 +359,3 @@ async def handle_misc(message: discord.Message, *, now_ts: float, allow_in_chann
             log_action("handle_misc", f"trigger={m.group(0)}", resp)
             return
         
-

@@ -124,8 +124,10 @@ on whether `nvidia-smi` is available (override with `--gpu` or `--cpu`).
    
    Optional flags:
    ```bash
-   python scripts/install.py --cpu   # force CPU-only wheels
-   python scripts/install.py --gpu   # force CUDA wheels even if nvidia-smi is absent
+   python scripts/install.py --cpu           # force CPU-only wheels
+   python scripts/install.py --gpu           # force CUDA wheels even if nvidia-smi is absent
+   python scripts/install.py --resume-model  # rerun only the DeBERTa download/test step
+   python scripts/install.py --clean-hf-cache --resume-model  # clear HF cache then redo the model stage
    ```
 
 3. **Add YOLO weights**

@@ -1,0 +1,355 @@
+{"event": "dues_loop_error", "error": "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000020AFA7256D0>: Failed to resolve 'oauth2.googleapis.com' ([Errno 11001] getaddrinfo failed)\"))"}
+{"event": "dues_loop_error", "error": "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000020AFA7274D0>: Failed to resolve 'oauth2.googleapis.com' ([Errno 11001] getaddrinfo failed)\"))"}
+{"event": "dues_loop_error", "error": "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000020A802082D0>: Failed to resolve 'oauth2.googleapis.com' ([Errno 11001] getaddrinfo failed)\"))"}
+{"event": "dues_loop_error", "error": "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000020A80209090>: Failed to resolve 'oauth2.googleapis.com' ([Errno 11001] getaddrinfo failed)\"))"}
+{"event": "dues_loop_error", "error": "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000020AFA727ED0>: Failed to resolve 'oauth2.googleapis.com' ([Errno 11001] getaddrinfo failed)\"))"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "", "attachments": 1}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "why did a guest ask for a picture w me", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "avocado in pit form", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "WHAT", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "dead serious", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "i brought most of them", "attachments": 1}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "tell them to die????", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "sorry piss bender miku you didnt make the cut", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "and i did it because they were sweet older ladies!", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "oh nvm", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "LMFAOOOO NO USUALLY IM WITH U", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "bruh i thought it was some man creeping on u", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "NOOOOOOOOO", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "also ignore all my conclave stuff thats confidential", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#executive-board", "content": "is anyone available between 530 and 1030 tonight to pick up a food donation?", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#itty-bitty-kitty-commitee", "content": "Are you popecrave", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "omnomnomnom", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "no but they are oomf", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#itty-bitty-kitty-commitee", "content": "Of course", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "they live in plano", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "they r in italy rn and said they would bring me something back 🤞 i looove knowing people who know people", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#itty-bitty-kitty-commitee", "content": "Vro got the sinister 6 lined up", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "", "attachments": 1}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "do not open a dark fountain in my room bro", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#itty-bitty-kitty-commitee", "content": "I see other people take pictures of their  room and they always have the nicest decor , my room is plane", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "anybody here a regular at tokyo station", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "content": "looks like a cinnamon roll", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#yapper-committee", "content": "the coalition ig reposted my story!", "attachments": 1}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "ts mean sometjing to me", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "i have this miku blanket/tapestry and i had it hung up in my room", "attachments": 0}
+{"event": "message", "author": "plink5277", "channel": "#itty-bitty-kitty-commitee", "content": "I have like 7  pictures :(", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#yapper-committee", "content": "that’d be the officers :3", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "", "attachments": 1}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "she’s so cute i love it", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "tis me!", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "i wanna start reposting the pics ppl tag us in more", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#itty-bitty-kitty-commitee", "content": "I got one that actually cool", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#itty-bitty-kitty-commitee", "content": "This is the nice corner of my room", "attachments": 1}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "MIKUUUUUU", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "https://tenor.com/view/tyler1-shirt-rip-gif-26569973", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "somehow ended up talking about religion to my mom again", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "Surprisingly went better than before", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "Ended up cause I asked her what she thought about the 10 commandments thing in texas", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "Ended up pushing my \"Jesus would be a poc working class man hated by the right and at the protest\" agenda", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "Anyways how's ur guys' day", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#pictures-of-the-cats", "content": "", "attachments": 1}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "This gives me an excuse to show my miku stuffs", "attachments": 0}
+{"event": "action", "name": "muted_send", "trigger": "channel=#itty-bitty-kitty-commitee", "output": "No match for 'my miku stuffs'."}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "give me a min", "attachments": 0}
+{"event": "message", "author": "lance030315", "channel": "#pictures-of-the-cats", "content": "I was walking to the UC for some TTRPGs, and happened across the doctor himself", "attachments": 1}
+{"event": "message", "author": "spitonme", "channel": "#pictures-of-the-cats", "content": "oh are you the one i gave the tv box yo", "attachments": 0}
+{"event": "message", "author": "lance030315", "channel": "#pictures-of-the-cats", "content": "Yes, I probably should’ve introduced myself.", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#pictures-of-the-cats", "content": "That lady is the business cat wispier", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#pictures-of-the-cats", "content": "idk if it catches what i wanted but i asked for permission to record her and oml egg pets !!!", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#pictures-of-the-cats", "content": "She the only one I seen pet eggs and use to absolute baby pencil", "attachments": 0}
+{"event": "message", "author": "lance030315", "channel": "#pictures-of-the-cats", "content": "Ok, that’s even crazier, considering pencil", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#pictures-of-the-cats", "content": "Pencil was sexist , if you were a women you were fine", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#pictures-of-the-cats", "content": "😜😜😜", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#pictures-of-the-cats", "content": "#getrekt", "attachments": 0}
+{"event": "message", "author": "lance030315", "channel": "#pictures-of-the-cats", "content": "Sounds about right", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "had a dog gnaw on me and my jeans", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "sobs", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "yummy kazius", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "NO!!!!!!!!!!!!", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "the mluthiest dog i have ever worked w", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "bruised me and broke skin", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "damn!!!!", "attachments": 0}
+{"event": "message", "author": "_lunanight", "channel": "#feeding-team", "content": "Hey! Is there anyone that can feed lot 50 and business today. My boyfriend had to take my car to work today, I won’t have it back until 8:30-9ish. if not, I can just come late!", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "there is a synth v teto nendoroid behind the triple baka art that i still am unsure if I will keep or sell", "attachments": 2}
+{"event": "message", "author": "_lunanight", "channel": "#feeding-team", "content": "Also, I can cover anyone who needs it tmr 🙌", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "NO", "attachments": 1}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "NOOOOOOOOOOOOO", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "BIG FAT N O !!!!", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "wait what miku expo day did u go to", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "The 2nd day iirc? April 25th", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "hehehe we were there together", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "", "attachments": 1}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "I remember this shit so vividly...", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#itty-bitty-kitty-commitee", "content": "You make it sound you got plastered afterwards", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "there is a video on tiktok (idk if it's still up) of someone catching me yelling \"I love you miku!!!\" before the concert starting", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "got i wish", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "@active feeders", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "pls make sure to tag active feeders when u need a cover!!!", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "/not mad", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "https://www.tiktok.com/t/ZP8Bbj9sw/", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "I think back on this concert regularly I wish they'd announce another tour 💔💔💔", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "hehehe", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "derek famous era", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#executive-board", "content": "https://tenor.com/view/no-gif-23548728", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "where is miku expo 2026", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "i know theyre doing the asia tour rn but… wont someone think of the poor north americans…", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#executive-board", "content": "I eep", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "joking", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "I'm saying!!", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "I thought they'd do a 2026 but I feel like they wouldve announced it atp...", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "going thru my videos i forgot the concert started 30 minutes late loll", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "miku had an emergency", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#executive-board", "content": "Im in lubbock", "attachments": 0}
+{"event": "message", "author": "catasourus", "channel": "#feeding-team", "content": "Heights and greens fed", "attachments": 2}
+{"event": "message", "author": "slayc127", "channel": "#executive-board", "content": "erm just come back ?", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#executive-board", "content": "dont ? /j", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#executive-board", "content": "i’m sorry i left campus so i could finish my hw, the gloom was kicking my ass and i needed my green drink", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "her miku miku beam wasn't ready", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "you should listen to true believer by hayley williams, you’d fw it", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#executive-board", "content": "yall r fine i suppose 🙄 /jjjjjjj", "attachments": 0}
+{"event": "message", "author": "void_now", "channel": "#pictures-of-the-cats", "content": "@Kitadan look at this civilized gentleman waiting for dinner", "attachments": 1}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "OMNOMNOMNOMNOM", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "or psych tbh, i personally have been using mine for some time now and it’s really good especially since the most i’ll do is like an essay or report which is perfect and the battery life on mine is really good compared to past computers i had which were either rly heavy or just not it", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "microsoft word on apple is hell, especially since everything is mixed around", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "wtf do u not see that mold", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "u need to give that thing a scrub and let it air out", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "open window or outside btw", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "also", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "since ppl know cats better that i would 😭😭", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "where", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "is this safe for cats?", "attachments": 1}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "oh", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "LMFAOOOOOOOOOO", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "oh I see", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "yeah put it outside", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "on ur porch in fact", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "I was genuinely worried", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "and drop ur address", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "wair wrong channel", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "😭", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "VENUS!!!!!!!!!!!!!!!!!!", "attachments": 4}
+{"event": "message", "author": "dandelion021._.", "channel": "#itty-bitty-kitty-commitee", "content": "OK SOO", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "funnily enough i was criticizing mega churches with my mom earlier", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#itty-bitty-kitty-commitee", "content": "", "attachments": 1}
+{"event": "message", "author": "dandelion021._.", "channel": "#itty-bitty-kitty-commitee", "content": "is this safe for kitty cats? the poor baby in the vid was crying", "attachments": 0}
+{"event": "message", "author": "void_now", "channel": "#pictures-of-the-cats", "content": "They moved before I got a pic but the siblings were sitting on the feeder", "attachments": 1}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "that's cause he hates water", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#pet-pictures", "content": "kitty across the street from the taqueria 💖 (and before y’all ask i’m an hour+ away from arlington… this is not eraser /silly)", "attachments": 1}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "yeah", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "Forgot to join the billiards club this year oh well", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#pet-pictures", "content": "almost as big as eraser though!", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "I probably wouldn't have liked them anyways", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "lolol got ur ass", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "its a fair question thi", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "but da baby is okay :333", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "cats r just dramatic", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "well not dramatic but yknow. that's just a behavior!", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "there probably is a medicated shampoo for them though", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#itty-bitty-kitty-commitee", "content": "not to my immediate knowledge but i mean ur day to day people shampoo does it for us but i would not advise using it on a kitty", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "TO GET MORE-", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "hehe stubby tail", "attachments": 0}
+{"event": "message", "author": "kitadan", "channel": "#pictures-of-the-cats", "content": "Orange loaf.", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "she ssooppppo cute", "attachments": 0}
+{"event": "message", "author": "void_now", "channel": "#feeding-team", "content": "Mkz fed!", "attachments": 3}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "pool snobs make me wanna cry like oh my god can we just HIT THE DAMN BALLS????", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "who caresssss just have fun", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#purrley-pawsitive-pussy-pals", "content": "Theyre mean", "attachments": 0}
+{"event": "message", "author": "void_now", "channel": "#pictures-of-the-cats", "content": "", "attachments": 2}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "I can feel the aura", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "HEAVY ON THIS", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "didnt get to share but last time we went to caves i sank like 2 or 3 balls in one hit", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "car on da car", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#itty-bitty-kitty-commitee", "content": "oh thankfully, his lil cries were getting to me", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "", "attachments": 2}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "lana da baby pug", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "i lov this creature guys", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "WHY R PUGS GENETIC ABOMINATIONS", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "kaz did u like the jay kay pug i sent u]", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "THAT FIRST PHOTO DJDHSHS", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "I DID", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "RIGHT!!!!!!!!!!!!!!!!!!!!!!", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "i was SO PLEASED", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pet-pictures", "content": "silly pug from work", "attachments": 1}
+{"event": "message", "author": "slayc127", "channel": "#pet-pictures", "content": "im so obsessed w this picture guys", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "guys do i study or do i go to be insanely early", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "insanely early to what?", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "oh go to bed", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "erm study", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "bedtime at 8", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "Mmm no", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "Bed", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "bruh", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "ur screwing w ur slwepschefule so bad /lh /not mean", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "Brah it's been fucked", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "eggzactly", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "i get it!", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "hey i remember vaugely that microwave has a thing going ok with his eyes, theyre a little goopy rn and the discharge looks a bit bloody", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#itty-bitty-kitty-commitee", "content": "?????", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#pet-pictures", "content": "AWWW", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "", "attachments": 1}
+{"event": "message", "author": "m_digio", "channel": "#itty-bitty-kitty-commitee", "content": "That was a few weeks ago! I thought it got better?", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#report-new-cats", "content": "wow such photo skills", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#itty-bitty-kitty-commitee", "content": "Gah @officers", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#report-new-cats", "content": "(i giggled)", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#itty-bitty-kitty-commitee", "content": "oh you’ve gotta be shitting me", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#itty-bitty-kitty-commitee", "content": "not our old diva 😭😭", "attachments": 0}
+{"event": "message", "author": "ludavis", "channel": "#report-new-cats", "content": "Dang that's a nice steel blue Ford maverick", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "oh geez", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "@Derek [TNR]", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "no my diva", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "microwave<a:__catcry:975843743590666300>", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "he looks so sad", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "i think hes just sleepy haha hes letting me pet his face and everything so i dont think its hurting him too bad", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "oh thats good", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#itty-bitty-kitty-commitee", "content": "thank you sm for pointing this out, we’re gonna get some scheduled asap", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "still silly", "attachments": 1}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "yeah no problem, i visited him earlier today and didnt notice anything so idk what happened", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#itty-bitty-kitty-commitee", "content": "oh so this is recent recent. i wonder what triggered this", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "no yeah i saw him earlier too", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "but i couldnt see him, he was in the busy", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "bush", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "idk why i said that lowkey", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "timestamped 3:03 today and no eye goop. so recent yes", "attachments": 1}
+{"event": "message", "author": "celeryiscelery", "channel": "#executive-board", "content": "", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#executive-board", "content": "literally the worst timing w this but let’s see what his eyes look like tomorrow before we schedule anything", "attachments": 0}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#pet-pictures", "content": "BABY BOYY", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#executive-board", "content": "i think we still need to get him in since it keeps coming back :/", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#executive-board", "content": "we’re gonna have to steal that carrier back from roach and miranda since that’s most likely gonna make this way easier", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "sun bathing", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#executive-board", "content": "i can see if i can get it from them tonight", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#executive-board", "content": "i will warn that i’m gonna be a bit busy this upcoming week bc i do have pescado’s play date (completely forgot to message about that, im sorry) and an exam. 💔\ni can help schedule the appointment but i dont know if its gonna match up with my availability", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#executive-board", "content": "ah okay heard!", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#yapper-committee", "content": "woa 😄", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#itty-bitty-kitty-commitee", "content": "so like flee shampoo for dogs but for cats", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#yapper-committee", "content": "I feel honored lol", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "hehe yesss im glad!!", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "content": "he lovessss those chin scritches", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "kpop demon hunters in da lyft", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "content": "waow", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "content": "is it good?", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "content": "I haven’t seen it yet", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "its aweaome", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "saw it 3 or 4 times!", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "first time was rhw night it came out i think, then 2nd time w mckayla n 3rd time w derk", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "content": "ooo oki", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "content": "I may watch it then lol", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "yassss report back when u do!", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "content": "okii", "attachments": 0}
+{"event": "message", "author": "hatshura", "channel": "#pictures-of-the-cats", "content": "car-ception", "attachments": 0}
+{"event": "message", "author": "hatshura", "channel": "#pictures-of-the-cats", "content": "https://tenor.com/view/brain-brain-meme-big-brain-big-brain-meme-big-brain-time-gif-2441110471562975014", "attachments": 0}
+{"event": "message", "author": "wingoffire2255", "channel": "#bot-spam", "content": "tomecat show me a melvin", "attachments": 0}
+{"event": "action", "name": "muted_send", "trigger": "channel=#bot-spam", "output": "No match for 'a melvin'."}
+{"event": "message", "author": "wingoffire2255", "channel": "#bot-spam", "content": "fuck", "attachments": 0}
+{"event": "message", "author": "wingoffire2255", "channel": "#bot-spam", "content": "tomcat show me melvin", "attachments": 0}
+{"event": "action", "name": "muted_send", "trigger": "channel=#bot-spam", "output": "embed"}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "yes omg its so good", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#itty-bitty-kitty-commitee", "content": "a must watch", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "", "attachments": 1}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "LMAO??? so skrunkly", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "da avocado", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "avocado on da flo", "attachments": 1}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "on a mission‼️‼️", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "hiding under bed 😭😭", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "me thinks ill walk back to ao", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "whats the worst that can happen!", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "okie avocado got one more dawn bath n one pill, told them if they see more they need to give another n give another bath. also gave them the flea comb.", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "", "attachments": 4}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "got scared of the traffic n went back up the driveway :( i dont like going on private property so i left", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "Hopefully his last bath for a while", "attachments": 1}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "@Ben @Kitadan", "attachments": 4}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "", "attachments": 4}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "hes such a sweet babg", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "he got me good on my chin but it was My fault", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "smh /j", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "He reminds me of puddles so much 😭 😭 😭", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "ill get business since im running back over to campus anyway @zahara 🌙", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "lot 50 will survive (they hunt!) if u dont wanna trek out here for them btw!! :33", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "YESSSSSSSSSSS", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "ur so right", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "puddles was an angel im really so so so glad in retrospect we were able to find a home w her", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "her \"owner\" i hope is suffering in hell", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#pictures-of-the-cats", "content": "who is this sweet baby? i was sitting at a table outside the uc and they were meowing but too shy to come up to me lol", "attachments": 1}
+{"event": "action", "name": "muted_send", "trigger": "channel=#pictures-of-the-cats", "output": "Processing image…"}
+{"event": "action", "name": "viz_identify", "trigger": "boxes=0 guesses=0", "output": "ok"}
+{"event": "action", "name": "viz_identify_error", "trigger": "err=AttributeError", "output": "'NoneType' object has no attribute 'edit'"}
+{"event": "action", "name": "muted_send", "trigger": "channel=#pictures-of-the-cats", "output": "Sorry, identify failed."}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "snickers", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "MS DIVA", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "SNICKERS", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#pictures-of-the-cats", "content": "awwwh", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "MY BELOVED", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#pictures-of-the-cats", "content": "she's so cute", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "she loves to have conversations but doesnt like being near people. she likes being admired tho", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "she wants a parasocial relationship with people", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "im omw to the uc i hope she'll still be ther", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#pictures-of-the-cats", "content": "she most likely is, she went under the golf cart over there", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "WAHOOOO", "attachments": 0}
+{"event": "message", "author": "_rambone_", "channel": "#purrley-pawsitive-pussy-pals", "content": "@kazius [membership+fundraising] @mckayla [retired] just talked to the GM at Highland Village", "attachments": 0}
+{"event": "message", "author": "_rambone_", "channel": "#purrley-pawsitive-pussy-pals", "content": "She kinda helped me start looking for positions closer to my house", "attachments": 0}
+{"event": "message", "author": "_rambone_", "channel": "#purrley-pawsitive-pussy-pals", "content": "W networking", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "WAHOOOOOOO", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "ill be sad tho man", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#pictures-of-the-cats", "content": "I always love how pissed she looks", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#feeding-team", "content": "I fed microwave that son of a bitch is LYING", "attachments": 0}
+{"event": "message", "author": "hersheykatt", "channel": "#due-paying-portal", "content": "I paid dues through paypal and submitted the application form. I couldnt submit a screenshot in the form though. My name will be labeled as Miralee", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#feeding-team", "content": "They are in cahoots", "attachments": 0}
+{"event": "message", "author": "marciepoo143", "channel": "#pet-pictures", "content": "he do not PLayyyyyy about butt scritches", "attachments": 1}
+{"event": "message", "author": "plink5277", "channel": "#itty-bitty-kitty-commitee", "content": "I see the cat tv in here", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#executive-board", "content": "flashbanged michael", "attachments": 3}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "LMFAOOOOO", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "he needs more food man", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#feeding-team", "content": "the fbca isnt under our jurisdiction right?", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#feeding-team", "content": "saw someone feeding the cats there and some kittens but i think i remember that you guys know that already", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#feeding-team", "content": "also dont really know why i put this in the feeding char but whatever", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "the first baptist church ? unforch not", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#feeding-team", "content": "are you still going to feed business?", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#feeding-team", "content": "that’s nawt us, that would be a church member!", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "im snagging business 4 them!", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#feeding-team", "content": "please don’t go over and talk to them abt feeding the kitties they will fight us 💔", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#feeding-team", "content": "ok no problem wanted to ask cause im close", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#feeding-team", "content": "probably", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#feeding-team", "content": "i saw the cats and almost approached them before i saw that they were out because someone was feeding them and i was like oh", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "low quality diva", "attachments": 1}
+{"event": "message", "author": "simplyshadow171295", "channel": "#feeding-team", "content": "yeah the church has some members that like to feed the cats, and some people in the church that think it’s us", "attachments": 0}
+{"event": "message", "author": "cici4f3", "channel": "#pictures-of-the-cats", "content": "snickers lacroix image", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#feeding-team", "content": "🤷", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "business fed", "attachments": 1}
+{"event": "message", "author": "frostfire312", "channel": "#questions-and-suggestions/How do I gain team roles?", "content": "I’m in most of the club function channels since I’m a paying member but I have no idea how to gain the roles so I can be notified when someone needs help.", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#questions-and-suggestions/How do I gain team roles?", "content": "we'll have to add them manually! are you wanting all of the team roles?", "attachments": 0}
+{"event": "message", "author": "astro_db", "channel": "#pictures-of-the-cats", "content": "", "attachments": 1}
+{"event": "message", "author": "astro_db", "channel": "#pictures-of-the-cats", "content": "I miss Jupiter", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "walked way too much toxay", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "wrong channel oops", "attachments": 0}
+{"event": "message", "author": "autumn065829", "channel": "#due-paying-portal", "content": "My username is $AutumnMcCalla on cashapp, I just paid $15", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "i rly have to walk across campus now", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "sigh", "attachments": 0}
+{"event": "message", "author": "frostfire312", "channel": "#questions-and-suggestions/How do I gain team roles?", "content": "yes please", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#questions-and-suggestions/How do I gain team roles?", "content": "added them! for fundraising + membership just keep an eye out for messages, it doesnt look like we have a designated role anymore! ill double check when i get home tho", "attachments": 0}
+{"event": "message", "author": "kitadan", "channel": "#yapper-committee", "content": "What am I doing on Friday night when I don't have to work in the morning?  Binging an anime from a year ago.", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "real.", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#itty-bitty-kitty-commitee", "content": "Its good yeah", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#itty-bitty-kitty-commitee", "content": "Big fan", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#itty-bitty-kitty-commitee", "content": "I think its up there with Into the Spiderverse in its animation", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "stay safe!!", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "i am!", "attachments": 0}
+{"event": "message", "author": "emmav", "channel": "#report-new-cats", "content": "", "attachments": 1}
+{"event": "message", "author": "emmav", "channel": "#report-new-cats", "content": "Does anyone know who this maybe 2 month old ginger kitten is?", "attachments": 0}
+{"event": "message", "author": "emmav", "channel": "#report-new-cats", "content": "I wanna call him simba", "attachments": 0}
+{"event": "message", "author": "emmav", "channel": "#report-new-cats", "content": "By the mac", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#report-new-cats", "content": "west campus is mostly unexplored!", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#report-new-cats", "content": "but i think we have seen specifically this guy hold on", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#report-new-cats", "content": "jk i can’t find it but the guy was in a tree. possibly the same cat", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#report-new-cats", "content": "Wayy older than that", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#report-new-cats", "content": "But I believe this is one another group (called in by uta??) Had trapped and just gave to us but we could do anything at the time because nobody was able to hold them and I was out of the state at the time", "attachments": 0}
+{"event": "message", "author": "emmav", "channel": "#report-new-cats", "content": "Hes so fucking small", "attachments": 0}
+{"event": "message", "author": "emmav", "channel": "#report-new-cats", "content": "Like the video is not giving him justice", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "One day I'll have enough money to buy random band merch", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "go to a thrift store? /j", "attachments": 0}
+{"event": "message", "author": "kitadan", "channel": "#report-new-cats", "content": "I think this one is part of a second litter at old smart hospital.", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "Streets saying there's some good news", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "??", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "One of my haters is not in good condition from what I know", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "It may be a good weekend", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "Throws up out window", "attachments": 0}

@@ -1,0 +1,307 @@
+[09/23/2025 11:07:43.453 PM] Message  || User: spitonme            || Channel: #feeding-team                        || Content: ts beautiful
+[09/23/2025 11:07:44.975 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/23/2025 11:07:48.212 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/23/2025 11:07:49.181 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/23/2025 11:07:50.523 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/23/2025 11:07:51.257 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/23/2025 11:07:51.990 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/23/2025 11:07:53.715 PM] Action   || Name: gmail_auth_url      || Trigger:                                      || Output: https://accounts.google.com/o/oauth2/auth?response_type=code&client_i...
+[09/23/2025 11:07:53.736 PM] Action   || Name: gmail_log_scheduler || Trigger: auth                                 || Output: pending
+[09/23/2025 11:08:50.185 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, auth url http://localhost:8765/?state=OFjCus2uiIIIelc3087cHo...
+[09/23/2025 11:08:50.199 PM] Intent   || gmail_auth_code           ||                                              
+[09/23/2025 11:08:50.594 PM] Action   || Name: gmail_auth_complete || Trigger: by=624440365595754496                || Output: ok
+[09/23/2025 11:08:57.219 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, check the last email
+[09/23/2025 11:08:57.237 PM] Intent   || gmail_check_last          ||                                              
+[09/23/2025 11:08:57.729 PM] Email    || Subject: Re: Campus Ca... || From: "Souders, Harper" <hcs5615@mavs.uta.... || Content: Thank you so much! I did find the area it helpe...
+[09/23/2025 11:09:07.837 PM] Message  || User: spitonme            || Channel: #cat-name-ideas                      || Content: sushi
+[09/23/2025 11:09:34.797 PM] React+   || User: izzyballz           || Channel: #feeding-team                        || emoji=🫡; msg="Chat were officially full" by m_digio
+[09/23/2025 11:15:12.414 PM] React+   || User: vasyline            || Channel: #pet-pictures                        || emoji=😭; msg=1420128973228347494
+[09/23/2025 11:17:31.452 PM] Message  || User: .bettercalljack     || Channel: #itty-bitty-kitty-commitee           || Content: The wifi still doen
+[09/23/2025 11:17:33.550 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: mother nature teases us with the setup for rain and severe thunderst...
+[09/23/2025 11:17:43.825 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: OH YEAHHHH WUCK FESTTTTT
+[09/23/2025 11:17:53.001 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: and then she skips us
+[09/23/2025 11:17:59.429 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: yesssss
+[09/23/2025 11:18:06.762 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: Im from pshs
+[09/23/2025 11:18:11.595 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat show me twix
+[09/23/2025 11:18:11.634 PM] Intent   || show_photo                ||                                               || cat=Twix
+[09/23/2025 11:18:45.369 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: woah
+[09/23/2025 11:18:54.236 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: actually small world we're in
+[09/23/2025 11:19:08.236 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: ngl ive been seeing alot of pshs students go to uta
+[09/23/2025 11:19:44.100 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: forks found in kitchen tbh
+[09/23/2025 11:19:59.741 PM] React+   || User: baseketballin       || Channel: #feeding-team                        || emoji=🫡; msg="Chat were officially full" by m_digio
+[09/23/2025 11:20:00.505 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: it’s nice and local
+[09/23/2025 11:20:15.068 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: 🙂‍↕️
+[09/23/2025 11:20:32.108 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: i almost chose to commute from plano bc i thought it would be possible
+[09/23/2025 11:20:53.825 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: hn not anymore esp how long im on campus
+[09/23/2025 11:21:17.991 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: it’s like an hour right
+[09/23/2025 11:21:26.975 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: roughly
+[09/23/2025 11:21:40.644 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: that’s not too bad that’s only like 15 min longer than mine
+[09/23/2025 11:21:52.169 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: it’d suck w a shit schedule though
+[09/23/2025 11:21:56.600 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: 45-50 if you take gbt
+[09/23/2025 11:22:11.715 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: literally
+[09/23/2025 11:22:18.174 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: like im here 8am-10pm
+[09/23/2025 11:22:19.314 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: kinda just took a 7 hour nap chat am i cooked
+[09/23/2025 11:22:21.247 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: hell nah
+[09/23/2025 11:22:25.548 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: bye how did this happen
+[09/23/2025 11:22:38.245 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: morning classes + club involvment
+[09/23/2025 11:22:44.905 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: aurrrr
+[09/23/2025 11:22:46.812 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: so we went to sleep 💪
+[09/23/2025 11:22:58.631 PM] React+   || User: izzyballz           || Channel: #yapper-committee                    || emoji=👍; msg="kinda just took a 7 hour nap chat am i c..." by racerdg
+[09/23/2025 11:23:05.128 PM] Edit     || User: yaeji               || Channel: #yapper-committee                    || so we went to sleep 💪 -> so we went to sleep extra early 💪
+[09/23/2025 11:23:05.592 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: yeah gl bro
+[09/23/2025 11:23:13.642 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: ty 🥲
+[09/23/2025 11:23:18.308 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: i try my best
+[09/23/2025 11:23:31.027 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: past 7 pm i gotta go i am not staying any later
+[09/23/2025 11:23:43.056 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i start getting antsy
+[09/23/2025 11:23:52.355 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: less if u go faster though
+[09/23/2025 11:23:55.872 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: I go like 85
+[09/23/2025 11:23:59.071 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: thats fair honestly 😭
+[09/23/2025 11:24:03.046 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: might go see if any cats are out im bored and dont want to do homework
+[09/23/2025 11:24:16.545 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: anyways is the wifi still out
+[09/23/2025 11:24:22.572 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: Toll costs do add up though
+[09/23/2025 11:24:29.335 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i do not touch the tolls
+[09/23/2025 11:24:30.221 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: ever
+[09/23/2025 11:24:31.425 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: they bumped the price on them tolls
+[09/23/2025 11:24:43.298 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: thats understandable
+[09/23/2025 11:25:04.539 PM] React+   || User: celeryiscelery      || Channel: #itty-bitty-kitty-commitee           || emoji=‼️; msg="Thank goodness for the lesbians" by bubblebee5866
+[09/23/2025 11:25:28.272 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: yes
+[09/23/2025 11:25:29.781 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: brah
+[09/23/2025 11:25:31.450 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: 161 my favorite
+[09/23/2025 11:25:35.061 PM] React+   || User: celeryiscelery      || Channel: #itty-bitty-kitty-commitee           || emoji=‼️; msg="????" by spitonme
+[09/23/2025 11:25:37.733 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: and 635 texpress
+[09/23/2025 11:25:50.778 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: oh hell nah
+[09/23/2025 11:25:56.808 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: but lowk
+[09/23/2025 11:26:00.199 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: i hate i35
+[09/23/2025 11:26:04.342 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: despise it
+[09/23/2025 11:26:11.623 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: avoid 35 and loop 12 like the plague
+[09/23/2025 11:26:15.435 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: literal hell on earth the first time i went
+[09/23/2025 11:26:26.242 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i drive on 35 daily
+[09/23/2025 11:26:40.164 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: 35 west for me specifically
+[09/23/2025 11:26:45.904 PM] Edit     || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || 35 west for me specifically -> 35 east for me specifically
+[09/23/2025 11:26:55.393 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i don’t think i’ve ever been on east
+[09/23/2025 11:27:02.219 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: 30 into dallas too <:bawhowho:1415189116647374929>
+[09/23/2025 11:27:19.283 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: the move honestly for me
+[09/23/2025 11:27:19.408 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: have you guys been driving when they start closing down the highways
+[09/23/2025 11:27:20.609 PM] React+   || User: .s3j                || Channel: #pet-pictures                        || emoji=❤️; msg=1420229462674374728
+[09/23/2025 11:27:24.022 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: is george bush
+[09/23/2025 11:27:24.925 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: actual fucking torture
+[09/23/2025 11:27:28.056 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: then i35
+[09/23/2025 11:27:31.092 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: 360 and 161 really be dividing the metroplex..
+[09/23/2025 11:27:40.664 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: but then again tolls 🥲
+[09/23/2025 11:27:57.160 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: brooo 75 in plano has been so bad
+[09/23/2025 11:27:59.483 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: so like everyday
+[09/23/2025 11:28:06.546 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: esp afternoon + rush hour
+[09/23/2025 11:28:13.235 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: OMG 635 -> 75
+[09/23/2025 11:28:14.732 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: HELL
+[09/23/2025 11:28:16.968 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: everyone forgets how to drive it’s inane
+[09/23/2025 11:28:18.872 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: ig 75 in general
+[09/23/2025 11:28:22.509 PM] Edit     || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || everyone forgets how to drive it’s inane -> everyone forgets how to drive it’...
+[09/23/2025 11:28:24.914 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: LITERALLYYYYY
+[09/23/2025 11:28:26.641 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: insane
+[09/23/2025 11:28:48.724 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: i wish they taught you to pick your lane early
+[09/23/2025 11:29:26.129 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: and that time saved exponentially decreases the faster you go
+[09/23/2025 11:29:56.114 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: you don't have to pass every car going 5 mph slower than you
+[09/23/2025 11:30:09.356 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i am so pro flow of traffic i don’t care if we’re all doing 200 mph ...
+[09/23/2025 11:30:37.085 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: i am too but it gets unnecessary at a certain point
+[09/23/2025 11:30:54.591 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: how are you gonna give mentally deranged drivers even LESS time to m...
+[09/23/2025 11:30:55.391 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: there’s nothing i hate more than a slow ass car in the fast lane and...
+[09/23/2025 11:31:01.511 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: and cut you off from the far lane to make their exit
+[09/23/2025 11:31:11.890 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: i honestly start complaining when theres a slow car in a fast lane
+[09/23/2025 11:31:18.008 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: like fucking MOVE
+[09/23/2025 11:31:20.168 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: ok that i get angry abt
+[09/23/2025 11:31:39.348 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: slow ass car in the fast lane and then the guy flying in the fast la...
+[09/23/2025 11:32:00.083 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: go fuck yourself like actually why can’t you just do 55 in the right...
+[09/23/2025 11:32:11.081 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: what is the psychology behind fast lane users who don't go FAST
+[09/23/2025 11:32:29.900 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: bro if i’m i’m the fast lane i will be doing 80 mph
+[09/23/2025 11:32:36.011 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: otherwise get out of the fast lane….
+[09/23/2025 11:32:44.842 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: that’s like the point i fear
+[09/23/2025 11:32:47.005 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: bro on 161 my avg speed bout 95 at ~8-9 am
+[09/23/2025 11:32:56.378 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: ikr like Dont go into the left lane when you know you want to go 30 ...
+[09/23/2025 11:33:20.662 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: i literally have a speeding spotify playlist
+[09/23/2025 11:33:23.983 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: 🤭
+[09/23/2025 11:33:26.326 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: there’s nothing worse than having to hard brake
+[09/23/2025 11:33:29.358 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i can’t
+[09/23/2025 11:33:37.715 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i hate it so bad
+[09/23/2025 11:33:42.017 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: DO U SEE
+[09/23/2025 11:33:49.425 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: people weaving around
+[09/23/2025 11:33:52.466 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: across 3 lanes
+[09/23/2025 11:33:55.823 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: on collins
+[09/23/2025 11:34:01.405 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i hate the weavers bro
+[09/23/2025 11:34:04.462 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: PICK A LANE DAMN
+[09/23/2025 11:34:07.790 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: why are we threading the needle
+[09/23/2025 11:34:11.752 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: ONGGG
+[09/23/2025 11:34:23.457 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: Im not gonna lie I weave sometimes...
+[09/23/2025 11:34:23.743 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: like ur still going to be late whats the point
+[09/23/2025 11:34:35.673 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: im deadddd 😭
+[09/23/2025 11:34:42.299 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: Usually it's on the highway though cause I dont like passing on the ...
+[09/23/2025 11:34:47.743 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: highway is fine
+[09/23/2025 11:34:47.892 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: I always pass on the left
+[09/23/2025 11:34:55.599 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: highway >>> local
+[09/23/2025 11:35:16.308 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: it’s so funny when a car is weaving all around a bunch of cars and t...
+[09/23/2025 11:35:22.427 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: yeah 😭
+[09/23/2025 11:35:22.679 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: like you did all that for what exactly
+[09/23/2025 11:35:29.671 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: yeah honestly the right time to weave is when theres a slow ass car ...
+[09/23/2025 11:35:32.791 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: risked ur mf car and saved no fkin time
+[09/23/2025 11:35:50.248 PM] React+   || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || emoji=💯; msg="it’s so funny when a car is weaving all ..." by izzyballz
+[09/23/2025 11:36:02.390 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: I do try to look way ahead
+[09/23/2025 11:36:19.957 PM] React+   || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || emoji=💯; msg="it’s so funny when a car is weaving all ..." by izzyballz
+[09/23/2025 11:36:27.523 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: If you anticipate traffic then you are a safer driver
+[09/23/2025 11:36:47.369 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: Also better fuel economy because you arent braking and accelerating ...
+[09/23/2025 11:37:02.838 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: no seriously
+[09/23/2025 11:37:09.000 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: the ppl who gas and brake repeatedly
+[09/23/2025 11:37:19.044 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: instead of just.. maintaining a speed
+[09/23/2025 11:37:28.159 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: exactly!!
+[09/23/2025 11:37:44.221 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i love my car i can drive like complete shit and still get like 32 mpg
+[09/23/2025 11:37:51.996 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: I say fuck the people behind me and just never hit the gas while in ...
+[09/23/2025 11:37:53.156 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: not that i am driving like complete shit
+[09/23/2025 11:37:57.363 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: niiiiice
+[09/23/2025 11:37:57.930 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: I’m letting that bitch ROLL
+[09/23/2025 11:38:06.445 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: bro me
+[09/23/2025 11:38:32.144 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i try to touch the brake as little as possible on the highway i hate...
+[09/23/2025 11:38:35.482 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: i drive a DCT omg ppl who inch piss me off so much
+[09/23/2025 11:38:38.260 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: You ain’t catching me edging the gas petal for 2 seconds
+[09/23/2025 11:39:04.160 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: sorry i’m lowkey an incher
+[09/23/2025 11:39:16.645 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: bro ur fancy automatic can handle it
+[09/23/2025 11:39:23.328 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: yes it can !
+[09/23/2025 11:39:24.532 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: im overheating my clutch overhere
+[09/23/2025 11:39:45.622 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: and who set that system up
+[09/23/2025 11:39:50.192 PM] React+   || User: spitonme            || Channel: #itty-bitty-kitty-commitee           || emoji=🐙; msg="i am so pro flow of traffic i don’t care..." by izzyballz
+[09/23/2025 11:40:39.896 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: and who decided your car couldn’t have auto
+[09/23/2025 11:40:50.277 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: auto cars r boringggg
+[09/23/2025 11:41:02.110 PM] Edit     || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || auto cars r boringggg -> traditional auto cars r boringggg
+[09/23/2025 11:41:06.613 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: I’d say yes but we live in Texas
+[09/23/2025 11:41:17.308 PM] React+   || User: spitonme            || Channel: #itty-bitty-kitty-commitee           || emoji=🐙; msg="and who set that system up" by izzyballz
+[09/23/2025 11:41:21.401 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: my car is an automatic technically
+[09/23/2025 11:41:30.554 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: but its... different
+[09/23/2025 11:41:52.094 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: honda fit is the ideal vehicle it’s so peak
+[09/23/2025 11:41:58.702 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: my car is both automatic and manual and once i accidentally turned i...
+[09/23/2025 11:42:20.427 PM] React+   || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || emoji=❤️; msg="honda fit is the ideal vehicle it’s so p..." by izzyballz
+[09/23/2025 11:42:32.701 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: sorry what
+[09/23/2025 11:42:34.131 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: car enthusiasts can agree honda fit peak
+[09/23/2025 11:42:46.172 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: how did this happen 😭
+[09/23/2025 11:43:16.105 PM] Message  || User: littletechyyy       || Channel: #itty-bitty-kitty-commitee           || Content: this is so real
+[09/23/2025 11:43:23.134 PM] React+   || User: kitadan             || Channel: #yapper-committee                    || emoji=👍; msg="kinda just took a 7 hour nap chat am i c..." by racerdg
+[09/23/2025 11:43:36.404 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: correction driving enthusiasts can agree the Honda fit is peak
+[09/23/2025 11:43:48.056 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: car enthusiasts too
+[09/23/2025 11:43:48.607 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: not a honda fit but there was a period of time my honda odyssey need...
+[09/23/2025 11:43:55.966 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: honda fit very tunable and fun
+[09/23/2025 11:43:58.685 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: yes my tank is 20 dollars yes i average like 37mpg yes i do not have...
+[09/23/2025 11:44:14.515 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: in this part of town all the car enthusiasts is how high your truck is
+[09/23/2025 11:44:17.766 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: oh nah 😭
+[09/23/2025 11:44:25.858 PM] Edit     || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || in this part of town all the car enthusiasts is how high your truck is -> in ...
+[09/23/2025 11:44:44.171 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: if i could id purge pickup trucks from the road
+[09/23/2025 11:44:48.019 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: penis size ∝ 1/(strut height + tire diameter)
+[09/23/2025 11:45:03.293 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: a road raging pickup trip driver almost killed me the other day
+[09/23/2025 11:45:18.440 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: 7/10 road rage incidents involve a pickup driver
+[09/23/2025 11:45:19.230 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: hitting the <:balloonboi:933099871257382983> every time I see a lift...
+[09/23/2025 11:45:23.638 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: My car has paddle shifters and i accidentally hit one of them
+[09/23/2025 11:45:25.249 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: lifted trucks that don't have their headlights readjusted 😡😡😡😡😡
+[09/23/2025 11:45:39.170 PM] React+   || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || emoji=❤️; msg="hitting the <:balloonboi:933099871257382..." by fawnest_
+[09/23/2025 11:45:51.984 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: i need to find a way to attach 15,000 lumens to the back of my vehic...
+[09/23/2025 11:45:53.950 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: bro i deadass can’t see
+[09/23/2025 11:46:02.747 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: my tiny ass car
+[09/23/2025 11:46:10.077 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: ohhh one of dem bitches, usually there’s a system in place where the...
+[09/23/2025 11:46:18.257 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: ahhhh you'll be fine
+[09/23/2025 11:46:22.539 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: always a failsafe
+[09/23/2025 11:46:41.143 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: unless manual
+[09/23/2025 11:46:48.698 PM] Edit     || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || unless manual -> unless true manual
+[09/23/2025 11:47:04.529 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i literally can’t with peoples led headlights everyone has two mini ...
+[09/23/2025 11:47:12.402 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: or one of them Hyundais
+[09/23/2025 11:47:20.717 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: i drive a hyundai
+[09/23/2025 11:47:22.306 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: you can literally barely see a difference between my headlights bein...
+[09/23/2025 11:47:47.128 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: LOL
+[09/23/2025 11:47:50.584 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: real
+[09/23/2025 11:47:52.369 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: last night i was driving and they were off and i didn’t notice until...
+[09/23/2025 11:48:01.989 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: all them new cars got those photon cannons at the front
+[09/23/2025 11:48:12.382 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: AND PPL WITH DRLS
+[09/23/2025 11:48:25.266 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: be Biden blasting the shit outa my eyes
+[09/23/2025 11:48:28.275 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: who think their drls are headlights 🤦
+[09/23/2025 11:48:45.492 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: https://tenor.com/view/biden-blast-joe-biden-biden-blast-gif-6547929...
+[09/23/2025 11:48:45.648 PM] Edit     || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || https://tenor.com/view/biden-blast-joe-biden-biden-blast-gif-6547929686164862...
+[09/23/2025 11:48:53.076 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: discord light mode
+[09/23/2025 11:49:31.868 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: yeah it was scary as fuck though i was in the middle of driving and ...
+[09/23/2025 11:49:52.139 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: the jolt of sudden high rpms go crazy
+[09/23/2025 11:49:53.471 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: do not be scared of le rev
+[09/23/2025 11:49:59.448 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: but my dad was with me and you just have to hold down the paddle aga...
+[09/23/2025 11:50:03.140 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: so now i know
+[09/23/2025 11:50:09.572 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: oh dats weird
+[09/23/2025 11:50:21.467 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: usually the car just realizes “oh shit mb” and goes back to auto
+[09/23/2025 11:50:26.284 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: i just wait until a stoplight and go neutral-drive again
+[09/23/2025 11:50:41.997 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: usually they can downshift automatically to avoid stalling
+[09/23/2025 11:51:03.178 PM] Edit     || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || i just wait until a stoplight and go neutral-drive again -> i just waited unt...
+[09/23/2025 11:51:19.237 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: I’m in a love/hate relationship with whoever invented Auto start-stop
+[09/23/2025 11:51:41.002 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: bro my old car (rip) didnt have a setting to turn it off permanently
+[09/23/2025 11:51:48.071 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: so everyyy time u started the car u had to turn it off
+[09/23/2025 11:52:00.816 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: Tbh I’m not sure if my dads has it too
+[09/23/2025 11:52:01.744 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: 2024 too like cmon
+[09/23/2025 11:52:03.128 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: Haven’t checked
+[09/23/2025 11:52:10.830 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: idek what that is
+[09/23/2025 11:52:17.180 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: my car is from 2013 it does not have auto start
+[09/23/2025 11:52:39.064 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: i drive a 2022 now
+[09/23/2025 11:52:41.987 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: car come to full stop, car make engine turn off, car save minuscule ...
+[09/23/2025 11:52:45.629 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: luckily it dont have it
+[09/23/2025 11:53:00.988 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: oooh yeah
+[09/23/2025 11:53:02.732 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: my car does not have that
+[09/23/2025 11:53:07.555 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: be happy
+[09/23/2025 11:53:09.217 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: u drive a honda fit
+[09/23/2025 11:53:14.338 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: it sound great but it’s a waste of time
+[09/23/2025 11:53:16.421 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: i dont think its necessary 😭
+[09/23/2025 11:53:30.847 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: more reasons to get a honda fit
+[09/23/2025 11:53:37.578 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: my car is my first car still
+[09/23/2025 11:53:40.846 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: some of these commuters r a little wild ngl
+[09/23/2025 11:53:53.510 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: this is my first car i got her one month ago
+[09/23/2025 11:53:58.825 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: <:aliencat:1417698216996241511>
+[09/23/2025 11:54:01.830 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: I’ve seen alotta big block v8s in both west and south lots
+[09/23/2025 11:54:26.516 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: south lots have a lot of cool cars
+[09/23/2025 11:54:33.610 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: some dude has a clean z
+[09/23/2025 11:54:34.890 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: have u seen the cyber trucks
+[09/23/2025 11:54:37.420 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i don’t understand why anyone would want anything other than market ...
+[09/23/2025 11:54:42.283 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: do not get me started.
+[09/23/2025 11:54:45.597 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: oh hell nah
+[09/23/2025 11:54:48.402 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: VROOOOOM
+[09/23/2025 11:54:48.591 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: isnt there a pink one
+[09/23/2025 11:54:49.368 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: ugly ahh cars
+[09/23/2025 11:54:50.943 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: have you seen the fuck ass pink one
+[09/23/2025 11:54:52.134 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: yes
+[09/23/2025 11:54:59.338 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: theres a miata that usually parks in the upgrade sections in the sou...
+[09/23/2025 11:55:03.116 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: cybertruck looks like a doorstop
+[09/23/2025 11:55:03.348 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: lmfao i saw it when i was with chris one time
+[09/23/2025 11:55:07.685 PM] React+   || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || emoji=😭; msg="cybertruck looks like a doorstop" by yaeji
+[09/23/2025 11:55:27.085 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: there was a first gen mr2 as well
+[09/23/2025 11:55:50.183 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: must be so brave pulling up to uta with a cyber truck 😭 💀 🥀
+[09/23/2025 11:55:58.722 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: 🍅
+[09/23/2025 11:56:08.866 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: brooo my dad has a hummer
+[09/23/2025 11:56:09.005 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: there’s a car that usually parks in the upgrade section of lot 49 wi...
+[09/23/2025 11:56:25.750 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: hummer is chad cybertruck
+[09/23/2025 11:56:32.367 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: should be my car.
+[09/23/2025 11:56:34.688 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i think it’s called ghost pink or smth like that
+[09/23/2025 11:56:40.811 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: (kazius has no license)
+[09/23/2025 11:56:47.222 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: bro it’s so pretty it’s white until the light hits and then it refle...
+[09/23/2025 11:56:50.552 PM] React+   || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || emoji=😭; msg="bro it’s so pretty it’s white until the ..." by izzyballz
+[09/23/2025 11:56:53.483 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: STOPPPPPPPPP
+[09/23/2025 11:56:57.575 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: need right neow
+[09/23/2025 11:56:59.228 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: oh pearlescent
+[09/23/2025 11:57:02.783 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: thats expensiveeee
+[09/23/2025 11:57:20.490 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: (no text; attachments=1)
+[09/23/2025 11:57:29.230 PM] React+   || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || emoji=😭; msg="bro it’s so pretty it’s white until the ..." by izzyballz
+[09/23/2025 11:57:29.361 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: it is gorg
+[09/23/2025 11:57:32.793 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: everytime I see a Mazda in red it’s just chef kiss
+[09/23/2025 11:57:39.978 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: <:catthumbsup:931115163317329920>
+[09/23/2025 11:57:45.689 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: hummer ev in full creme/offwhite
+[09/23/2025 11:57:46.802 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: i want a beatle car 🥲
+[09/23/2025 11:57:55.531 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: my parents dont support this tho
+[09/23/2025 11:58:03.419 PM] Edit     || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || i want a beatle car 🥲 -> i want a cute beatle car 🥲
+[09/23/2025 11:58:09.018 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: my mom thinks ill be shredded on the road driving a small car
+[09/23/2025 11:58:18.770 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: lmfao
+[09/23/2025 11:58:21.346 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: (no text; attachments=1)
+[09/23/2025 11:58:27.824 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: cutie
+[09/23/2025 11:58:35.447 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: get a honda fit
+[09/23/2025 11:58:49.861 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: i wanted a beetle but they suck butt
+[09/23/2025 11:58:51.756 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: driving a small car def the go to dumbahh truck on the left
+[09/23/2025 11:58:54.464 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: aw what a cute little car
+[09/23/2025 11:59:00.123 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: MIAT
+[09/23/2025 11:59:02.796 PM] Message  || User: yaeji               || Channel: #itty-bitty-kitty-commitee           || Content: :D
+[09/23/2025 11:59:15.578 PM] Message  || User: baseketballin       || Channel: #itty-bitty-kitty-commitee           || Content: trading my honda odyssey for a honda fit 🗣️
+[09/23/2025 11:59:18.328 PM] Message  || User: izzyballz           || Channel: #itty-bitty-kitty-commitee           || Content: dream car color it’s actually delectable
+[09/23/2025 11:59:34.057 PM] Message  || User: fawnest_            || Channel: #itty-bitty-kitty-commitee           || Content: is this soul red
+[09/23/2025 11:59:46.926 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: yum

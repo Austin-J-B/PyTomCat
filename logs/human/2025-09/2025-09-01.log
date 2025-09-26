@@ -1,0 +1,625 @@
+[09/01/2025 03:45:13.578 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 03:45:26.475 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: meow
+[09/01/2025 03:45:36.648 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat show me twix
+[09/01/2025 03:45:36.667 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1412176586526036169, "has_image": false, "slots": {"cat": "Twix", "station": "Twix", "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+[09/01/2025 03:46:03.182 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat who has been fed today
+[09/01/2025 03:46:08.717 PM] Message  || User: astro_db            || Channel: #feeding-team                        || Content: @Megan [Feeding Head & PR] how many pounds of cat food do y'all need?
+[09/01/2025 03:46:13.221 PM] Message  || User: astro_db            || Channel: #feeding-team                        || Content: For this week or two
+[09/01/2025 03:47:20.360 PM] Message  || User: astro_db            || Channel: #yapper-committee                    || Content: Yesssss!
+[09/01/2025 03:48:33.125 PM] Message  || User: kitadan             || Channel: #yapper-committee                    || Content: Your Idol and Golden are better.   But Twice did perform Takedown live at Llapalooza
+[09/01/2025 03:48:35.424 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: speaking offff kazius is it cool to give ppl ur contact info if they expresss interest in a haircut :3
+[09/01/2025 03:48:43.705 PM] Message  || User: m_digio             || Channel: #feeding-team                        || Content: I normally get about 40 lbs for two weeks and then whatever size senior food they have
+[09/01/2025 03:48:43.724 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=499034835562790912 || Output: Mary Kay and Zen
+[09/01/2025 03:48:57.745 PM] Message  || User: astro_db            || Channel: #feeding-team                        || Content: I gotchu
+[09/01/2025 03:49:40.308 PM] Message  || User: m_digio             || Channel: #feeding-team                        || Content: Thank you💪💪
+[09/01/2025 03:50:18.399 PM] Message  || User: celeryiscelery      || Channel: #yapper-committee                    || Content: twice mentioned
+[09/01/2025 03:51:33.669 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 03:51:49.293 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: meow
+[09/01/2025 03:51:54.184 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat show me twix
+[09/01/2025 03:51:54.219 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1412178174816555170, "has_image": false, "slots": {"cat": "Twix", "station": "Twix", "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+[09/01/2025 03:52:10.162 PM] Message  || User: reyesthighs         || Channel: #yapper-committee                    || Content: Woah now, let's not start pitting gold against gold, ok? /Silly
+[09/01/2025 03:52:17.083 PM] Message  || User: reyesthighs         || Channel: #yapper-committee                    || Content: I got my hair done by Kaz :3
+[09/01/2025 03:52:26.366 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat which stations have been fed
+[09/01/2025 03:52:26.392 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "feeding_status", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1412178309193928755, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+[09/01/2025 03:52:50.555 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat who is this
+[09/01/2025 03:52:50.571 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "cv_identify", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1412178412130537583, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:who_is_this"]}
+[09/01/2025 03:53:06.883 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: (no text; attachments=1)
+[09/01/2025 03:53:07.259 PM] Action   || Name: image_intake_error  || Trigger: channel=1341696618688286720          || Output: TCBPicsInput
+[09/01/2025 03:53:33.018 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat who is this
+[09/01/2025 03:53:33.037 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "cv_identify", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1412178587381137589, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:who_is_this"]}
+[09/01/2025 03:53:56.264 PM] Action   || Name: viz_identify_error  || Trigger: err=RuntimeError                     || Output: ultralytics is not installed. pip install ultralytics
+[09/01/2025 04:02:58.718 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 04:03:10.624 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: meow
+[09/01/2025 04:03:13.386 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat who is twix
+[09/01/2025 04:03:13.405 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "who_is", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1412181022010900651, "has_image": false, "slots": {"cat": "Twix", "station": "Twix", "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:who_is"]}
+[09/01/2025 04:03:15.984 PM] Action   || Name: handle_cat_show     || Trigger: name=2. Twix                         || Output: sending embed
+[09/01/2025 04:03:21.898 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: Tomcat show me twix
+[09/01/2025 04:03:21.913 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1412181056164987061, "has_image": false, "slots": {"cat": "Twix", "station": "Twix", "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+[09/01/2025 04:03:38.383 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat send me a photo of twix
+[09/01/2025 04:04:01.727 PM] Message  || User: reyesthighs         || Channel: #pictures-of-the-cats                || Content: Updating to let you know that avocado is out of containment and crawling all over me
+[09/01/2025 04:04:08.706 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat who is this
+[09/01/2025 04:04:08.722 PM] Action   || Name: cv_pending_set      || Trigger: ch=1341696618688286720; user=624440365595754496 || Output: cv_identify
+[09/01/2025 04:04:13.137 PM] Message  || User: reyesthighs         || Channel: #pictures-of-the-cats                || Content: he is watching my hands as I type like he plans on attacking them
+[09/01/2025 04:04:21.999 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: (no text; attachments=1)
+[09/01/2025 04:04:22.314 PM] Action   || Name: image_intake_error  || Trigger: channel=1341696618688286720          || Output: TCBPicsInput
+[09/01/2025 04:04:27.223 PM] Message  || User: reyesthighs         || Channel: #pictures-of-the-cats                || Content: Pray for me, Kitadan. i am locked in with a vicious killer. /silly
+[09/01/2025 04:04:36.198 PM] Action   || Name: viz_identify_error  || Trigger: err=RuntimeError                     || Output: ultralytics is not installed. pip install ultralytics
+[09/01/2025 04:04:36.548 PM] Action   || Name: cv_pending_fulfilled || Trigger: ch=1341696618688286720; user=624440365595754496 || Output: cv_identify
+[09/01/2025 04:04:38.014 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: YASSSSS
+[09/01/2025 04:08:18.484 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 04:08:39.572 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: who is microwave
+[09/01/2025 04:08:39.590 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "who_is", "confidence": 1.0, "channel_id": 1352882061651873863, "user_id": 624440365595754496, "message_id": 1412182392025776311, "has_image": false, "slots": {"cat": "Microwave", "station": "Microwave", "dates": null}, "decision": ["wake:dm", "slot:cat=Microwave", "intent:who_is"]}
+[09/01/2025 04:08:42.697 PM] Action   || Name: handle_cat_show     || Trigger: name=1. Microwave                    || Output: sending embed
+[09/01/2025 04:08:45.718 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 04:08:48.807 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: show me twix
+[09/01/2025 04:08:48.817 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1352882061651873863, "user_id": 624440365595754496, "message_id": 1412182429636235287, "has_image": false, "slots": {"cat": "Twix", "station": "Twix", "dates": null}, "decision": ["wake:dm", "slot:cat=Twix", "intent:show_photo"]}
+[09/01/2025 04:08:52.550 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 04:08:58.004 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: who is mike
+[09/01/2025 04:08:58.033 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "who_is", "confidence": 1.0, "channel_id": 1352882061651873863, "user_id": 624440365595754496, "message_id": 1412182466071892089, "has_image": false, "slots": {"cat": "Microwave", "station": "Microwave", "dates": null}, "decision": ["wake:dm", "slot:cat=Microwave", "intent:who_is"]}
+[09/01/2025 04:09:00.192 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 04:09:00.203 PM] Action   || Name: handle_cat_show     || Trigger: name=1. Microwave                    || Output: sending embed (cropped)
+[09/01/2025 04:09:10.821 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: identify
+[09/01/2025 04:09:10.852 PM] Action   || Name: cv_pending_set      || Trigger: ch=1352882061651873863; user=624440365595754496 || Output: cv_identify
+[09/01/2025 04:09:22.796 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: (no text; attachments=1)
+[09/01/2025 04:09:36.638 PM] Message  || User: slayc127            || Channel: #external-promotions                 || Content: i have around 25-50 toploaders + sleeves i used for kpop photocard trading along w other trading supplies (cards, envelopes, mailers, etc) im needing to get rid of. if anyones interested i can bring them to the meeting 2morrow along w a TON of freebies i received while i was actively trading
+[09/01/2025 04:09:37.868 PM] Action   || Name: viz_identify        || Trigger: boxes=1 guesses=1                    || Output: ok
+[09/01/2025 04:09:39.649 PM] Message  || User: slayc127            || Channel: #external-promotions                 || Content: if anyone else is interested lmk
+[09/01/2025 04:09:40.306 PM] Action   || Name: cv_pending_fulfilled || Trigger: ch=1352882061651873863; user=624440365595754496 || Output: cv_identify
+[09/01/2025 04:09:42.699 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: where are yall getting ice cream?
+[09/01/2025 04:09:42.854 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "sub_request", "confidence": 0.958, "channel_id": 830643125784412181, "user_id": 429741733706989568, "message_id": 1412182656048828497, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+[09/01/2025 04:09:42.873 PM] Action   || Name: sub_request         || Trigger: station=None; dates=None             || Output: logged
+[09/01/2025 04:09:42.886 PM] Action   || Name: sub_request_ui      || Trigger: station=None                         || Output: skipped_silent
+[09/01/2025 04:10:03.129 PM] Message  || User: slayc127            || Channel: #external-promotions                 || Content: free/no cost, i also have some stamps but ill be charging for them i just need to remember what the rates were when i bought them
+[09/01/2025 04:10:08.823 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: braums :3
+[09/01/2025 04:10:40.471 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: depending on what time this play date is up can i join yall and be non verbal and stare at yall w my autistic eyes
+[09/01/2025 04:10:50.216 PM] Message  || User: slayc127            || Channel: #external-promotions                 || Content: id post pictures but i cant be bothered, i will if anyone wants to see thp 🙏
+[09/01/2025 04:10:57.792 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: YAS
+[09/01/2025 04:11:04.038 PM] Message  || User: kc.yt               || Channel: #report-new-cats                     || Content: I think the same cat I just saw in front of west hall? I also saw a second one
+[09/01/2025 04:11:04.417 PM] Action   || Name: image_intake_error  || Trigger: channel=639882573199441930           || Output: TCBPicsInput
+[09/01/2025 04:11:15.819 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: ik i cant hang out for more than a couple hours maybe, ive gotten very little done today unforch
+[09/01/2025 04:11:21.883 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat identify
+[09/01/2025 04:11:22.156 PM] Action   || Name: image_intake_error  || Trigger: channel=1341696618688286720          || Output: TCBPicsInput
+[09/01/2025 04:11:22.173 PM] Event    ||                           ||                                               || {"event": "intent", "kind": "cv_identify", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1412183069779165325, "has_image": true, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "intent:cv_identify"]}
+[09/01/2025 04:11:25.013 PM] Action   || Name: viz_identify        || Trigger: boxes=1 guesses=1                    || Output: ok
+[09/01/2025 04:12:00.846 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: very fair, lots happening this week
+[09/01/2025 04:12:43.381 PM] Message  || User: kc.yt               || Channel: #report-new-cats                     || Content: (no text; attachments=1)
+[09/01/2025 04:12:43.802 PM] Action   || Name: image_intake_error  || Trigger: channel=639882573199441930           || Output: TCBPicsInput
+[09/01/2025 04:12:57.719 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: horrified for the meeting tomorrow
+[09/01/2025 04:13:07.087 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: same.
+[09/01/2025 04:13:41.534 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: there’s gonna be so many new faces
+[09/01/2025 04:13:54.425 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: and they will definitely be perceiving us
+[09/01/2025 04:14:51.716 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: real
+[09/01/2025 04:15:13.481 PM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: they're gonna GET you
+[09/01/2025 04:15:15.178 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: how many of yall r gonna be there ??
+[09/01/2025 04:15:17.790 PM] Message  || User: adeyumii            || Channel: #report-new-cats                     || Content: @Derek [TNR] preggers
+[09/01/2025 04:15:25.275 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: ima get them back 😭
+[09/01/2025 04:15:27.477 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: :)
+[09/01/2025 04:15:37.480 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: the straw is crazy megan
+[09/01/2025 04:15:50.555 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: wait no more nails what the heck
+[09/01/2025 04:15:54.149 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: they were so cute
+[09/01/2025 04:16:09.088 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: i shallllll
+[09/01/2025 04:16:22.226 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: Ik😭😭 they popped off this morning i was sad
+[09/01/2025 04:16:25.924 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: can someone sub for me at business for tomorrow
+[09/01/2025 04:16:38.989 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: rest in peace dedes paws <:sadmic:933102785610776606>
+[09/01/2025 04:42:36.305 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 04:42:37.993 PM] Event    ||                           ||                                               || {"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+[09/01/2025 04:42:38.708 PM] Event    ||                           ||                                               || {"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+[09/01/2025 04:42:39.350 PM] Event    ||                           ||                                               || {"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+[09/01/2025 04:42:40.078 PM] Event    ||                           ||                                               || {"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+[09/01/2025 04:42:40.453 PM] Event    ||                           ||                                               || {"event": "health", "component": "feeding_tab", "status": "ok"}
+[09/01/2025 04:44:26.267 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: meow
+[09/01/2025 04:44:26.750 PM] Action   || Name: handle_misc         || Trigger: trigger=meow                         || Output: mrrp?
+[09/01/2025 04:44:32.397 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: tomcat who is twix
+[09/01/2025 04:44:32.419 PM] Intent   || who_is (1.0)              ||                                               || cat=Twix; station=Twix
+[09/01/2025 04:44:35.069 PM] Action   || Name: handle_cat_show     || Trigger: name=2. Twix                         || Output: sending embed
+[09/01/2025 04:44:36.696 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 04:44:43.253 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: tomcat show me pencil
+[09/01/2025 04:44:43.275 PM] Intent   || show_photo (1.0)          ||                                               || cat=Pencil; station=Pencil
+[09/01/2025 04:44:46.186 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 04:47:14.484 PM] Message  || User: kitadan             || Channel: #report-new-cats                     || Content: Did you mean Bobbie?
+[09/01/2025 04:48:14.051 PM] Message  || User: adeyumii            || Channel: #report-new-cats                     || Content: No, barbie
+[09/01/2025 04:48:21.051 PM] Message  || User: adeyumii            || Channel: #report-new-cats                     || Content: She's the West campus version of bobbie
+[09/01/2025 04:48:26.623 PM] Message  || User: adeyumii            || Channel: #report-new-cats                     || Content: Bobbie is more orange
+[09/01/2025 04:48:48.186 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: tomcat who has been fed
+[09/01/2025 04:48:48.233 PM] Intent   || feeding_status (0.95)     ||                                              
+[09/01/2025 04:48:53.089 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: TomCat, manual 8pm update
+[09/01/2025 04:48:53.107 PM] Intent   || manual_8pm (0.99)         ||                                              
+[09/01/2025 04:48:54.122 PM] Action   || Name: manual_8pm          || Trigger: by=624440365595754496                || Output: preview_sent
+[09/01/2025 04:49:04.469 PM] Message  || User: _rambone_           || Channel: #executive-board                     || Content: Shirt came in!
+[09/01/2025 04:49:18.975 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: Can someone sub for me today at HOP?
+[09/01/2025 04:49:35.409 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: can someone sub for me today at HOP?
+[09/01/2025 04:49:35.431 PM] Intent   || sub_request (0.75)        ||                                               || station=HOP
+[09/01/2025 04:49:35.448 PM] Action   || Name: sub_request         || Trigger: station=HOP; dates=None              || Output: logged
+[09/01/2025 04:49:35.466 PM] Action   || Name: sub_request_ui      || Trigger: station=HOP                          || Output: skipped_silent
+[09/01/2025 04:49:50.033 PM] Message  || User: kitadan             || Channel: #report-new-cats                     || Content: Thank you for the clarification.
+[09/01/2025 04:51:05.597 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: I got it
+[09/01/2025 04:51:05.617 PM] Intent   || sub_accept (0.9)          ||                                              
+[09/01/2025 04:51:05.660 PM] Action   || Name: sub_accept          || Trigger: user=624440365595754496              || Output: ok
+[09/01/2025 04:51:29.708 PM] Message  || User: austinbaustinb      || Channel: DM:unknown                           || Content: TomCat, manual 8pm update
+[09/01/2025 04:51:29.722 PM] Intent   || manual_8pm (0.99)         ||                                              
+[09/01/2025 04:51:29.331 PM] Action   || Name: manual_8pm          || Trigger: by=624440365595754496                || Output: preview_sent
+[09/01/2025 04:52:58.232 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 04:52:59.326 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 04:53:00.051 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 04:53:00.748 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 04:52:59.486 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 04:52:59.936 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 04:53:08.465 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: meow
+[09/01/2025 04:53:08.728 PM] Action   || Name: handle_misc         || Trigger: trigger=meow                         || Output: mrrp?
+[09/01/2025 04:53:11.771 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: tomcat show me twix
+[09/01/2025 04:53:11.782 PM] Intent   || show_photo                ||                                               || cat=Twix
+[09/01/2025 04:53:17.169 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 04:55:07.629 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, manual 8pm update
+[09/01/2025 04:55:07.646 PM] Intent   || manual_8pm                ||                                              
+[09/01/2025 04:55:08.783 PM] Action   || Name: manual_8pm          || Trigger: by=624440365595754496                || Output: preview_sent
+[09/01/2025 04:58:29.870 PM] Message  || User: astro_db            || Channel: #feeding-team                        || Content: About 44 pounds of regular food and one senior food will be delivered soon
+[09/01/2025 04:58:29.888 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=833159536264216627 || Output: Mary Kay and Zen
+[09/01/2025 04:59:29.469 PM] Message  || User: nicoleguajardo      || Channel: #feeding-team                        || Content: I feed and watered Mike . Didn’t take a picture because it was raining 😭
+[09/01/2025 04:59:29.490 PM] Intent   || feed_update               ||                                               || station=Microwave; dates=['2025-09-01']
+[09/01/2025 04:59:30.811 PM] Action   || Name: sheet_mark          || Trigger: station=Microwave date=2025-09-01    || Output: ok
+[09/01/2025 04:59:30.829 PM] Action   || Name: feed_update         || Trigger: station=Microwave; dates=2025-09-01  || Output: ok
+[09/01/2025 05:04:12.527 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 05:04:13.546 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 05:04:14.120 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 05:04:14.680 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 05:04:15.288 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 05:04:15.554 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 05:05:01.725 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat show me for
+[09/01/2025 05:05:01.752 PM] Intent   || show_photo                ||                                               || cat=Ford F-150
+[09/01/2025 05:05:16.267 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat show me twix
+[09/01/2025 05:05:16.279 PM] Intent   || show_photo                ||                                               || cat=Twix
+[09/01/2025 05:08:53.667 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: can someone sub for me today at west?
+[09/01/2025 05:08:53.679 PM] Intent   || sub_request               ||                                              
+[09/01/2025 05:08:53.697 PM] Action   || Name: sub_request         || Trigger: station=None; dates=None             || Output: logged
+[09/01/2025 05:08:53.711 PM] Action   || Name: sub_request_ui      || Trigger: station=None                         || Output: skipped_silent
+[09/01/2025 05:09:15.732 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: yep I gotcha
+[09/01/2025 05:09:25.875 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: Got it
+[09/01/2025 05:09:38.678 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: can someone sub for me today at HOP?
+[09/01/2025 05:09:38.702 PM] Intent   || sub_request               ||                                               || station=HOP
+[09/01/2025 05:09:38.719 PM] Action   || Name: sub_request         || Trigger: station=HOP; dates=None              || Output: logged
+[09/01/2025 05:09:38.735 PM] Action   || Name: sub_request_ui      || Trigger: station=HOP                          || Output: skipped_silent
+[09/01/2025 05:09:50.893 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: got it
+[09/01/2025 05:09:55.514 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: dumped out all the water in the food bin so if anyone goes over there be careful of slipping
+[09/01/2025 05:09:55.531 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=694664394495361195 || Output: The Greens
+[09/01/2025 05:09:59.682 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: I got it
+[09/01/2025 05:09:59.692 PM] Intent   || sub_accept                ||                                              
+[09/01/2025 05:09:59.720 PM] Action   || Name: sub_accept          || Trigger: user=624440365595754496              || Output: ok
+[09/01/2025 05:10:23.812 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, manual 8pm update
+[09/01/2025 05:10:23.835 PM] Intent   || manual_8pm                ||                                              
+[09/01/2025 05:10:25.835 PM] Action   || Name: manual_8pm          || Trigger: by=624440365595754496                || Output: preview_sent
+[09/01/2025 05:13:31.789 PM] Message  || User: astro_db            || Channel: #feeding-team                        || Content: (no text; attachments=1)
+[09/01/2025 05:13:42.430 PM] Message  || User: astro_db            || Channel: #feeding-team                        || Content: Food restocked
+[09/01/2025 05:14:49.758 PM] Message  || User: astro_db            || Channel: #feeding-team                        || Content: @Megan [Feeding Head & PR] is this fine
+[09/01/2025 05:14:53.280 PM] Message  || User: slayc127            || Channel: #external-promotions                 || Content: yez :3
+[09/01/2025 05:15:02.568 PM] Message  || User: m_digio             || Channel: #feeding-team                        || Content: Yes thank you
+[09/01/2025 05:15:10.115 PM] Message  || User: astro_db            || Channel: #feeding-team                        || Content: No problem
+[09/01/2025 05:17:16.347 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/01/2025 05:17:17.676 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/01/2025 05:17:46.522 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/01/2025 05:17:47.444 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/01/2025 05:18:01.608 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: why does he look so concerned 😭
+[09/01/2025 05:18:38.111 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: I don't think he remembers me 😭
+[09/01/2025 05:19:29.531 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: west hall fed watered
+[09/01/2025 05:19:29.549 PM] Action   || Name: feed_pending_expired || Trigger: ch=643586809166561310; user=694664394495361195 || Output: 
+[09/01/2025 05:19:29.580 PM] Intent   || feed_update               ||                                               || station=West Hall; dates=['2025-09-01']
+[09/01/2025 05:19:31.788 PM] Action   || Name: sheet_mark          || Trigger: station=West Hall date=2025-09-01    || Output: ok
+[09/01/2025 05:19:31.799 PM] Action   || Name: feed_update         || Trigger: station=West Hall; dates=2025-09-01  || Output: ok
+[09/01/2025 05:21:43.476 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: crop
+[09/01/2025 05:21:43.495 PM] Intent   || cv_crop                   ||                                              
+[09/01/2025 05:22:10.562 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: wait which braums btw?
+[09/01/2025 05:22:32.187 PM] Message  || User: plink5277           || Channel: #yapper-committee                    || Content: I also got a much bigger bag of cat food
+[09/01/2025 05:22:41.203 PM] Message  || User: plink5277           || Channel: #yapper-committee                    || Content: I just don’t know how I’m gonna be able to haul into campus lmfao
+[09/01/2025 05:23:13.617 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: crop
+[09/01/2025 05:23:13.639 PM] Intent   || cv_crop                   ||                                              
+[09/01/2025 05:23:16.970 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 05:23:19.162 PM] Message  || User: _rambone_           || Channel: #executive-board                     || Content: anyway i can drop it off tomorrow before the meeting?
+[09/01/2025 05:23:34.706 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/01/2025 05:23:35.815 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/01/2025 05:23:45.190 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: What time
+[09/01/2025 05:24:22.793 PM] Message  || User: _rambone_           || Channel: #executive-board                     || Content: whenever you're free
+[09/01/2025 05:24:43.217 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, manual 8pm update
+[09/01/2025 05:24:43.254 PM] Intent   || manual_8pm                ||                                              
+[09/01/2025 05:24:44.444 PM] Action   || Name: manual_8pm          || Trigger: by=624440365595754496                || Output: preview_sent
+[09/01/2025 05:24:47.068 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/01/2025 05:24:48.320 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/01/2025 05:24:49.072 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: oh pantego!
+[09/01/2025 05:25:02.399 PM] Message  || User: _rambone_           || Channel: #executive-board                     || Content: i don't have anything planned before work
+[09/01/2025 05:25:22.052 PM] Message  || User: simplyshadow171295  || Channel: #report-new-cats                     || Content: i’m throwing hands
+[09/01/2025 05:26:00.825 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=2)
+[09/01/2025 05:26:01.837 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=2
+[09/01/2025 05:26:07.003 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: Twix likes belly rubs confirmed???
+[09/01/2025 05:26:48.158 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/01/2025 05:26:49.017 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/01/2025 05:26:49.161 PM] Message  || User: simplyshadow171295  || Channel: #yapper-committee                    || Content: chat you are not going to believe what i’ve hauled to my dorm
+[09/01/2025 05:27:03.951 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: how much should i refill the water? I only did a little so its not too heavy but i can do more since im here
+[09/01/2025 05:27:03.961 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=694664394495361195 || Output: The Greens
+[09/01/2025 05:27:18.594 PM] Message  || User: simplyshadow171295  || Channel: #yapper-committee                    || Content: approximately 10 year old sewing machine that i got for free from my aunt
+[09/01/2025 05:28:08.514 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: she’s so cutey
+[09/01/2025 05:28:53.845 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: it’s meant to be about half full when it’s hot out :3
+[09/01/2025 05:28:59.518 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: alright
+[09/01/2025 05:35:37.543 PM] Message  || User: m_digio             || Channel: #feeding-team                        || Content: water can be all the way, were mostly concerned about not over filling on food
+[09/01/2025 05:35:37.563 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=499034835562790912 || Output: The Greens
+[09/01/2025 05:36:30.048 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: erm im free after 1
+[09/01/2025 05:36:36.499 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/01/2025 05:36:38.827 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/01/2025 05:36:46.831 PM] Message  || User: _rambone_           || Channel: #executive-board                     || Content: alright
+[09/01/2025 05:37:23.358 PM] Message  || User: _rambone_           || Channel: #executive-board                     || Content: wanna meet at 2?
+[09/01/2025 05:38:37.168 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: works with me
+[09/01/2025 05:38:51.956 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: ~~what are shirts for again?~~
+[09/01/2025 05:39:17.851 PM] Message  || User: _rambone_           || Channel: #executive-board                     || Content: winning art contest
+[09/01/2025 05:39:24.068 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: ahh yes yes
+[09/01/2025 05:43:19.021 PM] Message  || User: m_digio             || Channel: #bot-spam                            || Content: tomcat show me eggs
+[09/01/2025 05:43:19.048 PM] Intent   || show_photo                ||                                               || cat=Eggs
+[09/01/2025 05:43:22.166 PM] Action   || Name: viz_crop            || Trigger: crops=2                              || Output: ok
+[09/01/2025 05:44:27.843 PM] Message  || User: austinbaustinb      || Channel: #bot-spam                            || Content: Currently working on VI so itll probably send duplicates occasionally
+[09/01/2025 05:44:43.775 PM] Message  || User: m_digio             || Channel: #bot-spam                            || Content: thats okay im working on button designs
+[09/01/2025 05:44:55.493 PM] Message  || User: m_digio             || Channel: #bot-spam                            || Content: dont feel liike scrolling through pictures so im abusing tomcat
+[09/01/2025 05:45:06.997 PM] Message  || User: austinbaustinb      || Channel: #bot-spam                            || Content: Thats what he's there for
+[09/01/2025 05:47:11.849 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 05:47:12.660 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 05:47:13.255 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 05:47:13.929 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 05:47:14.522 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 05:47:14.988 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 05:47:41.926 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: tomcat show me microwave
+[09/01/2025 05:47:41.949 PM] Intent   || show_photo                ||                                               || cat=Microwave
+[09/01/2025 05:47:47.134 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 05:48:08.265 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: crop
+[09/01/2025 05:48:08.281 PM] Intent   || cv_crop                   ||                                              
+[09/01/2025 05:48:09.845 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 05:48:19.597 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: (no text; attachments=2)
+[09/01/2025 05:48:21.252 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/01/2025 05:51:15.736 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: who hasn't been fed
+[09/01/2025 05:51:25.497 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: who has been fed
+[09/01/2025 05:51:25.511 PM] Intent   || feeding_status            ||                                              
+[09/01/2025 05:51:47.609 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: Can someone cover west for me today?
+[09/01/2025 05:52:05.573 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: Can someone sub for me at west today?
+[09/01/2025 05:52:21.022 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: Can someone cover west for me?
+[09/01/2025 05:52:21.043 PM] Intent   || sub_request               ||                                               || station=West Hall
+[09/01/2025 05:52:21.069 PM] Action   || Name: sub_request         || Trigger: station=West Hall; dates=None        || Output: logged
+[09/01/2025 05:52:21.088 PM] Action   || Name: sub_request_ui      || Trigger: station=West Hall                    || Output: skipped_silent
+[09/01/2025 05:52:33.532 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: @Ben @Kitadan Chris has managed to put avocado to sleep
+[09/01/2025 05:52:34.403 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=4
+[09/01/2025 05:52:35.596 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: I can
+[09/01/2025 05:52:52.733 PM] Message  || User: void_now            || Channel: #pictures-of-the-cats                || Content: Awww
+[09/01/2025 05:52:52.249 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: I got west today
+[09/01/2025 05:52:52.321 PM] Action   || Name: feed_pending_set    || Trigger: ch=1341696618688286720; user=624440365595754496 || Output: West Hall
+[09/01/2025 05:53:12.032 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: I can cover west today
+[09/01/2025 05:53:12.052 PM] Intent   || sub_request               ||                                               || station=West Hall; dates=['2025-09-01']
+[09/01/2025 05:53:12.061 PM] Action   || Name: sub_request         || Trigger: station=West Hall; dates=['2025-09-01'] || Output: logged
+[09/01/2025 05:53:12.076 PM] Action   || Name: sub_request_ui      || Trigger: station=West Hall                    || Output: skipped_silent
+[09/01/2025 05:53:21.508 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: we are watching princess and the frog
+[09/01/2025 05:53:26.260 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, manual 8pm update
+[09/01/2025 05:53:26.274 PM] Intent   || manual_8pm                ||                                              
+[09/01/2025 05:53:27.627 PM] Action   || Name: manual_8pm          || Trigger: by=624440365595754496                || Output: preview_sent
+[09/01/2025 05:53:44.152 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: i got it
+[09/01/2025 05:53:44.242 PM] Intent   || sub_accept                ||                                              
+[09/01/2025 05:53:44.358 PM] Action   || Name: sub_accept          || Trigger: user=624440365595754496              || Output: ok
+[09/01/2025 05:53:52.192 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, manual 8pm update
+[09/01/2025 05:53:52.205 PM] Intent   || manual_8pm                ||                                              
+[09/01/2025 05:53:53.184 PM] Action   || Name: manual_8pm          || Trigger: by=624440365595754496                || Output: preview_sent
+[09/01/2025 05:54:18.898 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=2)
+[09/01/2025 05:54:19.709 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=2
+[09/01/2025 05:55:04.908 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: whenever i drop off the food after feeding i have to spend a minimum of 10 minutes with the celebrity
+[09/01/2025 05:55:04.924 PM] Intent   || feed_update               ||                                               || station=The Greens; dates=['2025-09-01']
+[09/01/2025 05:55:05.736 PM] Action   || Name: sheet_mark          || Trigger: station=The Greens date=2025-09-01   || Output: ok
+[09/01/2025 05:55:05.766 PM] Action   || Name: feed_update         || Trigger: station=The Greens; dates=2025-09-01 || Output: ok
+[09/01/2025 05:56:23.959 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: omgg
+[09/01/2025 05:56:26.518 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: jealous
+[09/01/2025 05:56:32.195 PM] Message  || User: adeyumii            || Channel: #yapper-committee                    || Content: JELLY
+[09/01/2025 06:04:03.498 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 06:04:04.628 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 06:04:05.195 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 06:04:05.752 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 06:04:06.376 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 06:04:06.664 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 06:04:24.002 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: meow
+[09/01/2025 06:04:24.212 PM] Action   || Name: handle_misc         || Trigger: trigger=meow                         || Output: meeeoowww
+[09/01/2025 06:04:28.537 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat who hasn't been fed
+[09/01/2025 06:04:42.113 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat who has been fed
+[09/01/2025 06:04:42.132 PM] Intent   || feeding_status            ||                                              
+[09/01/2025 06:05:03.674 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: Do we like eggs face?
+[09/01/2025 06:05:07.413 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: (no text; attachments=1)
+[09/01/2025 06:05:22.575 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: crop
+[09/01/2025 06:05:22.622 PM] Intent   || cv_crop                   ||                                              
+[09/01/2025 06:12:13.125 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: twix loaf
+[09/01/2025 06:12:14.135 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=2
+[09/01/2025 06:13:01.018 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: crop
+[09/01/2025 06:13:01.033 PM] Intent   || cv_crop                   ||                                              
+[09/01/2025 06:13:05.009 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 06:13:37.194 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: who has been fed
+[09/01/2025 06:13:37.238 PM] Intent   || feeding_status            ||                                              
+[09/01/2025 06:13:41.603 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: who hasn't been fed
+[09/01/2025 06:14:40.624 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: can someone feed lot for me
+[09/01/2025 06:14:40.640 PM] Intent   || sub_request               ||                                               || station=Lot 50
+[09/01/2025 06:14:40.656 PM] Action   || Name: sub_request         || Trigger: station=Lot 50; dates=None           || Output: logged
+[09/01/2025 06:15:06.051 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: i can
+[09/01/2025 06:15:06.088 PM] Intent   || sub_accept                ||                                              
+[09/01/2025 06:15:06.123 PM] Action   || Name: sub_accept          || Trigger: user=624440365595754496              || Output: ok
+[09/01/2025 06:15:26.657 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, manual 8pm update
+[09/01/2025 06:15:26.673 PM] Intent   || manual_8pm                ||                                              
+[09/01/2025 06:15:28.066 PM] Action   || Name: manual_8pm          || Trigger: by=624440365595754496                || Output: preview_sent
+[09/01/2025 06:25:02.202 PM] Message  || User: _costco_wholesale_  || Channel: #yapper-committee                    || Content: WOAH
+[09/01/2025 06:25:27.699 PM] Message  || User: kitadan             || Channel: #yapper-committee                    || Content: Nice!
+[09/01/2025 06:25:34.444 PM] Message  || User: kitadan             || Channel: #yapper-committee                    || Content: (no text; attachments=1)
+[09/01/2025 06:29:08.481 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: the fuck
+[09/01/2025 06:29:27.746 PM] Message  || User: adeyumii            || Channel: #yapper-committee                    || Content: peachicks
+[09/01/2025 06:29:40.387 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: why are they just in the suburbs
+[09/01/2025 06:30:12.828 PM] Message  || User: austinbaustinb      || Channel: #yapper-committee                    || Content: weirdly long story
+[09/01/2025 06:31:48.139 PM] Message  || User: .bettercalljack     || Channel: #report-new-cats                     || Content: Anyone seen these two cats near west hall?
+[09/01/2025 06:31:49.806 PM] Action   || Name: image_intake        || Trigger: channel=639882573199441930           || Output: rows=2
+[09/01/2025 06:33:47.131 PM] Message  || User: .bettercalljack     || Channel: #itty-bitty-kitty-commitee           || Content: Are there any cats out on campus today
+[09/01/2025 06:34:29.473 PM] Message  || User: simplyshadow171295  || Channel: #itty-bitty-kitty-commitee           || Content: it looks like twix is out right now :3
+[09/01/2025 06:35:39.420 PM] Message  || User: cici4f3             || Channel: #pictures-of-the-cats                || Content: he's so cute I want to eat him
+[09/01/2025 06:36:03.859 PM] Message  || User: cici4f3             || Channel: #pictures-of-the-cats                || Content: I'm so jealous rn we should kill my job so I could come hang with you guys
+[09/01/2025 06:37:11.906 PM] Message  || User: kitadan             || Channel: #report-new-cats                     || Content: The one standing is probably the one pictured from earlier today.
+[09/01/2025 06:38:37.735 PM] Message  || User: .bettercalljack     || Channel: #itty-bitty-kitty-commitee           || Content: Time to track her down
+[09/01/2025 06:40:26.742 PM] Message  || User: reyesthighs         || Channel: #pictures-of-the-cats                || Content: Do it /silly
+[09/01/2025 06:41:50.002 PM] Message  || User: .bettercalljack     || Channel: #cat-name-ideas                      || Content: A duo name is mio and mao
+[09/01/2025 06:41:54.959 PM] Message  || User: .bettercalljack     || Channel: #cat-name-ideas                      || Content: https://tenor.com/view/mio-mao-gif-24240088
+[09/01/2025 06:45:42.652 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: probably should pin it atp, kitadan can fill us in when hes back online
+[09/01/2025 06:57:21.120 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 06:57:22.588 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 06:57:23.250 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 06:57:23.918 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 06:57:24.642 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 06:57:24.961 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 06:57:50.928 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: meow
+[09/01/2025 06:57:51.301 PM] Action   || Name: handle_misc         || Trigger: trigger=meow                         || Output: *stretches*
+[09/01/2025 06:57:53.713 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: who hasn't been fed
+[09/01/2025 06:57:53.731 PM] Intent   || feeding_status            ||                                              
+[09/01/2025 06:58:09.089 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: tomcat show me pencil
+[09/01/2025 06:58:09.105 PM] Intent   || show_photo                ||                                               || cat=Pencil
+[09/01/2025 06:58:13.976 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 07:00:35.390 PM] Message  || User: .bettercalljack     || Channel: #pictures-of-the-cats                || Content: (no text; attachments=3)
+[09/01/2025 07:00:37.096 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=3
+[09/01/2025 07:04:52.395 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: tomcat show me ford
+[09/01/2025 07:04:52.454 PM] Intent   || show_photo                ||                                               || cat=Ford F-150
+[09/01/2025 07:05:00.370 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: show me eraser
+[09/01/2025 07:05:00.393 PM] Intent   || show_photo                ||                                               || cat=Eraser
+[09/01/2025 07:05:00.977 PM] Action   || Name: viz_crop            || Trigger: crops=2                              || Output: ok
+[09/01/2025 07:08:01.604 PM] Message  || User: .bettercalljack     || Channel: #pictures-of-the-cats                || Content: This feels like irl neko atsuma
+[09/01/2025 07:19:49.193 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 07:19:50.567 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 07:19:51.473 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 07:19:52.240 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 07:19:53.004 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 07:19:53.403 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 07:20:47.136 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: TomCat, manual 8pm update
+[09/01/2025 07:20:47.150 PM] Intent   || manual_8pm                ||                                              
+[09/01/2025 07:20:48.248 PM] Action   || Name: manual_8pm          || Trigger: by=624440365595754496                || Output: preview_sent
+[09/01/2025 07:22:54.333 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: meow
+[09/01/2025 07:22:54.577 PM] Action   || Name: handle_misc         || Trigger: trigger=meow                         || Output: MEOW MEOW!
+[09/01/2025 07:22:58.624 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: show me eraser
+[09/01/2025 07:22:58.660 PM] Intent   || show_photo                ||                                               || cat=Eraser
+[09/01/2025 07:23:05.362 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 07:23:07.878 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 07:23:13.482 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 07:23:23.981 PM] Action   || Name: viz_crop            || Trigger: crops=2                              || Output: ok
+[09/01/2025 07:24:06.904 PM] Action   || Name: viz_crop            || Trigger: crops=2                              || Output: ok
+[09/01/2025 07:24:11.406 PM] Message  || User: austinbaustinb      || Channel: DM                                   || Content: tomcat who is eraser
+[09/01/2025 07:24:11.422 PM] Intent   || who_is                    ||                                               || cat=Eraser
+[09/01/2025 07:24:13.392 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 07:24:13.407 PM] Action   || Name: handle_cat_show     || Trigger: name=5. Eraser                       || Output: sending embed (cropped)
+[09/01/2025 07:44:09.292 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 07:44:11.071 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 07:44:11.732 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 07:44:12.315 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 07:44:12.919 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 07:44:13.258 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 07:48:31.617 PM] Message  || User: celeryiscelery      || Channel: #report-new-cats                     || Content: yes we know about them <:catthumbsup:931115163317329920>
+[09/01/2025 07:49:50.890 PM] Message  || User: celeryiscelery      || Channel: #bot-spam                            || Content: tomcat show me alaska
+[09/01/2025 07:49:50.905 PM] Intent   || show_photo                ||                                               || cat=Alaska
+[09/01/2025 07:49:57.010 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 07:50:21.821 PM] Action   || Name: viz_crop            || Trigger: crops=1                              || Output: ok
+[09/01/2025 07:50:21.865 PM] Message  || User: .bettercalljack     || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/01/2025 07:50:23.825 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/01/2025 07:54:30.689 PM] Message  || User: kitadan             || Channel: #yapper-committee                    || Content: Back before South Arlington got developed, it was a ranch.  The particular ranch was a peacock ranch.  The owner of the ranch went into debt and ran away rather than pay the bill.  So the peacocks became free range and went places other than the ranch.  When houses started being built in the area, the birds would come and go as they used to.  Eventually the owners of the houses just started feeding them.  They live and eat bugs in peoples yards.  That part of Arlington also has a large green space.
+[09/01/2025 07:59:12.577 PM] Action   || Name: feeding_8pm         || Trigger: unfed=6                              || Output: sent
+[09/01/2025 07:59:58.335 PM] Action   || Name: feeding_8pm         || Trigger: unfed=6                              || Output: sent
+[09/01/2025 08:00:01.658 PM] Action   || Name: feeding_8pm         || Trigger: unfed=6                              || Output: sent
+[09/01/2025 08:00:31.439 PM] Message  || User: .s3j                || Channel: #feeding-team                        || Content: 😭
+[09/01/2025 08:00:50.218 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: Also y'all lmk if this is ever wrong. I did look through the schedule when matching + there's also some stuff to keep track of subs and adjust to that, so if its wrong let us know
+[09/01/2025 08:00:50.237 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=624440365595754496 || Output: Mary Kay and Zen
+[09/01/2025 08:52:06.977 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 08:52:08.877 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 08:52:09.412 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 08:52:09.904 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 08:52:10.414 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 08:52:10.709 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 08:53:38.644 PM] React+   || User: 624440365595754496  || Channel: 643586809166561310                   || emoji=‼️; msg=1412252755535593513
+[09/01/2025 08:53:50.858 PM] React-   || User: 624440365595754496  || Channel: 643586809166561310                   || emoji=‼️; msg=1412252755535593513
+[09/01/2025 08:54:04.701 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: test
+[09/01/2025 08:54:21.834 PM] Edit     || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || test -> testBOOB
+[09/01/2025 08:58:14.906 PM] React+   || User: 356861356051529750  || Channel: 643586809166561310                   || emoji=‼️; msg=1412252755535593513
+[09/01/2025 08:58:35.288 PM] React+   || User: 751926923583553656  || Channel: 915790807720661042                   || emoji=‼️; msg=1412221911144075396
+[09/01/2025 08:59:05.171 PM] React+   || User: 751926923583553656  || Channel: 551082419768393731                   || emoji=😆; msg=1412224129314066573
+[09/01/2025 08:59:58.082 PM] Message  || User: reyesthighs         || Channel: #yapper-committee                    || Content: The creature is here
+[09/01/2025 09:00:32.188 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 09:00:34.014 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 09:00:34.529 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 09:00:34.978 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 09:00:35.444 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 09:00:35.695 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 09:01:59.005 PM] React+   || User: austinbaustinb      || Channel: #feeding-team                        || emoji=‼️; msg=1412252755535593513
+[09/01/2025 09:02:09.429 PM] React-   || User: unknown             || Channel: #feeding-team                        || emoji=‼️; msg=1412252755535593513
+[09/01/2025 09:02:15.891 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: boobies
+[09/01/2025 09:02:35.296 PM] React+   || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || emoji=🥸; msg=1412256281036718089
+[09/01/2025 09:03:59.491 PM] Roles    || User: austinbaustinb (624440365595754496) || Guild: Campus Cat Coalition                   || added=['Free Games ping']; removed=[]
+[09/01/2025 09:06:46.208 PM] React+   || User: astro_db            || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1412228798136582176
+[09/01/2025 09:06:48.830 PM] React+   || User: astro_db            || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1412230019815702680
+[09/01/2025 09:07:39.963 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: (no text; attachments=2)
+[09/01/2025 09:09:17.338 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 09:09:18.979 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 09:09:19.500 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 09:09:20.015 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 09:09:20.550 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 09:09:20.820 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 09:09:28.627 PM] Message  || User: reyesthighs         || Channel: #yapper-committee                    || Content: Unfortunately there are at least two melvins (or perhaps one melvin, and one melinda) because I spotted two in one place once
+[09/01/2025 09:10:09.385 PM] Message  || User: austinbaustinb      || Channel: #yapper-committee                    || Content: no
+[09/01/2025 09:10:23.187 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: can we name the spider at the business park
+[09/01/2025 09:10:25.508 PM] React-   || User: unknown             || Channel: #thomas-cat-sandbox                  || emoji=🥸; msg="boobies" by austinbaustinb
+[09/01/2025 09:10:27.751 PM] React+   || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || emoji=👍; msg="boobies" by austinbaustinb
+[09/01/2025 09:10:50.152 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: he also scared the shit out of me but i think hes chill
+[09/01/2025 09:11:13.810 PM] Message  || User: austinbaustinb      || Channel: #yapper-committee                    || Content: yk i dont think we have names for the spiders yet, whatre u thinkin
+[09/01/2025 09:11:20.026 PM] Edit     || User: austinbaustinb      || Channel: #yapper-committee                    || yk i dont think we have names for the spiders yet, whatre u thinkin -> yk i dont think we have names for the spiders yet, whatre u thinkin for a name
+[09/01/2025 09:12:17.248 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: hmm
+[09/01/2025 09:13:23.842 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: can they be vincent
+[09/01/2025 09:13:32.793 PM] React+   || User: reyesthighs         || Channel: #yapper-committee                    || emoji=😆; msg="no" by austinbaustinb
+[09/01/2025 09:13:38.730 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: spider
+[09/01/2025 09:13:43.249 PM] Message  || User: reyesthighs         || Channel: #yapper-committee                    || Content: I like Vincent
+[09/01/2025 09:13:55.697 PM] Message  || User: austinbaustinb      || Channel: #yapper-committee                    || Content: we could do vincent but that is very close to vicente for my monkey brain
+[09/01/2025 09:14:08.820 PM] Message  || User: reyesthighs         || Channel: #yapper-committee                    || Content: Personally I think all the wasps that are all up in my bizzly at west hall should be Brandon. They feel very Brandon to me.
+[09/01/2025 09:14:11.853 PM] Message  || User: austinbaustinb      || Channel: #yapper-committee                    || Content: i think i only started reading vicente as vicente today and not vincent
+[09/01/2025 09:14:18.403 PM] React+   || User: austinbaustinb      || Channel: #yapper-committee                    || emoji=‼️; msg="Personally I think all the wasps that ar..." by reyesthighs
+[09/01/2025 09:14:41.686 PM] React+   || User: racerdg             || Channel: #yapper-committee                    || emoji=‼️; msg="Personally I think all the wasps that ar..." by reyesthighs
+[09/01/2025 09:15:47.031 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: loll ive been sharing microwave pics to my internet oomfies and one of them just sent this
+[09/01/2025 09:15:54.341 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: im spreading the propaganda
+[09/01/2025 09:16:10.249 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: i dont care if you dont go to uta you will know about microwave
+[09/01/2025 09:16:17.757 PM] Message  || User: austinbaustinb      || Channel: #logging                             || Content: also I'm gonna have the new tomcat update check for roles before deleting messages. Currently there's a forbidden phrase of "DM if int*rested" that gets every message deleted
+[09/01/2025 09:16:34.645 PM] Message  || User: austinbaustinb      || Channel: #logging                             || Content: but if someone says that, or something similarly "marked as spam" but theyre a due paying member, itll stay up
+[09/01/2025 09:17:01.268 PM] Message  || User: austinbaustinb      || Channel: #yapper-committee                    || Content: he travels far
+[09/01/2025 09:21:54.426 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😆; msg="my theory is that theres only one possum..." by austinbaustinb
+[09/01/2025 09:21:56.845 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="sorry for dehumanizing him his markings ..." by racerdg
+[09/01/2025 09:22:03.993 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😆; msg="no" by austinbaustinb
+[09/01/2025 09:22:06.447 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="no" by austinbaustinb
+[09/01/2025 09:22:18.972 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="Personally I think all the wasps that ar..." by reyesthighs
+[09/01/2025 09:22:44.201 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: my managers name is brandan....do we want to adjust the spelling. jkjkjkjkjk
+[09/01/2025 09:22:52.348 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="loll ive been sharing microwave pics to ..." by racerdg
+[09/01/2025 09:22:59.830 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="he travels far" by austinbaustinb
+[09/01/2025 09:23:01.490 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="i dont care if you dont go to uta you wi..." by racerdg
+[09/01/2025 09:23:09.969 PM] Message  || User: austinbaustinb      || Channel: #yapper-committee                    || Content: name em derek 🔥 🔥
+[09/01/2025 09:23:28.137 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: this is the goal!!! i have a friend in houston im sending ccc photocards to bc she loves the kitties
+[09/01/2025 09:23:31.156 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😆; msg="name em derek 🔥 🔥" by austinbaustinb
+[09/01/2025 09:23:32.132 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="name em derek 🔥 🔥" by austinbaustinb
+[09/01/2025 09:23:46.488 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: waittt thats such a good idea
+[09/01/2025 09:24:03.804 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: next time i send mail to oomfs im doing that
+[09/01/2025 09:24:08.452 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: YASSS
+[09/01/2025 09:24:26.902 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: i wanna get more printed for us but im so fucking lazy
+[09/01/2025 09:24:37.468 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: haha
+[09/01/2025 09:24:54.812 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: can i ask where you print them?
+[09/01/2025 09:25:23.761 PM] React+   || User: simplyshadow171295  || Channel: #yapper-committee                    || emoji=😭; msg="loll ive been sharing microwave pics to ..." by racerdg
+[09/01/2025 09:25:23.857 PM] Message  || User: hatshura            || Channel: #pictures-of-the-cats                || Content: Angles people angles!!!
+[09/01/2025 09:25:41.581 PM] Message  || User: simplyshadow171295  || Channel: #yapper-committee                    || Content: oh hey i did that!
+[09/01/2025 09:25:52.075 PM] Message  || User: simplyshadow171295  || Channel: #yapper-committee                    || Content: yippee i’ve made it to alaska 😭
+[09/01/2025 09:26:10.629 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: i believe last time we just ordered them thru google photos! there was a website i was playing with but it was expensive and also really tedious to get all the images to the right sizing while still maintaining quality
+[09/01/2025 09:26:18.546 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=😆; msg="Angles people angles!!!" by hatshura
+[09/01/2025 09:26:53.067 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: i see
+[09/01/2025 09:27:44.034 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: ill get on reddit when i stop procrastinating this assignment, but there was one a lot of folks recommended that they had used for cupsleeve events n similar things
+[09/01/2025 09:28:41.682 PM] Roles    || User: austinbaustinb      || Guild: Campus Cat Coalition                   || added=[]; removed=['due paying members']
+[09/01/2025 09:29:00.597 PM] Roles    || User: austinbaustinb      || Guild: Campus Cat Coalition                   || added=['due paying members']; removed=[]
+[09/01/2025 09:30:13.058 PM] Message  || User: hatshura            || Channel: #pictures-of-the-cats                || Content: Strange looking cars this time round
+[09/01/2025 09:30:16.047 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/01/2025 09:32:32.754 PM] Message  || User: wingoffire2255      || Channel: #pictures-of-the-cats                || Content: Oh dang yeah strange cars
+[09/01/2025 09:32:39.894 PM] Message  || User: wingoffire2255      || Channel: #pictures-of-the-cats                || Content: that is a lot of them too
+[09/01/2025 09:32:55.498 PM] Message  || User: hatshura            || Channel: #pictures-of-the-cats                || Content: Swear there's like 4 of them mfs
+[09/01/2025 09:33:47.092 PM] Message  || User: wingoffire2255      || Channel: #pictures-of-the-cats                || Content: mhm like goodness
+[09/01/2025 09:36:26.774 PM] React+   || User: celeryiscelery      || Channel: #logging                             || emoji=🔥; msg="but if someone says that, or something s..." by austinbaustinb
+[09/01/2025 09:39:19.416 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: i hate doing continuing education credits i hate doing continuing education credits i hate doing continuing education credits
+[09/01/2025 09:39:42.302 PM] React+   || User: reyesthighs         || Channel: #yapper-committee                    || emoji=😭; msg="loll ive been sharing microwave pics to ..." by racerdg
+[09/01/2025 09:39:43.391 PM] React+   || User: reyesthighs         || Channel: #yapper-committee                    || emoji=‼️; msg="i dont care if you dont go to uta you wi..." by racerdg
+[09/01/2025 09:39:49.697 PM] React+   || User: reyesthighs         || Channel: #yapper-committee                    || emoji=😆; msg="my managers name is brandan....do we wan..." by slayc127
+[09/01/2025 09:39:50.956 PM] React+   || User: reyesthighs         || Channel: #yapper-committee                    || emoji=😆; msg="name em derek 🔥 🔥" by austinbaustinb
+[09/01/2025 09:39:51.954 PM] React+   || User: reyesthighs         || Channel: #yapper-committee                    || emoji=‼️; msg="name em derek 🔥 🔥" by austinbaustinb
+[09/01/2025 09:48:42.385 PM] React+   || User: kitadan             || Channel: #yapper-committee                    || emoji=😆; msg="no" by austinbaustinb
+[09/01/2025 09:48:50.816 PM] React+   || User: the.lemonade.stand  || Channel: #purrley-pawsitive-pussy-pals        || emoji=🔥; msg="i am the goat" by slayc127
+[09/01/2025 09:48:51.441 PM] React+   || User: the.lemonade.stand  || Channel: #purrley-pawsitive-pussy-pals        || emoji=❤️; msg="i am the goat" by slayc127
+[09/01/2025 09:49:24.193 PM] React+   || User: kitadan             || Channel: #yapper-committee                    || emoji=😭; msg="loll ive been sharing microwave pics to ..." by racerdg
+[09/01/2025 09:50:06.191 PM] Message  || User: hatshura            || Channel: #feeding-team                        || Content: Greens, HOP, and Lot 50 fed
+[09/01/2025 09:50:06.208 PM] Intent   || feed_update               ||                                               || station=Lot 50; dates=['2025-09-01']
+[09/01/2025 09:50:07.997 PM] Action   || Name: sheet_mark          || Trigger: station=Lot 50 date=2025-09-01       || Output: ok
+[09/01/2025 09:50:08.011 PM] Action   || Name: feed_update         || Trigger: station=Lot 50; dates=2025-09-01     || Output: ok
+[09/01/2025 09:50:09.787 PM] Action   || Name: sheet_mark          || Trigger: station=The Greens date=2025-09-01   || Output: ok
+[09/01/2025 09:50:09.798 PM] Action   || Name: feed_update         || Trigger: station=The Greens; dates=2025-09-01 || Output: ok
+[09/01/2025 09:50:10.450 PM] Action   || Name: sheet_mark          || Trigger: station=HOP date=2025-09-01          || Output: ok
+[09/01/2025 09:50:10.466 PM] Action   || Name: feed_update         || Trigger: station=HOP; dates=2025-09-01        || Output: ok
+[09/01/2025 09:50:11.065 PM] Action   || Name: sheet_mark          || Trigger: station=Mary Kay and Zen date=2025-09-01 || Output: ok
+[09/01/2025 09:50:11.088 PM] Action   || Name: feed_update         || Trigger: station=Mary Kay and Zen; dates=2025-09-01 || Output: ok
+[09/01/2025 09:50:16.890 PM] Message  || User: kitadan             || Channel: #yapper-committee                    || Content: Viscount(s)
+[09/01/2025 09:50:25.741 PM] Message  || User: hatshura            || Channel: #feeding-team                        || Content: Vincente lost in the sauce lmao
+[09/01/2025 09:50:25.751 PM] Intent   || feed_update               ||                                               || station=The Greens; dates=['2025-09-01']
+[09/01/2025 09:50:26.402 PM] Action   || Name: sheet_mark          || Trigger: station=The Greens date=2025-09-01   || Output: ok
+[09/01/2025 09:50:26.415 PM] Action   || Name: feed_update         || Trigger: station=The Greens; dates=2025-09-01 || Output: ok
+[09/01/2025 09:51:06.733 PM] React+   || User: kitadan             || Channel: #feeding-team                        || emoji=🎉; msg="Greens, HOP, and Lot 50 fed" by hatshura
+[09/01/2025 09:52:38.380 PM] React+   || User: slayc127            || Channel: #feeding-team                        || emoji=🎉; msg="Greens, HOP, and Lot 50 fed" by hatshura
+[09/01/2025 09:57:49.266 PM] React+   || User: .s3j                || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1412204520028635247
+[09/01/2025 09:58:38.617 PM] Message  || User: hatshura            || Channel: #feeding-team                        || Content: Also @active feeders I will be out of country for 2 weeks and will need someone to cover for me from the 9th-23rd. <:catthumbsup:931115163317329920>
+[09/01/2025 09:58:38.639 PM] Intent   || sub_request               ||                                               || station=Mary Kay and Zen; dates=['2025-09-09', '2025-09-10', '2025-09-11', '2025-09-12', '2025-09-13', '2025-09-14', '2025-09-15', '2025-09-16', '2025-09-17', '2025-09-18', '2025-09-19', '2025-09-20', '2025-09-21', '2025-09-22', '2025-09-23']
+[09/01/2025 09:58:38.658 PM] Action   || Name: sub_request         || Trigger: station=Mary Kay and Zen; dates=['2025-09-09', '2025-09-10', '2025-09-11', '2025-09-12', '2025-09-13', '2025-09-14', '2025-09-15', '2025-09-16', '2025-09-17', '2025-09-18', '2025-09-19', '2025-09-20', '2025-09-21', '2025-09-22', '2025-09-23'] || Output: logged
+[09/01/2025 09:58:55.063 PM] Message  || User: hatshura            || Channel: #feeding-team                        || Content: https://tenor.com/view/anime-edomae-elf-otaku-elf-eruda-unclephuc-gif-14576232653714159070
+[09/01/2025 09:58:55.443 PM] Edit     || User: hatshura            || Channel: #feeding-team                        || https://tenor.com/view/anime-edomae-elf-otaku-elf-eruda-unclephuc-gif-14576232653714159070 -> https://tenor.com/view/anime-edomae-elf-otaku-elf-eruda-unclephuc-gif-14576232653714159070
+[09/01/2025 09:59:08.620 PM] Message  || User: austinbaustinb      || Channel: #logging                             || Content: and then also this whole update is based on better language understanding. one of the methods is called "fuzzy matching" which essentially allows us to score each message from 0 to 100 instead of just a Yes or No.
+
+a website that kinda explains it is:
+https://dataladder.com/fuzzy-matching-101/
+but essentially we have a few key 'forbidden' phrases, which if you match perfectly, would be a 100% grade. However, if you're off by like one word or a letter or whatever, you may be graded like "80% of the forbidden phrase".
+We can then decide a cutoff of "anything above 90% is spam"
+
+so we get a little extra flexibility and it'll catch more edge cases.
+But also it in theory would have more false positives.
+so thats why I am allowing the 'due paying members' and 'server booster' roles as overwrites for that. You can say whatever if you have one of those two roles. But if not, you could be flagged. It won't kick anyone or whatever but may delete messages
+[09/01/2025 09:59:09.948 PM] Edit     || User: austinbaustinb      || Channel: #logging                             || and then also this whole update is based on better language understanding. one of the methods is called "fuzzy matching" which essentially allows us to score each message from 0 to 100 instead of just a Yes or No.
+
+a website that kinda explains it is:
+https://dataladder.com/fuzzy-matching-101/
+but essentially we have a few key 'forbidden' phrases, which if you match perfectly, would be a 100% grade. However, if you're off by like one word or a letter or whatever, you may be graded like "80% of the forbidden phrase".
+We can then decide a cutoff of "anything above 90% is spam"
+
+so we get a little extra flexibility and it'll catch more edge cases.
+But also it in theory would have more false positives.
+so thats why I am allowing the 'due paying members' and 'server booster' roles as overwrites for that. You can say whatever if you have one of those two roles. But if not, you could be flagged. It won't kick anyone or whatever but may delete messages -> and then also this whole update is based on better language understanding. one of the methods is called "fuzzy matching" which essentially allows us to score each message from 0 to 100 instead of just a Yes or No.
+
+a website that kinda explains it is:
+https://dataladder.com/fuzzy-matching-101/
+but essentially we have a few key 'forbidden' phrases, which if you match perfectly, would be a 100% grade. However, if you're off by like one word or a letter or whatever, you may be graded like "80% of the forbidden phrase".
+We can then decide a cutoff of "anything above 90% is spam"
+
+so we get a little extra flexibility and it'll catch more edge cases.
+But also it in theory would have more false positives.
+so thats why I am allowing the 'due paying members' and 'server booster' roles as overwrites for that. You can say whatever if you have one of those two roles. But if not, you could be flagged. It won't kick anyone or whatever but may delete messages
+[09/01/2025 09:59:30.770 PM] React+   || User: sarahngu7en         || Channel: #announcements                       || emoji=❤️; msg="@​everyone i hope we all had a great wee..." by slayc127
+[09/01/2025 09:59:34.532 PM] Message  || User: frostfire312        || Channel: #feeding-team                        || Content: what stations do you cover?
+[09/01/2025 09:59:34.546 PM] Intent   || sub_request               ||                                              
+[09/01/2025 09:59:34.564 PM] Action   || Name: sub_request         || Trigger: station=None; dates=None             || Output: logged
+[09/01/2025 09:59:35.670 PM] Message  || User: austinbaustinb      || Channel: #logging                             || Content: Really cool stuff if any of y'all are into that type of thing, but this also gives a better idea of "why was my message deleted?"
+[09/01/2025 10:01:28.646 PM] Roles    || User: sarahngu7en         || Guild: Campus Cat Coalition                   || added=['acknowledged rules']; removed=[]
+[09/01/2025 10:01:28.827 PM] React+   || User: sarahngu7en         || Channel: #rules                               || emoji=<:catthumbsup:931115163317329920>; msg="• No racist or homophobic language 
+• No..." by Carl-bot
+[09/01/2025 10:01:41.277 PM] React+   || User: sarahngu7en         || Channel: #get-roles                           || emoji=❤️; msg="**Role Menu: Pronouns**
+Please select yo..." by Carl-bot
+[09/01/2025 10:01:41.487 PM] Roles    || User: sarahngu7en         || Guild: Campus Cat Coalition                   || added=['she/her']; removed=[]
+[09/01/2025 10:01:43.359 PM] Roles    || User: sarahngu7en         || Guild: Campus Cat Coalition                   || added=['student']; removed=[]
+[09/01/2025 10:01:43.414 PM] React+   || User: sarahngu7en         || Channel: #get-roles                           || emoji=🎒; msg="**Role Menu: Member Type**
+Please select..." by Carl-bot
+[09/01/2025 10:01:48.732 PM] React+   || User: sarahngu7en         || Channel: #get-roles                           || emoji=☁️; msg="**Role Menu: Color**
+Please select the c..." by Carl-bot
+[09/01/2025 10:01:48.785 PM] Roles    || User: sarahngu7en         || Guild: Campus Cat Coalition                   || added=['sky blue [color]']; removed=[]
+[09/01/2025 10:22:46.393 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 10:22:47.605 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 10:22:48.115 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 10:22:48.568 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 10:22:49.144 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 10:22:49.449 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 10:25:22.971 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: i just wasted a half hour of my life doing a continuing education course through UT austin...and the NHA wont even let me claim the credit from it....FUCKERS
+[09/01/2025 10:25:32.909 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: at least the course was free...
+[09/01/2025 10:25:50.001 PM] Message  || User: hatshura            || Channel: #yapper-committee                    || Content: (no text; attachments=1)
+[09/01/2025 10:25:58.294 PM] React+   || User: simplyshadow171295  || Channel: #yapper-committee                    || emoji=😭; msg="i just wasted a half hour of my life doi..." by kcreepertux04
+[09/01/2025 10:26:19.986 PM] React+   || User: hatshura            || Channel: #yapper-committee                    || emoji=😭; msg="i just wasted a half hour of my life doi..." by kcreepertux04
+[09/01/2025 10:26:25.454 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: at least now i know more about the important of keeping a ready stock and urgent dispensing of buprenorphine prescriptions for the treatment of OUD...
+[09/01/2025 10:26:29.761 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: i guess
+[09/01/2025 10:26:58.687 PM] Message  || User: hatshura            || Channel: #yapper-committee                    || Content: https://tenor.com/view/gold-ship-gold-ship-dance-umamusume-dance-golshi-gold-ship-jukebox-gif-8107532327957041509
+[09/01/2025 10:26:58.907 PM] Edit     || User: hatshura            || Channel: #yapper-committee                    || https://tenor.com/view/gold-ship-gold-ship-dance-umamusume-dance-golshi-gold-ship-jukebox-gif-8107532327957041509 -> https://tenor.com/view/gold-ship-gold-ship-dance-umamusume-dance-golshi-gold-ship-jukebox-gif-8107532327957041509
+[09/01/2025 10:30:09.614 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="i just wasted a half hour of my life doi..." by kcreepertux04
+[09/01/2025 10:33:03.791 PM] Message  || User: frostfire312        || Channel: #feeding-team                        || Content: are those contains by the 2 bags?
+[09/01/2025 10:33:03.825 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=642133560685494282 || Output: The Greens
+[09/01/2025 10:34:55.893 PM] React+   || User: kitadan             || Channel: #yapper-committee                    || emoji=😭; msg="i just wasted a half hour of my life doi..." by kcreepertux04
+[09/01/2025 10:34:57.338 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: can u restate ur question for me ? 😭
+[09/01/2025 10:35:41.683 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/01/2025 10:35:42.876 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/01/2025 10:35:43.526 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/01/2025 10:35:44.058 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/01/2025 10:35:44.556 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/01/2025 10:35:44.882 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/01/2025 10:36:19.876 PM] Message  || User: frostfire312        || Channel: #feeding-team                        || Content: mb I was just wondering what was in the third bag next to the 2 cat food bags in the alternate food location video 😭
+[09/01/2025 10:36:19.890 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=642133560685494282 || Output: The Greens
+[09/01/2025 10:36:56.817 PM] React+   || User: mochenoch           || Channel: #yapper-committee                    || emoji=😭; msg="i just wasted a half hour of my life doi..." by kcreepertux04

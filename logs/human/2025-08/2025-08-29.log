@@ -1,0 +1,356 @@
+[08/29/2025 03:30:37.711 PM] Event    ||                           ||                                               || {"event": "dues_loop_error", "error": "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000020AFA7256D0>: Failed to resolve 'oauth2.googleapis.com' ([Errno 11001] getaddrinfo failed)\"))"}
+[08/29/2025 03:30:38.137 PM] Event    ||                           ||                                               || {"event": "dues_loop_error", "error": "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000020AFA7274D0>: Failed to resolve 'oauth2.googleapis.com' ([Errno 11001] getaddrinfo failed)\"))"}
+[08/29/2025 03:30:38.357 PM] Event    ||                           ||                                               || {"event": "dues_loop_error", "error": "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000020A802082D0>: Failed to resolve 'oauth2.googleapis.com' ([Errno 11001] getaddrinfo failed)\"))"}
+[08/29/2025 03:30:38.596 PM] Event    ||                           ||                                               || {"event": "dues_loop_error", "error": "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000020A80209090>: Failed to resolve 'oauth2.googleapis.com' ([Errno 11001] getaddrinfo failed)\"))"}
+[08/29/2025 03:30:38.754 PM] Event    ||                           ||                                               || {"event": "dues_loop_error", "error": "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000020AFA727ED0>: Failed to resolve 'oauth2.googleapis.com' ([Errno 11001] getaddrinfo failed)\"))"}
+[08/29/2025 03:30:51.146 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[08/29/2025 03:31:22.436 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[08/29/2025 03:33:18.944 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: why did a guest ask for a picture w me
+[08/29/2025 03:33:19.461 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: avocado in pit form
+[08/29/2025 03:33:27.810 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: WHAT
+[08/29/2025 03:33:38.554 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: dead serious
+[08/29/2025 03:33:44.837 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: i brought most of them
+[08/29/2025 03:33:45.134 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: tell them to die????
+[08/29/2025 03:33:47.507 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: sorry piss bender miku you didnt make the cut
+[08/29/2025 03:33:51.921 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: and i did it because they were sweet older ladies!
+[08/29/2025 03:33:57.023 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: oh nvm
+[08/29/2025 03:34:03.586 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: LMFAOOOO NO USUALLY IM WITH U
+[08/29/2025 03:34:05.705 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: bruh i thought it was some man creeping on u
+[08/29/2025 03:34:11.989 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: NOOOOOOOOO
+[08/29/2025 03:34:32.578 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: also ignore all my conclave stuff thats confidential
+[08/29/2025 03:35:54.870 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: is anyone available between 530 and 1030 tonight to pick up a food donation?
+[08/29/2025 03:37:30.140 PM] Message  || User: reyesthighs         || Channel: #itty-bitty-kitty-commitee           || Content: Are you popecrave
+[08/29/2025 03:39:49.966 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: omnomnomnom
+[08/29/2025 03:39:59.973 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: no but they are oomf
+[08/29/2025 03:40:11.358 PM] Message  || User: reyesthighs         || Channel: #itty-bitty-kitty-commitee           || Content: Of course
+[08/29/2025 03:40:18.702 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: they live in plano
+[08/29/2025 03:42:38.638 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: they r in italy rn and said they would bring me something back 🤞 i looove knowing people who know people
+[08/29/2025 03:46:40.732 PM] Message  || User: pancakemixteamdj    || Channel: #itty-bitty-kitty-commitee           || Content: Vro got the sinister 6 lined up
+[08/29/2025 03:47:12.159 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: (no text; attachments=1)
+[08/29/2025 03:47:18.811 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: do not open a dark fountain in my room bro
+[08/29/2025 03:47:34.472 PM] Message  || User: pancakemixteamdj    || Channel: #itty-bitty-kitty-commitee           || Content: I see other people take pictures of their  room and they always have the nicest decor , my room is plane
+[08/29/2025 03:50:20.638 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: anybody here a regular at tokyo station
+[08/29/2025 03:54:52.213 PM] Message  || User: not_d3fault_1420    || Channel: #pictures-of-the-cats                || Content: looks like a cinnamon roll
+[08/29/2025 03:57:23.204 PM] Message  || User: not_d3fault_1420    || Channel: #yapper-committee                    || Content: the coalition ig reposted my story!
+[08/29/2025 03:59:48.514 PM] Message  || User: spitonme            || Channel: #itty-bitty-kitty-commitee           || Content: ts mean sometjing to me
+[08/29/2025 04:00:06.241 PM] Message  || User: spitonme            || Channel: #itty-bitty-kitty-commitee           || Content: i have this miku blanket/tapestry and i had it hung up in my room
+[08/29/2025 04:00:13.925 PM] Message  || User: plink5277           || Channel: #itty-bitty-kitty-commitee           || Content: I have like 7  pictures :(
+[08/29/2025 04:00:27.405 PM] Message  || User: simplyshadow171295  || Channel: #yapper-committee                    || Content: that’d be the officers :3
+[08/29/2025 04:00:46.744 PM] Message  || User: spitonme            || Channel: #itty-bitty-kitty-commitee           || Content: (no text; attachments=1)
+[08/29/2025 04:00:51.417 PM] Message  || User: spitonme            || Channel: #itty-bitty-kitty-commitee           || Content: she’s so cute i love it
+[08/29/2025 04:04:20.698 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: tis me!
+[08/29/2025 04:04:34.116 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: i wanna start reposting the pics ppl tag us in more
+[08/29/2025 04:06:34.473 PM] Message  || User: pancakemixteamdj    || Channel: #itty-bitty-kitty-commitee           || Content: I got one that actually cool
+[08/29/2025 04:06:53.952 PM] Message  || User: pancakemixteamdj    || Channel: #itty-bitty-kitty-commitee           || Content: This is the nice corner of my room
+[08/29/2025 04:24:25.511 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: MIKUUUUUU
+[08/29/2025 04:24:37.548 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: https://tenor.com/view/tyler1-shirt-rip-gif-26569973
+[08/29/2025 04:29:18.182 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: somehow ended up talking about religion to my mom again
+[08/29/2025 04:29:23.644 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Surprisingly went better than before
+[08/29/2025 04:29:49.060 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Ended up cause I asked her what she thought about the 10 commandments thing in texas
+[08/29/2025 04:31:49.942 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Ended up pushing my "Jesus would be a poc working class man hated by the right and at the protest" agenda
+[08/29/2025 04:31:58.866 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Anyways how's ur guys' day
+[08/29/2025 04:35:35.409 PM] Message  || User: spitonme            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[08/29/2025 04:35:58.442 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: This gives me an excuse to show my miku stuffs
+[08/29/2025 04:35:59.008 PM] Action   || Name: muted_send          || Trigger: channel=#itty-bitty-kitty-commitee   || Output: No match for 'my miku stuffs'.
+[08/29/2025 04:36:02.741 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: give me a min
+[08/29/2025 04:42:30.279 PM] Message  || User: lance030315         || Channel: #pictures-of-the-cats                || Content: I was walking to the UC for some TTRPGs, and happened across the doctor himself
+[08/29/2025 04:50:32.501 PM] Message  || User: spitonme            || Channel: #pictures-of-the-cats                || Content: oh are you the one i gave the tv box yo
+[08/29/2025 04:53:48.244 PM] Message  || User: lance030315         || Channel: #pictures-of-the-cats                || Content: Yes, I probably should’ve introduced myself.
+[08/29/2025 04:56:17.601 PM] Message  || User: pancakemixteamdj    || Channel: #pictures-of-the-cats                || Content: That lady is the business cat wispier
+[08/29/2025 04:56:47.850 PM] Message  || User: spitonme            || Channel: #pictures-of-the-cats                || Content: idk if it catches what i wanted but i asked for permission to record her and oml egg pets !!!
+[08/29/2025 04:57:19.646 PM] Message  || User: pancakemixteamdj    || Channel: #pictures-of-the-cats                || Content: She the only one I seen pet eggs and use to absolute baby pencil
+[08/29/2025 04:58:00.916 PM] Message  || User: lance030315         || Channel: #pictures-of-the-cats                || Content: Ok, that’s even crazier, considering pencil
+[08/29/2025 04:58:27.971 PM] Message  || User: pancakemixteamdj    || Channel: #pictures-of-the-cats                || Content: Pencil was sexist , if you were a women you were fine
+[08/29/2025 04:58:35.193 PM] Message  || User: spitonme            || Channel: #pictures-of-the-cats                || Content: 😜😜😜
+[08/29/2025 04:58:40.156 PM] Message  || User: spitonme            || Channel: #pictures-of-the-cats                || Content: #getrekt
+[08/29/2025 05:01:10.908 PM] Message  || User: lance030315         || Channel: #pictures-of-the-cats                || Content: Sounds about right
+[08/29/2025 05:03:40.834 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: had a dog gnaw on me and my jeans
+[08/29/2025 05:03:55.548 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: sobs
+[08/29/2025 05:03:58.822 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: yummy kazius
+[08/29/2025 05:04:09.513 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: NO!!!!!!!!!!!!
+[08/29/2025 05:04:15.973 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: the mluthiest dog i have ever worked w
+[08/29/2025 05:04:19.194 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: bruised me and broke skin
+[08/29/2025 05:04:34.103 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: damn!!!!
+[08/29/2025 05:09:36.379 PM] Message  || User: _lunanight          || Channel: #feeding-team                        || Content: Hey! Is there anyone that can feed lot 50 and business today. My boyfriend had to take my car to work today, I won’t have it back until 8:30-9ish. if not, I can just come late!
+[08/29/2025 05:11:52.918 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: there is a synth v teto nendoroid behind the triple baka art that i still am unsure if I will keep or sell
+[08/29/2025 05:12:51.420 PM] Message  || User: _lunanight          || Channel: #feeding-team                        || Content: Also, I can cover anyone who needs it tmr 🙌
+[08/29/2025 05:13:11.092 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: NO
+[08/29/2025 05:13:14.857 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: NOOOOOOOOOOOOO
+[08/29/2025 05:13:21.076 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: BIG FAT N O !!!!
+[08/29/2025 05:13:50.336 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: wait what miku expo day did u go to
+[08/29/2025 05:16:20.627 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: The 2nd day iirc? April 25th
+[08/29/2025 05:17:03.468 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: hehehe we were there together
+[08/29/2025 05:18:35.267 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: (no text; attachments=1)
+[08/29/2025 05:19:56.010 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: I remember this shit so vividly...
+[08/29/2025 05:20:16.677 PM] Message  || User: pancakemixteamdj    || Channel: #itty-bitty-kitty-commitee           || Content: You make it sound you got plastered afterwards
+[08/29/2025 05:20:28.449 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: there is a video on tiktok (idk if it's still up) of someone catching me yelling "I love you miku!!!" before the concert starting
+[08/29/2025 05:20:36.295 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: got i wish
+[08/29/2025 05:20:41.785 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: @active feeders
+[08/29/2025 05:20:52.706 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: pls make sure to tag active feeders when u need a cover!!!
+[08/29/2025 05:20:57.082 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: /not mad
+[08/29/2025 05:21:39.363 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: https://www.tiktok.com/t/ZP8Bbj9sw/
+[08/29/2025 05:21:54.601 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: I think back on this concert regularly I wish they'd announce another tour 💔💔💔
+[08/29/2025 05:23:18.068 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: hehehe
+[08/29/2025 05:23:24.808 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: derek famous era
+[08/29/2025 05:23:44.641 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: https://tenor.com/view/no-gif-23548728
+[08/29/2025 05:24:47.261 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: where is miku expo 2026
+[08/29/2025 05:25:20.917 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: i know theyre doing the asia tour rn but… wont someone think of the poor north americans…
+[08/29/2025 05:25:22.324 PM] Message  || User: a1darek             || Channel: #executive-board                     || Content: I eep
+[08/29/2025 05:25:23.621 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: joking
+[08/29/2025 05:25:49.396 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: I'm saying!!
+[08/29/2025 05:26:02.054 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: I thought they'd do a 2026 but I feel like they wouldve announced it atp...
+[08/29/2025 05:27:13.774 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: going thru my videos i forgot the concert started 30 minutes late loll
+[08/29/2025 05:27:32.850 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: miku had an emergency
+[08/29/2025 05:28:11.840 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: Im in lubbock
+[08/29/2025 05:30:02.492 PM] Message  || User: catasourus          || Channel: #feeding-team                        || Content: Heights and greens fed
+[08/29/2025 05:33:25.831 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: erm just come back ?
+[08/29/2025 05:33:29.627 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: dont ? /j
+[08/29/2025 05:34:36.554 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: i’m sorry i left campus so i could finish my hw, the gloom was kicking my ass and i needed my green drink
+[08/29/2025 05:36:30.812 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: her miku miku beam wasn't ready
+[08/29/2025 05:37:45.047 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: you should listen to true believer by hayley williams, you’d fw it
+[08/29/2025 05:37:54.406 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: yall r fine i suppose 🙄 /jjjjjjj
+[08/29/2025 05:37:54.548 PM] Message  || User: void_now            || Channel: #pictures-of-the-cats                || Content: @Kitadan look at this civilized gentleman waiting for dinner
+[08/29/2025 05:38:25.235 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: OMNOMNOMNOMNOM
+[08/29/2025 05:39:47.722 PM] Message  || User: dandelion021._.     || Channel: #yapper-committee                    || Content: or psych tbh, i personally have been using mine for some time now and it’s really good especially since the most i’ll do is like an essay or report which is perfect and the battery life on mine is really good compared to past computers i had which were either rly heavy or just not it
+[08/29/2025 05:40:12.337 PM] Message  || User: dandelion021._.     || Channel: #yapper-committee                    || Content: microsoft word on apple is hell, especially since everything is mixed around
+[08/29/2025 05:41:02.562 PM] Message  || User: spitonme            || Channel: #itty-bitty-kitty-commitee           || Content: wtf do u not see that mold
+[08/29/2025 05:41:22.057 PM] Message  || User: spitonme            || Channel: #itty-bitty-kitty-commitee           || Content: u need to give that thing a scrub and let it air out
+[08/29/2025 05:41:29.237 PM] Message  || User: spitonme            || Channel: #itty-bitty-kitty-commitee           || Content: open window or outside btw
+[08/29/2025 05:41:57.700 PM] Message  || User: dandelion021._.     || Channel: #yapper-committee                    || Content: also
+[08/29/2025 05:42:08.831 PM] Message  || User: dandelion021._.     || Channel: #yapper-committee                    || Content: since ppl know cats better that i would 😭😭
+[08/29/2025 05:42:23.147 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: where
+[08/29/2025 05:42:27.161 PM] Message  || User: dandelion021._.     || Channel: #yapper-committee                    || Content: is this safe for cats?
+[08/29/2025 05:42:54.675 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: oh
+[08/29/2025 05:43:00.274 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: LMFAOOOOOOOOOO
+[08/29/2025 05:43:01.979 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: oh I see
+[08/29/2025 05:43:03.960 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: yeah put it outside
+[08/29/2025 05:43:08.017 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: on ur porch in fact
+[08/29/2025 05:43:09.727 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: I was genuinely worried
+[08/29/2025 05:43:12.477 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: and drop ur address
+[08/29/2025 05:43:25.092 PM] Message  || User: dandelion021._.     || Channel: #yapper-committee                    || Content: wair wrong channel
+[08/29/2025 05:43:26.101 PM] Message  || User: dandelion021._.     || Channel: #yapper-committee                    || Content: 😭
+[08/29/2025 05:43:40.748 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: VENUS!!!!!!!!!!!!!!!!!!
+[08/29/2025 05:44:04.557 PM] Message  || User: dandelion021._.     || Channel: #itty-bitty-kitty-commitee           || Content: OK SOO
+[08/29/2025 05:44:10.307 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: funnily enough i was criticizing mega churches with my mom earlier
+[08/29/2025 05:44:12.836 PM] Message  || User: dandelion021._.     || Channel: #itty-bitty-kitty-commitee           || Content: (no text; attachments=1)
+[08/29/2025 05:44:22.459 PM] Message  || User: dandelion021._.     || Channel: #itty-bitty-kitty-commitee           || Content: is this safe for kitty cats? the poor baby in the vid was crying
+[08/29/2025 05:44:33.374 PM] Message  || User: void_now            || Channel: #pictures-of-the-cats                || Content: They moved before I got a pic but the siblings were sitting on the feeder
+[08/29/2025 05:45:07.489 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: that's cause he hates water
+[08/29/2025 05:45:33.633 PM] Message  || User: simplyshadow171295  || Channel: #pet-pictures                        || Content: kitty across the street from the taqueria 💖 (and before y’all ask i’m an hour+ away from arlington… this is not eraser /silly)
+[08/29/2025 05:45:41.563 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: yeah
+[08/29/2025 05:45:44.419 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Forgot to join the billiards club this year oh well
+[08/29/2025 05:45:48.181 PM] Message  || User: simplyshadow171295  || Channel: #pet-pictures                        || Content: almost as big as eraser though!
+[08/29/2025 05:45:51.239 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: I probably wouldn't have liked them anyways
+[08/29/2025 05:45:52.397 PM] Message  || User: spitonme            || Channel: #itty-bitty-kitty-commitee           || Content: lolol got ur ass
+[08/29/2025 05:46:10.607 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: its a fair question thi
+[08/29/2025 05:46:16.744 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: but da baby is okay :333
+[08/29/2025 05:46:21.271 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: cats r just dramatic
+[08/29/2025 05:46:37.019 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: well not dramatic but yknow. that's just a behavior!
+[08/29/2025 05:47:17.939 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: there probably is a medicated shampoo for them though
+[08/29/2025 05:47:43.046 PM] Message  || User: a1darek             || Channel: #itty-bitty-kitty-commitee           || Content: not to my immediate knowledge but i mean ur day to day people shampoo does it for us but i would not advise using it on a kitty
+[08/29/2025 05:48:34.993 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: TO GET MORE-
+[08/29/2025 05:48:51.355 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: hehe stubby tail
+[08/29/2025 05:49:09.345 PM] Message  || User: kitadan             || Channel: #pictures-of-the-cats                || Content: Orange loaf.
+[08/29/2025 05:49:10.606 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: she ssooppppo cute
+[08/29/2025 05:49:35.174 PM] Message  || User: void_now            || Channel: #feeding-team                        || Content: Mkz fed!
+[08/29/2025 05:49:43.095 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: pool snobs make me wanna cry like oh my god can we just HIT THE DAMN BALLS????
+[08/29/2025 05:49:51.149 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: who caresssss just have fun
+[08/29/2025 05:50:27.538 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: Theyre mean
+[08/29/2025 05:51:07.783 PM] Message  || User: void_now            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=2)
+[08/29/2025 05:54:44.992 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: I can feel the aura
+[08/29/2025 05:55:26.729 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: HEAVY ON THIS
+[08/29/2025 05:55:42.771 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: didnt get to share but last time we went to caves i sank like 2 or 3 balls in one hit
+[08/29/2025 05:55:53.965 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: car on da car
+[08/29/2025 05:55:55.471 PM] Message  || User: dandelion021._.     || Channel: #itty-bitty-kitty-commitee           || Content: oh thankfully, his lil cries were getting to me
+[08/29/2025 06:04:06.172 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: (no text; attachments=2)
+[08/29/2025 06:04:06.628 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: lana da baby pug
+[08/29/2025 06:04:10.072 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: i lov this creature guys
+[08/29/2025 06:04:17.162 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: WHY R PUGS GENETIC ABOMINATIONS
+[08/29/2025 06:05:09.850 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: kaz did u like the jay kay pug i sent u]
+[08/29/2025 06:06:23.387 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: THAT FIRST PHOTO DJDHSHS
+[08/29/2025 06:06:37.700 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: I DID
+[08/29/2025 06:06:44.981 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: RIGHT!!!!!!!!!!!!!!!!!!!!!!
+[08/29/2025 06:07:05.904 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: i was SO PLEASED
+[08/29/2025 06:07:42.393 PM] Message  || User: slayc127            || Channel: #pet-pictures                        || Content: silly pug from work
+[08/29/2025 06:07:48.533 PM] Message  || User: slayc127            || Channel: #pet-pictures                        || Content: im so obsessed w this picture guys
+[08/29/2025 06:12:31.752 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: guys do i study or do i go to be insanely early
+[08/29/2025 06:12:44.688 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: insanely early to what?
+[08/29/2025 06:13:02.818 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: oh go to bed
+[08/29/2025 06:13:30.648 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: erm study
+[08/29/2025 06:13:32.943 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: bedtime at 8
+[08/29/2025 06:14:15.207 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Mmm no
+[08/29/2025 06:14:16.729 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Bed
+[08/29/2025 06:14:29.902 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: bruh
+[08/29/2025 06:14:46.664 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: ur screwing w ur slwepschefule so bad /lh /not mean
+[08/29/2025 06:15:17.173 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Brah it's been fucked
+[08/29/2025 06:15:31.228 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: eggzactly
+[08/29/2025 06:32:40.108 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: i get it!
+[08/29/2025 06:35:33.784 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: hey i remember vaugely that microwave has a thing going ok with his eyes, theyre a little goopy rn and the discharge looks a bit bloody
+[08/29/2025 06:36:20.146 PM] Message  || User: adeyumii            || Channel: #itty-bitty-kitty-commitee           || Content: ?????
+[08/29/2025 06:37:33.238 PM] Message  || User: kukieari            || Channel: #pet-pictures                        || Content: AWWW
+[08/29/2025 06:37:46.963 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: (no text; attachments=1)
+[08/29/2025 06:37:48.436 PM] Message  || User: m_digio             || Channel: #itty-bitty-kitty-commitee           || Content: That was a few weeks ago! I thought it got better?
+[08/29/2025 06:37:59.098 PM] Message  || User: kukieari            || Channel: #report-new-cats                     || Content: wow such photo skills
+[08/29/2025 06:38:03.218 PM] Message  || User: m_digio             || Channel: #itty-bitty-kitty-commitee           || Content: Gah @officers
+[08/29/2025 06:38:14.134 PM] Message  || User: kukieari            || Channel: #report-new-cats                     || Content: (i giggled)
+[08/29/2025 06:38:24.791 PM] Message  || User: celeryiscelery      || Channel: #itty-bitty-kitty-commitee           || Content: oh you’ve gotta be shitting me
+[08/29/2025 06:38:30.771 PM] Message  || User: celeryiscelery      || Channel: #itty-bitty-kitty-commitee           || Content: not our old diva 😭😭
+[08/29/2025 06:38:50.012 PM] Message  || User: ludavis             || Channel: #report-new-cats                     || Content: Dang that's a nice steel blue Ford maverick
+[08/29/2025 06:38:59.465 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: oh geez
+[08/29/2025 06:39:42.267 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: @Derek [TNR]
+[08/29/2025 06:39:44.602 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: no my diva
+[08/29/2025 06:39:48.234 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: microwave<a:__catcry:975843743590666300>
+[08/29/2025 06:39:53.785 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: he looks so sad
+[08/29/2025 06:40:20.692 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: i think hes just sleepy haha hes letting me pet his face and everything so i dont think its hurting him too bad
+[08/29/2025 06:41:19.597 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: oh thats good
+[08/29/2025 06:41:29.325 PM] Message  || User: celeryiscelery      || Channel: #itty-bitty-kitty-commitee           || Content: thank you sm for pointing this out, we’re gonna get some scheduled asap
+[08/29/2025 06:41:38.663 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: still silly
+[08/29/2025 06:41:57.167 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: yeah no problem, i visited him earlier today and didnt notice anything so idk what happened
+[08/29/2025 06:42:14.491 PM] Message  || User: celeryiscelery      || Channel: #itty-bitty-kitty-commitee           || Content: oh so this is recent recent. i wonder what triggered this
+[08/29/2025 06:42:43.551 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: no yeah i saw him earlier too
+[08/29/2025 06:42:52.467 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: but i couldnt see him, he was in the busy
+[08/29/2025 06:42:55.001 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: bush
+[08/29/2025 06:43:14.297 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: idk why i said that lowkey
+[08/29/2025 06:43:33.858 PM] Message  || User: racerdg             || Channel: #itty-bitty-kitty-commitee           || Content: timestamped 3:03 today and no eye goop. so recent yes
+[08/29/2025 06:45:16.012 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: (no text; attachments=0)
+[08/29/2025 06:45:16.450 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: literally the worst timing w this but let’s see what his eyes look like tomorrow before we schedule anything
+[08/29/2025 06:45:42.210 PM] Message  || User: _costco_wholesale_  || Channel: #pet-pictures                        || Content: BABY BOYY
+[08/29/2025 06:46:33.163 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: i think we still need to get him in since it keeps coming back :/
+[08/29/2025 06:47:09.348 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: we’re gonna have to steal that carrier back from roach and miranda since that’s most likely gonna make this way easier
+[08/29/2025 06:48:03.526 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: sun bathing
+[08/29/2025 06:53:01.040 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: i can see if i can get it from them tonight
+[08/29/2025 06:56:53.816 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: i will warn that i’m gonna be a bit busy this upcoming week bc i do have pescado’s play date (completely forgot to message about that, im sorry) and an exam. 💔
+i can help schedule the appointment but i dont know if its gonna match up with my availability
+[08/29/2025 06:57:21.763 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: ah okay heard!
+[08/29/2025 07:05:54.723 PM] Message  || User: not_d3fault_1420    || Channel: #yapper-committee                    || Content: woa 😄
+[08/29/2025 07:05:55.131 PM] Message  || User: dandelion021._.     || Channel: #itty-bitty-kitty-commitee           || Content: so like flee shampoo for dogs but for cats
+[08/29/2025 07:06:02.135 PM] Message  || User: not_d3fault_1420    || Channel: #yapper-committee                    || Content: I feel honored lol
+[08/29/2025 07:06:29.457 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: hehe yesss im glad!!
+[08/29/2025 07:07:07.957 PM] Message  || User: not_d3fault_1420    || Channel: #itty-bitty-kitty-commitee           || Content: he lovessss those chin scritches
+[08/29/2025 07:10:10.762 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: kpop demon hunters in da lyft
+[08/29/2025 07:10:32.838 PM] Message  || User: not_d3fault_1420    || Channel: #itty-bitty-kitty-commitee           || Content: waow
+[08/29/2025 07:10:42.466 PM] Message  || User: not_d3fault_1420    || Channel: #itty-bitty-kitty-commitee           || Content: is it good?
+[08/29/2025 07:10:48.622 PM] Message  || User: not_d3fault_1420    || Channel: #itty-bitty-kitty-commitee           || Content: I haven’t seen it yet
+[08/29/2025 07:10:52.268 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: its aweaome
+[08/29/2025 07:10:56.956 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: saw it 3 or 4 times!
+[08/29/2025 07:11:17.178 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: first time was rhw night it came out i think, then 2nd time w mckayla n 3rd time w derk
+[08/29/2025 07:11:29.966 PM] Message  || User: not_d3fault_1420    || Channel: #itty-bitty-kitty-commitee           || Content: ooo oki
+[08/29/2025 07:11:36.858 PM] Message  || User: not_d3fault_1420    || Channel: #itty-bitty-kitty-commitee           || Content: I may watch it then lol
+[08/29/2025 07:11:50.021 PM] Message  || User: slayc127            || Channel: #itty-bitty-kitty-commitee           || Content: yassss report back when u do!
+[08/29/2025 07:12:44.144 PM] Message  || User: not_d3fault_1420    || Channel: #itty-bitty-kitty-commitee           || Content: okii
+[08/29/2025 07:13:30.186 PM] Message  || User: hatshura            || Channel: #pictures-of-the-cats                || Content: car-ception
+[08/29/2025 07:13:53.642 PM] Message  || User: hatshura            || Channel: #pictures-of-the-cats                || Content: https://tenor.com/view/brain-brain-meme-big-brain-big-brain-meme-big-brain-time-gif-2441110471562975014
+[08/29/2025 07:20:00.477 PM] Message  || User: wingoffire2255      || Channel: #bot-spam                            || Content: tomecat show me a melvin
+[08/29/2025 07:20:01.768 PM] Action   || Name: muted_send          || Trigger: channel=#bot-spam                    || Output: No match for 'a melvin'.
+[08/29/2025 07:20:03.136 PM] Message  || User: wingoffire2255      || Channel: #bot-spam                            || Content: fuck
+[08/29/2025 07:20:13.023 PM] Message  || User: wingoffire2255      || Channel: #bot-spam                            || Content: tomcat show me melvin
+[08/29/2025 07:20:15.845 PM] Action   || Name: muted_send          || Trigger: channel=#bot-spam                    || Output: embed
+[08/29/2025 07:37:40.886 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: yes omg its so good
+[08/29/2025 07:37:42.887 PM] Message  || User: kukieari            || Channel: #itty-bitty-kitty-commitee           || Content: a must watch
+[08/29/2025 07:38:58.182 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: (no text; attachments=1)
+[08/29/2025 07:39:14.105 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: LMAO??? so skrunkly
+[08/29/2025 07:41:33.480 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: da avocado
+[08/29/2025 07:44:50.284 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: avocado on da flo
+[08/29/2025 07:45:12.912 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: on a mission‼️‼️
+[08/29/2025 07:45:33.490 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: hiding under bed 😭😭
+[08/29/2025 07:45:58.764 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: me thinks ill walk back to ao
+[08/29/2025 07:46:04.350 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: whats the worst that can happen!
+[08/29/2025 07:50:25.490 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: okie avocado got one more dawn bath n one pill, told them if they see more they need to give another n give another bath. also gave them the flea comb.
+[08/29/2025 07:53:50.890 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: (no text; attachments=4)
+[08/29/2025 07:54:17.686 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: got scared of the traffic n went back up the driveway :( i dont like going on private property so i left
+[08/29/2025 08:08:06.563 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Hopefully his last bath for a while
+[08/29/2025 08:08:38.474 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: @Ben @Kitadan
+[08/29/2025 08:10:51.968 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=4)
+[08/29/2025 08:26:06.456 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: hes such a sweet babg
+[08/29/2025 08:26:19.261 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: he got me good on my chin but it was My fault
+[08/29/2025 08:31:29.008 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: smh /j
+[08/29/2025 08:32:34.542 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: He reminds me of puddles so much 😭 😭 😭
+[08/29/2025 08:32:53.871 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: ill get business since im running back over to campus anyway @zahara 🌙
+[08/29/2025 08:33:19.872 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: lot 50 will survive (they hunt!) if u dont wanna trek out here for them btw!! :33
+[08/29/2025 08:33:28.175 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: YESSSSSSSSSSS
+[08/29/2025 08:33:31.287 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: ur so right
+[08/29/2025 08:33:46.099 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: puddles was an angel im really so so so glad in retrospect we were able to find a home w her
+[08/29/2025 08:34:04.347 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: her "owner" i hope is suffering in hell
+[08/29/2025 08:36:29.034 PM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: who is this sweet baby? i was sitting at a table outside the uc and they were meowing but too shy to come up to me lol
+[08/29/2025 08:36:29.035 PM] Action   || Name: muted_send          || Trigger: channel=#pictures-of-the-cats        || Output: Processing image…
+[08/29/2025 08:36:29.753 PM] Action   || Name: viz_identify        || Trigger: boxes=0 guesses=0                    || Output: ok
+[08/29/2025 08:36:29.763 PM] Action   || Name: viz_identify_error  || Trigger: err=AttributeError                   || Output: 'NoneType' object has no attribute 'edit'
+[08/29/2025 08:36:29.764 PM] Action   || Name: muted_send          || Trigger: channel=#pictures-of-the-cats        || Output: Sorry, identify failed.
+[08/29/2025 08:36:33.830 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: snickers
+[08/29/2025 08:36:35.622 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: MS DIVA
+[08/29/2025 08:36:37.263 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: SNICKERS
+[08/29/2025 08:36:38.908 PM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: awwwh
+[08/29/2025 08:36:39.452 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: MY BELOVED
+[08/29/2025 08:36:43.774 PM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: she's so cute
+[08/29/2025 08:36:48.996 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: she loves to have conversations but doesnt like being near people. she likes being admired tho
+[08/29/2025 08:37:12.463 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: she wants a parasocial relationship with people
+[08/29/2025 08:37:14.944 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: im omw to the uc i hope she'll still be ther
+[08/29/2025 08:37:37.972 PM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: she most likely is, she went under the golf cart over there
+[08/29/2025 08:37:59.781 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: WAHOOOO
+[08/29/2025 08:42:17.771 PM] Message  || User: _rambone_           || Channel: #purrley-pawsitive-pussy-pals        || Content: @kazius [membership+fundraising] @mckayla [retired] just talked to the GM at Highland Village
+[08/29/2025 08:42:56.839 PM] Message  || User: _rambone_           || Channel: #purrley-pawsitive-pussy-pals        || Content: She kinda helped me start looking for positions closer to my house
+[08/29/2025 08:43:00.436 PM] Message  || User: _rambone_           || Channel: #purrley-pawsitive-pussy-pals        || Content: W networking
+[08/29/2025 08:43:11.049 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: WAHOOOOOOO
+[08/29/2025 08:43:20.882 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: ill be sad tho man
+[08/29/2025 08:44:18.863 PM] Message  || User: pancakemixteamdj    || Channel: #pictures-of-the-cats                || Content: I always love how pissed she looks
+[08/29/2025 08:48:23.031 PM] Message  || User: reyesthighs         || Channel: #feeding-team                        || Content: I fed microwave that son of a bitch is LYING
+[08/29/2025 08:48:26.620 PM] Message  || User: hersheykatt         || Channel: #due-paying-portal                   || Content: I paid dues through paypal and submitted the application form. I couldnt submit a screenshot in the form though. My name will be labeled as Miralee
+[08/29/2025 08:49:14.292 PM] Message  || User: reyesthighs         || Channel: #feeding-team                        || Content: They are in cahoots
+[08/29/2025 08:50:31.825 PM] Message  || User: marciepoo143        || Channel: #pet-pictures                        || Content: he do not PLayyyyyy about butt scritches
+[08/29/2025 08:52:46.852 PM] Message  || User: plink5277           || Channel: #itty-bitty-kitty-commitee           || Content: I see the cat tv in here
+[08/29/2025 08:54:38.163 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: flashbanged michael
+[08/29/2025 08:54:45.297 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: LMFAOOOOO
+[08/29/2025 08:54:48.166 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: he needs more food man
+[08/29/2025 08:59:35.562 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: the fbca isnt under our jurisdiction right?
+[08/29/2025 09:00:48.658 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: saw someone feeding the cats there and some kittens but i think i remember that you guys know that already
+[08/29/2025 09:01:06.935 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: also dont really know why i put this in the feeding char but whatever
+[08/29/2025 09:02:35.456 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: the first baptist church ? unforch not
+[08/29/2025 09:02:41.809 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: are you still going to feed business?
+[08/29/2025 09:02:52.132 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: that’s nawt us, that would be a church member!
+[08/29/2025 09:03:01.362 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: im snagging business 4 them!
+[08/29/2025 09:03:17.901 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: please don’t go over and talk to them abt feeding the kitties they will fight us 💔
+[08/29/2025 09:03:19.168 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: ok no problem wanted to ask cause im close
+[08/29/2025 09:03:24.478 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: probably
+[08/29/2025 09:04:06.091 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: i saw the cats and almost approached them before i saw that they were out because someone was feeding them and i was like oh
+[08/29/2025 09:04:37.029 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: low quality diva
+[08/29/2025 09:05:06.243 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: yeah the church has some members that like to feed the cats, and some people in the church that think it’s us
+[08/29/2025 09:05:14.065 PM] Message  || User: cici4f3             || Channel: #pictures-of-the-cats                || Content: snickers lacroix image
+[08/29/2025 09:05:52.660 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: 🤷
+[08/29/2025 09:10:58.054 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: business fed
+[08/29/2025 09:11:19.132 PM] Message  || User: frostfire312        || Channel: #questions-and-suggestions/How do I gain team roles? || Content: I’m in most of the club function channels since I’m a paying member but I have no idea how to gain the roles so I can be notified when someone needs help.
+[08/29/2025 09:12:08.841 PM] Message  || User: slayc127            || Channel: #questions-and-suggestions/How do I gain team roles? || Content: we'll have to add them manually! are you wanting all of the team roles?
+[08/29/2025 09:15:24.797 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[08/29/2025 09:15:26.692 PM] Message  || User: astro_db            || Channel: #pictures-of-the-cats                || Content: I miss Jupiter
+[08/29/2025 09:16:10.457 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: walked way too much toxay
+[08/29/2025 09:16:14.045 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: wrong channel oops
+[08/29/2025 09:16:15.974 PM] Message  || User: autumn065829        || Channel: #due-paying-portal                   || Content: My username is $AutumnMcCalla on cashapp, I just paid $15
+[08/29/2025 09:16:25.786 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: i rly have to walk across campus now
+[08/29/2025 09:16:26.728 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: sigh
+[08/29/2025 09:24:50.677 PM] Message  || User: frostfire312        || Channel: #questions-and-suggestions/How do I gain team roles? || Content: yes please
+[08/29/2025 09:27:59.805 PM] Message  || User: slayc127            || Channel: #questions-and-suggestions/How do I gain team roles? || Content: added them! for fundraising + membership just keep an eye out for messages, it doesnt look like we have a designated role anymore! ill double check when i get home tho
+[08/29/2025 09:36:55.958 PM] Message  || User: kitadan             || Channel: #yapper-committee                    || Content: What am I doing on Friday night when I don't have to work in the morning?  Binging an anime from a year ago.
+[08/29/2025 09:42:36.071 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: real.
+[08/29/2025 09:47:15.563 PM] Message  || User: austinbaustinb      || Channel: #itty-bitty-kitty-commitee           || Content: Its good yeah
+[08/29/2025 09:47:20.853 PM] Message  || User: austinbaustinb      || Channel: #itty-bitty-kitty-commitee           || Content: Big fan
+[08/29/2025 09:47:32.066 PM] Message  || User: austinbaustinb      || Channel: #itty-bitty-kitty-commitee           || Content: I think its up there with Into the Spiderverse in its animation
+[08/29/2025 09:52:14.387 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: stay safe!!
+[08/29/2025 09:54:56.124 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: i am!
+[08/29/2025 10:34:09.961 PM] Message  || User: emmav               || Channel: #report-new-cats                     || Content: (no text; attachments=1)
+[08/29/2025 10:34:11.797 PM] Message  || User: emmav               || Channel: #report-new-cats                     || Content: Does anyone know who this maybe 2 month old ginger kitten is?
+[08/29/2025 10:34:15.258 PM] Message  || User: emmav               || Channel: #report-new-cats                     || Content: I wanna call him simba
+[08/29/2025 10:34:21.356 PM] Message  || User: emmav               || Channel: #report-new-cats                     || Content: By the mac
+[08/29/2025 10:34:32.551 PM] Message  || User: simplyshadow171295  || Channel: #report-new-cats                     || Content: west campus is mostly unexplored!
+[08/29/2025 10:34:47.707 PM] Message  || User: simplyshadow171295  || Channel: #report-new-cats                     || Content: but i think we have seen specifically this guy hold on
+[08/29/2025 10:36:13.283 PM] Message  || User: simplyshadow171295  || Channel: #report-new-cats                     || Content: jk i can’t find it but the guy was in a tree. possibly the same cat
+[08/29/2025 10:53:25.509 PM] Message  || User: a1darek             || Channel: #report-new-cats                     || Content: Wayy older than that
+[08/29/2025 10:54:13.920 PM] Message  || User: a1darek             || Channel: #report-new-cats                     || Content: But I believe this is one another group (called in by uta??) Had trapped and just gave to us but we could do anything at the time because nobody was able to hold them and I was out of the state at the time
+[08/29/2025 11:06:09.648 PM] Message  || User: emmav               || Channel: #report-new-cats                     || Content: Hes so fucking small
+[08/29/2025 11:06:20.131 PM] Message  || User: emmav               || Channel: #report-new-cats                     || Content: Like the video is not giving him justice
+[08/29/2025 11:18:32.527 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: One day I'll have enough money to buy random band merch
+[08/29/2025 11:23:34.291 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: go to a thrift store? /j
+[08/29/2025 11:27:08.254 PM] Message  || User: kitadan             || Channel: #report-new-cats                     || Content: I think this one is part of a second litter at old smart hospital.
+[08/29/2025 11:31:51.625 PM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: Streets saying there's some good news
+[08/29/2025 11:32:12.393 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: ??
+[08/29/2025 11:32:35.085 PM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: One of my haters is not in good condition from what I know
+[08/29/2025 11:32:52.059 PM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: It may be a good weekend
+[08/29/2025 11:37:05.950 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Throws up out window

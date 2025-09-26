@@ -66,6 +66,20 @@ def _venv_python() -> Path:
     return VENV_DIR / "bin" / "python"
 
 
+def _clean_hf_cache() -> None:
+    targets = [
+        Path(os.path.expanduser("~")) / ".cache" / "huggingface",
+        Path(os.path.expanduser("~")) / ".huggingface",
+    ]
+    for path in targets:
+        try:
+            if path.exists():
+                shutil.rmtree(path, ignore_errors=True)
+                print(f"Cleared {path}")
+        except Exception as exc:
+            print(f"Warning: failed to remove {path}: {exc}")
+
+
 def _ensure_repo() -> None:
     if not (ROOT / "requirements.txt").exists():
         raise InstallError(
@@ -156,7 +170,7 @@ def _ensure_extra_models() -> None:
     # These lightweight packages are not part of requirements to avoid inflating
     # runtime footprint when the NLP backstop is unused, but we need them for the
     # ONNX export step.
-    _pip(["install", "transformers==4.43.3", "safetensors>=0.4.4"])
+    _pip(["install", "huggingface_hub<0.34", "transformers==4.43.3", "safetensors>=0.4.4"])
 
 
 def _cleanup_tokenizer_artifacts() -> None:
@@ -221,6 +235,21 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="force reinstallation of base dependencies",
     )
+    parser.add_argument(
+        "--resume-model",
+        action="store_true",
+        help="skip dependency install and rerun only the DeBERTa download/test",
+    )
+    parser.add_argument(
+        "--skip-model",
+        action="store_true",
+        help="provision dependencies but skip the DeBERTa download + test stage",
+    )
+    parser.add_argument(
+        "--clean-hf-cache",
+        action="store_true",
+        help="delete local HuggingFace caches before downloading models",
+    )
     return parser.parse_args()
 
 
@@ -232,15 +261,29 @@ def main() -> None:
     print(f"Using Python interpreter: {python_exe}")
 
     _ensure_repo()
-    _create_or_reuse_venv(python_exe)
-    _install_base_dependencies(force_reinstall=args.reinstall)
+    if args.resume_model:
+        if not _venv_python().exists():
+            raise InstallError(".venv not found – run the full installer first.")
+        if args.clean_hf_cache:
+            _clean_hf_cache()
+        _ensure_deberta_model()
+        _test_model()
+        _maybe_create_env_template()
+    else:
+        _create_or_reuse_venv(python_exe)
+        _install_base_dependencies(force_reinstall=args.reinstall)
 
-    torch_force = "gpu" if args.gpu else "cpu" if args.cpu else None
-    _install_torch(torch_force)
+        torch_force = "gpu" if args.gpu else "cpu" if args.cpu else None
+        _install_torch(torch_force)
 
-    _ensure_deberta_model()
-    _test_model()
-    _maybe_create_env_template()
+        if not args.skip_model:
+            if args.clean_hf_cache:
+                _clean_hf_cache()
+            _ensure_deberta_model()
+            _test_model()
+        else:
+            print("Skipping DeBERTa download/test as requested")
+        _maybe_create_env_template()
 
     print("\nAll done! Launch the bot with:\n  python scripts/start.py\n")
 

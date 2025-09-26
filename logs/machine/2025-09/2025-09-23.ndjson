@@ -1,0 +1,307 @@
+{"event": "message", "author": "spitonme", "channel": "#feeding-team", "content": "ts beautiful", "attachments": 0}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "gmail_auth_url", "trigger": "", "output": "https://accounts.google.com/o/oauth2/auth?response_type=code&client_id=1060012833432-juct0ve2bt20jmdg2l49ht0egps13ujf.apps.googleusercontent.com&redirect_uri=http%3A%2F%2Flocalhost%3A8765%2F&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.readonly&state=OFjCus2uiIIIelc3087cHoRohNqQWO&access_type=offline&include_granted_scopes=true&prompt=consent"}
+{"event": "action", "name": "gmail_log_scheduler", "trigger": "auth", "output": "pending"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, auth url http://localhost:8765/?state=OFjCus2uiIIIelc3087cHoRohNqQWO&code=4/0AVGzR1B8Ab2j1Wg9K2oT6JR6kd-xcg_0SQfrohvYSrPDg9NQrTZXuh01AOE-JtYPO7NKgw&scope=https://www.googleapis.com/auth/gmail.readonly", "attachments": 0}
+{"event": "intent", "kind": "gmail_auth_code", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1420260666526269442, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "gmail_auth_complete", "trigger": "by=624440365595754496", "output": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, check the last email", "attachments": 0}
+{"event": "intent", "kind": "gmail_check_last", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1420260696410689536, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "gmail_last_email", "subject": "Re: Campus Cat Coalition- Broadcasting Project", "from": "\"Souders, Harper\" <hcs5615@mavs.uta.edu>", "snippet": "Thank you so much! I did find the area it helped a lot. I appreciate your guys help again, it means so much! Best, Harper Souders From: CampusCats &lt;utacampuscats@gmail.com&gt; Sent: Monday,"}
+{"event": "message", "author": "spitonme", "channel": "#cat-name-ideas", "content": "sushi", "attachments": 0}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#feeding-team", "message_id": 1420241600042369085, "emoji": "🫡", "message_preview": "Chat were officially full", "message_author": "m_digio"}
+{"event": "reaction_add", "user": "vasyline", "channel": "#pet-pictures", "message_id": 1420128973228347494, "emoji": "😭", "message_preview": "", "message_author": "m_digio"}
+{"event": "message", "author": ".bettercalljack", "channel": "#itty-bitty-kitty-commitee", "content": "The wifi still doen", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "mother nature teases us with the setup for rain and severe thunderstorms", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "OH YEAHHHH WUCK FESTTTTT", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "and then she skips us", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "yesssss", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "Im from pshs", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat show me twix", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1420263021489688627, "has_image": false, "slots": {"cat": "Twix", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "woah", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "actually small world we're in", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "ngl ive been seeing alot of pshs students go to uta", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "forks found in kitchen tbh", "attachments": 0}
+{"event": "reaction_add", "user": "baseketballin", "channel": "#feeding-team", "message_id": 1420241600042369085, "emoji": "🫡", "message_preview": "Chat were officially full", "message_author": "m_digio"}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "it’s nice and local", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "🙂‍↕️", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "i almost chose to commute from plano bc i thought it would be possible", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "hn not anymore esp how long im on campus", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "it’s like an hour right", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "roughly", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "that’s not too bad that’s only like 15 min longer than mine", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "it’d suck w a shit schedule though", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "45-50 if you take gbt", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "literally", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "like im here 8am-10pm", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "kinda just took a 7 hour nap chat am i cooked", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "hell nah", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "bye how did this happen", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "morning classes + club involvment", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "aurrrr", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "so we went to sleep 💪", "attachments": 0}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#yapper-committee", "message_id": 1420264060632432691, "emoji": "👍", "message_preview": "kinda just took a 7 hour nap chat am i c...", "message_author": "racerdg"}
+{"event": "message_edit", "author": "yaeji", "channel": "#yapper-committee", "before": "so we went to sleep 💪", "after": "so we went to sleep extra early 💪"}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "yeah gl bro", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "ty 🥲", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "i try my best", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "past 7 pm i gotta go i am not staying any later", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i start getting antsy", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "less if u go faster though", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "I go like 85", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "thats fair honestly 😭", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "might go see if any cats are out im bored and dont want to do homework", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "anyways is the wifi still out", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "Toll costs do add up though", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i do not touch the tolls", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "ever", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "they bumped the price on them tolls", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "thats understandable", "attachments": 0}
+{"event": "reaction_add", "user": "celeryiscelery", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420192250226278533, "emoji": "‼️", "message_preview": "Thank goodness for the lesbians", "message_author": "bubblebee5866"}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "yes", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "brah", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "161 my favorite", "attachments": 0}
+{"event": "reaction_add", "user": "celeryiscelery", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420259936595873906, "emoji": "‼️", "message_preview": "????", "message_author": "spitonme"}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "and 635 texpress", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "oh hell nah", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "but lowk", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "i hate i35", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "despise it", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "avoid 35 and loop 12 like the plague", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "literal hell on earth the first time i went", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i drive on 35 daily", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "35 west for me specifically", "attachments": 0}
+{"event": "message_edit", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "before": "35 west for me specifically", "after": "35 east for me specifically"}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i don’t think i’ve ever been on east", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "30 into dallas too <:bawhowho:1415189116647374929>", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "the move honestly for me", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "have you guys been driving when they start closing down the highways", "attachments": 0}
+{"event": "reaction_add", "user": ".s3j", "channel": "#pet-pictures", "message_id": 1420229462674374728, "emoji": "❤️", "message_preview": "", "message_author": "shynebwoy"}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "is george bush", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "actual fucking torture", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "then i35", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "360 and 161 really be dividing the metroplex..", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "but then again tolls 🥲", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "brooo 75 in plano has been so bad", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "so like everyday", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "esp afternoon + rush hour", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "OMG 635 -> 75", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "HELL", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "everyone forgets how to drive it’s inane", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "ig 75 in general", "attachments": 0}
+{"event": "message_edit", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "before": "everyone forgets how to drive it’s inane", "after": "everyone forgets how to drive it’s insane"}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "LITERALLYYYYY", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "insane", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "i wish they taught you to pick your lane early", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "and that time saved exponentially decreases the faster you go", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "you don't have to pass every car going 5 mph slower than you", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i am so pro flow of traffic i don’t care if we’re all doing 200 mph but we better all be doing 200mph", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "i am too but it gets unnecessary at a certain point", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "how are you gonna give mentally deranged drivers even LESS time to make decisions", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "there’s nothing i hate more than a slow ass car in the fast lane and i am not the one driving in the fast lane", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "and cut you off from the far lane to make their exit", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "i honestly start complaining when theres a slow car in a fast lane", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "like fucking MOVE", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "ok that i get angry abt", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "slow ass car in the fast lane and then the guy flying in the fast lane cuts in front of me in the middle lane because this cars doing 55 in the left lane", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "go fuck yourself like actually why can’t you just do 55 in the right lane", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "what is the psychology behind fast lane users who don't go FAST", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "bro if i’m i’m the fast lane i will be doing 80 mph", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "otherwise get out of the fast lane….", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "that’s like the point i fear", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "bro on 161 my avg speed bout 95 at ~8-9 am", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "ikr like Dont go into the left lane when you know you want to go 30 mph on a 70 mph highway", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "i literally have a speeding spotify playlist", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "🤭", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "there’s nothing worse than having to hard brake", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i can’t", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i hate it so bad", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "DO U SEE", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "people weaving around", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "across 3 lanes", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "on collins", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i hate the weavers bro", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "PICK A LANE DAMN", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "why are we threading the needle", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "ONGGG", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "Im not gonna lie I weave sometimes...", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "like ur still going to be late whats the point", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "im deadddd 😭", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "Usually it's on the highway though cause I dont like passing on the right", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "highway is fine", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "I always pass on the left", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "highway >>> local", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "it’s so funny when a car is weaving all around a bunch of cars and then still ends up at the same red as you", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "yeah 😭", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "like you did all that for what exactly", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "yeah honestly the right time to weave is when theres a slow ass car infront of you 😭", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "risked ur mf car and saved no fkin time", "attachments": 0}
+{"event": "reaction_add", "user": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420267319539531816, "emoji": "💯", "message_preview": "it’s so funny when a car is weaving all ...", "message_author": "izzyballz"}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "I do try to look way ahead", "attachments": 0}
+{"event": "reaction_add", "user": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420267319539531816, "emoji": "💯", "message_preview": "it’s so funny when a car is weaving all ...", "message_author": "izzyballz"}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "If you anticipate traffic then you are a safer driver", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "Also better fuel economy because you arent braking and accelerating quickly", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "no seriously", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "the ppl who gas and brake repeatedly", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "instead of just.. maintaining a speed", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "exactly!!", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i love my car i can drive like complete shit and still get like 32 mpg", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "I say fuck the people behind me and just never hit the gas while in traffic", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "not that i am driving like complete shit", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "niiiiice", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "I’m letting that bitch ROLL", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "bro me", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i try to touch the brake as little as possible on the highway i hate brake tappers", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "i drive a DCT omg ppl who inch piss me off so much", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "You ain’t catching me edging the gas petal for 2 seconds", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "sorry i’m lowkey an incher", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "bro ur fancy automatic can handle it", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "yes it can !", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "im overheating my clutch overhere", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "and who set that system up", "attachments": 0}
+{"event": "reaction_add", "user": "spitonme", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420266032152580126, "emoji": "🐙", "message_preview": "i am so pro flow of traffic i don’t care...", "message_author": "izzyballz"}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "and who decided your car couldn’t have auto", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "auto cars r boringggg", "attachments": 0}
+{"event": "message_edit", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "before": "auto cars r boringggg", "after": "traditional auto cars r boringggg"}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "I’d say yes but we live in Texas", "attachments": 0}
+{"event": "reaction_add", "user": "spitonme", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420268449070059600, "emoji": "🐙", "message_preview": "and who set that system up", "message_author": "izzyballz"}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "my car is an automatic technically", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "but its... different", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "honda fit is the ideal vehicle it’s so peak", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "my car is both automatic and manual and once i accidentally turned it to manual and almost broke it", "attachments": 0}
+{"event": "reaction_add", "user": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420268979422756905, "emoji": "❤️", "message_preview": "honda fit is the ideal vehicle it’s so p...", "message_author": "izzyballz"}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "sorry what", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "car enthusiasts can agree honda fit peak", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "how did this happen 😭", "attachments": 0}
+{"event": "message", "author": "littletechyyy", "channel": "#itty-bitty-kitty-commitee", "content": "this is so real", "attachments": 0}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1420264060632432691, "emoji": "👍", "message_preview": "kinda just took a 7 hour nap chat am i c...", "message_author": "racerdg"}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "correction driving enthusiasts can agree the Honda fit is peak", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "car enthusiasts too", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "not a honda fit but there was a period of time my honda odyssey needed a repair every month 😭", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "honda fit very tunable and fun", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "yes my tank is 20 dollars yes i average like 37mpg yes i do not have to brake for turns yes i can park literally any where it’s a perfect car", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "in this part of town all the car enthusiasts is how high your truck is", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "oh nah 😭", "attachments": 0}
+{"event": "message_edit", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "before": "in this part of town all the car enthusiasts is how high your truck is", "after": "in this part of town all the car enthusiasts care about is how high your truck is"}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "if i could id purge pickup trucks from the road", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "penis size ∝ 1/(strut height + tire diameter)", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "a road raging pickup trip driver almost killed me the other day", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "7/10 road rage incidents involve a pickup driver", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "hitting the <:balloonboi:933099871257382983> every time I see a lifted Silverado in my rear view", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "My car has paddle shifters and i accidentally hit one of them", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "lifted trucks that don't have their headlights readjusted 😡😡😡😡😡", "attachments": 0}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420269848407310418, "emoji": "❤️", "message_preview": "hitting the <:balloonboi:933099871257382...", "message_author": "fawnest_"}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "i need to find a way to attach 15,000 lumens to the back of my vehicle to blind lifted truck drivers", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "bro i deadass can’t see", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "my tiny ass car", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "ohhh one of dem bitches, usually there’s a system in place where the car makes sure you don’t fuck something up in be event that kinda thing happens", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "ahhhh you'll be fine", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "always a failsafe", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "unless manual", "attachments": 0}
+{"event": "message_edit", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "before": "unless manual", "after": "unless true manual"}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i literally can’t with peoples led headlights everyone has two mini suns attached to their cars and i drive with two candles sticks lighting my way", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "or one of them Hyundais", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "i drive a hyundai", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "you can literally barely see a difference between my headlights being on and off", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "LOL", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "real", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "last night i was driving and they were off and i didn’t notice until i was like halfway home highkey embarrassing asf", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "all them new cars got those photon cannons at the front", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "AND PPL WITH DRLS", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "be Biden blasting the shit outa my eyes", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "who think their drls are headlights 🤦", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "https://tenor.com/view/biden-blast-joe-biden-biden-blast-gif-6547929686164862695", "attachments": 0}
+{"event": "message_edit", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "before": "https://tenor.com/view/biden-blast-joe-biden-biden-blast-gif-6547929686164862695", "after": "https://tenor.com/view/biden-blast-joe-biden-biden-blast-gif-6547929686164862695"}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "discord light mode", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "yeah it was scary as fuck though i was in the middle of driving and was like. why does the car feel weird all of a sudden", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "the jolt of sudden high rpms go crazy", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "do not be scared of le rev", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "but my dad was with me and you just have to hold down the paddle again to turn it off", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "so now i know", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "oh dats weird", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "usually the car just realizes “oh shit mb” and goes back to auto", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "i just wait until a stoplight and go neutral-drive again", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "usually they can downshift automatically to avoid stalling", "attachments": 0}
+{"event": "message_edit", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "before": "i just wait until a stoplight and go neutral-drive again", "after": "i just waited until a stoplight and go neutral-drive again"}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "I’m in a love/hate relationship with whoever invented Auto start-stop", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "bro my old car (rip) didnt have a setting to turn it off permanently", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "so everyyy time u started the car u had to turn it off", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "Tbh I’m not sure if my dads has it too", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "2024 too like cmon", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "Haven’t checked", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "idek what that is", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "my car is from 2013 it does not have auto start", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "i drive a 2022 now", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "car come to full stop, car make engine turn off, car save minuscule amount of gas, but manage to po driver", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "luckily it dont have it", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "oooh yeah", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "my car does not have that", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "be happy", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "u drive a honda fit", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "it sound great but it’s a waste of time", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "i dont think its necessary 😭", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "more reasons to get a honda fit", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "my car is my first car still", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "some of these commuters r a little wild ngl", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "this is my first car i got her one month ago", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "<:aliencat:1417698216996241511>", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "I’ve seen alotta big block v8s in both west and south lots", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "south lots have a lot of cool cars", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "some dude has a clean z", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "have u seen the cyber trucks", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i don’t understand why anyone would want anything other than market leading fuel economy", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "do not get me started.", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "oh hell nah", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "VROOOOOM", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "isnt there a pink one", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "ugly ahh cars", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "have you seen the fuck ass pink one", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "yes", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "theres a miata that usually parks in the upgrade sections in the south lot closer to the bridge", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "cybertruck looks like a doorstop", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "lmfao i saw it when i was with chris one time", "attachments": 0}
+{"event": "reaction_add", "user": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420272297364947039, "emoji": "😭", "message_preview": "cybertruck looks like a doorstop", "message_author": "yaeji"}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "there was a first gen mr2 as well", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "must be so brave pulling up to uta with a cyber truck 😭 💀 🥀", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "🍅", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "brooo my dad has a hummer", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "there’s a car that usually parks in the upgrade section of lot 49 with this pink pearl finish it is so pretty", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "hummer is chad cybertruck", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "should be my car.", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i think it’s called ghost pink or smth like that", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "(kazius has no license)", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "bro it’s so pretty it’s white until the light hits and then it reflects pink", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420272734075748352, "emoji": "😭", "message_preview": "bro it’s so pretty it’s white until the ...", "message_author": "izzyballz"}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "STOPPPPPPPPP", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "need right neow", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "oh pearlescent", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "thats expensiveeee", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "", "attachments": 1}
+{"event": "reaction_add", "user": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420272734075748352, "emoji": "😭", "message_preview": "bro it’s so pretty it’s white until the ...", "message_author": "izzyballz"}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "it is gorg", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "everytime I see a Mazda in red it’s just chef kiss", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "<:catthumbsup:931115163317329920>", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "hummer ev in full creme/offwhite", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "i want a beatle car 🥲", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "my parents dont support this tho", "attachments": 0}
+{"event": "message_edit", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "before": "i want a beatle car 🥲", "after": "i want a cute beatle car 🥲"}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "my mom thinks ill be shredded on the road driving a small car", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "lmfao", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "", "attachments": 1}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "cutie", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "get a honda fit", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "i wanted a beetle but they suck butt", "attachments": 0}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "driving a small car def the go to dumbahh truck on the left", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "aw what a cute little car", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": "MIAT", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#itty-bitty-kitty-commitee", "content": ":D", "attachments": 0}
+{"event": "message", "author": "baseketballin", "channel": "#itty-bitty-kitty-commitee", "content": "trading my honda odyssey for a honda fit 🗣️", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "dream car color it’s actually delectable", "attachments": 1}
+{"event": "message", "author": "fawnest_", "channel": "#itty-bitty-kitty-commitee", "content": "is this soul red", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#itty-bitty-kitty-commitee", "content": "yum", "attachments": 0}

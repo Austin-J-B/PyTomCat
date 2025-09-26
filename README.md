@@ -76,8 +76,7 @@ bot remains stateless beyond files.
 
 ## Requirements & Dependencies
 
-`requirements.txt` targets CUDA 12.1 builds suitable for Nvidia GPUs
- Highlights:
+`requirements.txt` targets CUDA 12.1 builds suitable for Nvidia GPUs. Highlights:
 
 - **Discord stack:** `discord.py`, `aiohttp`, `python-dotenv`.
 - **Google APIs:** `gspread`, `google-api-python-client`, `google-auth-*`.
@@ -86,9 +85,8 @@ bot remains stateless beyond files.
   CUDA 12.1 wheels.
 - **Parsing:** `numpy`, `Pillow`, `rapidfuzz`, `beautifulsoup4`, `requests`.
 
-PyTorch wheels are referenced via `--extra-index-url https://download.pytorch.org/whl/cu121`.
-If you are installing on a CPU-only system, remove the extra index line and swap
-in the CPU wheels (`torch==2.3.1`, `torchvision==0.18.1`).
+The installer script automatically chooses GPU or CPU wheels for PyTorch based
+on whether `nvidia-smi` is available (override with `--gpu` or `--cpu`).
 
 ---
 
@@ -113,18 +111,22 @@ in the CPU wheels (`torch==2.3.1`, `torchvision==0.18.1`).
    cd PyTomCat
    ```
 
-2. **Run the setup script**
+2. **Provision the environment**
    ```bash
-   scripts\setup.cmd
+   python scripts/install.py
    ```
-   This script will automatically:
-   - Create and activate a virtual environment
-   - Install all required dependencies
-   - Download and convert the DeBERTa model to ONNX format
-   - Test the installation
+   The installer is idempotent – run it any time to refresh dependencies. It will:
+   - Reuse or create `.venv`
+   - Install/upgrade core Python dependencies
+   - Install PyTorch with CUDA 12.1 wheels when an NVIDIA GPU is detected (fallback to CPU otherwise)
+   - Download & convert the DeBERTa MNLI model to ONNX if the files are missing
+   - Smoke test the ONNX model and create a placeholder `.env` when none exists
    
-   > If you do not have a CUDA-capable GPU, edit `requirements.txt` and replace
-   > the `torch`/`torchvision` entries with CPU builds before running the script.
+   Optional flags:
+   ```bash
+   python scripts/install.py --cpu   # force CPU-only wheels
+   python scripts/install.py --gpu   # force CUDA wheels even if nvidia-smi is absent
+   ```
 
 3. **Add YOLO weights**
    
@@ -152,7 +154,7 @@ in the CPU wheels (`torch==2.3.1`, `torchvision==0.18.1`).
 
 7. **Run TomCat**
    ```bash
-   python -m tomcat.main
+   python scripts/start.py
    ```
 
 ---

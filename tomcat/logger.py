@@ -63,6 +63,8 @@ def log_event(event_data: dict) -> str:
     # Suppress verbose dues debug in human logs; still written to machine NDJSON above
     if kind == "dues_debug":
         return ""
+    if kind == "show_photo_page":
+        return ""
 
     if kind == "message":
         content = event_data.get("content")

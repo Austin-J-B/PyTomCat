@@ -12,7 +12,7 @@ from ..services.catsheets import (
     get_most_recent_photo as get_latest_photo,
     build_profile_embed as _build_profile_embed,
 )
-from ..logger import log_action 
+from ..logger import log_action, log_event 
 import re
 import os, io, asyncio, aiohttp
 from ..vision import vision as V
@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 from ..config import settings
 from ..services import profile_cache as PC
+from discord.errors import NotFound
 
 
 
@@ -35,6 +36,44 @@ class PhotoView(discord.ui.View):
     def __init__(self, cat_name: str):
         super().__init__(timeout=None)  # no expiry while the bot is running
         self.cat_name = cat_name
+
+    async def _edit_or_send(
+        self,
+        interaction: discord.Interaction,
+        *,
+        embed: Optional[discord.Embed] = None,
+        content: Optional[str] = None,
+        image_bytes: Optional[bytes] = None,
+        filename: str = "cache.jpg",
+    ) -> tuple[str, int | None]:
+        """Edit the original message when possible, else send a follow-up copy.
+
+        Returns (delivery_mode, resulting_message_id).
+        """
+        attachments = []
+        if image_bytes is not None:
+            attachments = [discord.File(io.BytesIO(image_bytes), filename=filename)]
+        try:
+            await interaction.followup.edit_message(
+                message_id=interaction.message.id,
+                content=content,
+                embed=embed,
+                attachments=attachments,
+                view=self,
+            )
+            return "edit", interaction.message.id
+        except NotFound:
+            files = None
+            if image_bytes is not None:
+                files = [discord.File(io.BytesIO(image_bytes), filename=filename)]
+            sent = await interaction.followup.send(
+                content=content,
+                embed=embed,
+                files=files,
+                view=self,
+            )
+            sent_id = getattr(sent, "id", None)
+            return "send", sent_id
 
     @discord.ui.button(label="Show me another", style=discord.ButtonStyle.primary)
     async def another(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -65,14 +104,45 @@ class PhotoView(discord.ui.View):
                 f"Image: {serial}"
             )
             e2 = discord.Embed(title=title, description=desc, color=0x2F3136)
-            file = discord.File(io.BytesIO(cached_bytes), filename="cache.jpg")
             e2.set_image(url="attachment://cache.jpg")
-            await interaction.followup.edit_message(message_id=interaction.message.id, embed=e2, attachments=[file], view=self)
+            delivery, delivered_id = await self._edit_or_send(
+                interaction,
+                embed=e2,
+                image_bytes=cached_bytes,
+                filename="cache.jpg",
+            )
+            log_event({
+                "event": "show_photo_page",
+                "cat": self.cat_name,
+                "source": "cache",
+                "serial": str(serial),
+                "reverse_index": str(rev),
+                "total": str(tot),
+                "delivery": delivery,
+                "message_id": interaction.message.id,
+                "delivered_message_id": delivered_id,
+                "user_id": getattr(getattr(interaction, "user", None), "id", None),
+            })
             return
         # Else pull a random recent photo
         pick2 = await get_random_photo(self.cat_name)
         if isinstance(pick2, str):
-            await interaction.followup.edit_message(message_id=interaction.message.id, content=pick2, embed=None, attachments=[], view=None)
+            delivery, delivered_id = await self._edit_or_send(
+                interaction,
+                content=pick2,
+                embed=None,
+                image_bytes=None,
+            )
+            log_event({
+                "event": "show_photo_page",
+                "cat": self.cat_name,
+                "source": "error",
+                "delivery": delivery,
+                "message_id": interaction.message.id,
+                "delivered_message_id": delivered_id,
+                "user_id": getattr(getattr(interaction, "user", None), "id", None),
+                "detail": pick2,
+            })
             return
         full = self.cat_name
         display = _display_name(full)
@@ -107,11 +177,34 @@ class PhotoView(discord.ui.View):
         if img_bytes_for_embed:
             file = discord.File(io.BytesIO(img_bytes_for_embed), filename="crop.jpg")
             e2.set_image(url="attachment://crop.jpg")
-            await interaction.followup.edit_message(message_id=interaction.message.id, embed=e2, attachments=[file], view=self)
+            delivery, delivered_id = await self._edit_or_send(
+                interaction,
+                embed=e2,
+                image_bytes=img_bytes_for_embed,
+                filename="crop.jpg",
+            )
         else:
             if img_url:
                 e2.set_image(url=img_url)
-            await interaction.followup.edit_message(message_id=interaction.message.id, embed=e2, attachments=[], view=self)
+            delivery, delivered_id = await self._edit_or_send(
+                interaction,
+                embed=e2,
+                image_bytes=None,
+            )
+
+        log_event({
+            "event": "show_photo_page",
+            "cat": self.cat_name,
+            "source": "recent",
+            "serial": str(pick2.get('serial','Unknown')),
+            "reverse_index": str(pick2.get('reverse_index','?')),
+            "total": str(pick2.get('total_available','?')),
+            "delivery": delivery,
+            "message_id": interaction.message.id,
+            "delivered_message_id": delivered_id,
+            "user_id": getattr(getattr(interaction, "user", None), "id", None),
+            "cropped": bool(img_bytes_for_embed),
+        })
 
 
 def _add_field(embed: discord.Embed, name: str, value: Any, inline: bool = True) -> None:

@@ -183,7 +183,8 @@ FEEDING_CHECK_RE = re.compile(
 SILENT_CMD = re.compile(r"\bsilent\s*mode\s+(on|off)\b", re.I)
 WHO_THIS_RE = re.compile(r"(?:^|\b)(?:who(?:'s|\s+is)|what(?:'s|\s+is))\s+(?:this|that)\s*(?:cat)?\??$", re.I)
 FEEDING_UPDATE_RE = re.compile(r"^feeding\s+update\s*$", re.I)
-MANUAL_8PM_RE = re.compile(r"^manual\s+8\s*pm\s+update\s*$", re.I)
+MANUAL_8PM_RE = re.compile(r"(?:manual\s+8\s*pm\s+update|preview\s+8\s*pm)", re.I)
+FEEDING_WHO_TODAY_RE = re.compile(r"who(?:'s|\s+is)?\s+feeding\s+(?:today|tonight)", re.I)
 CHECK_LAST_EMAIL_RE = re.compile(r"\bcheck\s+(?:the\s+)?last\s+email\b", re.I)
 AUTH_CODE_RE = re.compile(r"\bauth\s+(?:code|url)\s+(.+)$", re.I)
 LOG_PAST_EMAILS_RE = re.compile(r"\blog(?:\s+the)?\s+past\s+(\d+)\s+emails\b", re.I)
@@ -613,6 +614,16 @@ class IntentRouter:
                 self._traces[row["message_id"]] = trace
                 return ev
 
+            if FEEDING_WHO_TODAY_RE.search(text_wo):
+                ev = IntentEvent(
+                    type="feeding_today", confidence=0.95,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+                trace.append("rule:feeding_today")
+                self._traces[row["message_id"]] = trace
+                return ev
+
             # Admin-only manual 8pm preview
             if MANUAL_8PM_RE.search(text_wo):
                 ev = IntentEvent(
@@ -822,7 +833,7 @@ class IntentRouter:
 
         # 2) Feeding-team flows (high traffic). Sub-requests first.
         if in_feeding and (SUB_VERB.search(text) or FEED_REQUEST_RE.search(text)):
-            stations = self._extract_all_entities(text, want="station")
+            stations = self._extract_all_entities(text, want="station", allow_stopword_aliases=True)
             dates = self._extract_dates(text)
             if not stations:
                 stations = self._stations_from_schedule(row["user_id"], dates)
@@ -840,9 +851,9 @@ class IntentRouter:
         # Then feed updates
         # Case A: feed verb with possibly multiple stations
         if FEED_VERB.search(text):
-            stations = self._extract_all_entities(text, want="station")
+            stations = self._extract_all_entities(text, want="station", allow_stopword_aliases=True)
             if not stations:
-                best = self._extract_best_entity(text, want="station")
+                best = self._extract_best_entity(text, want="station", allow_stopword_aliases=True)
                 if best:
                     stations = [best]
             if stations:
@@ -896,7 +907,7 @@ class IntentRouter:
             # Only treat as a sub request in feeding channels
             if not in_feeding:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]) 
-            stations = self._extract_all_entities(text, want="station")
+            stations = self._extract_all_entities(text, want="station", allow_stopword_aliases=True)
             dates = self._extract_dates(text)
             conf = 0.9 if stations and dates else 0.75
             ev = IntentEvent(
@@ -939,7 +950,7 @@ class IntentRouter:
         if self._nlp and len(text) >= 3 and (addressed or in_feeding):
             nlp_intent, nlp_prob = self._nlp.predict_intent(text)
             if nlp_intent in {"feed_update","sub_request"} and nlp_prob >= CONF_MID:
-                station = self._extract_best_entity(text, want="station", allow_model=True)
+                station = self._extract_best_entity(text, want="station", allow_model=True, allow_stopword_aliases=True)
                 if nlp_intent == "feed_update" and station:
                     return IntentEvent(
                         type="feed_update", confidence=max(nlp_prob, 0.8),
@@ -1021,6 +1032,10 @@ class IntentRouter:
         
         if event.type == "feeding_status":
             await feeding.handle_feeding_inquiry(_intent("feeding_inquiry", {}), ctx)
+            return
+
+        if event.type == "feeding_today":
+            await feeding.handle_feeding_today(_intent("feeding_today", {}), {**ctx, "bot": ctx.get("bot")})
             return
 
         if event.type == "cv_detect":
@@ -1199,10 +1214,16 @@ class IntentRouter:
     def _normalize_text(self, s: str) -> str:
         return re.sub(r"\s+", " ", (s or "").strip().lower())
 
-    def _extract_best_entity(self, text: str, want: str, allow_model: bool=False) -> Optional[str]:
+    def _extract_best_entity(
+        self,
+        text: str,
+        want: str,
+        allow_model: bool = False,
+        allow_stopword_aliases: bool = False,
+    ) -> Optional[str]:
         """want in {'cat','station'}. Try aliases, then fuzzy, then optional NLP scorer."""
         # 1) alias exact/normalized
-        found = resolve_station_or_cat(text, want=want)
+        found = resolve_station_or_cat(text, want=want, include_stopword_aliases=allow_stopword_aliases)
         if found:
             return found
 
@@ -1224,12 +1245,18 @@ class IntentRouter:
 
         return None
 
-    def _extract_all_entities(self, text: str, want: str) -> List[str]:
+    def _extract_all_entities(
+        self,
+        text: str,
+        want: str,
+        *,
+        allow_stopword_aliases: bool = False,
+    ) -> List[str]:
         # Stations: use alias resolver so aliases like "west" → "West Hall" work
         if want == "station":
             try:
                 from .aliases import resolve_stations as _resolve_stations
-                stations = _resolve_stations(text)
+                stations = _resolve_stations(text, include_stopword_aliases=allow_stopword_aliases)
                 # resolve_stations returns display names already; ensure unique preserve order
                 out: List[str] = []
                 seen = set()

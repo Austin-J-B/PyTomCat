@@ -753,8 +753,23 @@ async def build_8pm_lines(bot: discord.Client, *, unfed: Optional[List[str]] = N
     def _fmt(uid: int) -> str:
         if mention:
             return f"<@{uid}>"
-        u = bot.get_user(uid)
-        return f"@{getattr(u,'name',str(uid))}"
+        name = None
+        if bot:
+            u = bot.get_user(uid)
+            if u:
+                name = getattr(u, "global_name", None) or getattr(u, "display_name", None) or getattr(u, "name", None)
+        if not name:
+            try:
+                lookup = getattr(settings, "user_id_map", {}) or {}
+                for disp, mapped in lookup.items():
+                    if int(mapped) == int(uid):
+                        name = disp
+                        break
+            except Exception:
+                pass
+        if not name:
+            name = str(uid)
+        return str(name)
 
     lines: List[str] = ["**Currently unfed stations**"]
     for st in unfed:
@@ -785,3 +800,13 @@ async def handle_manual_8pm_preview(intent, ctx: Dict[str, Any]) -> None:
     msg = await build_8pm_lines(bot, mention=False)
     await safe_send(ctx["channel"], msg)
     log_action("manual_8pm", f"by={uid}", "preview_sent")
+
+
+async def handle_feeding_today(intent, ctx: Dict[str, Any]) -> None:
+    """Post today's unfed schedule using plain display names (no mentions)."""
+    bot = ctx.get("bot")
+    lines = await build_8pm_lines(bot, mention=False)
+    await safe_send(ctx["channel"], lines)
+    author = ctx.get("author")
+    uid = int(getattr(author, 'id', 0)) if author else 0
+    log_action("feeding_today", f"by={uid}", "sent")

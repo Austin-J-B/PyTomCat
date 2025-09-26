@@ -4,6 +4,8 @@ import re
 from collections import defaultdict
 from typing import Optional, Tuple
 
+from .logger import log_action
+
 SPAM_PATTERNS = [
     re.compile(r"free\s+.*(mac\s*book|macbook|iphone|ps\s*5|playstation)\b", re.I),
     re.compile(r"tickets?\s+(?:to|for)\s+.+(concert|show|tour|event)", re.I),
@@ -11,6 +13,16 @@ SPAM_PATTERNS = [
     re.compile(r"first\s*come\s*first\s*serve", re.I),
     re.compile(r"\bmail\s+me\b|\bemail\s+me\b", re.I),
 ]
+
+SUSPICIOUS_TERMS = [
+    ("dm_if_interested", 2, re.compile(r"\b(?:dm|message|text)\s+me\s+if\s+(?:(?:you'?re|you\s+are)\s+)?interested\b", re.I)),
+    ("sell_my", 1, re.compile(r"\bsell(?:ing)?\s+my\b", re.I)),
+    ("season_tickets", 1, re.compile(r"\bseason\s+tickets?\b", re.I)),
+    ("selling_tickets", 1, re.compile(r"\bsell(?:ing)?\s+(?:my\s+)?tickets?\b", re.I)),
+    ("whatsapp", 1, re.compile(r"\bwhats?app\b", re.I)),
+]
+
+MIN_SPAM_SCORE = 3
 
 EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
 PHONE_RE = re.compile(r"\+?1?\s*(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}")
@@ -123,12 +135,21 @@ def check_spam(message, settings) -> tuple[bool, str]:
     if trust:
         return (False, trust)
     # Strong indicators
-    if EMAIL_RE.search(text) or PHONE_RE.search(text):
-        # allow one weak signal to pass but with contact info treat as strong
-        pass_score = 1
-    else:
-        pass_score = 0
-    score = pass_score
+    contact_hits = []
+    score = 0
+    if EMAIL_RE.search(text):
+        score += 2
+        contact_hits.append("email")
+    if PHONE_RE.search(text):
+        score += 2
+        contact_hits.append("phone")
+
+    suspicion_hits = []
+    for name, weight, rx in SUSPICIOUS_TERMS:
+        if rx.search(text):
+            score += weight
+            suspicion_hits.append(name)
+
     matched_rules = []
     for rx in SPAM_PATTERNS:
         if rx.search(text):
@@ -148,8 +169,32 @@ def check_spam(message, settings) -> tuple[bool, str]:
     # NLP backstop
     spam_prob = _nlp_predict_spam(settings, text)
     if spam_prob >= float(getattr(settings, 'spam_nlp_conf', 0.9)):
-        score += 2
-    if score >= 2:
+        score += 3
+    # Logging for visibility
+    try:
+        author_id = getattr(getattr(message, 'author', None), 'id', 'unknown')
+        channel_id = getattr(getattr(message, 'channel', None), 'id', 'unknown')
+        details_parts = []
+        if contact_hits:
+            details_parts.append(f"contact={','.join(contact_hits)}")
+        if suspicion_hits:
+            details_parts.append(f"phrases={','.join(suspicion_hits)}")
+        if matched_rules:
+            details_parts.append(f"regex={'|'.join(matched_rules)}")
+        if fuzzy_hits:
+            details_parts.append(f"fuzzy={len(fuzzy_hits)}")
+        if spam_prob > 0:
+            details_parts.append(f"nlp={spam_prob:.2f}")
+        if details_parts:
+            detail_msg = "; ".join(details_parts)
+            if score >= MIN_SPAM_SCORE:
+                log_action("spam_detect_debug", f"user={author_id}; ch={channel_id}", f"score={score}; {detail_msg}")
+            else:
+                log_action("spam_watch", f"user={author_id}; ch={channel_id}", f"score={score}; {detail_msg}")
+    except Exception:
+        pass
+
+    if score >= MIN_SPAM_SCORE:
         reason = "rules"
         if spam_prob >= float(getattr(settings, 'spam_nlp_conf', 0.9)):
             reason = "nlp"

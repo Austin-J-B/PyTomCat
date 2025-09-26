@@ -1,5 +1,5 @@
 ## Runtime log output captured per subsystem.
-logs/*
+#logs/*
 !logs/human/.gitkeep
 !logs/machine/.gitkeep
 ## Secrets and OAuth material live outside of version control.

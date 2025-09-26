@@ -170,7 +170,13 @@ def _ensure_extra_models() -> None:
     # These lightweight packages are not part of requirements to avoid inflating
     # runtime footprint when the NLP backstop is unused, but we need them for the
     # ONNX export step.
-    _pip(["install", "huggingface_hub<0.34", "transformers==4.43.3", "safetensors>=0.4.4"])
+    # Pinning to >=0.35.1 avoids the header parsing bug introduced with older 0.33.x releases.
+    _pip([
+        "install",
+        "huggingface_hub>=0.35.1,<0.36",
+        "transformers==4.43.3",
+        "safetensors>=0.4.4",
+    ])
 
 
 def _cleanup_tokenizer_artifacts() -> None:

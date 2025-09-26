@@ -327,18 +327,18 @@ class Settings:
         "Megan": 788886705276846140,  #vasyline
     })
 
-feeding_schedule: Dict[str, list[str]] = field(default_factory=lambda: {
-    # In order: Sun, Mon, Tue, Wed, Thu, Fri, Sat
-    "Microwave":         ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
-    "Snickers":          ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
-    "Business":          ["Atlas", "Alexa", "Morgan", "Bunny", "Abigail", "Zoe", "Elusive"],
-    "The Greens":        ["Jaeden", "Isabella", "Julia", "Micaela", "Brooke", "Peter", "Elusive"],
-    "HOP":               ["Jaeden", "Victoria", "Anabelle", "Brian", "Sophia", "Victoria", "Sophia"],
-    "Lot 50":            ["Miranda", "Brian", "Bryan", "Brian", "Bryan", "Zahara", "Miranda"],
-    "Mary Kay and Zen":  ["Kitadan", "Emma", "Kitadan", "Kitadan", "Jack", "Jack", "Jack"],
-    "West Hall":         ["Loren", "Charlotte", "Autumn", "Michael", "Loren", "Roach", "Emmaleigh"],
-    "Maintenance":       ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"],
-})
+    feeding_schedule: Dict[str, list[str]] = field(default_factory=lambda: {
+        # In order: Sun, Mon, Tue, Wed, Thu, Fri, Sat
+        "Microwave":         ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
+        "Snickers":          ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
+        "Business":          ["Atlas", "Alexa", "Morgan", "Bunny", "Abigail", "Zoe", "Elusive"],
+        "The Greens":        ["Jaeden", "Isabella", "Julia", "Micaela", "Brooke", "Peter", "Elusive"],
+        "HOP":               ["Jaeden", "Victoria", "Anabelle", "Brian", "Sophia", "Victoria", "Sophia"],
+        "Lot 50":            ["Miranda", "Brian", "Bryan", "Brian", "Bryan", "Zahara", "Miranda"],
+        "Mary Kay and Zen":  ["Kitadan", "Emma", "Kitadan", "Kitadan", "Jack", "Jack", "Jack"],
+        "West Hall":         ["Loren", "Charlotte", "Autumn", "Michael", "Loren", "Roach", "Emmaleigh"],
+        "Maintenance":       ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"],
+    })
 
 
 

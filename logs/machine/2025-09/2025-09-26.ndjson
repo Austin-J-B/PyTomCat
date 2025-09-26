@@ -22,3 +22,124 @@
 {"event": "reaction_add", "user": "cici4f3", "channel": "#itty-bitty-kitty-commitee", "message_id": 1420961655839527033, "emoji": "❤️", "message_preview": "Guys the cat by my apartment complex fin...", "message_author": "zoe.cronin"}
 {"event": "action", "name": "profiles_scheduler_error", "trigger": "", "output": "'X' object has no attribute 'guild'"}
 {"event": "action", "name": "profiles_scheduler_error", "trigger": "", "output": "'X' object has no attribute 'guild'"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "meow", "attachments": 0}
+{"event": "action", "name": "handle_misc", "trigger": "trigger=meow", "output": "mrow!"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat show me twix", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1421049780246679573, "has_image": false, "slots": {"cat": "Twix", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, check due payments", "attachments": 0}
+{"event": "intent", "kind": "dues_check", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1421051368575340677, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
+{"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat log 50 emails", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat log the past 50 emails", "attachments": 0}
+{"event": "intent", "kind": "gmail_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1421051564541476914, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=gmail_log_recent msg=1421051564541476914", "output": "begin"}
+{"event": "action", "name": "gmail_log_manual_begin", "trigger": "req=50", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "gmail_log_manual_react", "trigger": "msg=1421051564541476914", "output": "+1"}
+{"event": "action", "name": "gmail_log_manual_lock", "trigger": "req=50", "output": "acquired"}
+{"event": "action", "name": "gmail_log_manual_list", "trigger": "req=50", "output": "found=50"}
+{"event": "action", "name": "gmail_log_manual", "trigger": "req=50", "output": "logged=49; skipped=0"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Isabella Klein $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "reaction_remove", "user": "unknown", "channel": "#thomas-cat-sandbox", "message_id": 1421051564541476914, "emoji": "👍", "message_preview": "tomcat log the past 50 emails", "message_author": "austinbaustinb"}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=gmail_log_recent msg=1421051564541476914", "output": "done count=50"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat log the past 50 emails", "attachments": 0}
+{"event": "intent", "kind": "gmail_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1421052818202300436, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=gmail_log_recent msg=1421052818202300436", "output": "begin"}
+{"event": "action", "name": "gmail_log_manual_begin", "trigger": "req=50", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "gmail_log_manual_react", "trigger": "msg=1421052818202300436", "output": "+1"}
+{"event": "action", "name": "gmail_log_manual_lock", "trigger": "req=50", "output": "acquired"}
+{"event": "action", "name": "gmail_log_manual_list", "trigger": "req=50", "output": "found=50"}
+{"event": "action", "name": "gmail_log_manual", "trigger": "req=50", "output": "logged=0; skipped=0"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Isabella Klein $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "reaction_remove", "user": "unknown", "channel": "#thomas-cat-sandbox", "message_id": 1421052818202300436, "emoji": "👍", "message_preview": "tomcat log the past 50 emails", "message_author": "austinbaustinb"}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=gmail_log_recent msg=1421052818202300436", "output": "done count=50"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "meow", "attachments": 0}
+{"event": "action", "name": "handle_misc", "trigger": "trigger=meow", "output": "meow? :3"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat show me microwave", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1421052984867029022, "has_image": false, "slots": {"cat": "Microwave", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Microwave", "intent:show_photo"]}
+{"event": "show_photo_page", "cat": "1. Microwave", "source": "cache", "serial": "sn5644", "reverse_index": "1254", "total": "1262", "delivery": "edit", "message_id": 1421052990629875722, "delivered_message_id": 1421052990629875722, "user_id": 624440365595754496}
+{"event": "show_photo_page", "cat": "1. Microwave", "source": "cache", "serial": "sn5968", "reverse_index": "1364", "total": "1392", "delivery": "edit", "message_id": 1421052990629875722, "delivered_message_id": 1421052990629875722, "user_id": 624440365595754496}
+{"event": "show_photo_page", "cat": "1. Microwave", "source": "cache", "serial": "sn6048", "reverse_index": "1379", "total": "1383", "delivery": "edit", "message_id": 1421052990629875722, "delivered_message_id": 1421052990629875722, "user_id": 624440365595754496}
+{"event": "show_photo_page", "cat": "1. Microwave", "source": "cache", "serial": "sn5881", "reverse_index": "1335", "total": "1383", "delivery": "edit", "message_id": 1421052990629875722, "delivered_message_id": 1421052990629875722, "user_id": 624440365595754496}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#tomcat-justtext", "content": "meow", "attachments": 0}
+{"event": "action", "name": "handle_misc", "trigger": "trigger=meow", "output": "MEOW MEOW!"}
+{"event": "message", "author": "austinbaustinb", "channel": "#tomcat-justtext", "content": "tomcat who has been fed", "attachments": 0}
+{"event": "intent", "kind": "feeding_status", "confidence": 0.95, "channel_id": 1382926904658624582, "user_id": 624440365595754496, "message_id": 1421053615103283223, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "message", "author": "austinbaustinb", "channel": "#tomcat-justtext", "content": "tomcat feeding update", "attachments": 0}
+{"event": "intent", "kind": "feeding_status", "confidence": 0.95, "channel_id": 1382926904658624582, "user_id": 624440365595754496, "message_id": 1421053627702710303, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:feeding_status"]}
+{"event": "message", "author": "austinbaustinb", "channel": "#tomcat-justtext", "content": "TomCat, preview 8pm", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, Preview 8pm", "attachments": 0}
+{"event": "message_delete", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, Preview 8pm"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#tomcat-justtext", "content": "TomCat, who is feeding today", "attachments": 0}
+{"event": "intent", "kind": "feeding_today", "confidence": 0.95, "channel_id": 1382926904658624582, "user_id": 624440365595754496, "message_id": 1421055384155721772, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:feeding_today"]}
+{"event": "action", "name": "feeding_today", "trigger": "by=624440365595754496", "output": "sent"}

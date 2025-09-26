@@ -23,3 +23,119 @@
 [09/26/2025 01:44:07.008 AM] React+   || User: cici4f3             || Channel: #itty-bitty-kitty-commitee           || emoji=❤️; msg="Guys the cat by my apartment complex fin..." by zoe.cronin
 [09/26/2025 02:09:59.993 AM] Action   || Name: profiles_schedul... || Trigger:                                      || Output: 'X' object has no attribute 'guild'
 [09/26/2025 02:10:00.009 AM] Action   || Name: profiles_schedul... || Trigger:                                      || Output: 'X' object has no attribute 'guild'
+[09/26/2025 03:24:12.789 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/26/2025 03:24:14.070 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/26/2025 03:24:14.701 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/26/2025 03:24:15.434 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/26/2025 03:24:16.207 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/26/2025 03:24:16.610 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/26/2025 03:24:24.055 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: meow
+[09/26/2025 03:24:24.302 AM] Action   || Name: handle_misc         || Trigger: trigger=meow                         || Output: mrow!
+[09/26/2025 03:24:29.048 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat show me twix
+[09/26/2025 03:24:29.049 AM] Intent   || show_photo                ||                                               || cat=Twix
+[09/26/2025 03:30:47.742 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, check due payments
+[09/26/2025 03:30:47.743 AM] Intent   || dues_check                ||                                              
+[09/26/2025 03:30:48.114 AM] Action   || Name: dues_membership_... || Trigger: sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJ... || Output: ws=Membership Application List
+[09/26/2025 03:30:50.104 AM] Action   || Name: dues_membership_... || Trigger: row=2                                || Output: Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment...
+[09/26/2025 03:30:50.109 AM] Action   || Name: dues_membership_... || Trigger: total=1002                           || Output: usable=858
+[09/26/2025 03:31:22.027 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat log 50 emails
+[09/26/2025 03:31:34.484 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat log the past 50 emails
+[09/26/2025 03:31:34.485 AM] Intent   || gmail_log_recent          ||                                              
+[09/26/2025 03:31:34.486 AM] Action   || Name: intent_dispatch     || Trigger: type=gmail_log_recent msg=1421051... || Output: begin
+[09/26/2025 03:31:34.486 AM] Action   || Name: gmail_log_manual... || Trigger: req=50                               || Output: ch=1341696618688286720
+[09/26/2025 03:31:34.977 AM] Action   || Name: gmail_log_manual... || Trigger: msg=1421051564541476914              || Output: +1
+[09/26/2025 03:31:34.978 AM] Action   || Name: gmail_log_manual... || Trigger: req=50                               || Output: acquired
+[09/26/2025 03:31:35.434 AM] Action   || Name: gmail_log_manual... || Trigger: req=50                               || Output: found=50
+[09/26/2025 03:31:51.806 AM] Action   || Name: gmail_log_manual    || Trigger: req=50                               || Output: logged=49; skipped=0
+[09/26/2025 03:31:53.075 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Isabella Klein $10.00 on 2025-08-26
+[09/26/2025 03:31:53.076 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-08-26
+[09/26/2025 03:31:53.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Troy Broome $1.00 on 2025-08-26
+[09/26/2025 03:31:53.078 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Div Bits $2.00 on 2025-08-26
+[09/26/2025 03:31:53.078 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $1.00 on 2025-08-26
+[09/26/2025 03:31:53.079 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[09/26/2025 03:31:53.079 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maxwell Preston $5.00 on 2025-08-26
+[09/26/2025 03:31:53.080 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[09/26/2025 03:31:53.081 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Miguel V $5.00 on 2025-08-26
+[09/26/2025 03:31:53.081 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $3.00 on 2025-08-26
+[09/26/2025 03:31:53.081 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Megan Digiovanni $130.00 on 2025-08-26
+[09/26/2025 03:31:53.082 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Pedro Savala $5.00 on 2025-08-27
+[09/26/2025 03:31:53.082 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[09/26/2025 03:31:53.083 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Axel Torres $25.00 on 2025-08-22
+[09/26/2025 03:31:53.084 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: M. Padron $20.00 on 2025-08-26
+[09/26/2025 03:31:53.084 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[09/26/2025 03:31:53.085 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Addison Loera $8.00 on 2025-08-26
+[09/26/2025 03:31:53.086 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $5.00 on 2025-08-26
+[09/26/2025 03:31:53.086 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jordin Baylee $5.00 on 2025-08-26
+[09/26/2025 03:31:53.087 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kathleen Cantu $1.00 on 2025-08-26
+[09/26/2025 03:31:53.087 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $3.00 on 2025-08-26
+[09/26/2025 03:31:53.088 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Rob Jimenez $3.00 on 2025-08-26
+[09/26/2025 03:31:53.088 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Daniel Brantley $3.00 on 2025-08-26
+[09/26/2025 03:32:15.667 AM] React-   || User: unknown             || Channel: #thomas-cat-sandbox                  || emoji=👍; msg="tomcat log the past 50 emails" by austinbaustinb
+[09/26/2025 03:32:15.708 AM] Action   || Name: intent_dispatch     || Trigger: type=gmail_log_recent msg=1421051... || Output: done count=50
+[09/26/2025 03:36:33.322 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat log the past 50 emails
+[09/26/2025 03:36:33.324 AM] Intent   || gmail_log_recent          ||                                              
+[09/26/2025 03:36:33.325 AM] Action   || Name: intent_dispatch     || Trigger: type=gmail_log_recent msg=1421052... || Output: begin
+[09/26/2025 03:36:33.327 AM] Action   || Name: gmail_log_manual... || Trigger: req=50                               || Output: ch=1341696618688286720
+[09/26/2025 03:36:33.885 AM] Action   || Name: gmail_log_manual... || Trigger: msg=1421052818202300436              || Output: +1
+[09/26/2025 03:36:33.886 AM] Action   || Name: gmail_log_manual... || Trigger: req=50                               || Output: acquired
+[09/26/2025 03:36:34.691 AM] Action   || Name: gmail_log_manual... || Trigger: req=50                               || Output: found=50
+[09/26/2025 03:36:34.815 AM] Action   || Name: gmail_log_manual    || Trigger: req=50                               || Output: logged=0; skipped=0
+[09/26/2025 03:36:36.131 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Isabella Klein $10.00 on 2025-08-26
+[09/26/2025 03:36:36.132 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-08-26
+[09/26/2025 03:36:36.134 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Troy Broome $1.00 on 2025-08-26
+[09/26/2025 03:36:36.135 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Div Bits $2.00 on 2025-08-26
+[09/26/2025 03:36:36.137 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $1.00 on 2025-08-26
+[09/26/2025 03:36:36.138 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[09/26/2025 03:36:36.139 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maxwell Preston $5.00 on 2025-08-26
+[09/26/2025 03:36:36.141 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[09/26/2025 03:36:36.142 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Miguel V $5.00 on 2025-08-26
+[09/26/2025 03:36:36.143 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $3.00 on 2025-08-26
+[09/26/2025 03:36:36.144 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Megan Digiovanni $130.00 on 2025-08-26
+[09/26/2025 03:36:36.146 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Pedro Savala $5.00 on 2025-08-27
+[09/26/2025 03:36:36.147 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[09/26/2025 03:36:36.148 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Axel Torres $25.00 on 2025-08-22
+[09/26/2025 03:36:36.149 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: M. Padron $20.00 on 2025-08-26
+[09/26/2025 03:36:36.151 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[09/26/2025 03:36:36.152 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Addison Loera $8.00 on 2025-08-26
+[09/26/2025 03:36:36.154 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $5.00 on 2025-08-26
+[09/26/2025 03:36:36.155 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jordin Baylee $5.00 on 2025-08-26
+[09/26/2025 03:36:36.156 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kathleen Cantu $1.00 on 2025-08-26
+[09/26/2025 03:36:36.157 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $3.00 on 2025-08-26
+[09/26/2025 03:36:36.158 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Rob Jimenez $3.00 on 2025-08-26
+[09/26/2025 03:36:36.160 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Daniel Brantley $3.00 on 2025-08-26
+[09/26/2025 03:36:37.014 AM] React-   || User: unknown             || Channel: #thomas-cat-sandbox                  || emoji=👍; msg="tomcat log the past 50 emails" by austinbaustinb
+[09/26/2025 03:36:37.065 AM] Action   || Name: intent_dispatch     || Trigger: type=gmail_log_recent msg=1421052... || Output: done count=50
+[09/26/2025 03:37:06.482 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/26/2025 03:37:07.105 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/26/2025 03:37:07.620 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/26/2025 03:37:08.257 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/26/2025 03:37:08.858 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/26/2025 03:37:09.270 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/26/2025 03:37:10.175 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: meow
+[09/26/2025 03:37:10.352 AM] Action   || Name: handle_misc         || Trigger: trigger=meow                         || Output: meow? :3
+[09/26/2025 03:37:13.427 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat show me microwave
+[09/26/2025 03:37:13.428 AM] Intent   || show_photo                ||                                               || cat=Microwave
+[09/26/2025 03:39:35.589 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/26/2025 03:39:36.511 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/26/2025 03:39:37.075 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/26/2025 03:39:37.803 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/26/2025 03:39:38.496 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/26/2025 03:39:38.972 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/26/2025 03:39:39.836 AM] Message  || User: austinbaustinb      || Channel: #tomcat-justtext                     || Content: meow
+[09/26/2025 03:39:39.973 AM] Action   || Name: handle_misc         || Trigger: trigger=meow                         || Output: MEOW MEOW!
+[09/26/2025 03:39:43.473 AM] Message  || User: austinbaustinb      || Channel: #tomcat-justtext                     || Content: tomcat who has been fed
+[09/26/2025 03:39:43.475 AM] Intent   || feeding_status            ||                                              
+[09/26/2025 03:39:46.320 AM] Message  || User: austinbaustinb      || Channel: #tomcat-justtext                     || Content: tomcat feeding update
+[09/26/2025 03:39:46.321 AM] Intent   || feeding_status            ||                                              
+[09/26/2025 03:42:11.310 AM] Message  || User: austinbaustinb      || Channel: #tomcat-justtext                     || Content: TomCat, preview 8pm
+[09/26/2025 03:42:33.050 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: Tomcat, Preview 8pm
+[09/26/2025 03:42:39.468 AM] Delete   || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: Tomcat, Preview 8pm
+[09/26/2025 03:46:34.988 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/26/2025 03:46:36.024 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/26/2025 03:46:36.738 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/26/2025 03:46:37.291 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/26/2025 03:46:37.810 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/26/2025 03:46:38.137 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/26/2025 03:46:45.097 AM] Message  || User: austinbaustinb      || Channel: #tomcat-justtext                     || Content: TomCat, who is feeding today
+[09/26/2025 03:46:45.103 AM] Intent   || feeding_today             ||                                              
+[09/26/2025 03:46:45.944 AM] Action   || Name: feeding_today       || Trigger: by=624440365595754496                || Output: sent

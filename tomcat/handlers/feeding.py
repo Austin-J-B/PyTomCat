@@ -733,7 +733,14 @@ async def _run_8pm_check(bot: discord.Client) -> None:
     except Exception as e:
         log_action("feeding_8pm_error", f"unfed={len(unfed)}", str(e))
 
-async def build_8pm_lines(bot: discord.Client, *, unfed: Optional[List[str]] = None, sched: Optional[Dict[str, List[int]]] = None, mention: bool = True) -> str:
+async def build_8pm_lines(
+    bot: discord.Client,
+    *,
+    unfed: Optional[List[str]] = None,
+    sched: Optional[Dict[str, List[int]]] = None,
+    mention: bool = True,
+    include_fed: bool = False,
+) -> str:
     """Build the text for the 8pm message. mention=True uses <@id> tags; else shows @username/ID.
     If unfed/sched not provided, computes them.
     """
@@ -771,23 +778,59 @@ async def build_8pm_lines(bot: discord.Client, *, unfed: Optional[List[str]] = N
             name = str(uid)
         return str(name)
 
-    lines: List[str] = ["**Currently unfed stations**"]
-    for st in unfed:
-        # accepted sub for today?
+    sched = sched or {}
+
+    def _assignees_for(station: str) -> List[int]:
         assignees: List[int] = []
         for r in reversed(subs):
-            if r.get("station") == st and r.get("status") == "accepted" and today_iso in (r.get("dates") or []):
+            if r.get("station") == station and r.get("status") == "accepted" and today_iso in (r.get("dates") or []):
                 aid = r.get("assignee")
                 if isinstance(aid, int):
                     assignees.append(aid)
                     break
         if not assignees:
-            assignees = sched.get(st, [])
+            assignees = sched.get(station, [])
+        return assignees
+
+    def _format_station_line(station: str) -> str:
+        assignees = _assignees_for(station)
         if assignees:
-            lines.append(f"• **{st}** → {' '.join(_fmt(uid) for uid in assignees)}")
+            roster = " ".join(_fmt(uid) for uid in assignees)
         else:
-            lines.append(f"• **{st}** → Unassigned.")
-    return "\n".join(lines)
+            roster = "Unassigned."
+        return f"• **{station}** → {roster}"
+
+    if not include_fed:
+        lines: List[str] = ["**Currently unfed stations**"]
+        if not unfed:
+            lines.append("• none")
+            return "\n".join(lines)
+        for st in unfed:
+            lines.append(_format_station_line(st))
+        return "\n".join(lines)
+
+    stations = list(sched.keys()) if sched else []
+    unfed = unfed or []
+    unfed_set = set(unfed)
+    fed = [st for st in stations if st not in unfed_set]
+
+    sections: List[str] = []
+
+    sections.append("**Fed stations**")
+    if fed:
+        for st in fed:
+            sections.append(_format_station_line(st))
+    else:
+        sections.append("• none")
+
+    sections.append("**Unfed stations**")
+    if unfed:
+        for st in unfed:
+            sections.append(_format_station_line(st))
+    else:
+        sections.append("• none")
+
+    return "\n".join(sections)
 
 async def handle_manual_8pm_preview(intent, ctx: Dict[str, Any]) -> None:
     """Admin-only: post a dry-run of the 8pm message to the current channel (no pings)."""
@@ -805,7 +848,7 @@ async def handle_manual_8pm_preview(intent, ctx: Dict[str, Any]) -> None:
 async def handle_feeding_today(intent, ctx: Dict[str, Any]) -> None:
     """Post today's unfed schedule using plain display names (no mentions)."""
     bot = ctx.get("bot")
-    lines = await build_8pm_lines(bot, mention=False)
+    lines = await build_8pm_lines(bot, mention=False, include_fed=True)
     await safe_send(ctx["channel"], lines)
     author = ctx.get("author")
     uid = int(getattr(author, 'id', 0)) if author else 0

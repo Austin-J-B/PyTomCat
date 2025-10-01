@@ -1,0 +1,10 @@
+[09/29/2025 12:29:09.437 AM] Action   || Name: feeding_8pm         || Trigger: unfed=9                              || Output: sent
+[09/29/2025 12:29:16.499 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[09/29/2025 12:29:17.666 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[09/29/2025 12:29:18.339 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[09/29/2025 12:29:19.584 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[09/29/2025 12:29:20.440 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[09/29/2025 12:29:21.146 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[09/29/2025 12:30:36.488 AM] Message  || User: lemonelon_          || Channel: #feeding-team                        || Content: Woah!! I only do the greens on monday ?
+[09/29/2025 12:30:36.490 AM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=96362... || Output: The Greens
+[09/29/2025 12:31:15.685 AM] Message  || User: lemonelon_          || Channel: #feeding-team                        || Content: Or is this like a lyk u have to do it tdy bot alert

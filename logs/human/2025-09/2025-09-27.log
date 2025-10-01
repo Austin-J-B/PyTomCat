@@ -1,0 +1,922 @@
+[09/27/2025 12:11:15.517 AM] Message  || User: .bettercalljack     || Channel: #bot-spam                            || Content: WTF IS THAT
+[09/27/2025 12:11:19.798 AM] Message  || User: .bettercalljack     || Channel: #bot-spam                            || Content: WTF IS THAT
+[09/27/2025 12:12:30.960 AM] Message  || User: racerdg             || Channel: #bot-spam                            || Content: oh
+[09/27/2025 12:13:00.206 AM] Message  || User: spitonme            || Channel: #bot-spam                            || Content: holy canoodle
+[09/27/2025 12:17:50.182 AM] Message  || User: spitonme            || Channel: #yapper-committee                    || Content: i went to malibu jacks recently and they have a very
+[09/27/2025 12:17:52.111 AM] Message  || User: spitonme            || Channel: #yapper-committee                    || Content: very small
+[09/27/2025 12:17:55.191 AM] Message  || User: spitonme            || Channel: #yapper-committee                    || Content: superman thing
+[09/27/2025 12:17:56.548 AM] Message  || User: spitonme            || Channel: #yapper-committee                    || Content: for kids
+[09/27/2025 12:18:17.868 AM] Message  || User: spitonme            || Channel: #yapper-committee                    || Content: and i went on it and ngl,,, tears were escaping my eyes and i didnt ...
+[09/27/2025 12:18:35.115 AM] Message  || User: spitonme            || Channel: #yapper-committee                    || Content: ts broke me
+[09/27/2025 12:23:03.420 AM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: me and my sister just ordered uber eats popeyes
+[09/27/2025 12:25:55.096 AM] Message  || User: kitadan             || Channel: #bot-spam                            || Content: Geez
+[09/27/2025 12:34:43.447 AM] Action   || Name: gmail_log_scheduler || Trigger: found=1                              || Output: logged=1
+[09/27/2025 12:34:46.114 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Isabella Klein $10.00 on 2025-08-26
+[09/27/2025 12:34:46.114 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-08-26
+[09/27/2025 12:34:46.114 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Troy Broome $1.00 on 2025-08-26
+[09/27/2025 12:34:46.114 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Div Bits $2.00 on 2025-08-26
+[09/27/2025 12:34:46.114 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $1.00 on 2025-08-26
+[09/27/2025 12:34:46.114 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[09/27/2025 12:34:46.114 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maxwell Preston $5.00 on 2025-08-26
+[09/27/2025 12:34:46.114 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[09/27/2025 12:34:46.114 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Miguel V $5.00 on 2025-08-26
+[09/27/2025 12:34:46.130 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $3.00 on 2025-08-26
+[09/27/2025 12:34:46.130 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Megan Digiovanni $130.00 on 2025-08-26
+[09/27/2025 12:34:46.130 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Pedro Savala $5.00 on 2025-08-27
+[09/27/2025 12:34:46.131 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[09/27/2025 12:34:46.131 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Axel Torres $25.00 on 2025-08-22
+[09/27/2025 12:34:46.132 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: M. Padron $20.00 on 2025-08-26
+[09/27/2025 12:34:46.132 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[09/27/2025 12:34:46.133 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Addison Loera $8.00 on 2025-08-26
+[09/27/2025 12:34:46.134 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $5.00 on 2025-08-26
+[09/27/2025 12:34:46.134 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jordin Baylee $5.00 on 2025-08-26
+[09/27/2025 12:34:46.134 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kathleen Cantu $1.00 on 2025-08-26
+[09/27/2025 12:34:46.135 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $3.00 on 2025-08-26
+[09/27/2025 12:34:46.136 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Rob Jimenez $3.00 on 2025-08-26
+[09/27/2025 12:34:46.136 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Daniel Brantley $3.00 on 2025-08-26
+[09/27/2025 12:42:26.361 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: Bud davis back at it again with the $25, it’s been a bit. Also tomca...
+[09/27/2025 12:42:41.034 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: My moms coming to town this weekend though so I may be a little quiet
+[09/27/2025 12:54:06.014 AM] Message  || User: spitonme            || Channel: #external-promotions                 || Content: https://my.uta.edu/current_student/events/detail?startdate=2025-09-2...
+[09/27/2025 12:54:06.025 AM] Intent   || feed_update               ||                                               || station=West Hall; dates=['2025-09-27']
+[09/27/2025 12:54:06.026 AM] Action   || Name: feed_update_ignored || Trigger: station=West Hall                    || Output: channel_blocked:723326450794758155
+[09/27/2025 01:05:03.315 AM] Message  || User: pancakemixteamdj    || Channel: #yapper-committee                    || Content: Popeyes open that late ?
+[09/27/2025 01:05:16.935 AM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: Yes they open til 2 am
+[09/27/2025 01:13:05.959 AM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: they forgot my mashed potatoes 🫩
+[09/27/2025 01:47:12.785 AM] React+   || User: austinbaustinb      || Channel: #bot-spam                            || emoji=😭; msg="Ben was playing" by Wordle
+[09/27/2025 01:53:14.067 AM] Message  || User: racerdg             || Channel: #bot-spam                            || Content: girl
+[09/27/2025 02:10:02.658 AM] Action   || Name: profile_update_e... || Trigger: id=1                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[09/27/2025 02:10:03.549 AM] Action   || Name: profile_update_e... || Trigger: id=2                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[09/27/2025 02:10:04.349 AM] Action   || Name: profile_update_e... || Trigger: id=4                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[09/27/2025 02:10:05.344 AM] Action   || Name: profile_update_e... || Trigger: id=5                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[09/27/2025 02:10:06.290 AM] Action   || Name: profile_update_e... || Trigger: id=6                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[09/27/2025 02:10:07.144 AM] Action   || Name: profile_update_e... || Trigger: id=7                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[09/27/2025 02:10:07.990 AM] Action   || Name: profile_update_e... || Trigger: id=9                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[09/27/2025 02:10:08.813 AM] Action   || Name: profile_update_e... || Trigger: id=17                                || Output: 404 Not Found (error code: 10008): Unknown Message
+[09/27/2025 02:10:09.726 AM] Action   || Name: profile_update_e... || Trigger: id=67                                || Output: 404 Not Found (error code: 10008): Unknown Message
+[09/27/2025 02:10:09.727 AM] Action   || Name: profile_update_f... || Trigger: count=9                              || Output: 1,2,4,5,6,7,9,17,67
+[09/27/2025 02:10:09.728 AM] Action   || Name: profiles_scheduler  || Trigger: update_all                           || Output: ran
+[09/27/2025 02:22:39.419 AM] React+   || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || emoji=<:gaga:1413361490634870969>; msg="My moms coming to town this weekend t...
+[09/27/2025 02:40:06.861 AM] Message  || User: kitadan             || Channel: #pet-pictures                        || Content: @Derek [TNR]  How big is Ms Sienna now?
+[09/27/2025 03:00:00.317 AM] Action   || Name: dues_membership_... || Trigger: sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJ... || Output: ws=Membership Application List
+[09/27/2025 03:00:03.027 AM] Action   || Name: dues_membership_... || Trigger: row=2                                || Output: Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment...
+[09/27/2025 03:00:03.031 AM] Action   || Name: dues_membership_... || Trigger: total=1002                           || Output: usable=858
+[09/27/2025 03:00:03.075 AM] Action   || Name: dues_scheduler      || Trigger: count=4                              || Output: done
+[09/27/2025 05:26:09.205 AM] React+   || User: kcreepertux04       || Channel: #bot-spam                            || emoji=😭; msg="Ben was playing" by Wordle
+[09/27/2025 06:14:17.683 AM] React+   || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || emoji=<:gaga:1413361490634870969>; msg="My moms coming to town this weekend t...
+[09/27/2025 06:32:11.253 AM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=<:gaga:1413361490634870969>; msg="My moms coming to town this weekend t...
+[09/27/2025 07:01:46.627 AM] Message  || User: adeyumii            || Channel: #yapper-committee                    || Content: I love waking up late for work and being late for work
+[09/27/2025 07:02:13.179 AM] Message  || User: adeyumii            || Channel: #yapper-committee                    || Content: Thankful for my internal clock waking me up 10 minutes before my shi...
+[09/27/2025 07:17:35.473 AM] React+   || User: simplyshadow171295  || Channel: #bot-spam                            || emoji=😭; msg="Ben was playing" by Wordle
+[09/27/2025 08:23:59.046 AM] Message  || User: yaeji               || Channel: #bot-spam                            || Content: holy caNOODLE
+[09/27/2025 08:39:02.567 AM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: i am so cool guys (i have rounded out my literature review for honor...
+[09/27/2025 08:41:54.440 AM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: side eyeing this source because why r u calling men Men and then ref...
+[09/27/2025 09:06:01.848 AM] React+   || User: coziidruid          || Channel: #report-new-cats                     || emoji=🤝; msg="my critical thinking skills stopped work..." by _costco_wholesale_
+[09/27/2025 09:06:30.142 AM] React+   || User: coziidruid          || Channel: #report-new-cats                     || emoji=‼️; msg="the pictures are just for showing where ..." by racerdg
+[09/27/2025 09:06:40.612 AM] React+   || User: coziidruid          || Channel: #report-new-cats                     || emoji=😭; msg="I see it" by adeyumii
+[09/27/2025 09:06:42.725 AM] React+   || User: coziidruid          || Channel: #report-new-cats                     || emoji=😭; msg="i’m actually blind i can’t see it <:aaaa..." by celeryiscelery
+[09/27/2025 09:06:44.721 AM] React+   || User: coziidruid          || Channel: #report-new-cats                     || emoji=😭; msg="i can’t see it either 😭" by _costco_wholesale_
+[09/27/2025 09:07:46.252 AM] React+   || User: coziidruid          || Channel: #pet-pictures                        || emoji=🐙; msg=1421273485799460885
+[09/27/2025 09:08:43.664 AM] React+   || User: coziidruid          || Channel: #itty-bitty-kitty-commitee           || emoji=❤️; msg="Guys the cat by my apartment complex fin..." by zoe.cronin
+[09/27/2025 09:24:56.982 AM] React+   || User: the.lemonade.stand  || Channel: #pet-pictures                        || emoji=<:happycat:834819172546510868>; msg="Hello" by m_digio
+[09/27/2025 09:25:13.066 AM] Message  || User: the.lemonade.stand  || Channel: #pet-pictures                        || Content: can you boop her nose for me
+[09/27/2025 09:25:23.642 AM] React+   || User: the.lemonade.stand  || Channel: #pet-pictures                        || emoji=😭; msg=1421277967279063142
+[09/27/2025 09:25:34.064 AM] React+   || User: the.lemonade.stand  || Channel: #pet-pictures                        || emoji=<a:criipy_clap:1399231263541297233>; msg="home depot cat" by _costco_wh...
+[09/27/2025 09:48:27.745 AM] Message  || User: _lunanight          || Channel: #feeding-team                        || Content: i have some favorites from lot 50, they just have such interesting p...
+[09/27/2025 09:48:27.748 AM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=10047... || Output: Lot 50
+[09/27/2025 09:48:43.973 AM] Message  || User: _lunanight          || Channel: #feeding-team                        || Content: like the one that unhinges its jaw to eat
+[09/27/2025 09:48:44.091 AM] Intent   || sub_request               ||                                               || station=The Greens
+[09/27/2025 09:48:44.108 AM] Action   || Name: sub_request         || Trigger: station=The Greens; dates=2025-09-27 || Output: logged
+[09/27/2025 09:48:50.158 AM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: shitbag cuntface hehe
+[09/27/2025 09:49:00.721 AM] Message  || User: _lunanight          || Channel: #feeding-team                        || Content: and the tuxedo that just sits on the left and stares at everyone eating
+[09/27/2025 09:49:08.294 AM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: Probably Winston
+[09/27/2025 09:49:21.116 AM] Message  || User: adeyumii            || Channel: #bot-spam                            || Content: tomcat show me winston
+[09/27/2025 09:49:21.123 AM] Intent   || show_photo                ||                                               || cat=Winston
+[09/27/2025 09:51:14.942 AM] Message  || User: adeyumii            || Channel: #bot-spam                            || Content: @zahara 🌙 this one?
+[09/27/2025 09:51:29.221 AM] Message  || User: adeyumii            || Channel: #bot-spam                            || Content: There's alsooo
+[09/27/2025 09:51:32.473 AM] Message  || User: adeyumii            || Channel: #bot-spam                            || Content: Tomcat show me boots
+[09/27/2025 09:51:32.479 AM] Intent   || show_photo                ||                                               || cat=Boots
+[09/27/2025 09:51:58.099 AM] Message  || User: _lunanight          || Channel: #bot-spam                            || Content: IT IS
+[09/27/2025 09:52:36.533 AM] Message  || User: _lunanight          || Channel: #feeding-team                        || Content: (no text; attachments=1)
+[09/27/2025 09:52:37.356 AM] Action   || Name: sheet_mark          || Trigger: station=Lot 50 date=2025-09-27       || Output: ok
+[09/27/2025 09:52:37.356 AM] Action   || Name: feed_update         || Trigger: station=Lot 50; dates=2025-09-27     || Output: ok
+[09/27/2025 09:52:37.356 AM] Action   || Name: feed_pending_ful... || Trigger: ch=643586809166561310; user=10047... || Output: Lot 50
+[09/27/2025 09:52:42.929 AM] React+   || User: slayc127            || Channel: #feeding-team                        || emoji=‼️; msg=1421509841817567273
+[09/27/2025 09:52:45.068 AM] Message  || User: _lunanight          || Channel: #feeding-team                        || Content: There was also this one when I was feeding last week
+[09/27/2025 09:52:47.707 AM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: nefarious i believe!!!!
+[09/27/2025 09:52:50.517 AM] Message  || User: _lunanight          || Channel: #feeding-team                        || Content: Just sitting there the whole time
+[09/27/2025 09:53:01.799 AM] Message  || User: _lunanight          || Channel: #feeding-team                        || Content: what a name
+[09/27/2025 09:54:37.127 AM] React+   || User: emlenisgremlin      || Channel: #pictures-of-the-cats                || emoji=😭; msg="I wish he would let me remove his eye bo..." by .bettercalljack
+[09/27/2025 09:55:18.254 AM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: Nefarious, he's also known as Double Cheeseburger
+[09/27/2025 09:55:30.596 AM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: there's a couple cats who have a few names
+[09/27/2025 10:06:34.978 AM] Message  || User: pancakemixteamdj    || Channel: #yapper-committee                    || Content: The one where I live closes at 9:30
+[09/27/2025 10:12:20.118 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=<:gaga:1413361490634870969>; msg="My moms coming to town this weekend t...
+[09/27/2025 10:12:25.237 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=🔥; msg="i am so cool guys (i have rounded out my..." by slayc127
+[09/27/2025 10:12:35.533 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="side eyeing this source because why r u ..." by slayc127
+[09/27/2025 10:30:17.844 AM] Message  || User: _lunanight          || Channel: #feeding-team                        || Content: thats amazing
+[09/27/2025 10:37:55.430 AM] Message  || User: le_nuit_sans_fin    || Channel: #feeding-team                        || Content: Heights on pecan has been fed and the water has been changed
+[09/27/2025 10:37:55.438 AM] Intent   || feed_update               ||                                               || station=HOP; dates=['2025-09-27']
+[09/27/2025 10:37:56.812 AM] Action   || Name: sheet_mark          || Trigger: station=HOP date=2025-09-27          || Output: ok
+[09/27/2025 10:37:56.814 AM] Action   || Name: feed_update         || Trigger: station=HOP; dates=2025-09-27        || Output: ok
+[09/27/2025 10:37:58.690 AM] Action   || Name: sheet_mark          || Trigger: station=Mary Kay and Zen date=202... || Output: ok
+[09/27/2025 10:37:58.690 AM] Action   || Name: feed_update         || Trigger: station=Mary Kay and Zen; dates=2... || Output: ok
+[09/27/2025 10:37:59.254 AM] Action   || Name: sheet_mark          || Trigger: station=The Greens date=2025-09-27   || Output: ok
+[09/27/2025 10:37:59.254 AM] Action   || Name: feed_update         || Trigger: station=The Greens; dates=2025-09-27 || Output: ok
+[09/27/2025 10:40:23.260 AM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: 2005
+[09/27/2025 10:40:55.022 AM] Message  || User: a1darek             || Channel: #pet-pictures                        || Content: From when I last had her
+[09/27/2025 10:41:06.065 AM] Message  || User: a1darek             || Channel: #pet-pictures                        || Content: She's being taken care of by our club advisor for the weekend while ...
+[09/27/2025 11:04:44.955 AM] React+   || User: kitadan             || Channel: #pet-pictures                        || emoji=❤️; msg="From when I last had her" by a1darek
+[09/27/2025 11:05:13.544 AM] Message  || User: kitadan             || Channel: #pet-pictures                        || Content: I love the fifth picture asking for uppies
+[09/27/2025 11:06:59.481 AM] Message  || User: .bettercalljack     || Channel: #pet-pictures                        || Content: (no text; attachments=2)
+[09/27/2025 11:07:09.287 AM] React+   || User: .bettercalljack     || Channel: #pet-pictures                        || emoji=❤️; msg="From when I last had her" by a1darek
+[09/27/2025 11:17:27.221 AM] React+   || User: m_digio             || Channel: #pet-pictures                        || emoji=❤️; msg="can you boop her nose for me" by the.lemonade.stand
+[09/27/2025 11:17:30.959 AM] React+   || User: m_digio             || Channel: #pet-pictures                        || emoji=❤️; msg="From when I last had her" by a1darek
+[09/27/2025 11:18:55.477 AM] React+   || User: astro_db            || Channel: #itty-bitty-kitty-commitee           || emoji=❤️; msg="Guys the cat by my apartment complex fin..." by zoe.cronin
+[09/27/2025 11:21:22.048 AM] Message  || User: m_digio             || Channel: #bot-spam                            || Content: Stupid
+[09/27/2025 11:27:53.736 AM] Message  || User: racerdg             || Channel: #pet-pictures                        || Content: what casio is that
+[09/27/2025 11:30:15.486 AM] React+   || User: simplyshadow171295  || Channel: #bot-spam                            || emoji=😭; msg="Stupid" by m_digio
+[09/27/2025 12:04:12.206 PM] React+   || User: slayc127            || Channel: #pet-pictures                        || emoji=❤️; msg="From when I last had her" by a1darek
+[09/27/2025 12:11:59.923 PM] Message  || User: lifeye              || Channel: #feeding-team                        || Content: how many people are out feeding rn?
+[09/27/2025 12:12:16.800 PM] Message  || User: lifeye              || Channel: #feeding-team                        || Content: the food bag was left open with the lid off
+[09/27/2025 12:12:20.247 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: are there no containers?
+[09/27/2025 12:12:20.830 PM] Message  || User: lifeye              || Channel: #feeding-team                        || Content: and there isn’t any water
+[09/27/2025 12:12:41.476 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: The lid doesn't want to fit anymore and a raccoon or something could...
+[09/27/2025 12:12:54.994 PM] React+   || User: lifeye              || Channel: #feeding-team                        || emoji=👍; msg="The lid doesn't want to fit anymore and ..." by adeyumii
+[09/27/2025 12:12:56.861 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: Water can be refilled at the hose near the ROTC horse or in the uc
+[09/27/2025 12:13:19.817 PM] Message  || User: lifeye              || Channel: #feeding-team                        || Content: got it i’ll find a empty container
+[09/27/2025 12:13:35.336 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: (no text; attachments=0)
+[09/27/2025 12:13:36.581 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: Rotc hose
+[09/27/2025 12:13:47.863 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: There's I think an apple juice gallon that's usually for water
+[09/27/2025 12:13:47.996 PM] Intent   || sub_request               ||                                               || station=Maintenance
+[09/27/2025 12:13:48.011 PM] Action   || Name: sub_request         || Trigger: station=Maintenance; dates=2025-0... || Output: logged
+[09/27/2025 12:13:54.831 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: There used to be two ??? But idk
+[09/27/2025 12:14:49.208 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: Just don't put water in an empty food jug 😔
+[09/27/2025 12:15:05.769 PM] React+   || User: kitadan             || Channel: #feeding-team                        || emoji=👍; msg="The lid doesn't want to fit anymore and ..." by adeyumii
+[09/27/2025 12:16:49.362 PM] Message  || User: lifeye              || Channel: #feeding-team                        || Content: where is the  hose at the rotc?
+[09/27/2025 12:16:49.605 PM] Message  || User: izzyballz           || Channel: #feeding-team                        || Content: highkey i never use the water jugs i just use a big water bottle fro...
+[09/27/2025 12:18:15.445 PM] Message  || User: lifeye              || Channel: #feeding-team                        || Content: i’ll do that
+[09/27/2025 12:18:52.842 PM] Message  || User: izzyballz           || Channel: #feeding-team                        || Content: you just feed maintenance right
+[09/27/2025 12:18:52.842 PM] Intent   || feed_update               ||                                               || station=Maintenance; dates=['2025-09-27']
+[09/27/2025 12:18:54.840 PM] Action   || Name: sheet_mark          || Trigger: station=Maintenance date=2025-09-27  || Output: ok
+[09/27/2025 12:18:54.840 PM] Action   || Name: feed_update         || Trigger: station=Maintenance; dates=2025-0... || Output: ok
+[09/27/2025 12:20:07.668 PM] Message  || User: izzyballz           || Channel: #feeding-team                        || Content: that like my main station and i’m a commuter so i just buy my own fo...
+[09/27/2025 12:20:07.672 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=89187... || Output: Maintenance
+[09/27/2025 12:26:20.518 PM] React+   || User: simplyshadow171295  || Channel: #feeding-team                        || emoji=👍; msg="The lid doesn't want to fit anymore and ..." by adeyumii
+[09/27/2025 12:32:32.502 PM] Message  || User: le_nuit_sans_fin    || Channel: #feeding-team                        || Content: I went super early this morning and the lid was off the container en...
+[09/27/2025 12:32:51.783 PM] Message  || User: le_nuit_sans_fin    || Channel: #feeding-team                        || Content: So I put it back half on so I’m not 100% sure if you’re talking abou...
+[09/27/2025 12:32:53.237 PM] Message  || User: le_nuit_sans_fin    || Channel: #feeding-team                        || Content: Sorry
+[09/27/2025 12:39:08.142 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: The camo horse Infront of college hall. The video I forwarded shows ...
+[09/27/2025 12:39:08.231 PM] Intent   || sub_request               ||                                               || station=West Hall
+[09/27/2025 12:39:08.248 PM] Action   || Name: sub_request         || Trigger: station=West Hall; dates=2025-09-27  || Output: logged
+[09/27/2025 12:40:17.539 PM] Message  || User: lifeye              || Channel: #feeding-team                        || Content: matnicence fed!!
+[09/27/2025 12:40:35.752 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: yay
+[09/27/2025 12:44:54.272 PM] Message  || User: .bettercalljack     || Channel: #feeding-team                        || Content: It mightve been me
+[09/27/2025 12:45:07.987 PM] Message  || User: .bettercalljack     || Channel: #feeding-team                        || Content: Mary kay and zen fed
+[09/27/2025 12:45:08.000 PM] Intent   || feed_update               ||                                               || station=Mary Kay and Zen; dates=['2025-09-27']
+[09/27/2025 12:45:09.455 PM] Action   || Name: sheet_mark          || Trigger: station=Mary Kay and Zen date=202... || Output: ok
+[09/27/2025 12:45:09.455 PM] Action   || Name: feed_update         || Trigger: station=Mary Kay and Zen; dates=2... || Output: ok
+[09/27/2025 12:47:30.914 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: Thor !!!
+[09/27/2025 12:47:38.253 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: Did you see Freya (grey and orange) too?
+[09/27/2025 12:48:31.009 PM] Message  || User: .bettercalljack     || Channel: #feeding-team                        || Content: Yeah but she was shy
+[09/27/2025 12:58:38.345 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: Aww did you see her and Thor head bumping
+[09/27/2025 01:05:50.690 PM] Message  || User: .bettercalljack     || Channel: #feeding-team                        || Content: Yeah it was cute
+[09/27/2025 01:06:20.408 PM] React+   || User: void_now            || Channel: #feeding-team                        || emoji=🤮; msg="Thor !!!" by adeyumii
+[09/27/2025 01:06:30.691 PM] Message  || User: .bettercalljack     || Channel: #feeding-team                        || Content: I love all the cat pairings around campis
+[09/27/2025 01:06:34.315 PM] Edit     || User: .bettercalljack     || Channel: #feeding-team                        || I love all the cat pairings around campis -> I love all the cat pairings arou...
+[09/27/2025 01:06:49.032 PM] Message  || User: celeryiscelery      || Channel: #bot-spam                            || Content: mf got it wrong once and said this game sucks 💀
+[09/27/2025 01:09:22.206 PM] React+   || User: coziidruid          || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="side eyeing this source because why r u ..." by slayc127
+[09/27/2025 01:09:58.175 PM] Join     || User: figgybeans (3417... || Guild: Campus Cat Coalition                   || age_days=2979; invite=rAEFDeT
+[09/27/2025 01:11:40.871 PM] React+   || User: .bettercalljack     || Channel: #bot-spam                            || emoji=😭; msg="Ben was playing" by Wordle
+[09/27/2025 01:12:44.705 PM] React+   || User: figgybeans          || Channel: #rules                               || emoji=<:catthumbsup:931115163317329920>; msg="• No racist or homophobic langu...
+[09/27/2025 01:12:44.752 PM] Roles    || User: figgybeans          || Guild: Campus Cat Coalition                   || added=['acknowledged rules']; removed=[]
+[09/27/2025 01:15:37.271 PM] Message  || User: figgybeans          || Channel: #external-adoption-ads               || Content: neonatal kitten help needed ! our neighbor handed us this guy last n...
+[09/27/2025 01:15:56.738 PM] Edit     || User: figgybeans          || Channel: #external-adoption-ads               || neonatal kitten help needed ! our neighbor handed us this guy last night, fle...
+[09/27/2025 01:16:42.357 PM] Roles    || User: figgybeans          || Guild: Campus Cat Coalition                   || added=['close to campus']; removed=[]
+[09/27/2025 01:16:42.423 PM] React+   || User: figgybeans          || Channel: #get-roles                           || emoji=🏠; msg="**Role Menu: On or Off Campus**
+
+:school..." by Carl-bot
+[09/27/2025 01:16:48.583 PM] Roles    || User: figgybeans          || Guild: Campus Cat Coalition                   || added=['she/her']; removed=[]
+[09/27/2025 01:16:48.837 PM] React+   || User: figgybeans          || Channel: #get-roles                           || emoji=❤️; msg="**Role Menu: Pronouns**
+Please select yo..." by Carl-bot
+[09/27/2025 01:16:52.895 PM] React+   || User: figgybeans          || Channel: #get-roles                           || emoji=🎒; msg="**Role Menu: Member Type**
+Please select..." by Carl-bot
+[09/27/2025 01:16:53.097 PM] Roles    || User: figgybeans          || Guild: Campus Cat Coalition                   || added=['student']; removed=[]
+[09/27/2025 01:16:59.127 PM] React+   || User: figgybeans          || Channel: #get-roles                           || emoji=🍎; msg="**Role Menu: Color**
+Please select the c..." by Carl-bot
+[09/27/2025 01:16:59.143 PM] Roles    || User: figgybeans          || Guild: Campus Cat Coalition                   || added=['mahogany [color]']; removed=[]
+[09/27/2025 01:17:19.520 PM] React+   || User: thedan5000          || Channel: #memes                               || emoji=🐟; msg=1421327595836018841
+[09/27/2025 01:19:09.096 PM] Message  || User: _costco_wholesale_  || Channel: #yapper-committee                    || Content: does anyone know if there are printers in the uc
+[09/27/2025 01:21:03.690 PM] React+   || User: vasyline            || Channel: #external-adoption-ads               || emoji=💙; msg="neonatal kitten help needed ! our neighb..." by figgybeans
+[09/27/2025 01:22:37.923 PM] Delete   || User: _costco_wholesale_  || Channel: #yapper-committee                    || Content: does anyone know if there are printers in the uc
+[09/27/2025 01:29:51.909 PM] React+   || User: kitadan             || Channel: #external-adoption-ads               || emoji=💙; msg="neonatal kitten help needed ! our neighb..." by figgybeans
+[09/27/2025 01:30:10.642 PM] React+   || User: kitadan             || Channel: #feeding-team                        || emoji=❤️; msg="Mary kay and zen fed" by .bettercalljack
+[09/27/2025 01:30:29.660 PM] React+   || User: kitadan             || Channel: #feeding-team                        || emoji=🎉; msg="Yeah it was cute" by .bettercalljack
+[09/27/2025 01:36:58.970 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: this is so funny just getting water from the ground
+[09/27/2025 01:37:19.260 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: shrug
+[09/27/2025 01:44:40.799 PM] Message  || User: .bettercalljack     || Channel: #pictures-of-the-cats                || Content: These images are connected
+[09/27/2025 01:44:42.331 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=2
+[09/27/2025 01:45:52.201 PM] React+   || User: kitadan             || Channel: #pictures-of-the-cats                || emoji=😭; msg="These images are connected" by .bettercalljack
+[09/27/2025 01:45:55.960 PM] Message  || User: void_now            || Channel: #pictures-of-the-cats                || Content: god damn it angel
+[09/27/2025 01:46:30.178 PM] React+   || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || emoji=😭; msg="These images are connected" by .bettercalljack
+[09/27/2025 01:52:01.230 PM] Message  || User: kitadan             || Channel: #pictures-of-the-cats                || Content: Ouch.  Overstimmed?
+[09/27/2025 01:52:13.904 PM] Message  || User: .bettercalljack     || Channel: #pictures-of-the-cats                || Content: Yeah 💔
+[09/27/2025 01:54:05.363 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: "females"🤓 ☝️
+[09/27/2025 01:55:07.337 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: yikes. Wash it good
+[09/27/2025 01:58:26.845 PM] React+   || User: cici4f3             || Channel: #pictures-of-the-cats                || emoji=😭; msg="These images are connected" by .bettercalljack
+[09/27/2025 01:58:45.519 PM] React+   || User: cici4f3             || Channel: #pet-pictures                        || emoji=❤️; msg="From when I last had her" by a1darek
+[09/27/2025 01:59:01.059 PM] Message  || User: .bettercalljack     || Channel: #pictures-of-the-cats                || Content: Its clean now its just funny how you can tell the context
+[09/27/2025 02:00:43.151 PM] Message  || User: void_now            || Channel: #pictures-of-the-cats                || Content: He’s almost gotten me before as well 😭
+[09/27/2025 02:06:42.141 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: man if I get more than 10 notifications on tiktok from anyone I am n...
+[09/27/2025 02:10:36.987 PM] React+   || User: .s3j                || Channel: #pictures-of-the-cats                || emoji=😭; msg="These images are connected" by .bettercalljack
+[09/27/2025 02:11:40.851 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: just tag me next time
+[09/27/2025 02:17:34.533 PM] React+   || User: simplyshadow171295  || Channel: #external-adoption-ads               || emoji=💙; msg="neonatal kitten help needed ! our neighb..." by figgybeans
+[09/27/2025 02:17:42.759 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=😭; msg="These images are connected" by .bettercalljack
+[09/27/2025 02:23:35.877 PM] Message  || User: phat_cat_207        || Channel: #report-new-cats                     || Content: (no text; attachments=1)
+[09/27/2025 02:23:37.408 PM] Action   || Name: image_intake        || Trigger: channel=639882573199441930           || Output: rows=1
+[09/27/2025 02:23:56.279 PM] Message  || User: phat_cat_207        || Channel: #report-new-cats                     || Content: Is anyone available to help this kitten?
+[09/27/2025 02:35:34.176 PM] React+   || User: yaeji               || Channel: #bot-spam                            || emoji=😭; msg="Stupid" by m_digio
+[09/27/2025 02:37:33.865 PM] Message  || User: simplyshadow171295  || Channel: #report-new-cats                     || Content: he was posted in #external-adoption-ads . please don’t post cats tha...
+[09/27/2025 02:37:54.738 PM] React+   || User: slayc127            || Channel: #report-new-cats                     || emoji=‼️; msg="he was posted in #external-adoption-ads ..." by simplyshadow17...
+[09/27/2025 02:38:20.565 PM] Message  || User: slayc127            || Channel: #report-new-cats                     || Content: yes in future please keep these types of requests in #external-adopt...
+[09/27/2025 02:38:35.642 PM] React+   || User: simplyshadow171295  || Channel: #report-new-cats                     || emoji=💖; msg="yes in future please keep these types of..." by slayc127
+[09/27/2025 02:38:45.048 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: u n dama unforch
+[09/27/2025 02:38:49.954 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: dread
+[09/27/2025 02:41:13.581 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: u can just ignore them
+[09/27/2025 02:41:25.207 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: derek hates you /j
+[09/27/2025 02:41:34.613 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: bro hes been taking shots at me all week
+[09/27/2025 02:41:38.065 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: said i talked too much
+[09/27/2025 02:41:39.080 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: also @kazius [membership+fundraising] can you send me the pictures f...
+[09/27/2025 02:42:14.674 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: yeah
+[09/27/2025 02:42:36.378 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: gonna do an appreciation post
+[09/27/2025 02:42:52.421 PM] React+   || User: cici4f3             || Channel: #external-adoption-ads               || emoji=💙; msg="neonatal kitten help needed ! our neighb..." by figgybeans
+[09/27/2025 02:51:35.065 PM] Message  || User: austinbaustinb      || Channel: #music-recs                          || Content: Something eerie/creepy for the obligatory slow movement
+[09/27/2025 02:58:24.551 PM] Message  || User: austinbaustinb      || Channel: #music-recs                          || Content: Jack’s lament?
+[09/27/2025 03:02:42.605 PM] React+   || User: kitadan             || Channel: #report-new-cats                     || emoji=‼️; msg="he was posted in #external-adoption-ads ..." by simplyshadow17...
+[09/27/2025 03:02:45.720 PM] React+   || User: kitadan             || Channel: #report-new-cats                     || emoji=💖; msg="yes in future please keep these types of..." by slayc127
+[09/27/2025 03:04:22.362 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: i want him
+[09/27/2025 03:04:45.696 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=🔥; msg="i want him" by slayc127
+[09/27/2025 03:04:48.723 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: KITTYYY
+[09/27/2025 03:05:14.377 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: he reminds me saur much of luis
+[09/27/2025 03:05:18.770 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: obsessed w him
+[09/27/2025 03:05:25.549 PM] React+   || User: spitonme            || Channel: #bot-spam                            || emoji=🐙; msg="mf got it wrong once and said this game ..." by celeryiscelery
+[09/27/2025 03:05:26.926 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😆; msg="he reminds me saur much of luis" by slayc127
+[09/27/2025 03:05:29.418 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: sooooo sweet n chatty n lets me bring him around
+[09/27/2025 03:05:40.954 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: all of these babies r kind of ideal to have at a petco
+[09/27/2025 03:07:11.708 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: (no text; attachments=1)
+[09/27/2025 03:25:26.225 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: It's okay I'm being a bitch
+[09/27/2025 03:25:44.674 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: also cause I have nothing to do cause my team lead is greedy and wan...
+[09/27/2025 03:25:50.099 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: But I wanna go home :|
+[09/27/2025 03:35:27.787 PM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="also cause I have nothing to do cause my..." by a1darek
+[09/27/2025 03:35:31.768 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: bruh
+[09/27/2025 03:36:49.851 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: it's fine I suppose.
+[09/27/2025 03:37:01.127 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: I'm very 50/50 with this team lead I'm ngl
+[09/27/2025 03:40:08.752 PM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: angry cat
+[09/27/2025 03:40:10.343 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/27/2025 03:49:08.682 PM] Message  || User: spitonme            || Channel: #external-promotions                 || Content: https://www.threads.com/@dahlgrenkevin/post/DPFQ1bPkjIM?xmt=AQF0E5B1...
+[09/27/2025 03:49:10.182 PM] Edit     || User: spitonme            || Channel: #external-promotions                 || https://www.threads.com/@dahlgrenkevin/post/DPFQ1bPkjIM?xmt=AQF0E5B1Ax3OHREvy...
+[09/27/2025 03:49:26.983 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Simba
+[09/27/2025 04:05:00.017 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: what a car
+[09/27/2025 04:07:09.018 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: they sound evil
+[09/27/2025 04:11:56.408 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: we need to buy a new container for food storage
+[09/27/2025 04:12:00.479 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😆; msg="what a car" by kcreepertux04
+[09/27/2025 04:12:02.502 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: like the big tub
+[09/27/2025 04:12:09.729 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: sighs so loudly
+[09/27/2025 04:12:22.705 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: do we have a solution thatll be better than what we currently have t...
+[09/27/2025 04:12:23.706 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: OR mavorgs gives us our locker back
+[09/27/2025 04:12:35.931 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: you’re right. it’s about time
+[09/27/2025 04:12:50.425 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: they gave it away
+[09/27/2025 04:13:03.299 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: gr how to i explode them /silly
+[09/27/2025 04:13:22.691 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: im thinking we should ask maintenance about what we maybe can put ou...
+[09/27/2025 04:14:01.579 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: thinking about long term stuff, let me know if im crazy but one of t...
+[09/27/2025 04:14:08.549 PM] React+   || User: _costco_wholesale_  || Channel: #report-new-cats                     || emoji=‼️; msg="he was posted in #external-adoption-ads ..." by simplyshadow17...
+[09/27/2025 04:14:33.517 PM] React+   || User: _costco_wholesale_  || Channel: #yapper-committee                    || emoji=😆; msg="what a car" by kcreepertux04
+[09/27/2025 04:14:39.597 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: this comes with potentially chosing a different location than by mik...
+[09/27/2025 04:16:07.476 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: i am all for it personally, we just need to harass maintenance
+[09/27/2025 04:16:43.954 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: especially since the new containers that r still in the lounge r fai...
+[09/27/2025 04:17:03.439 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: someone was being evil
+[09/27/2025 04:17:13.846 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😆; msg="someone was being evil" by slayc127
+[09/27/2025 04:18:38.533 PM] Message  || User: _costco_wholesale_  || Channel: #feeding-team                        || Content: what happened at the food thing 😭
+[09/27/2025 04:21:54.018 PM] Message  || User: emiximez            || Channel: #feeding-team                        || Content: West Hall fed
+[09/27/2025 04:21:54.018 PM] Intent   || feed_update               ||                                               || station=West Hall; dates=['2025-09-27']
+[09/27/2025 04:21:55.465 PM] Action   || Name: sheet_mark          || Trigger: station=West Hall date=2025-09-27    || Output: ok
+[09/27/2025 04:21:55.465 PM] Action   || Name: feed_update         || Trigger: station=West Hall; dates=2025-09-27  || Output: ok
+[09/27/2025 04:24:35.315 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=‼️; msg="angry cat" by emiximez
+[09/27/2025 04:24:41.244 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=‼️; msg="Simba" by adeyumii
+[09/27/2025 04:24:45.908 PM] React+   || User: simplyshadow171295  || Channel: #yapper-committee                    || emoji=😆; msg="what a car" by kcreepertux04
+[09/27/2025 04:25:14.619 PM] Message  || User: baseketballin       || Channel: #feeding-team                        || Content: michael wave fed !!!!
+[09/27/2025 04:25:14.623 PM] Action   || Name: feed_pending_exp... || Trigger: ch=643586809166561310; user=41372... || Output: 
+[09/27/2025 04:25:14.623 PM] Intent   || feed_update               ||                                               || station=Microwave; dates=['2025-09-27']
+[09/27/2025 04:25:15.259 PM] Action   || Name: sheet_mark          || Trigger: station=Microwave date=2025-09-27    || Output: ok
+[09/27/2025 04:25:15.267 PM] Action   || Name: feed_update         || Trigger: station=Microwave; dates=2025-09-27  || Output: ok
+[09/27/2025 04:28:22.455 PM] Message  || User: _costco_wholesale_  || Channel: #feeding-team                        || Content: coba
+[09/27/2025 04:28:22.460 PM] Intent   || feed_update               ||                                               || station=Business; dates=['2025-09-27']
+[09/27/2025 04:28:23.262 PM] Action   || Name: sheet_mark          || Trigger: station=Business date=2025-09-27     || Output: ok
+[09/27/2025 04:28:23.262 PM] Action   || Name: feed_update         || Trigger: station=Business; dates=2025-09-27   || Output: ok
+[09/27/2025 04:28:40.097 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: I know it in my gut they are im ngl
+[09/27/2025 04:29:19.682 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: they keep trying to get me to apply to their emergency clinic which ...
+[09/27/2025 04:29:27.031 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: I know something evil is happening there
+[09/27/2025 04:30:09.444 PM] Message  || User: a1darek             || Channel: #executive-board                     || Content: maintenence contact and we get a good sturdy locker for outdoors que...
+[09/27/2025 04:30:57.479 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=‼️; msg="angry cat" by emiximez
+[09/27/2025 04:31:36.284 PM] React+   || User: simplyshadow171295  || Channel: #feeding-team                        || emoji=‼️; msg="coba" by _costco_wholesale_
+[09/27/2025 04:31:45.706 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: pet da egg please
+[09/27/2025 04:34:11.706 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: egg
+[09/27/2025 04:34:45.564 PM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: Idk if politics are allowed but
+[09/27/2025 04:35:03.052 PM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: Small town experience
+[09/27/2025 04:35:44.175 PM] Message  || User: pancakemixteamdj    || Channel: #yapper-committee                    || Content: Is that Biden on the top????
+[09/27/2025 04:36:01.317 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: ehhhh i’m only half against it bc once we do get our locker back the...
+[09/27/2025 04:36:01.503 PM] React+   || User: ludavis             || Channel: #yapper-committee                    || emoji=<:mommy_ayowtf:967644392938672158>; msg="Idk if politics are allowed bu...
+[09/27/2025 04:36:25.486 PM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: 6ez
+[09/27/2025 04:36:27.418 PM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: Yes
+[09/27/2025 04:36:40.813 PM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: I saw this car pick up a guy cosplaying jesus from hs
+[09/27/2025 04:37:13.580 PM] Message  || User: baseketballin       || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/27/2025 04:37:15.111 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/27/2025 04:37:29.643 PM] Message  || User: _costco_wholesale_  || Channel: #feeding-team                        || Content: greens
+[09/27/2025 04:37:29.650 PM] Intent   || feed_update               ||                                               || station=The Greens; dates=['2025-09-27']
+[09/27/2025 04:37:30.316 PM] Action   || Name: sheet_mark          || Trigger: station=The Greens date=2025-09-27   || Output: ok
+[09/27/2025 04:37:30.316 PM] Action   || Name: feed_update         || Trigger: station=The Greens; dates=2025-09-27 || Output: ok
+[09/27/2025 04:37:30.316 PM] Message  || User: _costco_wholesale_  || Channel: #feeding-team                        || Content: I did
+[09/27/2025 04:37:35.282 PM] React+   || User: _costco_wholesale_  || Channel: #feeding-team                        || emoji=🫡; msg="pet da egg please" by simplyshadow171295
+[09/27/2025 04:37:36.807 PM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: Another ver
+[09/27/2025 04:37:47.881 PM] React+   || User: simplyshadow171295  || Channel: #feeding-team                        || emoji=🎉; msg="I did" by _costco_wholesale_
+[09/27/2025 04:37:51.988 PM] React+   || User: .bettercalljack     || Channel: #yapper-committee                    || emoji=😆; msg="what a car" by kcreepertux04
+[09/27/2025 04:38:59.588 PM] Message  || User: ludavis             || Channel: #yapper-committee                    || Content: you won't miss small towns. Politics aside, there's nothing to do be...
+[09/27/2025 04:41:20.487 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: i dont believe we need our locker is the thing
+[09/27/2025 04:41:40.862 PM] Message  || User: mochenoch           || Channel: #yapper-committee                    || Content: Small towns are usually boring after a bit
+[09/27/2025 04:42:12.235 PM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="they keep trying to get me to apply to t..." by a1darek
+[09/27/2025 04:42:12.377 PM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: The house is worse the walls are covers bottom to top with standard ...
+[09/27/2025 04:42:20.658 PM] Edit     || User: .bettercalljack     || Channel: #yapper-committee                    || The house is worse the walls are covers bottom to top with standard pro trump...
+[09/27/2025 04:42:20.970 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="you won't miss small towns. Politics asi..." by ludavis
+[09/27/2025 04:42:23.467 PM] React+   || User: .bettercalljack     || Channel: #yapper-committee                    || emoji=‼️; msg="you won't miss small towns. Politics asi..." by ludavis
+[09/27/2025 04:42:36.389 PM] React+   || User: simplyshadow171295  || Channel: #yapper-committee                    || emoji=‼️; msg="you won't miss small towns. Politics asi..." by ludavis
+[09/27/2025 04:42:41.909 PM] Edit     || User: .bettercalljack     || Channel: #yapper-committee                    || The house is worse the walls are covered bottom to top with standard pro trum...
+[09/27/2025 04:43:13.598 PM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: Yeah the most fun me and my friends had recently is just eating pho ...
+[09/27/2025 04:43:41.940 PM] Edit     || User: .bettercalljack     || Channel: #yapper-committee                    || The house is worse the walls are covered bottom to top with standard pro trum...
+[09/27/2025 04:43:54.416 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=‼️; msg="Simba" by adeyumii
+[09/27/2025 04:44:50.485 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: i mean it keeps all of our food from being exposed to the elements
+[09/27/2025 04:46:01.628 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/27/2025 04:46:02.691 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/27/2025 04:46:03.293 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: i wish they had bigger locker options but i just don’t want people t...
+[09/27/2025 04:46:06.692 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: sorry im at work, but the things we have gotten to store our food wo...
+[09/27/2025 04:46:25.426 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: bunch of sleepy cats today
+[09/27/2025 04:46:26.113 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=3
+[09/27/2025 04:46:27.775 PM] Delete   || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: 
+[09/27/2025 04:48:06.572 PM] React+   || User: vasyline            || Channel: #pictures-of-the-cats                || emoji=💙; msg="bunch of sleepy cats today" by _costco_wholesale_
+[09/27/2025 04:49:16.234 PM] Message  || User: ludavis             || Channel: #yapper-committee                    || Content: lol I'm not surprised. I went to a technical college in a small town...
+[09/27/2025 04:51:06.169 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: Twix just attacked eggs :(
+[09/27/2025 04:51:11.329 PM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: When your small town is "50 year old guy rambling to you at walmart ...
+[09/27/2025 04:51:16.207 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: gonna put her in a soup now
+[09/27/2025 04:51:24.691 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=💙; msg="bunch of sleepy cats today" by _costco_wholesale_
+[09/27/2025 04:51:37.782 PM] Message  || User: .bettercalljack     || Channel: #pictures-of-the-cats                || Content: NOO bad twix
+[09/27/2025 04:51:39.977 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=💙; msg="bunch of sleepy cats today" by _costco_wholesale_
+[09/27/2025 04:54:02.049 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=😭; msg="Twix just attacked eggs :(" by _costco_wholesale_
+[09/27/2025 04:56:48.783 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: @Derek [TNR] i have free litter box from work do u want it for sienn...
+[09/27/2025 04:58:12.184 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/27/2025 04:58:13.644 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/27/2025 05:02:18.800 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: I mean I guess but iirc we have like 990000 litter boxes in storage
+[09/27/2025 05:03:58.352 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: do ee not want it then
+[09/27/2025 05:04:16.260 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: can I sees it
+[09/27/2025 05:04:23.020 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: brandan just gave it to me n said it was either a toss or donate
+[09/27/2025 05:04:28.032 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: brah
+[09/27/2025 05:04:31.550 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: it's fine just toss
+[09/27/2025 05:04:44.123 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: nothing crazy
+[09/27/2025 05:04:49.205 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: so u hate sustainability then /j
+[09/27/2025 05:12:00.503 PM] React+   || User: vasyline            || Channel: #pictures-of-the-cats                || emoji=😭; msg="Twix just attacked eggs :(" by _costco_wholesale_
+[09/27/2025 05:15:10.732 PM] Message  || User: not_d3fault_1420    || Channel: #pictures-of-the-cats                || Content: chunky
+[09/27/2025 05:15:51.118 PM] React+   || User: not_d3fault_1420    || Channel: #pictures-of-the-cats                || emoji=😭; msg="These images are connected" by .bettercalljack
+[09/27/2025 05:32:17.643 PM] React+   || User: austinbaustinb      || Channel: #executive-board                     || emoji=‼️; msg="i mean it keeps all of our food from bei..." by celeryiscelery
+[09/27/2025 05:32:48.685 PM] Message  || User: austinbaustinb      || Channel: #tomcat-justtext                     || Content: Tomcat who has been fed
+[09/27/2025 05:32:48.686 PM] Intent   || feeding_status            ||                                              
+[09/27/2025 05:40:44.987 PM] Join     || User: kazmarine (68278... || Guild: Campus Cat Coalition                   || age_days=2038; invite=rAEFDeT
+[09/27/2025 05:41:59.425 PM] React+   || User: kazmarine           || Channel: #rules                               || emoji=<:catthumbsup:931115163317329920>; msg="• No racist or homophobic langu...
+[09/27/2025 05:41:59.580 PM] Roles    || User: kazmarine           || Guild: Campus Cat Coalition                   || added=['acknowledged rules']; removed=[]
+[09/27/2025 05:42:21.427 PM] Roles    || User: kazmarine           || Guild: Campus Cat Coalition                   || added=['on campus']; removed=[]
+[09/27/2025 05:42:21.440 PM] React+   || User: kazmarine           || Channel: #get-roles                           || emoji=🏫; msg="**Role Menu: On or Off Campus**
+
+:school..." by Carl-bot
+[09/27/2025 05:42:24.549 PM] React+   || User: kazmarine           || Channel: #get-roles                           || emoji=❤️; msg="**Role Menu: Pronouns**
+Please select yo..." by Carl-bot
+[09/27/2025 05:42:24.629 PM] Roles    || User: kazmarine           || Guild: Campus Cat Coalition                   || added=['she/her']; removed=[]
+[09/27/2025 05:42:29.350 PM] Roles    || User: kazmarine           || Guild: Campus Cat Coalition                   || added=['student']; removed=[]
+[09/27/2025 05:42:29.408 PM] React+   || User: kazmarine           || Channel: #get-roles                           || emoji=🎒; msg="**Role Menu: Member Type**
+Please select..." by Carl-bot
+[09/27/2025 05:42:46.040 PM] React+   || User: kazmarine           || Channel: #get-roles                           || emoji=🌿; msg="**Role Menu: Color**
+Please select the c..." by Carl-bot
+[09/27/2025 05:42:46.064 PM] Roles    || User: kazmarine           || Guild: Campus Cat Coalition                   || added=['fern [color]']; removed=[]
+[09/27/2025 05:43:44.823 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: https://tenor.com/view/dog-dog-staring-at-sun-cute-dog-dog-closed-ey...
+[09/27/2025 05:43:49.564 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: i hate work
+[09/27/2025 06:01:16.721 PM] Message  || User: almunds             || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/27/2025 06:01:18.220 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/27/2025 06:01:37.502 PM] Message  || User: almunds             || Channel: #pictures-of-the-cats                || Content: Can someone tell me which cat this is?
+[09/27/2025 06:05:27.369 PM] Message  || User: void_now            || Channel: #pictures-of-the-cats                || Content: Snickers!
+[09/27/2025 06:06:59.893 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: MS SNICKERSSSSSS
+[09/27/2025 06:07:02.636 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: my beloved
+[09/27/2025 06:07:11.253 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: lov her sm
+[09/27/2025 06:11:34.793 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: i love playing TKO in jackbox. i want this hoodie now
+[09/27/2025 06:22:55.392 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: ms divaa
+[09/27/2025 06:34:52.659 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: freaking jealous…
+[09/27/2025 06:35:26.784 PM] Message  || User: racerdg             || Channel: #pet-pictures                        || Content: (no text; attachments=1)
+[09/27/2025 06:36:11.940 PM] React+   || User: simplyshadow171295  || Channel: #yapper-committee                    || emoji=😭; msg="i love playing TKO in jackbox. i want th..." by kcreepertux04
+[09/27/2025 06:36:27.412 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: you gotta catch her while she’s distracted
+[09/27/2025 06:42:58.075 PM] Message  || User: racerdg             || Channel: #pet-pictures                        || Content: (no text; attachments=1)
+[09/27/2025 06:45:14.425 PM] React+   || User: slayc127            || Channel: #pet-pictures                        || emoji=😭; msg=1421643311461957632
+[09/27/2025 06:48:56.631 PM] React+   || User: a1darek             || Channel: #pet-pictures                        || emoji=❤️; msg=1421643311461957632
+[09/27/2025 06:49:00.174 PM] React+   || User: a1darek             || Channel: #pet-pictures                        || emoji=❤️; msg=1421641417952071722
+[09/27/2025 06:56:31.596 PM] React+   || User: kitadan             || Channel: #pet-pictures                        || emoji=😭; msg=1421643311461957632
+[09/27/2025 07:09:35.432 PM] React+   || User: ludavis             || Channel: #pictures-of-the-cats                || emoji=😭; msg="These images are connected" by .bettercalljack
+[09/27/2025 07:09:47.457 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: forgot i got asked to come in on monday
+[09/27/2025 07:10:03.158 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: https://tenor.com/view/katamari-crab-gun-crab-gun-katamari-damacy-gi...
+[09/27/2025 07:10:15.642 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: this is not the gif i was looking for but its going in rotation
+[09/27/2025 07:10:26.893 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="https://tenor.com/view/katamari-crab-gun..." by slayc127
+[09/27/2025 07:10:28.490 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😆; msg="this is not the gif i was looking for bu..." by slayc127
+[09/27/2025 07:10:30.222 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=🔥; msg="this is not the gif i was looking for bu..." by slayc127
+[09/27/2025 07:13:29.752 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: I'm omw to feed l50 now
+[09/27/2025 07:13:29.754 PM] Intent   || feed_update               ||                                               || station=Lot 50; dates=['2025-09-27']
+[09/27/2025 07:13:31.875 PM] Action   || Name: sheet_mark          || Trigger: station=Lot 50 date=2025-09-27       || Output: ok
+[09/27/2025 07:13:31.875 PM] Action   || Name: feed_update         || Trigger: station=Lot 50; dates=2025-09-27     || Output: ok
+[09/27/2025 07:13:38.814 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: Ya girl was kidnapped by her roommates all day
+[09/27/2025 07:13:56.560 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: tomcat what stations have been fed
+[09/27/2025 07:14:02.595 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: what's the command
+[09/27/2025 07:19:21.237 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: tomcat who’s been fed
+[09/27/2025 07:19:32.424 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: lowk i thought we got rid of that
+[09/27/2025 07:21:53.751 PM] Message  || User: ludavis             || Channel: #feeding-team                        || Content: tomcat
+[09/27/2025 07:21:58.966 PM] Message  || User: ludavis             || Channel: #feeding-team                        || Content: Are you alive
+[09/27/2025 07:22:02.689 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: bro might be down
+[09/27/2025 07:22:02.798 PM] Intent   || sub_request               ||                                               || station=Maintenance
+[09/27/2025 07:22:02.831 PM] Action   || Name: sub_request         || Trigger: station=Maintenance; dates=2025-0... || Output: updated
+[09/27/2025 07:22:07.551 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: is he working in other channels?
+[09/27/2025 07:22:11.757 PM] Message  || User: ludavis             || Channel: #feeding-team                        || Content: <:rip_:765146146191835147>
+[09/27/2025 07:22:28.268 PM] Message  || User: ludavis             || Channel: #bot-spam                            || Content: Tomcat show me microwave
+[09/27/2025 07:22:28.268 PM] Intent   || show_photo                ||                                               || cat=Microwave
+[09/27/2025 07:22:31.324 PM] Message  || User: kitadan             || Channel: #bot-spam                            || Content: Tomcat show me Ginger
+[09/27/2025 07:22:31.326 PM] Intent   || show_photo                ||                                               || cat=Ginger
+[09/27/2025 07:22:39.194 PM] Message  || User: ludavis             || Channel: #feeding-team                        || Content: He's working
+[09/27/2025 07:22:53.625 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: meow
+[09/27/2025 07:22:54.017 PM] Action   || Name: handle_misc         || Trigger: trigger=meow                         || Output: mrow!
+[09/27/2025 07:23:21.491 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: wahoooo
+[09/27/2025 07:36:46.274 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: Success, pumpkin pie
+[09/27/2025 07:38:36.501 PM] Message  || User: .s3j                || Channel: #pictures-of-the-cats                || Content: He's out early !!
+[09/27/2025 07:38:37.814 PM] Message  || User: .s3j                || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/27/2025 07:38:40.018 PM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: (no text; attachments=2)
+[09/27/2025 07:38:41.456 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=2
+[09/27/2025 07:38:49.066 PM] Message  || User: .s3j                || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[09/27/2025 07:38:49.753 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/27/2025 07:39:00.565 PM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: Toothless imposter + a black kitten and calico cat
+[09/27/2025 07:40:31.675 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: Lpt 50 fed
+[09/27/2025 07:40:31.690 PM] Intent   || feed_update               ||                                               || station=Lot 50; dates=['2025-09-27']
+[09/27/2025 07:40:32.525 PM] Action   || Name: sheet_mark          || Trigger: station=Lot 50 date=2025-09-27       || Output: ok
+[09/27/2025 07:40:32.528 PM] Action   || Name: feed_update         || Trigger: station=Lot 50; dates=2025-09-27     || Output: ok
+[09/27/2025 07:41:30.149 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=‼️; msg=1421657319653249086
+[09/27/2025 07:41:32.744 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=‼️; msg=1421657319653249086
+[09/27/2025 07:41:49.377 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=😭; msg=1421657322018836491
+[09/27/2025 07:41:51.737 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=😭; msg="Toothless imposter + a black kitten and ..." by austinbaustinb
+[09/27/2025 07:42:04.523 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: bruh
+[09/27/2025 07:42:53.690 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: looks great
+[09/27/2025 07:44:46.853 PM] React+   || User: void_now            || Channel: #yapper-committee                    || emoji=🔥; msg="Success, pumpkin pie" by le_nuit_sans_fin
+[09/27/2025 07:45:36.633 PM] Message  || User: austinbaustinb      || Channel: #tomcat-justtext                     || Content: Tomcat who has been fed
+[09/27/2025 07:45:36.641 PM] Intent   || feeding_status            ||                                              
+[09/27/2025 07:45:44.722 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: Tomcat who has been fed
+[09/27/2025 07:45:44.722 PM] Intent   || feeding_status            ||                                              
+[09/27/2025 07:46:13.830 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: I guess “who’s” is “who is” to him
+[09/27/2025 07:46:44.378 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: TomCat, who is feeding today
+[09/27/2025 07:46:44.378 PM] Intent   || feeding_today             ||                                              
+[09/27/2025 07:46:45.298 PM] Action   || Name: feeding_today       || Trigger: by=624440365595754496                || Output: sent
+[09/27/2025 07:47:20.252 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: HOLY FUVK GAME GRUMPS UMAMUSUME EPISODE?????????????
+[09/27/2025 07:48:40.667 PM] Message  || User: .s3j                || Channel: #pictures-of-the-cats                || Content: (no text; attachments=3)
+[09/27/2025 07:48:41.470 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=3
+[09/27/2025 07:50:58.220 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: It is great, it was my first attempt and my roommate helped
+[09/27/2025 07:51:35.204 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: Everything was made from scratch
+[09/27/2025 07:51:39.441 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: :DDDD
+[09/27/2025 07:54:04.066 PM] Message  || User: _costco_wholesale_  || Channel: #feeding-team                        || Content: im going 😭
+[09/27/2025 07:54:11.192 PM] React+   || User: not_d3fault_1420    || Channel: #yapper-committee                    || emoji=🔥; msg="Success, pumpkin pie" by le_nuit_sans_fin
+[09/27/2025 07:54:27.671 PM] Message  || User: not_d3fault_1420    || Channel: #bot-spam                            || Content: tomcat show me Twix
+[09/27/2025 07:54:27.672 PM] Intent   || show_photo                ||                                               || cat=Twix
+[09/27/2025 07:55:01.892 PM] Message  || User: not_d3fault_1420    || Channel: #bot-spam                            || Content: love that pic of her
+[09/27/2025 07:55:02.932 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: some tweakers were near the car wash when I was trying to take a pic...
+[09/27/2025 07:55:02.947 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=47432... || Output: Lot 50
+[09/27/2025 07:55:07.470 PM] Message  || User: void_now            || Channel: #bot-spam                            || Content: Tomcat identify
+[09/27/2025 07:55:07.477 PM] Action   || Name: cv_pending_set      || Trigger: ch=956398865421074462; user=97265... || Output: cv_identify
+[09/27/2025 07:55:20.097 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: unforch I couldnt have gone earlier in the day. But dang, scary
+[09/27/2025 07:55:25.519 PM] Message  || User: void_now            || Channel: #bot-spam                            || Content: Tomcat identify
+[09/27/2025 07:55:26.939 PM] Action   || Name: viz_identify        || Trigger: boxes=1 guesses=1                    || Output: ok
+[09/27/2025 07:55:28.269 PM] Action   || Name: cv_pending_fulfi... || Trigger: ch=956398865421074462; user=97265... || Output: cv_identify
+[09/27/2025 07:55:30.205 PM] React+   || User: void_now            || Channel: #bot-spam                            || emoji=❌; msg=1421661547897421914
+[09/27/2025 07:55:30.768 PM] React+   || User: not_d3fault_1420    || Channel: #bot-spam                            || emoji=❌; msg=1421661547897421914
+[09/27/2025 07:55:32.814 PM] React+   || User: not_d3fault_1420    || Channel: #bot-spam                            || emoji=😭; msg=1421661547897421914
+[09/27/2025 07:55:38.284 PM] Message  || User: void_now            || Channel: #bot-spam                            || Content: Tomcat identify
+[09/27/2025 07:55:38.284 PM] Intent   || cv_identify               ||                                              
+[09/27/2025 07:55:39.393 PM] Action   || Name: viz_identify        || Trigger: boxes=2 guesses=2                    || Output: ok
+[09/27/2025 07:55:45.396 PM] React+   || User: void_now            || Channel: #bot-spam                            || emoji=✅; msg=1421661600837795976
+[09/27/2025 07:55:47.773 PM] Message  || User: not_d3fault_1420    || Channel: #bot-spam                            || Content: bro how 😭
+[09/27/2025 07:55:51.690 PM] React-   || User: unknown             || Channel: #bot-spam                            || emoji=✅; msg=1421661600837795976
+[09/27/2025 07:56:00.459 PM] React+   || User: void_now            || Channel: #bot-spam                            || emoji=😲; msg=1421661600837795976
+[09/27/2025 07:56:03.783 PM] Message  || User: not_d3fault_1420    || Channel: #bot-spam                            || Content: yk what, that’s close enough
+[09/27/2025 07:56:16.302 PM] React+   || User: not_d3fault_1420    || Channel: #bot-spam                            || emoji=✅; msg=1421661600837795976
+[09/27/2025 07:56:17.955 PM] React-   || User: unknown             || Channel: #bot-spam                            || emoji=✅; msg=1421661600837795976
+[09/27/2025 07:56:18.237 PM] React+   || User: not_d3fault_1420    || Channel: #bot-spam                            || emoji=❌; msg=1421661600837795976
+[09/27/2025 07:56:21.299 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Maddox
+[09/27/2025 07:56:22.166 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=3
+[09/27/2025 07:56:25.879 PM] React+   || User: m_digio             || Channel: #pictures-of-the-cats                || emoji=❤️; msg="Maddox" by adeyumii
+[09/27/2025 07:56:46.301 PM] Message  || User: not_d3fault_1420    || Channel: #bot-spam                            || Content: tomcat identify
+[09/27/2025 07:56:46.301 PM] Intent   || cv_identify               ||                                              
+[09/27/2025 07:56:47.407 PM] Action   || Name: viz_identify        || Trigger: boxes=1 guesses=1                    || Output: ok
+[09/27/2025 07:57:24.099 PM] React+   || User: not_d3fault_1420    || Channel: #pictures-of-the-cats                || emoji=❤️; msg="Maddox" by adeyumii
+[09/27/2025 07:57:52.034 PM] React+   || User: not_d3fault_1420    || Channel: #pet-pictures                        || emoji=❤️; msg=1421641417952071722
+[09/27/2025 07:58:34.730 PM] React+   || User: reyesthighs         || Channel: #report-new-cats                     || emoji=‼️; msg="he was posted in #external-adoption-ads ..." by simplyshadow17...
+[09/27/2025 07:58:53.361 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: two brown tabbies
+[09/27/2025 07:58:54.205 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/27/2025 07:59:13.027 PM] React+   || User: reyesthighs         || Channel: #yapper-committee                    || emoji=‼️; msg="you won't miss small towns. Politics asi..." by ludavis
+[09/27/2025 07:59:24.337 PM] Message  || User: not_d3fault_1420    || Channel: #pictures-of-the-cats                || Content: mlem
+[09/27/2025 07:59:45.039 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: we need a cross section
+[09/27/2025 07:59:46.966 PM] React+   || User: reyesthighs         || Channel: #yapper-committee                    || emoji=😭; msg="i love playing TKO in jackbox. i want th..." by kcreepertux04
+[09/27/2025 07:59:48.694 PM] React+   || User: reyesthighs         || Channel: #yapper-committee                    || emoji=🔥; msg="Success, pumpkin pie" by le_nuit_sans_fin
+[09/27/2025 07:59:52.991 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: show us a slice
+[09/27/2025 07:59:58.190 PM] Message  || User: not_d3fault_1420    || Channel: #yapper-committee                    || Content: yesss
+[09/27/2025 08:00:00.941 PM] Action   || Name: feeding_8pm         || Trigger: unfed=1                              || Output: sent
+[09/27/2025 08:00:03.990 PM] Message  || User: not_d3fault_1420    || Channel: #yapper-committee                    || Content: I second that lol
+[09/27/2025 08:00:24.314 PM] Delete   || User: not_d3fault_1420    || Channel: #yapper-committee                    || Content: I second that lol
+[09/27/2025 08:02:18.794 PM] React+   || User: cici4f3             || Channel: #pictures-of-the-cats                || emoji=❤️; msg="Maddox" by adeyumii
+[09/27/2025 08:03:23.565 PM] React+   || User: austinbaustinb      || Channel: #bot-spam                            || emoji=❌; msg=1421661547897421914
+[09/27/2025 08:03:33.944 PM] React+   || User: austinbaustinb      || Channel: #bot-spam                            || emoji=❌; msg=1421661600837795976
+[09/27/2025 08:03:53.813 PM] Message  || User: austinbaustinb      || Channel: #bot-spam                            || Content: That’s an experimental thing, it’s only trained on like 10 cats
+[09/27/2025 08:04:02.783 PM] Message  || User: austinbaustinb      || Channel: #bot-spam                            || Content: Toothless and stove not included
+[09/27/2025 08:04:51.830 PM] React+   || User: _costco_wholesale_  || Channel: #feeding-team                        || emoji=🫡; msg="**Currently unfed stations**
+• **Snicker..." by Tom Cat
+[09/27/2025 08:05:49.831 PM] React+   || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || emoji=‼️; msg=1421657319653249086
+[09/27/2025 08:07:07.044 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: files take so long to upload. sigh
+[09/27/2025 08:07:14.877 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: i have.... almost 40 more files
+[09/27/2025 08:09:39.490 PM] React+   || User: kitadan             || Channel: #yapper-committee                    || emoji=🔥; msg="Success, pumpkin pie" by le_nuit_sans_fin
+[09/27/2025 08:09:57.511 PM] React+   || User: kitadan             || Channel: #bot-spam                            || emoji=❌; msg=1421661547897421914
+[09/27/2025 08:10:07.668 PM] React+   || User: kitadan             || Channel: #bot-spam                            || emoji=❌; msg=1421661600837795976
+[09/27/2025 08:10:12.533 PM] React+   || User: kitadan             || Channel: #bot-spam                            || emoji=❌; msg=1421661885916381387
+[09/27/2025 08:10:47.437 PM] React+   || User: .s3j                || Channel: #bot-spam                            || emoji=❌; msg=1421661600837795976
+[09/27/2025 08:10:56.749 PM] React+   || User: kitadan             || Channel: #pictures-of-the-cats                || emoji=😭; msg=1421657322018836491
+[09/27/2025 08:11:01.706 PM] React+   || User: .s3j                || Channel: #yapper-committee                    || emoji=🔥; msg="Success, pumpkin pie" by le_nuit_sans_fin
+[09/27/2025 08:11:37.282 PM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=😆; msg="HOLY FUVK GAME GRUMPS UMAMUSUME EPISODE?..." by a1darek
+[09/27/2025 08:12:22.831 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: id ask him again for the bit but ill refrain
+[09/27/2025 08:12:26.424 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: scaryyyy
+[09/27/2025 08:12:38.175 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=❤️; msg="Maddox" by adeyumii
+[09/27/2025 08:12:45.722 PM] Message  || User: kitadan             || Channel: #pictures-of-the-cats                || Content: Where at?
+[09/27/2025 08:13:01.332 PM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: North of the engineering research building
+[09/27/2025 08:13:09.856 PM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: Like right off of UTA blvd
+[09/27/2025 08:14:16.098 PM] Message  || User: kitadan             || Channel: #pictures-of-the-cats                || Content: So near Greens/CPC?
+[09/27/2025 08:15:43.595 PM] Message  || User: _costco_wholesale_  || Channel: #feeding-team                        || Content: snickers
+[09/27/2025 08:15:43.596 PM] Intent   || feed_update               ||                                               || station=Snickers; dates=['2025-09-27']
+[09/27/2025 08:15:45.378 PM] Action   || Name: sheet_mark          || Trigger: station=Snickers date=2025-09-27     || Output: ok
+[09/27/2025 08:15:45.391 PM] Action   || Name: feed_update         || Trigger: station=Snickers; dates=2025-09-27   || Output: ok
+[09/27/2025 08:15:47.988 PM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: Nah northwest of that
+[09/27/2025 08:15:49.874 PM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: 32.73356° N, 97.11294° W
+[09/27/2025 08:18:27.739 PM] React+   || User: .bettercalljack     || Channel: #bot-spam                            || emoji=✅; msg=1421661547897421914
+[09/27/2025 08:18:28.220 PM] React-   || User: unknown             || Channel: #bot-spam                            || emoji=✅; msg=1421661547897421914
+[09/27/2025 08:18:28.650 PM] React+   || User: .bettercalljack     || Channel: #bot-spam                            || emoji=❌; msg=1421661547897421914
+[09/27/2025 08:18:33.674 PM] React+   || User: .bettercalljack     || Channel: #bot-spam                            || emoji=❌; msg=1421661600837795976
+[09/27/2025 08:18:37.841 PM] React+   || User: .bettercalljack     || Channel: #bot-spam                            || emoji=❌; msg=1421661885916381387
+[09/27/2025 08:18:43.595 PM] Message  || User: .bettercalljack     || Channel: #bot-spam                            || Content: LMAO
+[09/27/2025 08:18:57.565 PM] React+   || User: .bettercalljack     || Channel: #bot-spam                            || emoji=😭; msg=1421661547897421914
+[09/27/2025 08:19:32.876 PM] Message  || User: .bettercalljack     || Channel: #bot-spam                            || Content: Bro is 93.9% microwave 😭
+[09/27/2025 08:20:11.716 PM] Edit     || User: .bettercalljack     || Channel: #bot-spam                            || Bro is 93.9% microwave 😭 -> Bro is 63.2% microwave 😭
+[09/27/2025 08:20:29.034 PM] Message  || User: .bettercalljack     || Channel: #bot-spam                            || Content: Tomcat identify
+[09/27/2025 08:20:29.047 PM] Intent   || cv_identify               ||                                              
+[09/27/2025 08:20:30.002 PM] Action   || Name: viz_identify        || Trigger: boxes=1 guesses=1                    || Output: ok
+[09/27/2025 08:20:33.658 PM] Message  || User: .bettercalljack     || Channel: #bot-spam                            || Content: Wooo
+[09/27/2025 08:20:34.675 PM] React+   || User: .bettercalljack     || Channel: #bot-spam                            || emoji=✅; msg=1421667853639225395
+[09/27/2025 08:20:41.253 PM] Message  || User: kitadan             || Channel: #pictures-of-the-cats                || Content: Okay.  So not Voidling.
+[09/27/2025 08:20:52.636 PM] React+   || User: kitadan             || Channel: #bot-spam                            || emoji=✅; msg=1421667853639225395
+[09/27/2025 08:20:52.815 PM] Message  || User: .bettercalljack     || Channel: #bot-spam                            || Content: Tomcat identify
+[09/27/2025 08:20:52.815 PM] Intent   || cv_identify               ||                                              
+[09/27/2025 08:20:53.674 PM] Action   || Name: viz_identify        || Trigger: boxes=1 guesses=1                    || Output: ok
+[09/27/2025 08:20:56.486 PM] React+   || User: .bettercalljack     || Channel: #bot-spam                            || emoji=✅; msg=1421667953237164195
+[09/27/2025 08:21:08.367 PM] Message  || User: .bettercalljack     || Channel: #bot-spam                            || Content: Tomcat identify
+[09/27/2025 08:21:08.372 PM] Intent   || cv_identify               ||                                              
+[09/27/2025 08:21:09.224 PM] Action   || Name: viz_identify        || Trigger: boxes=1 guesses=1                    || Output: ok
+[09/27/2025 08:21:11.472 PM] React+   || User: .bettercalljack     || Channel: #bot-spam                            || emoji=✅; msg=1421668018328567922
+[09/27/2025 08:21:19.689 PM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: Yeah I’m thinking a different group in that little apartment/buildin...
+[09/27/2025 08:22:08.096 PM] Message  || User: ludavis             || Channel: #memes                               || Content: https://x.com/catsbeingweirds/status/1971983176886018451?t=GLD7iz_2L...
+[09/27/2025 08:22:08.369 PM] Edit     || User: ludavis             || Channel: #memes                               || https://x.com/catsbeingweirds/status/1971983176886018451?t=GLD7iz_2LGcdXiskKg...
+[09/27/2025 08:24:52.595 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: what’s he mad for
+[09/27/2025 08:24:53.659 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/27/2025 08:25:39.074 PM] React+   || User: _costco_wholesale_  || Channel: #pet-pictures                        || emoji=❤️; msg=1421641417952071722
+[09/27/2025 08:25:40.583 PM] React+   || User: _costco_wholesale_  || Channel: #pet-pictures                        || emoji=😭; msg=1421643311461957632
+[09/27/2025 08:25:41.145 PM] React+   || User: _costco_wholesale_  || Channel: #pet-pictures                        || emoji=❤️; msg=1421643311461957632
+[09/27/2025 08:25:45.565 PM] Message  || User: _costco_wholesale_  || Channel: #pet-pictures                        || Content: BABIES OMG
+[09/27/2025 08:25:54.499 PM] Message  || User: _costco_wholesale_  || Channel: #pet-pictures                        || Content: THEYRE SO PUPPY
+[09/27/2025 08:26:11.374 PM] React+   || User: _costco_wholesale_  || Channel: #memes                               || emoji=🐟; msg=1421327595836018841
+[09/27/2025 08:30:26.095 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: (no text; attachments=1)
+[09/27/2025 08:30:32.301 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: Lesson of the day
+[09/27/2025 08:30:40.456 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: I cannot cut even slices for the life of me
+[09/27/2025 08:32:27.596 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: real
+[09/27/2025 08:34:59.012 PM] Action   || Name: gmail_log_scheduler || Trigger: found=2                              || Output: logged=2
+[09/27/2025 08:35:01.937 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Isabella Klein $10.00 on 2025-08-26
+[09/27/2025 08:35:01.938 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-08-26
+[09/27/2025 08:35:01.938 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Troy Broome $1.00 on 2025-08-26
+[09/27/2025 08:35:01.939 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Div Bits $2.00 on 2025-08-26
+[09/27/2025 08:35:01.940 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $1.00 on 2025-08-26
+[09/27/2025 08:35:01.940 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[09/27/2025 08:35:01.940 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maxwell Preston $5.00 on 2025-08-26
+[09/27/2025 08:35:01.941 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[09/27/2025 08:35:01.941 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Miguel V $5.00 on 2025-08-26
+[09/27/2025 08:35:01.942 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $3.00 on 2025-08-26
+[09/27/2025 08:35:01.943 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Megan Digiovanni $130.00 on 2025-08-26
+[09/27/2025 08:35:01.943 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Pedro Savala $5.00 on 2025-08-27
+[09/27/2025 08:35:01.943 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[09/27/2025 08:35:01.944 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Axel Torres $25.00 on 2025-08-22
+[09/27/2025 08:35:01.945 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: M. Padron $20.00 on 2025-08-26
+[09/27/2025 08:35:01.945 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[09/27/2025 08:35:01.945 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Addison Loera $8.00 on 2025-08-26
+[09/27/2025 08:35:01.945 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $5.00 on 2025-08-26
+[09/27/2025 08:35:01.945 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jordin Baylee $5.00 on 2025-08-26
+[09/27/2025 08:35:01.948 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kathleen Cantu $1.00 on 2025-08-26
+[09/27/2025 08:35:01.948 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $3.00 on 2025-08-26
+[09/27/2025 08:35:01.948 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Rob Jimenez $3.00 on 2025-08-26
+[09/27/2025 08:35:01.948 PM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Daniel Brantley $3.00 on 2025-08-26
+[09/27/2025 08:36:53.939 PM] Message  || User: austinbaustinb      || Channel: #tomcat-justtext                     || Content: Tomcat who has been fed
+[09/27/2025 08:36:53.952 PM] Intent   || feeding_status            ||                                              
+[09/27/2025 08:37:05.518 PM] Message  || User: austinbaustinb      || Channel: #tomcat-justtext                     || Content: TomCat, who is feeding today
+[09/27/2025 08:37:05.531 PM] Intent   || feeding_today             ||                                              
+[09/27/2025 08:37:06.252 PM] Action   || Name: feeding_today       || Trigger: by=624440365595754496                || Output: sent
+[09/27/2025 08:38:06.941 PM] React+   || User: simplyshadow171295  || Channel: #feeding-team                        || emoji=🎉; msg="snickers" by _costco_wholesale_
+[09/27/2025 08:38:29.407 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: “Who’s been fed” needs to be added as an exception cuz it’s not “who...
+[09/27/2025 08:38:29.431 PM] Intent   || feed_update               ||                                               || station=Mary Kay and Zen; dates=['2025-09-27']
+[09/27/2025 08:38:29.989 PM] Action   || Name: sheet_mark          || Trigger: station=Mary Kay and Zen date=202... || Output: ok
+[09/27/2025 08:38:29.989 PM] Action   || Name: feed_update         || Trigger: station=Mary Kay and Zen; dates=2... || Output: ok
+[09/27/2025 08:38:31.898 PM] Action   || Name: sheet_mark          || Trigger: station=The Greens date=2025-09-27   || Output: ok
+[09/27/2025 08:38:31.899 PM] Action   || Name: feed_update         || Trigger: station=The Greens; dates=2025-09-27 || Output: ok
+[09/27/2025 08:38:51.556 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=‼️; msg="Yeah I’m thinking a different group in t..." by austinbaustinb
+[09/27/2025 08:39:29.097 PM] React+   || User: simplyshadow171295  || Channel: #bot-spam                            || emoji=❌; msg=1421661600837795976
+[09/27/2025 08:39:34.456 PM] React+   || User: simplyshadow171295  || Channel: #bot-spam                            || emoji=‼️; msg="That’s an experimental thing, it’s only ..." by austinbaustinb
+[09/27/2025 08:39:38.377 PM] React+   || User: simplyshadow171295  || Channel: #bot-spam                            || emoji=✅; msg=1421667853639225395
+[09/27/2025 08:39:41.306 PM] React+   || User: simplyshadow171295  || Channel: #bot-spam                            || emoji=✅; msg=1421667953237164195
+[09/27/2025 08:39:44.565 PM] React+   || User: simplyshadow171295  || Channel: #bot-spam                            || emoji=✅; msg=1421668018328567922
+[09/27/2025 08:40:25.024 PM] React+   || User: .bettercalljack     || Channel: #feeding-team                        || emoji=🎉; msg="snickers" by _costco_wholesale_
+[09/27/2025 08:40:40.298 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: i need them to stop existing (unless you want to name them)
+[09/27/2025 08:41:14.932 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: actually technically they’ve been spotted before
+[09/27/2025 08:41:57.244 PM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: Calico is Wing and the black kitten is Stop
+There was older black ca...
+[09/27/2025 08:42:28.486 PM] Message  || User: void_now            || Channel: #pictures-of-the-cats                || Content: The black kitten is just named “Stop”????
+[09/27/2025 08:43:37.849 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: https://discord.com/channels/551082419768393729/639882573199441930/1...
+[09/27/2025 08:43:45.401 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: this person has naming rights i believe
+[09/27/2025 08:43:53.377 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: that’d be our first sighting
+[09/27/2025 08:44:30.531 PM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: Together they r wingstop
+[09/27/2025 08:44:33.400 PM] React+   || User: austinbaustinb      || Channel: #pictures-of-the-cats                || emoji=👍; msg="The black kitten is just named “Stop”???..." by void_now
+[09/27/2025 08:45:01.825 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: like cloudy, chance, and meatball
+[09/27/2025 08:45:28.839 PM] Message  || User: void_now            || Channel: #pictures-of-the-cats                || Content: Oh
+[09/27/2025 08:50:40.816 PM] Message  || User: lance030315         || Channel: #pictures-of-the-cats                || Content: Found a few congregants of the baptist church on my way home.
+[09/27/2025 08:50:42.440 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=5
+[09/27/2025 08:51:55.283 PM] Message  || User: lance030315         || Channel: #pictures-of-the-cats                || Content: Photo quality sucks as I didn’t want to risk using flash and scaring...
+[09/27/2025 08:53:43.955 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: yeah it’s not entirely possible to tell who’s who, but the last one ...
+[09/27/2025 08:54:14.311 PM] Message  || User: lance030315         || Channel: #pictures-of-the-cats                || Content: And this one, between the baptist student center and park central
+[09/27/2025 08:54:15.038 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/27/2025 08:54:54.986 PM] Message  || User: simplyshadow171295  || Channel: #report-new-cats                     || Content: wonderful news you get naming rights (because i don’t like austin (/...
+[09/27/2025 08:55:02.513 PM] Message  || User: spitonme            || Channel: #yapper-committee                    || Content: @Derek [TNR] my friend’s miku they got for $50
+[09/27/2025 08:55:23.932 PM] React+   || User: spitonme            || Channel: #bot-spam                            || emoji=✅; msg=1421668018328567922
+[09/27/2025 08:56:09.505 PM] Message  || User: a1darek             || Channel: #yapper-committee                    || Content: 50 <:sideeye:1412870825907851296>
+[09/27/2025 08:56:12.465 PM] Message  || User: lance030315         || Channel: #bot-spam                            || Content: Tomcat who is itztli
+[09/27/2025 08:56:12.467 PM] Intent   || who_is                    ||                                               || cat=Itztli
+[09/27/2025 08:56:16.279 PM] Message  || User: a1darek             || Channel: #yapper-committee                    || Content: she is cute though!
+[09/27/2025 08:56:17.384 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: tomcat who is voidling
+[09/27/2025 08:56:17.386 PM] Intent   || who_is                    ||                                               || cat=Voidling
+[09/27/2025 08:56:17.674 PM] React+   || User: kitadan             || Channel: #bot-spam                            || emoji=✅; msg=1421668018328567922
+[09/27/2025 08:56:19.565 PM] React+   || User: spitonme            || Channel: #yapper-committee                    || emoji=🐙; msg="she is cute though!" by a1darek
+[09/27/2025 08:56:35.031 PM] Message  || User: spitonme            || Channel: #yapper-committee                    || Content: she is ! i want to chew on her ponytail
+[09/27/2025 08:56:40.909 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Sigh my files still haven't uploaded
+[09/27/2025 08:56:46.210 PM] React+   || User: littlelindentree    || Channel: #pictures-of-the-cats                || emoji=💙; msg="bunch of sleepy cats today" by _costco_wholesale_
+[09/27/2025 08:56:49.595 PM] React+   || User: kitadan             || Channel: #pictures-of-the-cats                || emoji=‼️; msg="Yeah I’m thinking a different group in t..." by austinbaustinb
+[09/27/2025 08:56:51.020 PM] Message  || User: a1darek             || Channel: #yapper-committee                    || Content: new cereal spoon!
+[09/27/2025 08:56:56.913 PM] Message  || User: spitonme            || Channel: #yapper-committee                    || Content: 😭
+[09/27/2025 08:57:01.293 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: i could’ve sworn we’d TNR’d voidling
+[09/27/2025 08:57:09.830 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: that’s DEFINITELY an ear tip
+[09/27/2025 08:57:17.877 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: That's an ear tip
+[09/27/2025 08:57:21.721 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: is boo not voidling
+[09/27/2025 08:57:26.065 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: They're the same
+[09/27/2025 08:57:29.707 PM] Message  || User: lance030315         || Channel: #pictures-of-the-cats                || Content: Can’t wait to get tnr clearance on the baptist cats, as considering ...
+[09/27/2025 08:57:33.690 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Boo is Erica's name for Voidling
+[09/27/2025 08:57:43.440 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: okay so then i should update her thing
+[09/27/2025 08:57:45.412 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Like how she calls Garfield Tito Fluff Butt
+[09/27/2025 08:57:49.908 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: thought so
+[09/27/2025 08:57:54.004 PM] React+   || User: a1darek             || Channel: #bot-spam                            || emoji=❌; msg=1421661547897421914
+[09/27/2025 08:57:57.408 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: so that’s voidling for sure. wonderful
+[09/27/2025 08:58:10.847 PM] React+   || User: a1darek             || Channel: #bot-spam                            || emoji=✅; msg=1421667853639225395
+[09/27/2025 08:58:14.165 PM] Message  || User: spitonme            || Channel: #bot-spam                            || Content: very large range
+[09/27/2025 08:58:14.535 PM] React+   || User: a1darek             || Channel: #bot-spam                            || emoji=✅; msg=1421667953237164195
+[09/27/2025 08:58:16.970 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: itztli is an unspayed mom and voidling/boo is tipped now
+[09/27/2025 08:58:33.408 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: she was just spotted by park central :3
+[09/27/2025 08:58:41.220 PM] React+   || User: spitonme            || Channel: #bot-spam                            || emoji=🐙; msg="she was just spotted by park central :3" by simplyshadow171295
+[09/27/2025 08:59:59.908 PM] Message  || User: lance030315         || Channel: #bot-spam                            || Content: Yep, which is of course near the church/bookstore end of her range
+[09/27/2025 09:00:13.726 PM] Message  || User: mochenoch           || Channel: #yapper-committee                    || Content: Me and Waffle House are about to have some alone time
+[09/27/2025 09:00:15.627 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: I’ve abandoned our son
+[09/27/2025 09:00:17.049 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[09/27/2025 09:00:22.237 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="Me and Waffle House are about to have so..." by mochenoch
+[09/27/2025 09:00:31.448 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: those hashbrowns look so fucking good
+[09/27/2025 09:00:39.281 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=😭; msg="I’ve abandoned our son" by _costco_wholesale_
+[09/27/2025 09:00:43.189 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: How Dare...
+[09/27/2025 09:01:08.423 PM] Message  || User: mochenoch           || Channel: #yapper-committee                    || Content: <:ch_acatpray:936454363965169705> Waffle House my beloved
+[09/27/2025 09:01:37.853 PM] Message  || User: mochenoch           || Channel: #yapper-committee                    || Content: It is good, if your Waffle House isn’t questionable looking then you...
+[09/27/2025 09:01:45.592 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="It is good, if your Waffle House isn’t q..." by mochenoch
+[09/27/2025 09:01:46.965 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: so true
+[09/27/2025 09:02:03.168 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: stop by the mansfield location right off the highway, that was my lo...
+[09/27/2025 09:02:23.996 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: gainesville tx location was my home store, it only opened...i think ...
+[09/27/2025 09:02:34.271 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: regular hashbrowns > crispy hash browns
+[09/27/2025 09:02:40.339 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: worst take
+[09/27/2025 09:02:45.455 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: mods kick him /j
+[09/27/2025 09:02:47.081 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: sorry
+[09/27/2025 09:02:52.330 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: ur allowed ur opinions
+[09/27/2025 09:02:53.862 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: i will die on that hill
+[09/27/2025 09:02:55.845 PM] React+   || User: simplyshadow171295  || Channel: #yapper-committee                    || emoji=😭; msg="Me and Waffle House are about to have so..." by mochenoch
+[09/27/2025 09:03:04.649 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: i also got extra crispy hashbrowns otherwise they were just soggy n ...
+[09/27/2025 09:03:13.613 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: he almost followed me to the uc stairs so I had to point somewhere a...
+[09/27/2025 09:03:19.371 PM] React+   || User: simplyshadow171295  || Channel: #bot-spam                            || emoji=‼️; msg="Yep, which is of course near the church/..." by lance030315
+[09/27/2025 09:03:23.299 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=😭; msg="I’ve abandoned our son" by _costco_wholesale_
+[09/27/2025 09:03:27.367 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: my go to order my last few months was two hashbrowns all the way, ho...
+[09/27/2025 09:03:31.617 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: Do yall deep fry, pan fry, or bake hash browns??
+[09/27/2025 09:03:35.377 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: animal cruelty and child abandonment
+[09/27/2025 09:03:36.142 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: okok.. crispy outside, soft inside 🤝
+[09/27/2025 09:03:40.293 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😆; msg="okok.. crispy outside, soft inside 🤝" by yaeji
+[09/27/2025 09:03:41.550 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="okok.. crispy outside, soft inside 🤝" by yaeji
+[09/27/2025 09:04:09.199 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: pan fry i guess woluld be the closest, theyre fried on the black top...
+[09/27/2025 09:04:10.807 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: but 90/10 soft to crisp ratio
+[09/27/2025 09:04:15.799 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="but 90/10 soft to crisp ratio" by yaeji
+[09/27/2025 09:04:19.464 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=👎; msg="but 90/10 soft to crisp ratio" by yaeji
+[09/27/2025 09:04:20.543 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: Mmmm
+[09/27/2025 09:04:41.299 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: This makes me want to go make some fries
+[09/27/2025 09:04:54.712 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: but im not sure how many locations 'offer' steamed hashbrowns, appar...
+[09/27/2025 09:04:57.509 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="This makes me want to go make some fries" by le_nuit_sans_fin
+[09/27/2025 09:05:02.622 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=😭; msg="he almost followed me to the uc stairs s..." by _costco_wholesale_
+[09/27/2025 09:05:03.836 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=‼️; msg="animal cruelty and child abandonment" by simplyshadow171295
+[09/27/2025 09:05:04.282 PM] Message  || User: figgybeans          || Channel: #external-adoption-ads               || Content: update; i was lucky and Texas Pawprints had an open spot for their b...
+[09/27/2025 09:05:04.295 PM] Intent   || feed_update               ||                                               || station=Mary Kay and Zen; dates=['2025-09-27']
+[09/27/2025 09:05:04.296 PM] Action   || Name: feed_update_ignored || Trigger: station=Mary Kay and Zen             || Output: channel_blocked:655270100475052032
+[09/27/2025 09:05:05.299 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: OoP
+[09/27/2025 09:05:05.812 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: interesting
+[09/27/2025 09:05:09.330 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: elusive is on a list
+[09/27/2025 09:05:22.643 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: yeah
+[09/27/2025 09:05:43.239 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=‼️; msg="elusive is on a list" by slayc127
+[09/27/2025 09:05:46.752 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: it always weirded me out when ppl came to waffle house and asked for...
+[09/27/2025 09:05:51.389 PM] React+   || User: simplyshadow171295  || Channel: #external-adoption-ads               || emoji=🎉; msg="update; i was lucky and Texas Pawprints ..." by figgybeans
+[09/27/2025 09:06:10.639 PM] React+   || User: slayc127            || Channel: #external-adoption-ads               || emoji=🎉; msg="update; i was lucky and Texas Pawprints ..." by figgybeans
+[09/27/2025 09:06:13.203 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: I fear, I am not going to Waffle House for healthy
+[09/27/2025 09:06:16.252 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😆; msg="I fear, I am not going to Waffle House f..." by le_nuit_sans_fin
+[09/27/2025 09:06:17.164 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="I fear, I am not going to Waffle House f..." by le_nuit_sans_fin
+[09/27/2025 09:06:18.558 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: forreal
+[09/27/2025 09:06:28.049 PM] React+   || User: izzyballz           || Channel: #feeding-team                        || emoji=🎉; msg="snickers" by _costco_wholesale_
+[09/27/2025 09:06:40.161 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: itz why i wont go there again probs, im veggie now n they have a han...
+[09/27/2025 09:06:57.034 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: Rip
+[09/27/2025 09:07:01.080 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: you go to waffle house half asleep at 2 am with munchies
+[09/27/2025 09:07:04.268 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="you go to waffle house half asleep at 2 ..." by yaeji
+[09/27/2025 09:07:07.883 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: you WANT unhealthy
+[09/27/2025 09:07:08.760 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: Real
+[09/27/2025 09:07:11.840 PM] React+   || User: _costco_wholesale_  || Channel: #external-adoption-ads               || emoji=🎉; msg="update; i was lucky and Texas Pawprints ..." by figgybeans
+[09/27/2025 09:07:12.424 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: no forreal
+[09/27/2025 09:07:12.903 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😆; msg="HOLY FUVK GAME GRUMPS UMAMUSUME EPISODE?..." by a1darek
+[09/27/2025 09:07:14.504 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: that's the good shit
+[09/27/2025 09:07:31.175 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: gainesville waffle house was fun, wed get all the ppl coming home fr...
+[09/27/2025 09:07:48.034 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: i worked my birthday n made a few hundred dollars that night bc it c...
+[09/27/2025 09:07:55.586 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: BIG W
+[09/27/2025 09:07:58.707 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="BIG W" by yaeji
+[09/27/2025 09:08:06.314 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: will never work my birthday like that again but it was really nice
+[09/27/2025 09:08:12.725 PM] Message  || User: lance030315         || Channel: #pictures-of-the-cats                || Content: And evading arrest… (they ran)
+[09/27/2025 09:08:19.489 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i hope  don’t end up working my bday but i probably will
+[09/27/2025 09:08:22.186 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=‼️; msg="And evading arrest… (they ran)" by lance030315
+[09/27/2025 09:08:29.768 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: itz not worth it imo unless u work a tipped position
+[09/27/2025 09:08:35.564 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: I don’t get that (she says like she didn’t go to McDonald’s at 11pm ...
+[09/27/2025 09:08:42.362 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😆; msg="I don’t get that (she says like she didn..." by le_nuit_sans_fin
+[09/27/2025 09:08:45.549 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: i haven't celebrated a birthday since obama's inauguration
+[09/27/2025 09:08:49.769 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: so i wouldn't mind the bonus
+[09/27/2025 09:08:53.390 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: 🤑🤑🤑
+[09/27/2025 09:08:58.001 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: me too tbh up until this yr
+[09/27/2025 09:09:08.659 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: spent a disgusting amount of money on makeup recently bank account i...
+[09/27/2025 09:09:17.814 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: that was my bday last yr and it taught me that i really deserve to m...
+[09/27/2025 09:09:20.800 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: my bday this yr was rly nice
+[09/27/2025 09:09:23.213 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😆; msg="spent a disgusting amount of money on ma..." by izzyballz
+[09/27/2025 09:09:30.388 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: I’m glad
+[09/27/2025 09:10:02.229 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: i think bdays r very special, not for everyone ofc but i think too m...
+[09/27/2025 09:10:04.534 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: I don’t usually do much for birthday cuz it’s on Canada day, we usua...
+[09/27/2025 09:10:08.236 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: idk im procrastinating this paper
+[09/27/2025 09:10:09.907 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="I don’t usually do much for birthday cuz..." by le_nuit_sans_fin
+[09/27/2025 09:10:15.063 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: heardddd
+[09/27/2025 09:10:22.407 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: Real
+[09/27/2025 09:10:32.470 PM] Message  || User: simplyshadow171295  || Channel: #memes                               || Content: (no text; attachments=1)
+[09/27/2025 09:11:39.721 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: i need keaton henson to ship my damn package
+[09/27/2025 09:11:44.737 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: i've been so carefree since maybe my junior year
+[09/27/2025 09:11:52.784 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: i want these tshirts....and the tote bag....and my cd......i am foam...
+[09/27/2025 09:12:02.815 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: most days have just been about me
+[09/27/2025 09:12:12.084 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: the unfortunate reality is its shipping from the uk its gonna take a...
+[09/27/2025 09:12:16.580 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: even if it's just sleeping for the whole day
+[09/27/2025 09:12:24.749 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: Me time is nice
+[09/27/2025 09:12:43.435 PM] Edit     || User: yaeji               || Channel: #yapper-committee                    || i've been so carefree since maybe my junior year -> i've been so carefree sin...
+[09/27/2025 09:12:54.221 PM] Message  || User: le_nuit_sans_fin    || Channel: #yapper-committee                    || Content: I would probably be a hermit if my family didn’t force me do to thin...
+[09/27/2025 09:13:37.575 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: i think it's good for you to go out and do things sometimes
+[09/27/2025 09:13:43.336 PM] Edit     || User: yaeji               || Channel: #yapper-committee                    || i think it's good for you to go out and do things sometimes -> i think it's g...
+[09/27/2025 09:13:59.279 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: being a loner with no friends i'm like gregory house but slightly le...
+[09/27/2025 09:14:07.829 PM] Message  || User: mochenoch           || Channel: #yapper-committee                    || Content: I want my hashbrowns either McDonald’s style or waffle house style
+[09/27/2025 09:14:12.200 PM] Message  || User: mochenoch           || Channel: #yapper-committee                    || Content: There’s no in between
+[09/27/2025 09:24:39.722 PM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: I forgot about my birthday until i had a friend immediately spam me ...
+[09/27/2025 09:24:54.284 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=😭; msg="I’ve abandoned our son" by _costco_wholesale_
+[09/27/2025 09:45:07.945 PM] React+   || User: not_d3fault_1420    || Channel: #bot-spam                            || emoji=✅; msg=1421667953237164195
+[09/27/2025 09:45:13.033 PM] React+   || User: not_d3fault_1420    || Channel: #bot-spam                            || emoji=✅; msg=1421667853639225395
+[09/27/2025 09:46:15.692 PM] React+   || User: orphean_            || Channel: #pictures-of-the-cats                || emoji=💙; msg="bunch of sleepy cats today" by _costco_wholesale_
+[09/27/2025 09:46:16.808 PM] React-   || User: unknown             || Channel: #pictures-of-the-cats                || emoji=💙; msg="bunch of sleepy cats today" by _costco_wholesale_
+[09/27/2025 09:46:18.549 PM] React+   || User: orphean_            || Channel: #pictures-of-the-cats                || emoji=🫁; msg="bunch of sleepy cats today" by _costco_wholesale_
+[09/27/2025 09:50:09.018 PM] React+   || User: kitadan             || Channel: #external-adoption-ads               || emoji=🎉; msg="update; i was lucky and Texas Pawprints ..." by figgybeans
+[09/27/2025 09:54:17.425 PM] Message  || User: pancakemixteamdj    || Channel: #yapper-committee                    || Content: Glad my parents stopped attempting me to go things especially to Pat...
+[09/27/2025 10:12:22.599 PM] React+   || User: kitadan             || Channel: #pictures-of-the-cats                || emoji=😭; msg="I’ve abandoned our son" by _costco_wholesale_
+[09/27/2025 10:16:10.633 PM] Message  || User: baseketballin       || Channel: #report-new-cats                     || Content: OKAY FINALLY I CAUGHT IT
+[09/27/2025 10:16:12.300 PM] Action   || Name: image_intake        || Trigger: channel=639882573199441930           || Output: rows=3
+[09/27/2025 10:16:18.517 PM] Edit     || User: baseketballin       || Channel: #report-new-cats                     || OKAY FINALLY I CAUGHT IT -> OKAY FINALLY I FOUND HIM AGAIN
+[09/27/2025 10:19:06.657 PM] React+   || User: kitadan             || Channel: #report-new-cats                     || emoji=‼️; msg="OKAY FINALLY I FOUND HIM AGAIN" by baseketballin
+[09/27/2025 10:19:47.376 PM] Message  || User: kitadan             || Channel: #report-new-cats                     || Content: How close is this to Davis/College Row?
+[09/27/2025 10:20:09.049 PM] React+   || User: slayc127            || Channel: #report-new-cats                     || emoji=‼️; msg="OKAY FINALLY I FOUND HIM AGAIN" by baseketballin
+[09/27/2025 10:20:17.268 PM] Message  || User: slayc127            || Channel: #report-new-cats                     || Content: stealing him.
+[09/27/2025 10:22:04.079 PM] React+   || User: m_digio             || Channel: #report-new-cats                     || emoji=‼️; msg="OKAY FINALLY I FOUND HIM AGAIN" by baseketballin
+[09/27/2025 10:24:06.541 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i have a cold why am i being punished
+[09/27/2025 10:24:09.013 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: what did i do
+[09/27/2025 10:24:24.828 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i haven’t been sick in so long this is evil
+[09/27/2025 10:25:03.848 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: you have rhino
+[09/27/2025 10:25:09.378 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: and i have an 11-7 shift tmr 💔
+[09/27/2025 10:25:32.533 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i have unidentified upper respiratory infection
+[09/27/2025 10:25:53.346 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: if i could get the sore throat to go away its be fine thats like the...
+[09/27/2025 10:26:01.847 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: omggggg twins
+[09/27/2025 10:26:04.688 PM] Edit     || User: izzyballz           || Channel: #yapper-committee                    || if i could get the sore throat to go away its be fine thats like the only iss...
+[09/27/2025 10:26:05.705 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: the air feels rather shallow these days
+[09/27/2025 10:26:06.830 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: 1130-730 but close enough
+[09/27/2025 10:26:07.562 PM] React+   || User: izzyballz           || Channel: #yapper-committee                    || emoji=‼️; msg="omggggg twins" by slayc127
+[09/27/2025 10:26:10.987 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=‼️; msg="the air feels rather shallow these days" by yaeji
+[09/27/2025 10:26:25.045 PM] React+   || User: izzyballz           || Channel: #yapper-committee                    || emoji=🩷; msg="1130-730 but close enough" by slayc127
+[09/27/2025 10:26:30.934 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: victimized by runny nose and sore throat
+[09/27/2025 10:28:17.488 PM] Message  || User: baseketballin       || Channel: #report-new-cats                     || Content: like greek row ???
+[09/27/2025 10:28:29.549 PM] Message  || User: baseketballin       || Channel: #report-new-cats                     || Content: pretty close maybe like a 3-5 min drive
+[09/27/2025 10:28:43.034 PM] Message  || User: baseketballin       || Channel: #report-new-cats                     || Content: i live at maverick place apartments if that helps
+[09/27/2025 10:28:52.423 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: the huda beauty loose powder is so good guys the girlies were not ex...
+[09/27/2025 10:29:20.666 PM] Message  || User: baseketballin       || Channel: #cat-name-ideas                      || Content: custard fish fingers
+[09/27/2025 10:29:24.402 PM] Message  || User: baseketballin       || Channel: #cat-name-ideas                      || Content: fish fingers
+[09/27/2025 10:29:44.814 PM] Message  || User: void_now            || Channel: #cat-name-ideas                      || Content: 11th dr my beloved
+[09/27/2025 10:29:59.995 PM] Message  || User: baseketballin       || Channel: #cat-name-ideas                      || Content: THANK YOU FOR GETTING THE REFERENCE
+[09/27/2025 10:30:02.673 PM] React+   || User: baseketballin       || Channel: #cat-name-ideas                      || emoji=❤️; msg="11th dr my beloved" by void_now
+[09/27/2025 10:30:06.041 PM] React+   || User: void_now            || Channel: #cat-name-ideas                      || emoji=💜; msg="THANK YOU FOR GETTING THE REFERENCE" by baseketballin
+[09/27/2025 10:30:16.304 PM] Message  || User: baseketballin       || Channel: #cat-name-ideas                      || Content: hes my fav 🙏
+[09/27/2025 10:30:29.751 PM] Message  || User: void_now            || Channel: #cat-name-ideas                      || Content: It's been so long since I've watched but I stopped around his last s...
+[09/27/2025 10:30:32.595 PM] Message  || User: void_now            || Channel: #cat-name-ideas                      || Content: I will continue one day
+[09/27/2025 10:30:46.673 PM] Edit     || User: void_now            || Channel: #cat-name-ideas                      || It's been so long since I've watched but I stopped around his last season 😭 -...
+[09/27/2025 10:33:25.851 PM] Edit     || User: baseketballin       || Channel: #report-new-cats                     || pretty close maybe like a 3-5 min drive -> pretty close maybe like a 3-5 min ...
+[09/27/2025 10:33:42.753 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: guys who watched the season finale of the summer hikaru died today ..
+[09/27/2025 10:38:10.657 PM] React+   || User: vasyline            || Channel: #feeding-team                        || emoji=🎉; msg="snickers" by _costco_wholesale_
+[09/27/2025 10:54:04.518 PM] React+   || User: racerdg             || Channel: #bot-spam                            || emoji=😭; msg=1421661547897421914
+[09/27/2025 10:54:05.314 PM] React+   || User: racerdg             || Channel: #bot-spam                            || emoji=❌; msg=1421661547897421914
+[09/27/2025 10:54:11.096 PM] React+   || User: racerdg             || Channel: #bot-spam                            || emoji=❌; msg=1421661600837795976
+[09/27/2025 10:54:16.182 PM] React+   || User: racerdg             || Channel: #bot-spam                            || emoji=❌; msg=1421661885916381387
+[09/27/2025 10:54:21.986 PM] React+   || User: racerdg             || Channel: #bot-spam                            || emoji=✅; msg=1421667853639225395
+[09/27/2025 10:54:24.939 PM] React+   || User: racerdg             || Channel: #bot-spam                            || emoji=✅; msg=1421667953237164195
+[09/27/2025 10:54:27.503 PM] React+   || User: racerdg             || Channel: #bot-spam                            || emoji=✅; msg=1421668018328567922
+[09/27/2025 10:54:53.898 PM] Message  || User: simplyshadow171295  || Channel: #report-new-cats                     || Content: picl …
+[09/27/2025 10:55:04.986 PM] React+   || User: simplyshadow171295  || Channel: #report-new-cats                     || emoji=‼️; msg="OKAY FINALLY I FOUND HIM AGAIN" by baseketballin
+[09/27/2025 11:01:16.503 PM] Message  || User: kitadan             || Channel: #report-new-cats                     || Content: Thanks.  Not Petal from Maintenance but similar colors.
+[09/27/2025 11:08:18.522 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: Hello...
+[09/27/2025 11:08:43.799 PM] Message  || User: simplyshadow171295  || Channel: #report-new-cats                     || Content: yes her name is picl (pickle), she was first spotted by roach
+[09/27/2025 11:09:42.267 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: how's life
+[09/27/2025 11:09:55.925 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: good! wbu
+[09/27/2025 11:10:20.630 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: on an upward trend!
+[09/27/2025 11:11:03.502 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: is that good
+[09/27/2025 11:11:56.143 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: slowly regaining my sanity off the back of a grueling summer
+[09/27/2025 11:12:07.080 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: yes lol
+[09/27/2025 11:12:23.377 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: i hope everything is well then! u got this
+[09/27/2025 11:12:23.704 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: i still have those 2 am emo thoughts but.. don't we all
+[09/27/2025 11:12:26.759 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: i beeelievee in you
+[09/27/2025 11:12:28.095 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: yes
+[09/27/2025 11:12:32.835 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: church baby and black cat that ran into parking garage that was too ...
+[09/27/2025 11:12:34.673 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=4
+[09/27/2025 11:12:40.198 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: but thats why i try to sleep before or watch silly shows
+[09/27/2025 11:12:43.035 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: i love abbott elementary
+[09/27/2025 11:13:04.585 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: ah a comedy
+[09/27/2025 11:13:17.721 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: yes
+[09/27/2025 11:13:33.205 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: spotify for students gives you free hulu i might have to watch it
+[09/27/2025 11:14:13.097 PM] React+   || User: izzyballz           || Channel: #yapper-committee                    || emoji=👁️; msg="Hello..." by kukieari
+[09/27/2025 11:15:23.174 PM] React+   || User: vasyline            || Channel: #external-adoption-ads               || emoji=🎉; msg="update; i was lucky and Texas Pawprints ..." by figgybeans
+[09/27/2025 11:15:48.783 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: ok so i switched from runny nose and throat to bodily sick sensation...
+[09/27/2025 11:17:44.701 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: sounds like it's time to sleep
+[09/27/2025 11:17:51.299 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: hopefully it gets better tomorrow
+[09/27/2025 11:18:10.654 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: do you usually medicate colds
+[09/27/2025 11:18:21.440 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: theraflu my goat
+[09/27/2025 11:18:28.470 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: theraflu saves lives
+[09/27/2025 11:18:43.034 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: my KING theraflu
+[09/27/2025 11:19:03.253 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: i was gonna talk abt how i don't medicate but i would give heavy une...
+[09/27/2025 11:19:27.956 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: i can't imagine it's easy to rawdog an 8 hour shift
+[09/27/2025 11:19:34.876 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i do NOT have time to be sick the faster i can get it out of my syst...
+[09/27/2025 11:19:55.721 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: but sometimes ur body gets sick
+[09/27/2025 11:20:00.096 PM] Message  || User: kukieari            || Channel: #yapper-committee                    || Content: and its okay to rest izzy balls
+[09/27/2025 11:21:16.736 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: balls
+[09/27/2025 11:23:10.454 PM] React+   || User: izzyballz           || Channel: #yapper-committee                    || emoji=🩷; msg="and its okay to rest izzy balls" by kukieari
+[09/27/2025 11:23:45.864 PM] Roles    || User: petrichor           || Guild: Campus Cat Coalition                   || added=['close to campus']; removed=[]
+[09/27/2025 11:23:45.985 PM] React+   || User: petrichor           || Channel: #get-roles                           || emoji=🏠; msg="**Role Menu: On or Off Campus**
+
+:school..." by Carl-bot
+[09/27/2025 11:27:55.600 PM] Message  || User: baseketballin       || Channel: #report-new-cats                     || Content: SO CUTE WHAT
+[09/27/2025 11:28:05.456 PM] Message  || User: baseketballin       || Channel: #report-new-cats                     || Content: i love that such a cute name
+[09/27/2025 11:28:07.971 PM] Message  || User: baseketballin       || Channel: #report-new-cats                     || Content: picl
+[09/27/2025 11:34:05.131 PM] Message  || User: rocktail1202        || Channel: #memes                               || Content: (no text; attachments=0)
+[09/27/2025 11:34:14.955 PM] React+   || User: rocktail1202        || Channel: #memes                               || emoji=😂; msg=1421680449721204827
+[09/27/2025 11:54:00.423 PM] React+   || User: .s3j                || Channel: #bot-spam                            || emoji=✅; msg=1421667853639225395
+[09/27/2025 11:54:05.831 PM] React+   || User: .s3j                || Channel: #bot-spam                            || emoji=✅; msg=1421667953237164195
+[09/27/2025 11:54:26.033 PM] React+   || User: .s3j                || Channel: #bot-spam                            || emoji=✅; msg=1421668018328567922
+[09/27/2025 11:54:51.893 PM] Join     || User: texas_1522 (5692... || Guild: Campus Cat Coalition                   || age_days=2352; invite=rAEFDeT
+[09/27/2025 11:54:59.438 PM] Message  || User: .s3j                || Channel: #bot-spam                            || Content: Tomcat who is Callie
+[09/27/2025 11:54:59.940 PM] Intent   || who_is                    ||                                               || cat=Callie
+[09/27/2025 11:55:19.142 PM] Message  || User: austinbaustinb      || Channel: #bot-spam                            || Content: Mislabeled photo there
+[09/27/2025 11:55:21.201 PM] Message  || User: .s3j                || Channel: #bot-spam                            || Content: Tomcat show me Callie
+[09/27/2025 11:55:21.204 PM] Intent   || show_photo                ||                                               || cat=Callie

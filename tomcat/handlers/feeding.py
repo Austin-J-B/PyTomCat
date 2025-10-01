@@ -803,7 +803,7 @@ async def build_8pm_lines(
     if not include_fed:
         lines: List[str] = ["**Currently unfed stations**"]
         if not unfed:
-            lines.append("• none")
+            lines.append("none")
             return "\n".join(lines)
         for st in unfed:
             lines.append(_format_station_line(st))

@@ -177,6 +177,7 @@ def _ensure_extra_models() -> None:
         "transformers==4.43.3",
         "safetensors>=0.4.4",
         "sentencepiece>=0.1.99",
+        "onnx>=1.16.2,<1.17",
     ])
 
 

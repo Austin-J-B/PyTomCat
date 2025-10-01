@@ -14,7 +14,25 @@ def convert_model():
     
     # Download model and tokenizer
     model_name = "microsoft/deberta-v3-small"
-    model = AutoModelForSequenceClassification.from_pretrained(model_name, use_safetensors=True)
+    try:
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            use_safetensors=True,
+        )
+    except Exception as exc:
+        fallback_reasons = (
+            "dictionary update sequence element",
+            "Can't load the model",
+        )
+        if not any(reason in str(exc) for reason in fallback_reasons):
+            raise
+        # Some Windows setups inject malformed HF headers, which breaks the
+        # safetensors auto-conversion path. Fall back to the PyTorch weights.
+        print("Safetensors load failed; retrying with standard PyTorch weights...")
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            use_safetensors=False,
+        )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     
     # Save tokenizer

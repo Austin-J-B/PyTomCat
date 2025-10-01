@@ -33,7 +33,15 @@ def convert_model():
             model_name,
             use_safetensors=False,
         )
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+    except ValueError as exc:
+        if "sentencepiece" in str(exc).lower():
+            raise RuntimeError(
+                "sentencepiece is required to load the fast tokenizer. "
+                "Re-run scripts/install.py or pip install sentencepiece>=0.1.99"
+            ) from exc
+        raise
     
     # Save tokenizer
     tokenizer.save_pretrained(weights_dir)

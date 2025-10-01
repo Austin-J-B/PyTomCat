@@ -4,6 +4,13 @@ from pathlib import Path
 import torch
 import shutil
 
+try:
+    import onnx  # noqa: F401
+except ImportError as exc:
+    raise RuntimeError(
+        "onnx is required for model export. Re-run scripts/install.py or pip install onnx>=1.16.2,<1.17"
+    ) from exc
+
 def convert_model():
     """Download DeBERTa-v3-small model and convert to ONNX format."""
     print("Downloading DeBERTa-v3-small model...")

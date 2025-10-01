@@ -176,6 +176,7 @@ def _ensure_extra_models() -> None:
         "huggingface_hub>=0.35.1,<0.36",
         "transformers==4.43.3",
         "safetensors>=0.4.4",
+        "sentencepiece>=0.1.99",
     ])
 
 

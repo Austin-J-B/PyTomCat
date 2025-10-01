@@ -16,7 +16,7 @@ async def handle_station_residents(intent, ctx: Dict[str, Any]) -> None:
 
     if not station:
         if raw_query:
-            await safe_send(channel, f"I couldn't match **{raw_query}** to a station.")
+            await safe_send(channel, f"I couldn't match \"{raw_query}\" to a station.")
         else:
             await safe_send(channel, "I couldn't match that to a station.")
         log_action("station_residents", "unmatched", raw_query or "")
@@ -24,10 +24,10 @@ async def handle_station_residents(intent, ctx: Dict[str, Any]) -> None:
 
     residents = get_residents_for_station(station)
     if not residents:
-        await safe_send(channel, f"I don't have any residents recorded for **{station}** yet.")
+        await safe_send(channel, f"I don't have any residents recorded for the {station} station yet.")
         log_action("station_residents", f"station={station}", "no_residents")
         return
 
     names = ", ".join(residents)
-    await safe_send(channel, f"Cats near **{station}**: {names}")
+    await safe_send(channel, f"Cats near the {station} station: {names}")
     log_action("station_residents", f"station={station}", f"count={len(residents)}")

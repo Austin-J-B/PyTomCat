@@ -81,3 +81,575 @@
 {"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who feeds today", "attachments": 0}
 {"event": "intent", "kind": "feeding_today", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1422863509988839455, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:feeding_today"]}
 {"event": "action", "name": "feeding_today", "trigger": "by=624440365595754496", "output": "sent"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "meow", "attachments": 0}
+{"event": "action", "name": "handle_misc", "trigger": "trigger=meow", "output": "meow meow"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "Alright tomcat should be back up.\nIm moving towards getting it full self-sufficient soon. Ideally so there's a \"tomcat helper\" role for those of you who want to help label images or keep the bot running. this would be in a discord applications window much like the wordle bot. I'm wanting to wrap up development on tomcat soon. It will still gather images and have the ability to add new cats and everything, but I do want to move away from google drive/sheets if possible and have an ironed out \"production\" version.", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "New feature,", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "tomcat, who lives at lot 50", "attachments": 0}
+{"event": "intent", "kind": "station_residents", "confidence": 0.9, "channel_id": 956398865421074462, "user_id": 624440365595754496, "message_id": 1422864750349516862, "has_image": false, "slots": {"cat": null, "station": "Lot 50", "dates": null}, "decision": ["wake:prefix", "intent:station_residents", "slot:station=Lot 50"]}
+{"event": "action", "name": "station_residents", "trigger": "station=Lot 50", "output": "count=28"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "tomcat show me vincente", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 624440365595754496, "message_id": 1422864779554459719, "has_image": false, "slots": {"cat": "Vincente", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Vincente", "intent:show_photo"]}
+{"event": "show_photo_page", "cat": "88. Vincente", "source": "cache", "serial": "sn4974", "reverse_index": "28", "total": "64", "delivery": "edit", "message_id": 1422864790191083520, "delivered_message_id": 1422864790191083520, "user_id": 624440365595754496}
+{"event": "show_photo_page", "cat": "88. Vincente", "source": "cache", "serial": "sn5311", "reverse_index": "51", "total": "64", "delivery": "edit", "message_id": 1422864790191083520, "delivered_message_id": 1422864790191083520, "user_id": 624440365595754496}
+{"event": "show_photo_page", "cat": "88. Vincente", "source": "cache", "serial": "sn5977", "reverse_index": "64", "total": "64", "delivery": "edit", "message_id": 1422864790191083520, "delivered_message_id": 1422864790191083520, "user_id": 624440365595754496}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "such a sad world where i’m having to lock up fucking advil cuz people keep stealing it enough to where we’re losing money on it", "attachments": 1}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "let people steal advil", "attachments": 0}
+{"event": "show_photo_page", "cat": "88. Vincente", "source": "cache", "serial": "sn4974", "reverse_index": "28", "total": "64", "delivery": "edit", "message_id": 1422864790191083520, "delivered_message_id": 1422864790191083520, "user_id": 694664394495361195}
+{"event": "show_photo_page", "cat": "88. Vincente", "source": "cache", "serial": "sn5515", "reverse_index": "61", "total": "64", "delivery": "edit", "message_id": 1422864790191083520, "delivered_message_id": 1422864790191083520, "user_id": 694664394495361195}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "Not how a business works but okay", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "they can steal the store brand still we don’t ever lock that up", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#bot-spam", "content": "Enchilada?", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#bot-spam", "content": "Tomcat show me enchilada", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 474329968936091648, "message_id": 1422909122814283806, "has_image": false, "slots": {"cat": "Enchilada", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Enchilada", "intent:show_photo"]}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1422807948052135968, "emoji": "😆", "message_preview": "ryan higa house mention in the great yea...", "message_author": "spitonme"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1422792964421324892, "emoji": "‼️", "message_preview": "\"Brit is not good\" should be the only se...", "message_author": ".s3j"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1422789491806044240, "emoji": "😭", "message_preview": "This is one of the worst things I’ve eve...", "message_author": "austinbaustinb"}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "this is evil", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "That ain’t right but if thats what it is", "attachments": 0}
+{"event": "message_delete", "author": "austinbaustinb", "channel": "#bot-spam", "content": "That ain’t right but if thats what it is"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#yapper-committee", "message_id": 1422881185390133338, "emoji": "‼️", "message_preview": "let people steal advil", "message_author": "racerdg"}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "content": "", "attachments": 1}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "My friend isai let's me know about yugioh stuff and that's how I stay in the know for that game", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "They just added enw supports for my favorite archetype", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "I'm back", "attachments": 0}
+{"event": "message", "author": "starr8968", "channel": "#pictures-of-the-cats", "content": "", "attachments": 3}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=3"}
+{"event": "message", "author": "starr8968", "channel": "#pictures-of-the-cats", "content": "Hated my morning but now it's sm better bc I saw her :3", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "DIVAAAAAAAAAAAAA", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "cant believe i have to go to class AGAIN", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "DM", "content": "hi tom", "attachments": 1}
+{"event": "message", "author": "orphean_", "channel": "#feeding-team", "content": "west hall fed!", "attachments": 1}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 426919280378904588, "message_id": 1422949035580461147, "has_image": true, "slots": {"cat": null, "station": "West Hall", "dates": ["2025-10-01"]}, "decision": ["slot:stations=West Hall", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark", "trigger": "station=West Hall date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=West Hall; dates=2025-10-01", "output": "ok"}
+{"event": "reaction_add", "user": "orphean_", "channel": "#pictures-of-the-cats", "message_id": 1422389193623208019, "emoji": "😭", "message_preview": "\"Ahah hey baby girll ahhhh you tryin sma...", "message_author": "m_digio"}
+{"event": "reaction_add", "user": "orphean_", "channel": "#pictures-of-the-cats", "message_id": 1422427342835552358, "emoji": "‼️", "message_preview": "happy one year anniversary of the day fo...", "message_author": "simplyshadow171295"}
+{"event": "reaction_add", "user": "bluedragon5864", "channel": "#pictures-of-the-cats", "message_id": 1422933101306318961, "emoji": "❤️", "message_preview": "", "message_author": "not_d3fault_1420"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422702465341718611, "emoji": "😭", "message_preview": "update it was roach", "message_author": "adeyumii"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422705682536464407, "emoji": "😭", "message_preview": "Snitchanda over here outing me /silly /j", "message_author": "reyesthighs"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422705763452977213, "emoji": "🤣", "message_preview": "\"Oops meow meow meow\" is killing me", "message_author": "m_digio"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#pet-pictures", "message_id": 1422705933196198009, "emoji": "<:balloonboi:933099871257382983>", "message_preview": "I cant nap in peace", "message_author": "m_digio"}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#bot-spam", "content": "tomcat show me microwave", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 980567857849045032, "message_id": 1422954324035899564, "has_image": false, "slots": {"cat": "Microwave", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Microwave", "intent:show_photo"]}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "grumpy this morning", "attachments": 2}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=2"}
+{"event": "message", "author": "fawnest_", "channel": "#pictures-of-the-cats", "content": "", "attachments": 1}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=1"}
+{"event": "message", "author": "fawnest_", "channel": "#pictures-of-the-cats", "content": "Who is this lil guy <:macrowave:857753712591634442>", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "L", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "do we think he js getting up to move", "attachments": 1}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=1"}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "where r u at!", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "West hall", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "Prob simba", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#pictures-of-the-cats", "message_id": 1422955796580532234, "emoji": "‼️", "message_preview": "Prob simba", "message_author": "adeyumii"}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "hes looking at a worm! i was trying to figure out what he was doing", "attachments": 1}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=1"}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "BRO JUST LAID ON IT", "attachments": 0}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "message_id": 1422956167965184100, "emoji": "😭", "message_preview": "BRO JUST LAID ON IT", "message_author": "slayc127"}
+{"event": "message", "author": "a1darek", "channel": "#pictures-of-the-cats", "content": "https://tenor.com/view/mmm-egg-in-me-adventure-gif-15365145469660482118", "attachments": 0}
+{"event": "message_edit", "author": "a1darek", "channel": "#pictures-of-the-cats", "before": "https://tenor.com/view/mmm-egg-in-me-adventure-gif-15365145469660482118", "after": "https://tenor.com/view/mmm-egg-in-me-adventure-gif-15365145469660482118"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#pictures-of-the-cats", "message_id": 1422956656769372202, "emoji": "😭", "message_preview": "https://tenor.com/view/mmm-egg-in-me-adv...", "message_author": "a1darek"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "message_id": 1422956656769372202, "emoji": "😭", "message_preview": "https://tenor.com/view/mmm-egg-in-me-adv...", "message_author": "a1darek"}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "microwave is so fucking funny", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "what’s he doing?", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "got up bc of a worm, stared at it really hard for like 2 minutes, readjusted n laid down on it", "attachments": 0}
+{"event": "reaction_add", "user": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1422957126896193658, "emoji": "😆", "message_preview": "got up bc of a worm, stared at it really...", "message_author": "slayc127"}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "i think he was contemplating whether it was worth the effort to kill it", "attachments": 0}
+{"event": "reaction_add", "user": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1422957181082275861, "emoji": "😆", "message_preview": "i think he was contemplating whether it ...", "message_author": "slayc127"}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "instead he determined death by body weight and suffocation was better /silly", "attachments": 0}
+{"event": "reaction_add", "user": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1422957267938181170, "emoji": "😆", "message_preview": "instead he determined death by body weig...", "message_author": "slayc127"}
+{"event": "reaction_add", "user": "adeyumii", "channel": "#pictures-of-the-cats", "message_id": 1422956167965184100, "emoji": "😭", "message_preview": "BRO JUST LAID ON IT", "message_author": "slayc127"}
+{"event": "message", "author": "spitonme", "channel": "#feeding-team", "content": "ty to who put feeding stuff outside bin bc i have a deep fear or fly larvae", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#yapper-committee", "content": "let people steal advil", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#pictures-of-the-cats", "content": "Somebody got a crowd this morning", "attachments": 1}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=1"}
+{"event": "message", "author": "m_digio", "channel": "#purrley-pawsitive-pussy-pals", "content": "", "attachments": 1}
+{"event": "message", "author": "adeyumii", "channel": "#yapper-committee", "content": "you don't get paid enough to care", "attachments": 0}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "funny af satire", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#feeding-team", "message_id": 1422958316853788816, "emoji": "❤️", "message_preview": "ty to who put feeding stuff outside bin ...", "message_author": "spitonme"}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "is the new location easier for yall ?", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "five finger discount", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#pictures-of-the-cats", "message_id": 1422959342545797182, "emoji": "😭", "message_preview": "Somebody got a crowd this morning", "message_author": "pancakemixteamdj"}
+{"event": "message", "author": "orphean_", "channel": "#feeding-team", "content": "i don’t think it’s that different for me anyway i got lost for like 30 seconds before i turned around and finally saw it✊🏼", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#feeding-team", "message_id": 1422960737487421451, "emoji": "❤️", "message_preview": "i don’t think it’s that different for me...", "message_author": "orphean_"}
+{"event": "message", "author": "slayc127", "channel": "#feeding-team", "content": "YIPPPEEEEE", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#pictures-of-the-cats", "content": "simba", "attachments": 0}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422790365081243769, "emoji": "🐙", "message_preview": "85 due paying members and 1,149 overall ...", "message_author": "austinbaustinb"}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422790365081243769, "emoji": "👍", "message_preview": "85 due paying members and 1,149 overall ...", "message_author": "austinbaustinb"}
+{"event": "reaction_remove", "user": "unknown", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422790365081243769, "emoji": "👍", "message_preview": "85 due paying members and 1,149 overall ...", "message_author": "austinbaustinb"}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "this is a comical ratio idk why i thought there'd be more due paying", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#itty-bitty-kitty-commitee", "content": "Far far majority of those people are inactive alumni or old students, due paying is a better # of active members methinks", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#itty-bitty-kitty-commitee", "content": "People don’t really leave the server", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#itty-bitty-kitty-commitee", "content": "85 \"active members\" is pretty cool to me", "attachments": 0}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#feeding-team", "message_id": 1422958316853788816, "emoji": "❤️", "message_preview": "ty to who put feeding stuff outside bin ...", "message_author": "spitonme"}
+{"event": "message", "author": "spitonme", "channel": "#feeding-team", "content": "snickers fed", "attachments": 2}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 543969877619245068, "message_id": 1422963412798804019, "has_image": true, "slots": {"cat": null, "station": "Snickers", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Snickers", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark", "trigger": "station=Snickers date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=Snickers; dates=2025-10-01", "output": "ok"}
+{"event": "message_edit", "author": "spitonme", "channel": "#feeding-team", "before": "ty to who put feeding stuff outside bin bc i have a deep fear or fly larvae", "after": "ty to who put feeding stuff outside bin bc i have a deep fear of fly larvae"}
+{"event": "reaction_add", "user": "spitonme", "channel": "#pictures-of-the-cats", "message_id": 1422959342545797182, "emoji": "🐙", "message_preview": "Somebody got a crowd this morning", "message_author": "pancakemixteamdj"}
+{"event": "message", "author": "spitonme", "channel": "#pictures-of-the-cats", "content": "yes bru i was putting the food up and was like woaw people", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#pictures-of-the-cats", "content": "but also they were giving him very respectable distance", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#pictures-of-the-cats", "content": "like bird watchers", "attachments": 0}
+{"event": "reaction_add", "user": "kitadan", "channel": "#pictures-of-the-cats", "message_id": 1422959342545797182, "emoji": "😭", "message_preview": "Somebody got a crowd this morning", "message_author": "pancakemixteamdj"}
+{"event": "reaction_add", "user": ".s3j", "channel": "#yapper-committee", "message_id": 1422881185390133338, "emoji": "‼️", "message_preview": "let people steal advil", "message_author": "racerdg"}
+{"event": "reaction_add", "user": "fawnest_", "channel": "#pictures-of-the-cats", "message_id": 1422955796580532234, "emoji": "‼️", "message_preview": "Prob simba", "message_author": "adeyumii"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#feeding-team", "message_id": 1422958316853788816, "emoji": "❤️", "message_preview": "ty to who put feeding stuff outside bin ...", "message_author": "spitonme"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#feeding-team", "message_id": 1422960737487421451, "emoji": "❤️", "message_preview": "i don’t think it’s that different for me...", "message_author": "orphean_"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#yapper-committee", "message_id": 1422960392195281027, "emoji": "‼️", "message_preview": "five finger discount", "message_author": "slayc127"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "message_id": 1422959342545797182, "emoji": "😭", "message_preview": "Somebody got a crowd this morning", "message_author": "pancakemixteamdj"}
+{"event": "reaction_add", "user": "reyesthighs", "channel": "#feeding-team", "message_id": 1422732207033811007, "emoji": "🎉", "message_preview": "new west hall feeding location, its to t...", "message_author": "slayc127"}
+{"event": "reaction_add", "user": "reyesthighs", "channel": "#feeding-team", "message_id": 1422752979097882717, "emoji": "🩷", "message_preview": "meow meow meow im tomcat meow meow\nevery...", "message_author": "adeyumii"}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#yapper-committee", "message_id": 1422960392195281027, "emoji": "‼️", "message_preview": "five finger discount", "message_author": "slayc127"}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "fighting demons", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "(a tummy ache)", "attachments": 0}
+{"event": "reaction_add", "user": "spitonme", "channel": "#yapper-committee", "message_id": 1422960392195281027, "emoji": "🐙", "message_preview": "five finger discount", "message_author": "slayc127"}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#pictures-of-the-cats", "message_id": 1422959342545797182, "emoji": "😭", "message_preview": "Somebody got a crowd this morning", "message_author": "pancakemixteamdj"}
+{"event": "message", "author": "m_digio", "channel": "#external-promotions", "content": "Snowcones outside nedderman", "attachments": 1}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "i think if ppl r struggling to afford pain medication to the point that theyre stealing it,, its ok to turn a blind eye, similar to baby forumla", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "its more of a socio economical problem than it is a morality problem", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "right omg?", "attachments": 0}
+{"event": "reaction_add", "user": "spitonme", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422962645434109972, "emoji": "🐙", "message_preview": "85 \"active members\" is pretty cool to me", "message_author": "m_digio"}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "thats true like literally imagine 85 people telling you that you had a cool shirt", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "thats a whole lot of people", "attachments": 0}
+{"event": "reaction_add", "user": "spitonme", "channel": "#external-promotions", "message_id": 1422975261359738971, "emoji": "🐙", "message_preview": "Snowcones outside nedderman", "message_author": "m_digio"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "^^", "attachments": 0}
+{"event": "reaction_add", "user": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1422974981184163911, "emoji": "😭", "message_preview": "(a tummy ache)", "message_author": "slayc127"}
+{"event": "message", "author": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "content": "that’s so true actually", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#external-promotions", "message_id": 1422975261359738971, "emoji": "🐙", "message_preview": "Snowcones outside nedderman", "message_author": "m_digio"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "i was lich at walgreens yesterday to pick up meds before my shit i walked right back out everything there is so expensive", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1422975269051826247, "emoji": "‼️", "message_preview": "i think if ppl r struggling to afford pa...", "message_author": "spitonme"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1422975369736224880, "emoji": "‼️", "message_preview": "its more of a socio economical problem t...", "message_author": "spitonme"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "forreal", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "worked my shift with no meds i literally couldn’t even justify it", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "SO expensive", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "my mom is reaching menopause and i must buy my own period products 🙁", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "this plus ibuprofen and tea ?? 🙁", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "if you ever need to buy otc meds go to walmart get the store brand", "attachments": 0}
+{"event": "reaction_add", "user": "spitonme", "channel": "#yapper-committee", "message_id": 1422976535207612640, "emoji": "🐙", "message_preview": "if you ever need to buy otc meds go to w...", "message_author": "izzyballz"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "probably as cheap as it gets", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "kroger store brand is also pretty respectable", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "do NOT go to any pharmacy the prices are heinous", "attachments": 0}
+{"event": "message_edit", "author": "izzyballz", "channel": "#yapper-committee", "before": "i was lich at walgreens yesterday to pick up meds before my shit i walked right back out everything there is so expensive", "after": "i was lich at walgreens yesterday to pick up meds before my shift i walked right back out everything there is so expensive"}
+{"event": "reaction_add", "user": "adeyumii", "channel": "#external-promotions", "message_id": 1422975261359738971, "emoji": "🐙", "message_preview": "Snowcones outside nedderman", "message_author": "m_digio"}
+{"event": "message", "author": "austinbaustinb", "channel": "#itty-bitty-kitty-commitee", "content": "I think the highest it’s been in a bit!", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "oh i never", "attachments": 0}
+{"event": "message", "author": "redfoxflying", "channel": "#itty-bitty-kitty-commitee", "content": "Banners are a-printing", "attachments": 1}
+{"event": "reaction_add", "user": "m_digio", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422977787253489744, "emoji": "🔥", "message_preview": "Banners are a-printing", "message_author": "redfoxflying"}
+{"event": "message", "author": "m_digio", "channel": "#itty-bitty-kitty-commitee", "content": "Yuhh🎉🎉", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#executive-board", "content": "We can js table and not sell anything if we want", "attachments": 1}
+{"event": "message", "author": "adeyumii", "channel": "#itty-bitty-kitty-commitee", "content": "Can we spend some of the club money on one of those flags where you can put someone's face on it", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#itty-bitty-kitty-commitee", "content": "We need a microwave flag", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#itty-bitty-kitty-commitee", "content": "what abt those ugly pet pillows", "attachments": 0}
+{"event": "reaction_add", "user": ".bettercalljack", "channel": "#pictures-of-the-cats", "message_id": 1422956167965184100, "emoji": "😭", "message_preview": "BRO JUST LAID ON IT", "message_author": "slayc127"}
+{"event": "message", "author": ".bettercalljack", "channel": "#bot-spam", "content": "Tomcat identifying", "attachments": 1}
+{"event": "message", "author": ".bettercalljack", "channel": "#bot-spam", "content": "Tomcat identifying", "attachments": 1}
+{"event": "message", "author": ".bettercalljack", "channel": "#bot-spam", "content": "Ia", "attachments": 0}
+{"event": "message", "author": ".bettercalljack", "channel": "#bot-spam", "content": "Why", "attachments": 0}
+{"event": "message", "author": ".bettercalljack", "channel": "#bot-spam", "content": "Tomecar identify", "attachments": 1}
+{"event": "message", "author": ".bettercalljack", "channel": "#bot-spam", "content": "Tomcat identify", "attachments": 1}
+{"event": "intent", "kind": "cv_identify", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 1037772447509917717, "message_id": 1422980882808963143, "has_image": true, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "intent:cv_identify"]}
+{"event": "action", "name": "viz_identify", "trigger": "boxes=1 guesses=1", "output": "ok"}
+{"event": "reaction_add", "user": ".bettercalljack", "channel": "#bot-spam", "message_id": 1422980884977684651, "emoji": "✅", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "message", "author": ".bettercalljack", "channel": "#bot-spam", "content": "Tomcat identify", "attachments": 1}
+{"event": "intent", "kind": "cv_identify", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 1037772447509917717, "message_id": 1422980954942869696, "has_image": true, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "intent:cv_identify"]}
+{"event": "action", "name": "viz_identify", "trigger": "boxes=2 guesses=2", "output": "ok"}
+{"event": "reaction_add", "user": "coziidruid", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422787487205429279, "emoji": "❤️", "message_preview": "Me and seja are planning on bringing him...", "message_author": "austinbaustinb"}
+{"event": "reaction_add", "user": "austinbaustinb", "channel": "#bot-spam", "message_id": 1422980956553351239, "emoji": "❌", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "reaction_add", "user": "austinbaustinb", "channel": "#bot-spam", "message_id": 1422980884977684651, "emoji": "✅", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "message", "author": "austinbaustinb", "channel": "#itty-bitty-kitty-commitee", "content": "Bronze statue to replace hereford’s bust", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#external-promotions", "content": "omg yumm balls", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#external-promotions", "content": "oh", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#external-promotions", "content": "hello", "attachments": 0}
+{"event": "reaction_add", "user": "mochenoch", "channel": "#external-adoption-ads", "message_id": 1421679073704411257, "emoji": "🎉", "message_preview": "update; i was lucky and Texas Pawprints ...", "message_author": "figgybeans"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422977787253489744, "emoji": "🔥", "message_preview": "Banners are a-printing", "message_author": "redfoxflying"}
+{"event": "reaction_add", "user": "coziidruid", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422981472662458460, "emoji": "‼️", "message_preview": "Bronze statue to replace hereford’s bust", "message_author": "austinbaustinb"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422981472662458460, "emoji": "‼️", "message_preview": "Bronze statue to replace hereford’s bust", "message_author": "austinbaustinb"}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#yapper-committee", "content": "someone go bother mike for me", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#yapper-committee", "content": "I have an online exam lol", "attachments": 0}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422981472662458460, "emoji": "‼️", "message_preview": "Bronze statue to replace hereford’s bust", "message_author": "austinbaustinb"}
+{"event": "message", "author": "reyesthighs", "channel": "#yapper-committee", "content": "I feed him today", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 915790807720661042, "user_id": 674640043289083944, "message_id": 1422982718593040465, "has_image": false, "slots": {"cat": null, "station": "Microwave", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Microwave", "intent:feed_update"]}
+{"event": "action", "name": "feed_update_ignored", "trigger": "station=Microwave", "output": "channel_blocked:915790807720661042"}
+{"event": "message", "author": "reyesthighs", "channel": "#yapper-committee", "content": "I can bother him", "attachments": 0}
+{"event": "reaction_add", "user": "reyesthighs", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422787487205429279, "emoji": "❤️", "message_preview": "Me and seja are planning on bringing him...", "message_author": "austinbaustinb"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422981472662458460, "emoji": "‼️", "message_preview": "Bronze statue to replace hereford’s bust", "message_author": "austinbaustinb"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#bot-spam", "message_id": 1422980884977684651, "emoji": "✅", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#bot-spam", "message_id": 1422980956553351239, "emoji": "❌", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "reaction_add", "user": "reyesthighs", "channel": "#feeding-team", "message_id": 1422654031297253538, "emoji": "‼️", "message_preview": "im FORREAL [NOT CLICKBAIT] moving statio...", "message_author": "slayc127"}
+{"event": "message", "author": "reyesthighs", "channel": "#feeding-team", "content": "saurr....I don't feed west hall anymore? 😭", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 674640043289083944, "message_id": 1422983480144564264, "has_image": false, "slots": {"cat": null, "station": "West Hall", "dates": ["2025-10-01"]}, "decision": ["slot:stations=West Hall", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark", "trigger": "station=West Hall date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=West Hall; dates=2025-10-01", "output": "ok"}
+{"event": "message", "author": "m_digio", "channel": "#itty-bitty-kitty-commitee", "content": "yeah the bust was put in the library, idea was to not like delete history but not celebrate him either", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "no nicole has friday", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#feeding-team", "content": "just this friday or all fridays?", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "all fridays", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#yapper-committee", "content": "yay lol", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#feeding-team", "content": "🫡", "attachments": 0}
+{"event": "message", "author": "kitadan", "channel": "#feeding-team", "content": "When is the new bin arriving?", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#itty-bitty-kitty-commitee", "content": "put a giant thumbs down next to him", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "today! ill get it set up and everything cleaned tmrw afternoon", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#itty-bitty-kitty-commitee", "content": "keeping the statue of a really bad person but also playing an extremely loud incorrect buzzar every few minutes so people know that we don't agree with it /silly /ref", "attachments": 0}
+{"event": "reaction_add", "user": "celeryiscelery", "channel": "#executive-board", "message_id": 1422978023359119402, "emoji": "<:gaga:1413361490634870969>", "message_preview": "We can js table and not sell anything if...", "message_author": "m_digio"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422986584025858219, "emoji": "😭", "message_preview": "keeping the statue of a really bad perso...", "message_author": "reyesthighs"}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "sounds like a bit from the good place", "attachments": 0}
+{"event": "reaction_add", "user": "kitadan", "channel": "#feeding-team", "message_id": 1422986430623518762, "emoji": "🎉", "message_preview": "today! ill get it set up and everything ...", "message_author": "m_digio"}
+{"event": "message", "author": "kitadan", "channel": "#feeding-team", "content": "Woot woot!", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#itty-bitty-kitty-commitee", "content": "no need i will ask my mami for one", "attachments": 0}
+{"event": "reaction_add", "user": "spitonme", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422987639199502507, "emoji": "🐙", "message_preview": "sounds like a bit from the good place", "message_author": "slayc127"}
+{"event": "reaction_add", "user": "redfoxflying", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422986584025858219, "emoji": "🤣", "message_preview": "keeping the statue of a really bad perso...", "message_author": "reyesthighs"}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "Well this is awkward, I have a clone", "attachments": 1}
+{"event": "message", "author": "mochenoch", "channel": "#yapper-committee", "content": "Cloneeee", "attachments": 0}
+{"event": "message", "author": "mochenoch", "channel": "#yapper-committee", "content": "Also there’s a lot of clubs outside the UC, did I miss a memo 😭", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "Me too", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "Stranger danger I don’t know these clubs", "attachments": 0}
+{"event": "member_join", "user": "soultaker8053", "user_id": 218825324316590080, "guild": "Campus Cat Coalition", "guild_id": 551082419768393729, "account_age_days": 3322, "invite_code": "rAEFDeT", "inviter_id": 552159074893037600}
+{"event": "reaction_add", "user": "kitadan", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422986584025858219, "emoji": "😭", "message_preview": "keeping the statue of a really bad perso...", "message_author": "reyesthighs"}
+{"event": "reaction_add", "user": "vasyline", "channel": "#bot-spam", "message_id": 1422980884977684651, "emoji": "✅", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "reaction_add", "user": "vasyline", "channel": "#bot-spam", "message_id": 1422980956553351239, "emoji": "❌", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "message", "author": "redfoxflying", "channel": "#itty-bitty-kitty-commitee", "content": "13 posters and one feeding instruction, ready for pickup!", "attachments": 1}
+{"event": "reaction_add", "user": "m_digio", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "message", "author": "adeyumii", "channel": "#itty-bitty-kitty-commitee", "content": "Florb", "attachments": 0}
+{"event": "reaction_add", "user": "adeyumii", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "i had to stop myself from laughing in my college algebra lecture i’m crying", "attachments": 2}
+{"event": "reaction_add", "user": "a1darek", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "FIREEEEEEEEEEE", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#executive-board", "content": "", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#feeding-team", "content": "", "attachments": 1}
+{"event": "message", "author": "reyesthighs", "channel": "#feeding-team", "content": "Fed the wave", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 674640043289083944, "message_id": 1422996044651954186, "has_image": false, "slots": {"cat": null, "station": "Microwave", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Microwave,Greens", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark", "trigger": "station=Microwave date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=Microwave; dates=2025-10-01", "output": "ok"}
+{"event": "action", "name": "sheet_mark_error", "trigger": "station=Greens date=2025-10-01", "output": "missing_column"}
+{"event": "action", "name": "feed_update", "trigger": "station=Greens; dates=2025-10-01", "output": "partial"}
+{"event": "message", "author": "reyesthighs", "channel": "#yapper-committee", "content": "Bothered the shit out of that fat tub of lard here's the proof /silly /af", "attachments": 2}
+{"event": "reaction_add", "user": "reyesthighs", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1422996282590494780, "emoji": "😭", "message_preview": "Bothered the shit out of that fat tub of...", "message_author": "reyesthighs"}
+{"event": "reaction_add", "user": "soultaker8053", "channel": "#get-roles", "message_id": 1027254815102881882, "emoji": "😭", "message_preview": "**Role Menu: On or Off Campus**\n\n:school...", "message_author": "Carl-bot"}
+{"event": "reaction_remove", "user": "unknown", "channel": "#get-roles", "message_id": 1027254815102881882, "emoji": "😭", "message_preview": "**Role Menu: On or Off Campus**\n\n:school...", "message_author": "Carl-bot"}
+{"event": "reaction_add", "user": "soultaker8053", "channel": "#get-roles", "message_id": 1027254815102881882, "emoji": "🚗", "message_preview": "**Role Menu: On or Off Campus**\n\n:school...", "message_author": "Carl-bot"}
+{"event": "member_update", "user": "soultaker8053", "user_id": 218825324316590080, "guild": "Campus Cat Coalition", "roles_added": ["commuter"], "roles_removed": []}
+{"event": "reaction_add", "user": "soultaker8053", "channel": "#get-roles", "message_id": 934598820183044206, "emoji": "🎓", "message_preview": "**Role Menu: Member Type**\nPlease select...", "message_author": "Carl-bot"}
+{"event": "member_update", "user": "soultaker8053", "user_id": 218825324316590080, "guild": "Campus Cat Coalition", "roles_added": ["alumni"], "roles_removed": []}
+{"event": "member_update", "user": "soultaker8053", "user_id": 218825324316590080, "guild": "Campus Cat Coalition", "roles_added": ["she/her"], "roles_removed": []}
+{"event": "reaction_add", "user": "soultaker8053", "channel": "#get-roles", "message_id": 934597338951979109, "emoji": "❤️", "message_preview": "**Role Menu: Pronouns**\nPlease select yo...", "message_author": "Carl-bot"}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#yapper-committee", "message_id": 1422996282590494780, "emoji": "😭", "message_preview": "Bothered the shit out of that fat tub of...", "message_author": "reyesthighs"}
+{"event": "reaction_add", "user": "vasyline", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "reaction_add", "user": "vasyline", "channel": "#yapper-committee", "message_id": 1422996282590494780, "emoji": "😭", "message_preview": "Bothered the shit out of that fat tub of...", "message_author": "reyesthighs"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "starbucks double shot energy drink tastes like shit 🫩", "attachments": 0}
+{"event": "reaction_add", "user": ".s3j", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "?", "attachments": 0}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1422996282590494780, "emoji": "😭", "message_preview": "Bothered the shit out of that fat tub of...", "message_author": "reyesthighs"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "something is not right about it ts does not taste like iced latte", "attachments": 1}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "ur so wrong its so good", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "but it definitely isnt coffee", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "it is coffee flavored liquid", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "why do people not check their display names before sending messages like this", "attachments": 1}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "just caught onto it", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#yapper-committee", "content": "Oh haha yea those r so bad….", "attachments": 0}
+{"event": "reaction_add", "user": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1423000552270200992, "emoji": "😆", "message_preview": "why do people not check their display na...", "message_author": "slayc127"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "it seems i am a minority here", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#yapper-committee", "content": "Ok yea Kaz is normal", "attachments": 0}
+{"event": "reaction_add", "user": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1423000552270200992, "emoji": "😭", "message_preview": "why do people not check their display na...", "message_author": "slayc127"}
+{"event": "message", "author": "austinbaustinb", "channel": "#yapper-committee", "content": "The triple shot gets a little bitter", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#yapper-committee", "content": "But very good", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1423000718842789940, "emoji": "‼️", "message_preview": "The triple shot gets a little bitter", "message_author": "austinbaustinb"}
+{"event": "message", "author": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "content": "u should mention that to them fjdhshs", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "triple shot is so fire", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "but deadly", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1423000691055788144, "emoji": "😭", "message_preview": "it seems i am a minority here", "message_author": "izzyballz"}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "for sure", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "im putting off replying for neow", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#yapper-committee", "content": "Love that", "attachments": 0}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#yapper-committee", "message_id": 1422996282590494780, "emoji": "😭", "message_preview": "Bothered the shit out of that fat tub of...", "message_author": "reyesthighs"}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "", "attachments": 1}
+{"event": "reaction_add", "user": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1423001938915754065, "emoji": "🔥", "message_preview": "", "message_author": "slayc127"}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "he has rolled in dirt many times today apparently", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "content": "", "attachments": 2}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=2"}
+{"event": "reaction_add", "user": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1423001999087112313, "emoji": "🔥", "message_preview": "he has rolled in dirt many times today a...", "message_author": "slayc127"}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "content": "", "attachments": 1}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=1"}
+{"event": "message", "author": "kukieari", "channel": "#pictures-of-the-cats", "content": "IS THAT WHERE HE WAS", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "hes in his alley!!!!!!!!!!!", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#pictures-of-the-cats", "content": "I COULDNT FIND HIM", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "omgggggg", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#pictures-of-the-cats", "content": "", "attachments": 2}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=2"}
+{"event": "message", "author": "kukieari", "channel": "#pictures-of-the-cats", "content": "big butt", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#pictures-of-the-cats", "content": "big loaf", "attachments": 0}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#bot-spam", "message_id": 1422980884977684651, "emoji": "✅", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#bot-spam", "message_id": 1422980956553351239, "emoji": "❌", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "reaction_add", "user": "m_digio", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1423001938915754065, "emoji": "🔥", "message_preview": "", "message_author": "slayc127"}
+{"event": "reaction_add", "user": "m_digio", "channel": "#pictures-of-the-cats", "message_id": 1423002148677091599, "emoji": "❤️", "message_preview": "", "message_author": "not_d3fault_1420"}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422977787253489744, "emoji": "🔥", "message_preview": "Banners are a-printing", "message_author": "redfoxflying"}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422981472662458460, "emoji": "‼️", "message_preview": "Bronze statue to replace hereford’s bust", "message_author": "austinbaustinb"}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422986584025858219, "emoji": "😭", "message_preview": "keeping the statue of a really bad perso...", "message_author": "reyesthighs"}
+{"event": "reaction_add", "user": "cici4f3", "channel": "#feeding-team", "message_id": 1422996042088972331, "emoji": "<:macrowave:857753712591634442>", "message_preview": "", "message_author": "reyesthighs"}
+{"event": "reaction_add", "user": "cici4f3", "channel": "#pictures-of-the-cats", "message_id": 1423002148677091599, "emoji": "❤️", "message_preview": "", "message_author": "not_d3fault_1420"}
+{"event": "reaction_add", "user": "cici4f3", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#feeding-team", "message_id": 1422996042088972331, "emoji": "<:macrowave:857753712591634442>", "message_preview": "", "message_author": "reyesthighs"}
+{"event": "reaction_add", "user": "orphean_", "channel": "#feeding-team", "message_id": 1422984712774746214, "emoji": "🫁", "message_preview": "🫡", "message_author": "reyesthighs"}
+{"event": "message", "author": "m_digio", "channel": "#executive-board", "content": "box has arrived, might go out later after my lab and set it up if i have the energy. if not itll get done tmrw around 1", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "i got one of those from the pickard vending machine", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "now before i go back to my car i visit pickard", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "!!", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#feeding-team", "content": "did u not volunteer urself", "attachments": 0}
+{"event": "reaction_add", "user": "spitonme", "channel": "#feeding-team", "message_id": 1422986430623518762, "emoji": "🎉", "message_preview": "today! ill get it set up and everything ...", "message_author": "m_digio"}
+{"event": "message", "author": "spitonme", "channel": "#feeding-team", "content": "truly blessed for tackling that", "attachments": 0}
+{"event": "reaction_add", "user": "orphean_", "channel": "#feeding-team", "message_id": 1422996042088972331, "emoji": "<:macrowave:857753712591634442>", "message_preview": "", "message_author": "reyesthighs"}
+{"event": "reaction_add", "user": "emiximez", "channel": "#yapper-committee", "message_id": 1422975369736224880, "emoji": "‼️", "message_preview": "its more of a socio economical problem t...", "message_author": "spitonme"}
+{"event": "reaction_add", "user": "emiximez", "channel": "#yapper-committee", "message_id": 1422975269051826247, "emoji": "‼️", "message_preview": "i think if ppl r struggling to afford pa...", "message_author": "spitonme"}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "@feeding team i will actually be going later this afternoon to clean out everything and set up the new box if anyone has a free afternoon and would like to help", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "i can help depending on what time", "attachments": 0}
+{"event": "message", "author": "layotu", "channel": "#feeding-team", "content": "what time", "attachments": 0}
+{"event": "reaction_add", "user": "redfoxflying", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422995335369854997, "emoji": "💚", "message_preview": "FIREEEEEEEEEEE", "message_author": "slayc127"}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "im free after 3:30", "attachments": 0}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "In class til 2:20 but free for however long after", "attachments": 0}
+{"event": "message", "author": "layotu", "channel": "#feeding-team", "content": "same", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "Itll probably be around 4", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#feeding-team", "content": "Chris says before 6 and I'm fine whenever", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "I have lab rn that normally last about 2 hours and then ill run home and grab supplies", "attachments": 0}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "(I do need to charge my phone though)", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#feeding-team", "content": "What should we bring to the cleaning", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#feeding-team", "content": "Water? Cloth?", "attachments": 0}
+{"event": "message", "author": "layotu", "channel": "#feeding-team", "content": "wait no it’s wednesday im free at 3:30", "attachments": 0}
+{"event": "reaction_add", "user": ".bettercalljack", "channel": "#feeding-team", "message_id": 1422996042088972331, "emoji": "<:macrowave:857753712591634442>", "message_preview": "", "message_author": "reyesthighs"}
+{"event": "message", "author": "a1darek", "channel": "#pictures-of-the-cats", "content": "michael finally in his hall???", "attachments": 0}
+{"event": "message", "author": ".bettercalljack", "channel": "#yapper-committee", "content": "I tried bum energy from the engineering student council very good", "attachments": 0}
+{"event": "reaction_add", "user": ".bettercalljack", "channel": "#pictures-of-the-cats", "message_id": 1423002148677091599, "emoji": "❤️", "message_preview": "", "message_author": "not_d3fault_1420"}
+{"event": "message", "author": ".bettercalljack", "channel": "#pictures-of-the-cats", "content": "He looks like a ladybug", "attachments": 0}
+{"event": "reaction_add", "user": ".bettercalljack", "channel": "#external-promotions", "message_id": 1422975261359738971, "emoji": "🐙", "message_preview": "Snowcones outside nedderman", "message_author": "m_digio"}
+{"event": "message", "author": ".bettercalljack", "channel": "#feeding-team", "content": "I can also help", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#feeding-team", "content": "Yesterday I offered up the station *until it had been moved* as we had been saying for weeks that we were going to move it. And then they moved it today 😭", "attachments": 0}
+{"event": "message", "author": "reyesthighs", "channel": "#feeding-team", "content": "Don't get me wrong I am absolutely down for them to take it I don't get territorial I just don't want to be scheduled to feed and then nawt feed", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 674640043289083944, "message_id": 1423022475062673548, "has_image": false, "slots": {"cat": null, "station": "Mary Kay and Zen", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Mary Kay and Zen", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark", "trigger": "station=Mary Kay and Zen date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=Mary Kay and Zen; dates=2025-10-01", "output": "ok"}
+{"event": "reaction_add", "user": "dandelion021._.", "channel": "#yapper-committee", "message_id": 1423021619764531371, "emoji": "‼️", "message_preview": "I tried bum energy from the engineering ...", "message_author": ".bettercalljack"}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "@pointzero", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "Probably, i did js pass by and put two new containers out there that will be for the \"new and improved\" feeding storage and it smelled like hot garbage so something to clean/wipe definitely", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "Were also throwing away A LOT of stuff out there, like all the broken winter shelters", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "content": "he left there", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "content": "idk where to", "attachments": 0}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422986584025858219, "emoji": "😭", "message_preview": "keeping the statue of a really bad perso...", "message_author": "reyesthighs"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "how many hours a week do you guys work i’m trying to see something", "attachments": 0}
+{"event": "message", "author": "cici4f3", "channel": "#yapper-committee", "content": "between 12-15 typically", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "uh depends, usually 28 but if they need coverage then it can be more", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "it’s all based on my availability", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "ermmmmm these days i think its around maybe 30?", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#yapper-committee", "content": "18", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#yapper-committee", "content": "Or 20 I forget", "attachments": 0}
+{"event": "message", "author": "redfoxflying", "channel": "#itty-bitty-kitty-commitee", "content": "I have completed my in person wage hours, and I’m free to work from home! I left the posters at the front desk of the central library so y’all can pick them up whenever is convenient, but I told them I’d take them back if you aren’t able to come get them tonight!", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "ok so uta students and msu students are seeking to have different vibes work wise", "attachments": 0}
+{"event": "message_edit", "author": "izzyballz", "channel": "#yapper-committee", "before": "ok so uta students and msu students are seeking to have different vibes work wise", "after": "ok so uta students and msu students are seeming to have different vibes work wise"}
+{"event": "reaction_add", "user": "m_digio", "channel": "#itty-bitty-kitty-commitee", "message_id": 1423031750451396758, "emoji": "❤️", "message_preview": "I have completed my in person wage hours...", "message_author": "redfoxflying"}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "Can someone (who's gonna help me later) pick up the papers/posters from the library", "attachments": 0}
+{"event": "intent", "kind": "sub_request", "confidence": 0.75, "channel_id": 643586809166561310, "user_id": 499034835562790912, "message_id": 1423034249887350794, "has_image": false, "slots": {"cat": null, "station": "Microwave", "dates": null}, "decision": ["intent:sub_request"]}
+{"event": "action", "name": "sub_request", "trigger": "station=Microwave; dates=2025-10-01", "output": "logged"}
+{"event": "action", "name": "sub_request", "trigger": "station=Greens; dates=2025-10-01", "output": "logged"}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "I’m happy to grab them if no one else can", "attachments": 0}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "But it’s going to be a sec cuz I’d have to walk back from my apartment", "attachments": 0}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "@Megan [Feeding Head & PR] when would you want me to grab them?", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#yapper-committee", "content": "What are the results like so far", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "Just by the time I'm at Mikey's station, like around 4ish", "attachments": 0}
+{"event": "action", "name": "feed_pending_set", "trigger": "ch=643586809166561310; user=499034835562790912", "output": "Microwave"}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "guys i just got a 100 on my micro exam and got the 25 points extra credit <a:freak:1402043975010877653>", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "Although this lab seems to be going longer than expected so 430ish", "attachments": 0}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "🫡🫡", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "good to know ill pass at least one class this semester", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#yapper-committee", "content": "~20-22 only on the weekends", "attachments": 0}
+{"event": "reaction_add", "user": "lil.mama", "channel": "#introductions", "message_id": 1422280521827745882, "emoji": "💜", "message_preview": "", "message_author": "_enderman24"}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#pictures-of-the-cats", "content": "HES HUGE", "attachments": 0}
+{"event": "reaction_add", "user": "_costco_wholesale_", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "A 100 the fuck , I was only good at macro", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "the first unit of micro and macro are basically the same", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "and i took macro in hs last year", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "im liking not going to be cooking this hard on the future units cause macro lost me later too", "attachments": 0}
+{"event": "reaction_add", "user": "celeryiscelery", "channel": "#executive-board", "message_id": 1423011293832413317, "emoji": "<:gaga:1413361490634870969>", "message_preview": "box has arrived, might go out later afte...", "message_author": "m_digio"}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "I got cooked by Micro later on", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "my friend that goes there work 9 hours a week and she said most people she knows are either unemployed or work short hours with jobs through their schools and labs and stuff like tha", "attachments": 0}
+{"event": "message_edit", "author": "izzyballz", "channel": "#yapper-committee", "before": "my friend that goes there work 9 hours a week and she said most people she knows are either unemployed or work short hours with jobs through their schools and labs and stuff like tha", "after": "my friend that goes there work 9 hours a week and she said most people she knows are either unemployed or work short hours with jobs through their schools and labs and stuff like that"}
+{"event": "message", "author": "adeyumii", "channel": "#yapper-committee", "content": "Dannngggg", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#yapper-committee", "content": "Interesting", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "successfully drove to work without the gps for the first time 🤞", "attachments": 0}
+{"event": "reaction_add", "user": "hatshura", "channel": "#itty-bitty-kitty-commitee", "message_id": 1422992984915312772, "emoji": "🔥", "message_preview": "13 posters and one feeding instruction, ...", "message_author": "redfoxflying"}
+{"event": "message", "author": "kitadan", "channel": "#feeding-team", "content": "Mary Kay and Zen fed.", "attachments": 2}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 427867525225906176, "message_id": 1423043594498871328, "has_image": true, "slots": {"cat": null, "station": "Mary Kay and Zen", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Mary Kay and Zen", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark", "trigger": "station=Mary Kay and Zen date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=Mary Kay and Zen; dates=2025-10-01", "output": "ok"}
+{"event": "message", "author": "po1ntzero", "channel": "#yapper-committee", "content": "Ty for attending ‼️‼️", "attachments": 0}
+{"event": "reaction_add", "user": "po1ntzero", "channel": "#yapper-committee", "message_id": 1423021619764531371, "emoji": "‼️", "message_preview": "I tried bum energy from the engineering ...", "message_author": ".bettercalljack"}
+{"event": "action", "name": "gmail_log_scheduler", "trigger": "found=1", "output": "logged=1"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Isabella Klein $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "message", "author": "m_digio", "channel": "#executive-board", "content": "", "attachments": 1}
+{"event": "message", "author": "izzyballz", "channel": "#feeding-team", "content": "maintenance fed and watered", "attachments": 1}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 891876061313380425, "message_id": 1423047832666898543, "has_image": true, "slots": {"cat": null, "station": "Maintenance", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Maintenance,Mary Kay and Zen", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark", "trigger": "station=Maintenance date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=Maintenance; dates=2025-10-01", "output": "ok"}
+{"event": "action", "name": "sheet_mark", "trigger": "station=Mary Kay and Zen date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=Mary Kay and Zen; dates=2025-10-01", "output": "ok"}
+{"event": "message", "author": "a1darek", "channel": "#executive-board", "content": "I can set up but I do have a class from 11-12", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#feeding-team", "content": "@Megan [Feeding Head & PR]  do you want Miranda to bring her camera to take photos for PR team", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#itty-bitty-kitty-commitee", "message_id": 1423031750451396758, "emoji": "❤️", "message_preview": "I have completed my in person wage hours...", "message_author": "redfoxflying"}
+{"event": "message", "author": ".bettercalljack", "channel": "#feeding-team", "content": "Are yall there rn at mikeys station", "attachments": 0}
+{"event": "action", "name": "feed_pending_set", "trigger": "ch=643586809166561310; user=1037772447509917717", "output": "Microwave"}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "I’m grabbing the posters then I’ll be on my way", "attachments": 0}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": ":))", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "Up to yall!", "attachments": 0}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "Speaking of posters", "attachments": 0}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "Where in the library are they??", "attachments": 0}
+{"event": "action", "name": "feed_pending_set", "trigger": "ch=643586809166561310; user=690727460924424212", "output": "Microwave"}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "Im omw now guys 10-20 min", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "", "attachments": 0}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "Success thank you", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "there is turning an eye to the individual stealing and businesses trying to make money. We don’t sell things we lose money on, that’s just terrible business. And it’s not people struggling that’s stealing it, it’s organized retail crime. Your average stacy shoplifter isn’t forcing us to lock up stuff by themselves. We get hit all the time by organized retail crime just wiping our shelves.", "attachments": 0}
+{"event": "message", "author": "layotu", "channel": "#feeding-team", "content": "I'll head over there now then", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "belated whining and complaining but it pmo how the ppl in the class before mine NEVER fucking leave the classroom", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "we are SEVEN weeks in once that clock hits 220 VACATE THE SAMN AREA", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "Theft is absolutely rampant. We lost $140k last year my store alone to people stealing shit. If we aren’t making money on it (negative shrink adjusted gross profit items) then we put in protection measures", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "wdym its 230 and there are still 2 of u in here", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "also william i think yr the only person in this chat in any position of authority at their retail job", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "Yeah 🫠", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "/not mad but i personally dont get paid enough to care when the people in charge make triple my salary regardless of shrink", "attachments": 0}
+{"event": "message", "author": "bubblebee5866", "channel": "#feeding-team", "content": "Fed buisness", "attachments": 1}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 609945813128445974, "message_id": 1423052316956950569, "has_image": true, "slots": {"cat": null, "station": "Business", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Business", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark", "trigger": "station=Business date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=Business; dates=2025-10-01", "output": "ok"}
+{"event": "message", "author": ".bettercalljack", "channel": "#feeding-team", "content": "I will bring lysol wipes", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "Well I mean it really does matter for a company like mine, we have thin margins. We only make ¢3 for every $1 spent in the stores. So theft absolutely eats into that a lot, and it’s part of the reason we’ve have to close so many stores is because the theft makes them unprofitable so why would we stay open? It creates pharmacy deserts.", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "So many people have lost their job to it. It also makes the work of all of the rest of us so much worse cuz we have to start putting extra labor into locking things up and having to come unlock things for you, nobody wants to be doing it but if people didn’t steal then it wouldn’t be an issue", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#itty-bitty-kitty-commitee", "content": "Toothless’ grill is gone", "attachments": 1}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "I understand people stealing food/medicine because they can’t afford it. But the theft extends to all sorts of shit, we have cosmetics locked up, pokémon cards, eyedrops, first aid supplies. It’s rampant theft", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "I used to have the same mindset when I started in retail that it’s theft i’m not paid enough to deal with it but having been in the industry for a few years it’s actually so annoying and pmo", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#itty-bitty-kitty-commitee", "content": "NOOOOOOOOOOO", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "i suppose i can understand your perspective", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "that sounds sassy but i dont mean it to be, just not gonna share my thoughts bc unforch i dont think its the right space 😔😔", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "#toowoke /j", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "quite a common point of debate though tbh", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "in general", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "but i lost a new friend once sharing my opinion so 🫠", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "@Nick [pencil's #1 hater]", "attachments": 0}
+{"event": "message", "author": "dandelion021._.", "channel": "#yapper-committee", "content": "nickkk", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "Yeah, I understand the mindset of its a multi billion dollar company they can afford to get shoplifted, but you arent hurting the company, they dont give a shit, youre only hurting the actual employees at the store and other consumers by causing stuff to get locked up or prices to get raised to offset the theft", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "but it is what it is", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "im just an officer so i try to keep my more intense feelings n opinions Not in here <3", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "this was my point when i was harassed by demonstrators in a public chain restaurant", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "i will too then!", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "that's all i will say", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "Anyways thats my rant over", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "i'm feeding greens right now so I will come after if you guys are still there", "attachments": 0}
+{"event": "action", "name": "feed_pending_set", "trigger": "ch=643586809166561310; user=338109126808829953", "output": "Greens"}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "greens fed", "attachments": 1}
+{"event": "action", "name": "feed_pending_expired", "trigger": "ch=643586809166561310; user=338109126808829953", "output": ""}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 338109126808829953, "message_id": 1423056439819112568, "has_image": true, "slots": {"cat": null, "station": "Greens", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Greens", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark_error", "trigger": "station=Greens date=2025-10-01", "output": "missing_column"}
+{"event": "action", "name": "feed_update", "trigger": "station=Greens; dates=2025-10-01", "output": "partial"}
+{"event": "message", "author": "m_digio", "channel": "#feeding-team", "content": "Alr guy im here", "attachments": 0}
+{"event": "message_edit", "author": "yaeji", "channel": "#yapper-committee", "before": "this was my point when i was harassed by demonstrators in a public chain restaurant", "after": "this was my point (might just be my cynicism speaking) when i was harassed by demonstrators in a public chain restaurant"}
+{"event": "message", "author": "frostfire312", "channel": "#feeding-team", "content": "", "attachments": 2}
+{"event": "message", "author": "frostfire312", "channel": "#feeding-team", "content": "Lot 50 and hop fed", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 642133560685494282, "message_id": 1423058948528930977, "has_image": false, "slots": {"cat": null, "station": "HOP", "dates": ["2025-10-01"]}, "decision": ["slot:stations=HOP,Lot 50,Mary Kay and Zen", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark", "trigger": "station=HOP date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=HOP; dates=2025-10-01", "output": "ok"}
+{"event": "action", "name": "sheet_mark", "trigger": "station=Lot 50 date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=Lot 50; dates=2025-10-01", "output": "ok"}
+{"event": "action", "name": "sheet_mark", "trigger": "station=Mary Kay and Zen date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=Mary Kay and Zen; dates=2025-10-01", "output": "ok"}
+{"event": "message", "author": ".s3j", "channel": "#itty-bitty-kitty-commitee", "content": "He probably ate it", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who feeds today", "attachments": 0}
+{"event": "intent", "kind": "feeding_today", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1423059724185632798, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:feeding_today"]}
+{"event": "action", "name": "feeding_today", "trigger": "by=624440365595754496", "output": "sent"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Greens fed", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1423059815256686662, "has_image": false, "slots": {"cat": null, "station": "Greens", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Greens", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark_error", "trigger": "station=Greens date=2025-10-01", "output": "missing_column"}
+{"event": "action", "name": "feed_update", "trigger": "station=Greens; dates=2025-10-01", "output": "partial"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who feeds today", "attachments": 0}
+{"event": "intent", "kind": "feeding_today", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1423059843723563088, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:feeding_today"]}
+{"event": "action", "name": "feeding_today", "trigger": "by=624440365595754496", "output": "sent"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "The greens fed", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1423059863474274415, "has_image": false, "slots": {"cat": null, "station": "Greens", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Greens", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark_error", "trigger": "station=Greens date=2025-10-01", "output": "missing_column"}
+{"event": "action", "name": "feed_update", "trigger": "station=Greens; dates=2025-10-01", "output": "partial"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who feeds today", "attachments": 0}
+{"event": "intent", "kind": "feeding_today", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1423059876422221874, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:feeding_today"]}
+{"event": "action", "name": "feeding_today", "trigger": "by=624440365595754496", "output": "sent"}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "this how we exercising our free speech on campus?💀", "attachments": 1}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who feeds today", "attachments": 0}
+{"event": "intent", "kind": "feeding_today", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1423060183373971590, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:feeding_today"]}
+{"event": "action", "name": "feeding_today", "trigger": "by=624440365595754496", "output": "sent"}
+{"event": "reaction_add", "user": "_costco_wholesale_", "channel": "#itty-bitty-kitty-commitee", "message_id": 1423059512205643930, "emoji": "😆", "message_preview": "He probably ate it", "message_author": ".s3j"}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "Always makes me sad to see people giving those groups attention", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "Don’t feed the troll", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 830643125784412181, "user_id": 624440365595754496, "message_id": 1423060366921044031, "has_image": false, "slots": {"cat": null, "station": "Greens", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Greens", "intent:feed_update"]}
+{"event": "action", "name": "feed_update_ignored", "trigger": "station=Greens", "output": "channel_blocked:830643125784412181"}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "i noticed he was there and i wanted to give myself five minutes to see if i could catch him saying any fuck assery and sure enough 30 seconds into recording he said that 💀", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "these people were asking me why he was doing that and i was like he’s just rage baiting like he’s been doing for the past 4 semesters", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "getting home after hours in long pants, climbing into your cold sheets...", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "i have math hw but fuck that for now", "attachments": 0}
+{"event": "message", "author": "yaeji", "channel": "#yapper-committee", "content": "💤", "attachments": 0}
+{"event": "reaction_add", "user": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1423060760115806240, "emoji": "‼️", "message_preview": "these people were asking me why he was d...", "message_author": "celeryiscelery"}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "Those dudes are always horrible and I do wish the worst for them. The world rots with hate. End of my commentary on that, the rest is left as an exercise for the reader.\n\nHowever I do think these guys are pretty good actors", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#feeding-team", "content": "you have enough help?", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#feeding-team", "content": "@Megan [Feeding Head & PR] dunno why i turned ping off sorry", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "genuinely wonder what kind of money he’s making off of it", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "I don’t doubt they’re actually shitty people but also like he keeps the same level of hate the entire time. Doesn’t escalate stuff and is relatively calm with the vile shit", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "bc there were people that used to say he just says shit to try and get someone to assault him so he can sue but he records with a go pro so he’s literally clip farming people that are debating", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "Yeah", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "the last thing he said before i left was something about the crusades and went on some rant like “aren’t you glad the christians defended this land? if it weren’t for us then we’d all be speaking arabic”💀", "attachments": 0}
+{"event": "reaction_add", "user": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1423061795110781009, "emoji": "‼️", "message_preview": "the last thing he said before i left was...", "message_author": "celeryiscelery"}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "like that is not a debate that is straight up rage baiting and the guys that were trying to actually debate him weren’t realizing that 😭", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "And then like people debate/argue and it’s kinda just the most Reddit snark responses ever. And like brah ur feeding the troll", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "U a victim", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "U lose if u care about the guy", "attachments": 0}
+{"event": "reaction_add", "user": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1423061918192762940, "emoji": "‼️", "message_preview": "like that is not a debate that is straig...", "message_author": "celeryiscelery"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who feeds today", "attachments": 0}
+{"event": "intent", "kind": "feeding_today", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1423062338222817303, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:feeding_today"]}
+{"event": "action", "name": "feeding_today", "trigger": "by=624440365595754496", "output": "sent"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "greens fed", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1423062392652173353, "has_image": false, "slots": {"cat": null, "station": "Greens", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Greens", "intent:feed_update"]}
+{"event": "action", "name": "sheet_mark", "trigger": "station=Greens date=2025-10-01", "output": "ok"}
+{"event": "action", "name": "feed_update", "trigger": "station=Greens; dates=2025-10-01", "output": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who feeds today", "attachments": 0}
+{"event": "intent", "kind": "feeding_today", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1423062413946654741, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:feeding_today"]}
+{"event": "action", "name": "feeding_today", "trigger": "by=624440365595754496", "output": "sent"}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "i need the guy who dresses up as megamind to come and just crash that entire thing", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "so evill", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "The Who???", "attachments": 0}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "dam n hes been here as long as ive been here", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1423060760115806240, "emoji": "‼️", "message_preview": "these people were asking me why he was d...", "message_author": "celeryiscelery"}

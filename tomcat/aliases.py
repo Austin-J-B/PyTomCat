@@ -287,17 +287,58 @@ def _fallback_lookup_cat(text_norm: str, tokens: Iterable[str]) -> Optional[str]
     return None
 
 _STATION_ALIASES = {
-    # Prior config stations
     "west hall": ["west hall", "west", "hall"],
     "maintenance": ["maintenance", "maint"],
+    "west campus": ["west campus"],
     "business": ["business", "coba"],
-    "the greens": ["the greens", "greens", "green", "grink", "grinks"],
-    "hop": ["hop", "pecan", "thwop", "thop", "heights", "hops"],  # Heights on Pecan
+    "the greens": [
+        "the greens",
+        "greens",
+        "green",
+        "grink",
+        "grinks",
+        "center chase",
+        "center chase apartments",
+        "center chase apartments & the greens",
+    ],
+    "hop": ["hop", "pecan", "thwop", "thop", "heights", "hops", "heights on pecan"],
     "lot 50": ["lot 50", "lot50", "l50", "lot"],
-    "mary kay and zen": ["mary kay and zen", "mkz", "zen", "mary kay", "mary", "kay"],
-    # Some stations are also cat names in the list; include them if they are real stations too
-    "microwave": ["microwave", "mike", "mikey", "miker", "micro", "wave", "old man", "michael", "him", "himb"],
+    "mary kay and zen": [
+        "mary kay and zen",
+        "mkz",
+        "zen",
+        "mary kay",
+        "mary",
+        "kay",
+        "zen gardens",
+        "zen apartments",
+        "mary kay apartments",
+    ],
+    "microwave": [
+        "microwave",
+        "mike",
+        "mikey",
+        "miker",
+        "micro",
+        "wave",
+        "old man",
+        "michael",
+        "him",
+        "himb",
+        "chemistry",
+        "chemistry building",
+        "chemistry/planetarium building",
+        "planetarium",
+        "planetarium building",
+        "library",
+        "life science building",
+        "library life science building",
+    ],
     "snickers": ["snickers", "snicks"],
+    "bookstore": ["First Baptist Church", "church", "first baptist", "bookstore"],
+    "engineering research building": ["engineering research building", "north campus"],
+    "centennial courts": ["centennial", "centennial courts"],
+    "kc hall": ["kc hall", "kc", "kalpana chawla", "kalpana chawla hall"],
 }
 
 # Canonical display names (capitalization as you want to show)
@@ -312,6 +353,13 @@ _DISPLAY = {
     "hop": "HOP",
     "lot 50": "Lot 50",
     "mary kay and zen": "Mary Kay and Zen",
+    "microwave": "Microwave",
+    "snickers": "Snickers",
+    "bookstore": "Bookstore",
+    "engineering research building": "Engineering Research Building",
+    "centennial courts": "Centennial Courts",
+    "west campus": "West Campus",
+    "kc hall": "KC Hall",
 }
 
 STOPWORDS = {
@@ -324,7 +372,7 @@ STOPWORDS = {
     "where", "which", "while", "do", "does", "did", "have", "has", "had", "we",
     "us", "our", "ours", "you", "your", "yours", "i", "me", "my", "mine", "they",
     "them", "their", "theirs", "he", "him", "his", "she", "her", "hers", "lot",
-    "hall"
+    "hall", "station", "stations"
 }
 
 

@@ -43,6 +43,7 @@ from .handlers.misc import (
     handle_profiles_update_all,
 )
 from .handlers.dues import handle_check_last_email
+from .handlers.stations import handle_station_residents as _handle_station_residents
 
 # ---- Aliases and optional NLP ------------------------------------------------
 from .aliases import resolve_station_or_cat, alias_vocab
@@ -151,6 +152,7 @@ class IntentEvent:
     dates: Optional[List[str]] = None      # ISO "YYYY-MM-DD"
     # evidence pointers (message ids) used when pairing
     paired_messages: Optional[List[int]] = None
+    raw_station: Optional[str] = None      # original station query text (for station-specific intents)
 
 # Simple ring buffer per (channel_id, user_id)
 MachineRow = Dict[str, Any]
@@ -177,8 +179,12 @@ ACCEPT_PAT= re.compile(
     re.I,
 )
 FEEDING_CHECK_RE = re.compile(
-    r"^(?:(?:who(?:'s|\s+is|\s+has|\s+have|\s+hasn'?t|\s+haven'?t)\s*(?:been\s+)?fed(?:\s+today)?)|(?:which\s+stations?\s+(?:have|has|haven'?t|hasn'?t)\s*(?:been\s+)?fed(?:\s+today)?))\s*[?.!]*$",
-    re.I
+    r"^(?:(?:who(?:['’]s|\s+is|\s+has|\s+have|\s+hasn?['’]?t|\s+haven?['’]?t)\s*(?:been\s+)?fed(?:\s+today)?)|(?: (?:which|what) \s+ stations? \s+ (?:have|has|haven?['’]?t|hasn?['’]?t) \s*(?:been\s+)?fed(?:\s+today)?))\s*[?.!]*$",
+    re.I | re.X,
+)
+WHO_LIVES_RE = re.compile(
+    r"^\s*who\s+lives?\s+(?:at|by|near|around|in|on)\s+(?P<target>.+?)\s*[?.!]*$",
+    re.I,
 )
 SILENT_CMD = re.compile(r"\bsilent\s*mode\s+(on|off)\b", re.I)
 WHO_THIS_RE = re.compile(r"(?:^|\b)(?:who(?:'s|\s+is)|what(?:'s|\s+is))\s+(?:this|that)\s*(?:cat)?\??$", re.I)
@@ -666,6 +672,28 @@ class IntentRouter:
 
 
             # Feeding inquiry requires addressing (wake/mention/DM)
+            m_who_lives = WHO_LIVES_RE.search(text_wo)
+            if m_who_lives:
+                target = m_who_lives.group("target").strip()
+                cleaned = re.sub(r"['’]s\b", "", target)
+                cleaned = re.sub(r"\b(?:feeding\s+)?stations?\b", "", cleaned, flags=re.I)
+                cleaned = re.sub(r"\b(?:the|that|this|there|here)\b", "", cleaned, flags=re.I)
+                cleaned = re.sub(r"\s+", " ", cleaned).strip()
+                station_name = self._extract_best_entity(cleaned or target, want="station", allow_stopword_aliases=True)
+                ev = IntentEvent(
+                    type="station_residents", confidence=0.9,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                    station=station_name, raw_station=cleaned or target,
+                )
+                trace.append("intent:station_residents")
+                if station_name:
+                    trace.append(f"slot:station={station_name}")
+                else:
+                    trace.append("slot:station=unknown")
+                self._traces[row["message_id"]] = trace
+                return ev
+
             if FEEDING_CHECK_RE.search(text_wo):
                 return IntentEvent(
                     type="feeding_status", confidence=0.95,
@@ -1036,6 +1064,11 @@ class IntentRouter:
 
         if event.type == "feeding_today":
             await feeding.handle_feeding_today(_intent("feeding_today", {}), {**ctx, "bot": ctx.get("bot")})
+            return
+
+        if event.type == "station_residents":
+            payload = {"station": event.station, "query": event.raw_station}
+            await _handle_station_residents(_intent("station_residents", payload), ctx)
             return
 
         if event.type == "cv_detect":

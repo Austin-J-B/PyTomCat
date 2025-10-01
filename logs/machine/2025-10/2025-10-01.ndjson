@@ -72,3 +72,12 @@
 {"event": "action", "name": "handle_misc", "trigger": "trigger=meow", "output": "meow? :3"}
 {"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 798371895434149939, "user_id": 624440365595754496, "message_id": 1422862693962088510, "has_image": false, "slots": {"cat": null, "station": "Lot 50", "dates": ["2025-10-01"]}, "decision": ["slot:stations=Lot 50", "intent:feed_update"]}
 {"event": "action", "name": "feed_update_ignored", "trigger": "station=Lot 50", "output": "channel_blocked:798371895434149939"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who feeds today", "attachments": 0}
+{"event": "intent", "kind": "feeding_today", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1422863509988839455, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": ["wake:prefix", "rule:feeding_today"]}
+{"event": "action", "name": "feeding_today", "trigger": "by=624440365595754496", "output": "sent"}

@@ -30,3 +30,22 @@
 {"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
 {"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
 {"event": "action", "name": "dues_scheduler", "trigger": "count=4", "output": "done"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who's been fed", "attachments": 0}
+{"event": "intent", "kind": "feeding_status", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1422856866731397200, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, what stations have been fed", "attachments": 0}
+{"event": "intent", "kind": "feeding_status", "confidence": 0.95, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1422856931059568672, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who lives at the grink", "attachments": 0}
+{"event": "intent", "kind": "station_residents", "confidence": 0.9, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1422856992032292937, "has_image": false, "slots": {"cat": null, "station": "The Greens", "dates": null}, "decision": ["wake:prefix", "intent:station_residents", "slot:station=The Greens"]}
+{"event": "action", "name": "station_residents", "trigger": "station=The Greens", "output": "count=7"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat, who lives near Chemistry?", "attachments": 0}
+{"event": "intent", "kind": "station_residents", "confidence": 0.9, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1422857078912974861, "has_image": false, "slots": {"cat": null, "station": "Microwave", "dates": null}, "decision": ["wake:prefix", "intent:station_residents", "slot:station=Microwave"]}
+{"event": "action", "name": "station_residents", "trigger": "station=Microwave", "output": "count=2"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat who lives by engineering", "attachments": 0}
+{"event": "intent", "kind": "station_residents", "confidence": 0.9, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1422859749384392704, "has_image": false, "slots": {"cat": null, "station": "Engineering Research Building", "dates": null}, "decision": ["wake:prefix", "intent:station_residents", "slot:station=Engineering Research Building"]}
+{"event": "action", "name": "station_residents", "trigger": "station=Engineering Research Building", "output": "count=4"}

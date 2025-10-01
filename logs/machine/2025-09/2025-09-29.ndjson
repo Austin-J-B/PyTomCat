@@ -1,0 +1,10 @@
+{"event": "action", "name": "feeding_8pm", "trigger": "unfed=9", "output": "sent"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "lemonelon_", "channel": "#feeding-team", "content": "Woah!! I only do the greens on monday ?", "attachments": 0}
+{"event": "action", "name": "feed_pending_set", "trigger": "ch=643586809166561310; user=963624067078971402", "output": "The Greens"}
+{"event": "message", "author": "lemonelon_", "channel": "#feeding-team", "content": "Or is this like a lyk u have to do it tdy bot alert", "attachments": 0}

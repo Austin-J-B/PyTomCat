@@ -821,7 +821,7 @@ async def build_8pm_lines(
         for st in fed:
             sections.append(_format_station_line(st))
     else:
-        sections.append("• none")
+        sections.append("none")
 
     sections.append("**Unfed stations**")
     if unfed:

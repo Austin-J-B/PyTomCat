@@ -460,6 +460,8 @@ def _resolve_exact_or_prefix(
 def resolve_station_or_cat(text: str, want: str, include_stopword_aliases: bool = False) -> Optional[str]:
     _refresh_dyn_aliases(force=False)
     text_norm = _normalize(text)
+    if text_norm in STOPWORDS:
+        return None
     raw_tokens = _words(text_norm)
     tokens = [tok for tok in raw_tokens if tok] if include_stopword_aliases else [tok for tok in raw_tokens if tok not in STOPWORDS]
 
@@ -516,6 +518,8 @@ def resolve_stations(text: str, *, include_stopword_aliases: bool = False) -> Li
                 break
 
     for tok in tokens:
+        if tok in STOPWORDS:
+            continue
         disp = resolve_station_or_cat(tok, "station", include_stopword_aliases=include_stopword_aliases)
         if disp and disp not in found:
             found.append(disp)
@@ -523,7 +527,9 @@ def resolve_stations(text: str, *, include_stopword_aliases: bool = False) -> Li
     if not found:
         alias_candidates = _alias_pairs(table, include_stopword_aliases=include_stopword_aliases)
         for cand in tokens:
-            if (cand in STOPWORDS or len(cand) < 4) and not include_stopword_aliases:
+            if cand in STOPWORDS:
+                continue
+            if len(cand) < 4 and not include_stopword_aliases:
                 continue
             if not cand:
                 continue

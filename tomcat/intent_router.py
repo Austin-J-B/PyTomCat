@@ -167,6 +167,8 @@ CROP_PAT   = re.compile(r"\bcrop\b", re.I)
 FEED_REQUEST_RE = re.compile(r"\b(can|could|would)\s+(someone|anyone)\s+feed\b", re.I)
 FEED_VERB = re.compile(r"\b(fed|feed(?:ed)?|filled|topped(?:\s*off)?)\b", re.I)
 SUB_VERB  = re.compile(r"\b(sub|cover|cover\s+me|can\s+someone|anyone\s+able)\b", re.I)
+# Negative phrasing like "don't feed" should not trigger a feed update
+FEED_NEGATION_RE = re.compile(r"\b(?:(?:do(?:n't|\s+not))|(?:did(?:n't|\s+not))|(?:never)|(?:cant|can't|cannot)|(?:won't)|(?:should(?:n't|\s+not))|(?:would(?:n't|\s+not))|(?:haven't)|(?:hasn't)|(?:hadn't))\s+(?:feed|fed)\b", re.I)
 # Accept patterns in feeding channels (broad but channel-gated)
 ACCEPT_PAT= re.compile(
     r"\b(" 
@@ -879,25 +881,34 @@ class IntentRouter:
         # Then feed updates
         # Case A: feed verb with possibly multiple stations
         if FEED_VERB.search(text):
-            stations = self._extract_all_entities(text, want="station", allow_stopword_aliases=True)
-            if not stations:
-                best = self._extract_best_entity(text, want="station", allow_stopword_aliases=True)
-                if best:
-                    stations = [best]
-            if stations:
-                dates = self._extract_dates(text)
-                if not dates:
-                    dates = [self._today()]
-                ev = IntentEvent(
-                    type="feed_update", confidence=0.95,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                    station=stations[0], stations=stations, dates=dates
-                )
-                trace.append(f"slot:stations={','.join(stations)}")
-                trace.append("intent:feed_update")
+            if FEED_NEGATION_RE.search(text):
+                trace.append("skip:negated_feed")
                 self._traces[row["message_id"]] = trace
-                return ev
+                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+            elif "?" in text and not has_image:
+                trace.append("skip:question_feed")
+                self._traces[row["message_id"]] = trace
+                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+            else:
+                stations = self._extract_all_entities(text, want="station", allow_stopword_aliases=True)
+                if not stations:
+                    best = self._extract_best_entity(text, want="station", allow_stopword_aliases=True)
+                    if best:
+                        stations = [best]
+                if stations:
+                    dates = self._extract_dates(text)
+                    if not dates:
+                        dates = [self._today()]
+                    ev = IntentEvent(
+                        type="feed_update", confidence=0.95,
+                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                        station=stations[0], stations=stations, dates=dates
+                    )
+                    trace.append(f"slot:stations={','.join(stations)}")
+                    trace.append("intent:feed_update")
+                    self._traces[row["message_id"]] = trace
+                    return ev
 
         # Case B: only station name(s), use image context if needed
         station_only_list = self._extract_all_entities(text, want="station")

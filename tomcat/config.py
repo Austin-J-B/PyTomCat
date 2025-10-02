@@ -116,6 +116,8 @@ class Settings:
     bot_dm_id: int | None = int(os.getenv("BOT_DM_ID", "1352882061651873863") or "0") or None
     timezone: str = os.getenv("TIMEZONE", "America/Chicago")
     channel_sheet_map: dict[int, str] = field(default_factory=_build_channel_sheet_map)
+    dm_image_tab: str = os.getenv("DM_IMAGE_TAB", "TCBPicsInput")
+    dm_image_sheet_id: str | None = os.getenv("DM_IMAGE_SHEET_ID") or None
     # Admins
     admin_ids: list[int] = field(default_factory=lambda: [
         int(x) for x in _get_env_list("ADMIN_IDS") if x.strip().lstrip("-").isdigit()

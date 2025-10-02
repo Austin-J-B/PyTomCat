@@ -693,22 +693,6 @@ async def _sleep_until_local_time(hour: int, minute: int):
 
 async def _run_8pm_check(bot: discord.Client) -> None:
     """Build and send the 8PM summary of remaining feed duties."""
-    # compute unfed stations from sheet
-    unfed = await _list_unfed_stations_today()
-    if not unfed:
-        log_action("feeding_8pm", "unfed=0", "nothing_to_ping")
-        return
-
-    # choose who to ping: subs first, else default schedule
-    today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
-    weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
-    sched = _read_schedule_for_weekday(weekday)
-
-    # (optional) validation of station names deferred by request
-
-    # Build a message that pings the right people
-    lines = await build_8pm_lines(bot, unfed=unfed, sched=sched, mention=True)
-
     # Use feeding team channel for alerts
     channel_id = getattr(settings, "ch_feeding_team", None)
     if not channel_id:
@@ -720,13 +704,32 @@ async def _run_8pm_check(bot: discord.Client) -> None:
         log_action("feeding_8pm", f"channel={channel_id}", "not_found")
         return
 
-    msg = lines
+    unfed = await _list_unfed_stations_today()
     from discord.abc import Messageable
-    from ..utils.sender import safe_send
+
+    if not unfed:
+        msg = "All stations have been fed! Yippee!!!"
+        try:
+            if isinstance(ch, Messageable):
+                await safe_send(ch, msg)
+                log_action("feeding_8pm", "unfed=0", "celebrated")
+            else:
+                log_action("feeding_8pm", f"channel={channel_id}; type={type(ch).__name__}", "not_messageable")
+        except Exception as e:
+            log_action("feeding_8pm_error", "unfed=0", str(e))
+        return
+
+    # choose who to ping: subs first, else default schedule
+    today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
+    weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
+    sched = _read_schedule_for_weekday(weekday)
+
+    # Build a message that pings the right people
+    lines = await build_8pm_lines(bot, unfed=unfed, sched=sched, mention=True)
 
     try:
         if isinstance(ch, Messageable):
-            await safe_send(ch, msg)  # silent mode respected here
+            await safe_send(ch, lines)  # silent mode respected here
             log_action("feeding_8pm", f"unfed={len(unfed)}", "sent")
         else:
             log_action("feeding_8pm", f"channel={channel_id}; type={type(ch).__name__}", "not_messageable")

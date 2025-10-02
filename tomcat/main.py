@@ -317,10 +317,13 @@ async def on_message(message: discord.Message):
         except Exception:
             pass
         return
-    # Channel → Sheet image intake (unprompted, only in mapped channels)
+    # Channel/DM → Sheet image intake
     try:
-        if getattr(message, "attachments", None) and settings.channel_sheet_map and int(message.channel.id) in settings.channel_sheet_map:
-            await _handle_image_intake(message)
+        if getattr(message, "attachments", None):
+            in_map = settings.channel_sheet_map and int(getattr(message.channel, "id", 0) or 0) in settings.channel_sheet_map
+            is_dm = getattr(message, "guild", None) is None
+            if in_map or is_dm:
+                await _handle_image_intake(message)
     except Exception as e:
         log_action("image_intake_error", f"channel={getattr(message.channel,'id','?')}", str(e))
 

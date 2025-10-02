@@ -62,28 +62,28 @@ async def _profiles_channel(message: discord.Message, ctx: Dict[str, Any]) -> Me
                     break
     return ch if isinstance(ch, Messageable) else None
 
-def _open_ws(worksheet_title: str):
-    """Open a worksheet by title, preferring the Vision sheet but falling back to Catabase.
-    This helps when a tab like TCBPicsInput lives under Catabase, not Vision.
-    """
+def _open_ws(worksheet_title: str, *, preferred_sheet_id: str | None = None):
+    """Open a worksheet by title, checking an optional preferred spreadsheet first."""
     gc = sheets_client()
-    # Try Vision/Aux first
-    sh_id = settings.sheet_vision_id or settings.aux_spreadsheet_id
-    if sh_id:
+    tried: set[str] = set()
+
+    candidates = []
+    if preferred_sheet_id:
+        candidates.append(preferred_sheet_id)
+    for sid in [settings.sheet_vision_id or settings.aux_spreadsheet_id,
+                settings.sheet_catabase_id or settings.cat_spreadsheet_id]:
+        if sid and sid not in candidates:
+            candidates.append(sid)
+
+    for sid in candidates:
+        if not sid or sid in tried:
+            continue
+        tried.add(sid)
         try:
-            sh = gc.open_by_key(sh_id)
+            sh = gc.open_by_key(sid)
             return sh.worksheet(worksheet_title)
         except Exception:
-            pass
-    # Fallback to Catabase
-    cat_id = settings.sheet_catabase_id or settings.cat_spreadsheet_id
-    if cat_id:
-        try:
-            sh2 = gc.open_by_key(cat_id)
-            return sh2.worksheet(worksheet_title)
-        except Exception:
-            pass
-    log_action("image_intake_error", f"tab={worksheet_title}", "no_worksheet")
+            continue
     return None
 
 
@@ -303,9 +303,25 @@ async def start_profile_scheduler(bot):
             log_action("profiles_scheduler_error", "", str(e))
 
 async def handle_channel_image_intake(message: discord.Message) -> None:
-    """Log attachments dropped into intake channels to the right Sheets tab."""
+    """Log attachments dropped into intake channels (or DMs) to the right Sheets tab."""
     ch_id = getattr(message.channel, "id", None)
-    tab = settings.channel_sheet_map.get(int(ch_id)) if ch_id else None
+    sheet_override: str | None = None
+    tab = None
+    if ch_id is not None and int(ch_id) in settings.channel_sheet_map:
+        tab = settings.channel_sheet_map.get(int(ch_id))
+
+    is_dm = getattr(message, "guild", None) is None
+    if not tab and is_dm:
+        tab = settings.dm_image_tab or next(iter(settings.channel_sheet_map.values()), None)
+        sheet_override = settings.dm_image_sheet_id
+
+    if isinstance(tab, str) and "::" in tab:
+        sheet_override, tab = [s.strip() for s in tab.split("::", 1)]
+        sheet_override = sheet_override or None
+
+    if tab == "TCBPicsInput" and not sheet_override:
+        sheet_override = settings.sheet_catabase_id or settings.cat_spreadsheet_id or sheet_override
+
     if not tab:
         return
     images = [a for a in (message.attachments or []) if (a.content_type or "").startswith("image/")]
@@ -313,27 +329,26 @@ async def handle_channel_image_intake(message: discord.Message) -> None:
         return
 
     try:
-        ws = _open_ws(tab)
+        ws = _open_ws(tab, preferred_sheet_id=sheet_override)
         if ws is None:
-            log_action("image_intake_error", f"channel={ch_id}", "no_worksheet")
+            meta = f"no_worksheet tab={tab}"
+            if sheet_override:
+                meta += f" sheet={sheet_override}"
+            log_action("image_intake_error", f"channel={ch_id or 'dm'}", meta)
             return
         # Per spec: Column A = direct media link, B = username (the @name), C = timestamp (UTC Z)
         username = getattr(message.author, 'name', 'user')
         tsz = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00","Z")
-        rows = [[
-            att.url,
-            username,
-            tsz,
-        ] for att in images]
+        rows = [[att.url, username, tsz] for att in images]
         # Force append into columns A:C so values do not drift to F:H when prior columns have formatting
         ws.append_rows(
             rows,
             value_input_option=cast(Any, "USER_ENTERED"),
             table_range="A:C",
         )
-        log_action("image_intake", f"channel={ch_id}", f"rows={len(rows)}")
+        log_action("image_intake", f"channel={ch_id or 'dm'}", f"rows={len(rows)}")
     except Exception as e:
-        log_action("image_intake_error", f"channel={ch_id}", str(e))
+        log_action("image_intake_error", f"channel={ch_id or 'dm'}", str(e))
 
 
 

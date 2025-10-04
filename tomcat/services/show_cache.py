@@ -112,7 +112,12 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
             rows = _RECENTPICS_ROWS
         if rows is None:
             gc = sheets_client()
-            ws = gc.open_by_key(settings.sheet_vision_id).worksheet("RecentPics")
+            # Guard against missing configuration which static checkers warn about
+            sv_id: str = getattr(settings, 'sheet_vision_id', None) or ""
+            if not sv_id:
+                log_action('show_cache_sheet_missing', 'sheet_vision_id', str(getattr(settings, 'sheet_vision_id', None)))
+                return []
+            ws = gc.open_by_key(sv_id).worksheet("RecentPics")
             rows = ws.get_all_values()
             _set_recentpics_rows(rows)
         if not rows:
@@ -203,7 +208,8 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
     total = len(existing)
     # Reuse a single HTTP session for downloads to cut overhead
     timeout = aiohttp.ClientTimeout(total=8.0)
-    async with aiohttp.ClientSession(timeout=timeout) as sess:
+    headers = {"User-Agent": "TomCatShowCache/1.0 (+https://example.invalid)"}
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as sess:
       for url, serial, reverse_index, total_available in pairs:
         if total >= min_count:
             break
@@ -212,12 +218,19 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
             continue
         # Download with shared session
         raw = None
-        try:
-            async with sess.get(url) as resp:
-                resp.raise_for_status()
-                raw = await resp.read()
-        except Exception:
-            raw = None
+        # Try a couple of times to download; some hosts are flaky
+        for attempt in range(1, 4):
+            try:
+                async with sess.get(url) as resp:
+                    resp.raise_for_status()
+                    raw = await resp.read()
+                if raw:
+                    log_action('show_cache_download_ok', url, f"sn={sn} attempt={attempt} size={len(raw)}")
+                    break
+            except Exception as e:
+                log_action('show_cache_download_fail', url, f"sn={sn} attempt={attempt} err={type(e).__name__}:{e}")
+                raw = None
+                await asyncio.sleep(0.15 * attempt)
         if not raw:
             continue
         # Optional crop during fill
@@ -384,7 +397,11 @@ async def warm_cache_on_boot() -> None:
         return
     try:
         gc = sheets_client()
-        ws = gc.open_by_key(settings.sheet_vision_id).worksheet("RecentPics")
+        sv_id: str = getattr(settings, 'sheet_vision_id', None) or ""
+        if not sv_id:
+            log_action('show_cache_warm_error', 'sheet_missing', str(getattr(settings, 'sheet_vision_id', None)))
+            return
+        ws = gc.open_by_key(sv_id).worksheet("RecentPics")
         rows = ws.get_all_values()
     except Exception as e:
         log_action('show_cache_warm_error', 'sheet', str(e))

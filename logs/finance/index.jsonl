@@ -241,3 +241,12 @@
 {"email_id": "1998db76aa3e14ab", "status": "unsupported", "subject": "[Campus Cat Coalition] You've got a new subscriber!", "ts": "2025-09-28T01:34:59.050070+00:00"}
 {"email_id": "199a152ad30b4577", "status": "unsupported", "subject": "Pay over time terms changing", "ts": "2025-10-01T20:34:00.685017+00:00"}
 {"email_id": "199a24cacaa47478", "status": "unsupported", "subject": "[Campus Cat Coalition] You've got a new subscriber!", "ts": "2025-10-02T00:34:05.518281+00:00"}
+{"email_id": "199aaa4765cbba32", "status": "unsupported", "subject": "Twilight needs a loving home", "ts": "2025-10-03T17:48:12.875137+00:00"}
+{"email_id": "199aaa5145818b25", "status": "unsupported", "subject": "Re: Thank you for reaching out! [This is an automated message] Re: Twilight needs a loving home", "ts": "2025-10-03T17:48:12.875137+00:00"}
+{"email_id": "199aaec8f528cbb5", "status": "unsupported", "subject": "Automatic reply to PayPal email", "ts": "2025-10-03T17:48:12.875137+00:00"}
+{"email_id": "199ab7a8486d8dfe", "status": "unsupported", "subject": "Your September statements", "ts": "2025-10-03T21:49:08.559288+00:00"}
+{"email_id": "199abbb2628fd1ff", "status": "unsupported", "subject": "Orange Short Hair Tabby", "ts": "2025-10-03T21:49:08.559288+00:00"}
+{"email_id": "199ac091457fa8b1", "status": "unsupported", "subject": "Re: Questions regarding bulk orders of stickers and t-shirts", "ts": "2025-10-03T21:49:08.559288+00:00"}
+{"email_id": "199aaec82401cdf7", "status": "income", "category": "Donations", "amount": 6.0, "fingerprint": "income|2025-10-03|6.00|kris mason||paypal", "ts": "2025-10-03T21:49:11.602524+00:00"}
+{"email_id": "199aaf09cb01e81d", "status": "income", "category": "Donations", "amount": 3.0, "fingerprint": "income|2025-10-03|3.00|emily robinson||venmo", "ts": "2025-10-03T21:49:11.819141+00:00"}
+{"email_id": "199ab7ebb4abf6ac", "status": "income", "category": "Donations", "amount": 49.0, "fingerprint": "income|2025-10-03|49.00|megan digiovanni||venmo", "ts": "2025-10-03T21:49:11.997376+00:00"}

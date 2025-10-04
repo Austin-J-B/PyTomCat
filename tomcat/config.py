@@ -200,7 +200,8 @@ class Settings:
     # Show-photo cache (for fast "show me" responses)
     show_cache_dir: str = os.getenv("SHOW_CACHE_DIR", "./cache/show_photos")
     show_cache_per_cat: int = int(os.getenv("SHOW_CACHE_PER_CAT", "5") or "5")
-    show_cache_prefill_on_boot: bool = _get_env_bool("SHOW_CACHE_PREFILL_ON_BOOT", True)
+    # Disable warm-on-boot by default so caches only fill on demand or on admin recache
+    show_cache_prefill_on_boot: bool = _get_env_bool("SHOW_CACHE_PREFILL_ON_BOOT", False)
     show_cache_warm_concurrency: int = int(os.getenv("SHOW_CACHE_WARM_CONCURRENCY", "2") or "2")
     show_cache_warm_limit: int = int(os.getenv("SHOW_CACHE_WARM_LIMIT", "0") or "0")  # 0 = all
     # Optional: downscale/compress cached JPEGs to speed sending (0 disables)

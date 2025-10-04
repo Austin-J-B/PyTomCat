@@ -91,12 +91,30 @@ def _ensure_classifier() -> None:
     try:
         ckpt_path = settings.cv_classify_weights
         if not ckpt_path or not os.path.exists(ckpt_path):
+            log_action('viz_clf_load_info', 'path_missing', str(ckpt_path))
             return  # classifier is optional
+        # Try loading to the chosen device; if that fails, try CPU as a fallback and log details
+        last_exc = None
         try:
-            state = torch.load(ckpt_path, map_location=_device, weights_only=True)  # torch>=2.4
-        except TypeError:
-            # Older torch without weights_only
-            state = torch.load(ckpt_path, map_location=_device)
+            try:
+                state = torch.load(ckpt_path, map_location=_device, weights_only=True)  # torch>=2.4
+            except TypeError:
+                state = torch.load(ckpt_path, map_location=_device)
+        except Exception as e:
+            last_exc = e
+            log_action('viz_clf_load_warn', 'load_device_failed', f"dev={_device} err={type(e).__name__}:{e}")
+            # Try CPU fallback
+            try:
+                cpu_dev = torch.device('cpu')
+                try:
+                    state = torch.load(ckpt_path, map_location=cpu_dev, weights_only=True)
+                except TypeError:
+                    state = torch.load(ckpt_path, map_location=cpu_dev)
+                log_action('viz_clf_load_info', 'cpu_fallback', f"loaded_to_cpu from {ckpt_path}")
+                # Ensure model will be moved to the intended device later
+            except Exception as e2:
+                log_action('viz_clf_load_error', 'cpu_fallback_failed', f"{type(e2).__name__}:{e2}")
+                raise last_exc or e2
 
         # Infer num_classes from checkpoint if possible
         sd = state.get("state_dict", state) if isinstance(state, dict) else state

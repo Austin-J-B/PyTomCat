@@ -166,7 +166,7 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
             idx = r["index"]
             lines.append(f"{idx}. **{name}** ({conf*100:.1f}%)")
 
-        desc = ("".join(lines) if lines else "_no classifier configured_")
+        desc = ("".join(lines) if lines else "_no cat detected_")
         emb = discord.Embed(
             description=desc,
             color=0x2F3136

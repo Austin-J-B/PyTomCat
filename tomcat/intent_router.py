@@ -43,6 +43,7 @@ from .handlers.misc import (
     handle_profiles_update_all,
 )
 from .handlers.dues import handle_check_last_email
+from .handlers.finance import handle_log_recent_finances
 from .handlers.stations import handle_station_residents as _handle_station_residents
 
 # ---- Aliases and optional NLP ------------------------------------------------
@@ -164,9 +165,9 @@ IDENT_PAT= re.compile(r"\b(identify|id|classify|classification)\b", re.I)
 DETECT_PAT = re.compile(r"\bdetect\b", re.I)
 CROP_PAT   = re.compile(r"\bcrop\b", re.I)
 
-FEED_REQUEST_RE = re.compile(r"\b(can|could|would)\s+(someone|anyone)\s+feed\b", re.I)
-FEED_VERB = re.compile(r"\b(fed|feed(?:ed)?|filled|topped(?:\s*off)?)\b", re.I)
-SUB_VERB  = re.compile(r"\b(sub|cover|cover\s+me|can\s+someone|anyone\s+able)\b", re.I)
+FEED_REQUEST_RE = re.compile(r"\b(can|could|would)\s+(?:someone|somebody|anyone|anybody|smb|sb|some1)\s+(?:feed|cover|take)\b", re.I)
+FEED_VERB = re.compile(r"\b(fed|fill(?:ed)?|filled|topped(?:\s*off)?)\b", re.I)
+SUB_VERB  = re.compile(r"\b(sub|cover|cover\s+me|can\s+(?:someone|somebody|anyone|anybody|smb|sb|some1)|anyone\s+able|can\s+u|can\s+ya)\b", re.I)
 # Negative phrasing like "don't feed" should not trigger a feed update
 FEED_NEGATION_RE = re.compile(r"\b(?:(?:do(?:n't|\s+not))|(?:did(?:n't|\s+not))|(?:never)|(?:cant|can't|cannot)|(?:won't)|(?:should(?:n't|\s+not))|(?:would(?:n't|\s+not))|(?:haven't)|(?:hasn't)|(?:hadn't))\s+(?:feed|fed)\b", re.I)
 # Accept patterns in feeding channels (broad but channel-gated)
@@ -193,9 +194,11 @@ WHO_THIS_RE = re.compile(r"(?:^|\b)(?:who(?:'s|\s+is)|what(?:'s|\s+is))\s+(?:thi
 FEEDING_UPDATE_RE = re.compile(r"^feeding\s+update\s*$", re.I)
 MANUAL_8PM_RE = re.compile(r"(?:manual\s+8\s*pm\s+update|preview\s+8\s*pm)", re.I)
 FEEDING_WHO_TODAY_RE = re.compile(r"who(?:'s|\s+is)?\s+(?:feeding|feeds?)\s+(?:today|tonight)", re.I)
+FEEDING_WHO_ANY_RE = re.compile(r"who(?:'s|\s+is)?\s+(?:feeding|feeds?)", re.I)
 CHECK_LAST_EMAIL_RE = re.compile(r"\bcheck\s+(?:the\s+)?last\s+email\b", re.I)
 AUTH_CODE_RE = re.compile(r"\bauth\s+(?:code|url)\s+(.+)$", re.I)
 LOG_PAST_EMAILS_RE = re.compile(r"\blog(?:\s+the)?\s+past\s+(\d+)\s+emails\b", re.I)
+LOG_LAST_FINANCES_RE = re.compile(r"\blog(?:\s+the)?\s+last\s+(\d+)\s+finances\b", re.I)
 DUE_CHECK_RE = re.compile(r"\bcheck\s+due\s+payments\b", re.I)
 EXPORT_DUES_RE = re.compile(r"\bexport\s+due(?:s)?\s+portal\b", re.I)
 DUES_PERKS_RE = re.compile(r"\brun\s+dues\s+perks\b", re.I)
@@ -208,6 +211,21 @@ REMOVE_ROLE_RE = re.compile(r"\b(?:remove|clear|strip)\s+(?:the\s+)?role\s+(\d{5
 CREATE_PROFILES_RE = re.compile(r"^create\s+profiles?\s+(\d+)(?:\s+through\s+(\d+))?$", re.I)
 UPDATE_PROFILE_RE  = re.compile(r"^update\s+profile\s+(\d+)$", re.I)
 UPDATE_ALL_PROFILES_RE = re.compile(r"^update\s+all\s+profiles$", re.I)
+
+MONTH_NAME_MAP = {
+    "jan": 1, "january": 1,
+    "feb": 2, "february": 2,
+    "mar": 3, "march": 3,
+    "apr": 4, "april": 4,
+    "may": 5,
+    "jun": 6, "june": 6,
+    "jul": 7, "july": 7,
+    "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10,
+    "nov": 11, "november": 11,
+    "dec": 12, "december": 12,
+}
 
 
 
@@ -479,6 +497,21 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
+            # Admin-only: "log last N finances"
+            m_fin = LOG_LAST_FINANCES_RE.search(text_wo)
+            if m_fin:
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return IntentEvent(
+                    type="finance_log_recent", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+
             m_auth = AUTH_CODE_RE.search(text_wo)
             if m_auth:
                 author = message.author
@@ -631,6 +664,19 @@ class IntentRouter:
                 trace.append("rule:feeding_today")
                 self._traces[row["message_id"]] = trace
                 return ev
+
+            if FEEDING_WHO_ANY_RE.search(text_wo):
+                target_iso = self._parse_schedule_date(text_wo)
+                if target_iso:
+                    ev = IntentEvent(
+                        type="feeding_schedule", confidence=0.9,
+                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                        dates=[target_iso]
+                    )
+                    trace.append(f"rule:feeding_schedule={target_iso}")
+                    self._traces[row["message_id"]] = trace
+                    return ev
 
             # Admin-only manual 8pm preview
             if MANUAL_8PM_RE.search(text_wo):
@@ -1077,6 +1123,11 @@ class IntentRouter:
             await feeding.handle_feeding_today(_intent("feeding_today", {}), {**ctx, "bot": ctx.get("bot")})
             return
 
+        if event.type == "feeding_schedule":
+            target_iso = event.dates[0] if event.dates else None
+            await feeding.handle_feeding_schedule(_intent("feeding_schedule", {"date": target_iso}), {**ctx, "bot": ctx.get("bot")})
+            return
+
         if event.type == "station_residents":
             payload = {"station": event.station, "query": event.raw_station}
             await _handle_station_residents(_intent("station_residents", payload), ctx)
@@ -1125,6 +1176,25 @@ class IntentRouter:
             except Exception:
                 pass
             return
+
+        if event.type == "finance_log_recent":
+            try:
+                log_action("intent_dispatch", f"type=finance_log_recent msg={event.message_id}", "begin")
+            except Exception:
+                pass
+            text_wo = self._strip_wake_tokens((event.text or ""), message)
+            m = LOG_LAST_FINANCES_RE.search(text_wo)
+            try:
+                count = int(m.group(1)) if m else 10
+            except Exception:
+                count = 10
+            await handle_log_recent_finances(_intent("finance_log_recent", {"count": count}), ctx)
+            try:
+                log_action("intent_dispatch", f"type=finance_log_recent msg={event.message_id}", f"done count={count}")
+            except Exception:
+                pass
+            return
+
 
         if event.type == "dues_check":
             from .handlers.dues import handle_check_dues
@@ -1443,6 +1513,133 @@ class IntentRouter:
         iso = sorted({d.isoformat() for d in out})
         return iso
 
+    def _parse_schedule_date(self, text: str) -> Optional[str]:
+        if not FEEDING_WHO_ANY_RE.search(text):
+            return None
+        text_low = text.lower()
+        m = re.search(r"who(?:'s|\s+is)?\s+(?:feeding|feeds?)\s*(.*)", text_low)
+        if not m:
+            return None
+        fragment = m.group(1).strip()
+        fragment = fragment.strip("?!., ")
+        today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
+
+        if not fragment:
+            return None
+
+        # Helpful reductions
+        def _strip_prefixes(frag: str) -> str:
+            changed = True
+            frag = frag.strip()
+            while changed and frag:
+                changed = False
+                for prefix in ("on ", "for ", "at ", "the "):
+                    if frag.startswith(prefix):
+                        frag = frag[len(prefix):].lstrip()
+                        changed = True
+            return frag
+
+        fragment = _strip_prefixes(fragment)
+        fragment = fragment.strip()
+
+        if not fragment:
+            return None
+
+        # Specific keywords
+        if "day after tomorrow" in fragment:
+            return (today + timedelta(days=2)).isoformat()
+        if "tomorrow" in fragment:
+            return (today + timedelta(days=1)).isoformat()
+        if fragment in {"today", "tonight"}:
+            return today.isoformat()
+
+        # Relative days/weeks
+        m_rel = re.search(r"in\s+(a|one|\d+)\s+day(?:s)?", fragment)
+        if m_rel:
+            count = m_rel.group(1)
+            days = 1 if count in {"a", "one"} else int(count)
+            return (today + timedelta(days=days)).isoformat()
+        m_week = re.search(r"in\s+(a|one|\d+)\s+week(?:s)?", fragment)
+        if m_week:
+            count = m_week.group(1)
+            weeks = 1 if count in {"a", "one"} else int(count)
+            return (today + timedelta(days=weeks * 7)).isoformat()
+
+        # ISO date yyyy-mm-dd
+        match_iso = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", text_low)
+        if match_iso:
+            try:
+                return datetime.fromisoformat(match_iso.group(1)).date().isoformat()
+            except Exception:
+                pass
+
+        # Month/day[/year]
+        match_md = re.search(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b", fragment)
+        if match_md:
+            month = int(match_md.group(1))
+            day = int(match_md.group(2))
+            year = today.year
+            if match_md.group(3):
+                y = match_md.group(3)
+                year = int(y) if len(y) == 4 else 2000 + int(y)
+            try:
+                candidate = date(year, month, day)
+            except ValueError:
+                candidate = None
+            if candidate:
+                if not match_md.group(3) and candidate < today:
+                    candidate = date(year + 1, month, day)
+                return candidate.isoformat()
+
+        # Month name with ordinal/day
+        match_month = re.search(r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,\s*(\d{4}))?\b", text_low)
+        if match_month:
+            month_token = match_month.group(1)
+            day = int(match_month.group(2))
+            year = today.year
+            if match_month.group(3):
+                year = int(match_month.group(3))
+            month = MONTH_NAME_MAP.get(month_token[:3], 0)
+            try:
+                candidate = date(year, month, day)
+            except ValueError:
+                candidate = None
+            if candidate:
+                if not match_month.group(3) and candidate < today:
+                    candidate = date(year + 1, month, day)
+                return candidate.isoformat()
+
+        # Ordinal day like "15th"
+        match_ord = re.search(r"\b(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b", fragment)
+        if match_ord:
+            day = int(match_ord.group(1))
+            year = today.year
+            month = today.month
+            for _ in range(24):  # cap iterations
+                try:
+                    candidate = date(year, month, day)
+                except ValueError:
+                    year, month = self._advance_month(year, month)
+                    continue
+                if candidate < today:
+                    year, month = self._advance_month(year, month)
+                    continue
+                return candidate.isoformat()
+
+        # Weekday names
+        match_wd = re.search(r"\b((?:this|next)\s+)?(mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b", fragment)
+        if match_wd:
+            modifier = (match_wd.group(1) or '').strip()
+            token = match_wd.group(2)[:3]
+            idx = WEEKDAYS.get(token)
+            if idx is not None:
+                base = self._next_weekday(today, idx)
+                if modifier == 'next':
+                    base = self._next_weekday(base, idx)
+                return base.isoformat()
+
+        return None
+
     def _next_weekday(self, today: date, tgt: int) -> date:
         days_ahead = (tgt - today.weekday() + 7) % 7
         days_ahead = 7 if days_ahead == 0 else days_ahead  # always next occurrence
@@ -1452,6 +1649,13 @@ class IntentRouter:
         days_back = (today.weekday() - tgt + 7) % 7
         days_back = 7 if days_back == 0 else days_back
         return today - timedelta(days=days_back)
+
+    def _advance_month(self, year: int, month: int) -> Tuple[int, int]:
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+        return year, month
 
     # ---------- pending FEED helpers ----------
     def _set_pending_feed(self, channel_id: int, user_id: int, stations: List[str], message_id: int) -> None:

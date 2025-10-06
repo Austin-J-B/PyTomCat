@@ -290,6 +290,28 @@ def _resolve_user_ids(names: List[str]) -> List[int]:
             continue
     return ids
 
+
+def _format_user(bot: Optional[discord.Client], uid: int, mention: bool) -> str:
+    if mention:
+        return f"<@{uid}>"
+    name = None
+    if bot:
+        user = bot.get_user(uid)
+        if user:
+            name = getattr(user, "global_name", None) or getattr(user, "display_name", None) or getattr(user, "name", None)
+    if not name:
+        lookup = getattr(settings, "user_id_map", {}) or {}
+        for disp, mapped in lookup.items():
+            try:
+                if int(mapped) == int(uid):
+                    name = disp
+                    break
+            except Exception:
+                continue
+    if not name:
+        name = str(uid)
+    return str(name)
+
 def _read_schedule_for_weekday(weekday_name: str) -> Dict[str, List[int]]:
     """Read schedule from settings.feeding_schedule in station→7-day format.
     Expected format in config:
@@ -760,27 +782,6 @@ async def build_8pm_lines(
             subs.extend(rows)
     today_iso = today.isoformat()
 
-    def _fmt(uid: int) -> str:
-        if mention:
-            return f"<@{uid}>"
-        name = None
-        if bot:
-            u = bot.get_user(uid)
-            if u:
-                name = getattr(u, "global_name", None) or getattr(u, "display_name", None) or getattr(u, "name", None)
-        if not name:
-            try:
-                lookup = getattr(settings, "user_id_map", {}) or {}
-                for disp, mapped in lookup.items():
-                    if int(mapped) == int(uid):
-                        name = disp
-                        break
-            except Exception:
-                pass
-        if not name:
-            name = str(uid)
-        return str(name)
-
     sched = sched or {}
 
     def _assignees_for(station: str) -> List[int]:
@@ -798,7 +799,7 @@ async def build_8pm_lines(
     def _format_station_line(station: str) -> str:
         assignees = _assignees_for(station)
         if assignees:
-            roster = " ".join(_fmt(uid) for uid in assignees)
+            roster = " ".join(_format_user(bot, uid, mention) for uid in assignees)
         else:
             roster = "Unassigned."
         return f"• **{station}** → {roster}"
@@ -835,6 +836,72 @@ async def build_8pm_lines(
 
     return "\n".join(sections)
 
+
+async def build_schedule_for_date(
+    bot: Optional[discord.Client],
+    target_date: date,
+    *,
+    mention: bool = False,
+) -> str:
+    weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][target_date.weekday()]
+    sched = _read_schedule_for_weekday(weekday) or {}
+
+    target_dt = datetime.combine(target_date, datetime.min.time())
+    target_key = _sub_month_key_from_datetime(target_dt)
+    month_keys = list(dict.fromkeys(_recent_month_keys() + ([target_key] if target_key else [])))
+
+    async with _SUBS_LOCK:
+        files = _load_sub_files(month_keys, include_legacy=os.path.exists(SUBS_LEGACY_FILE))
+        subs: List[dict] = []
+        for _, rows in files:
+            subs.extend(rows)
+
+    target_iso = target_date.isoformat()
+    accepted: Dict[str, int] = {}
+    for rec in reversed(subs):
+        if rec.get("status") != "accepted":
+            continue
+        dates = _normalize_dates(rec.get("dates") or [])
+        if target_iso not in dates:
+            continue
+        station = _canonical_station(rec.get("station")) or rec.get("station")
+        assignee = rec.get("assignee")
+        if station and isinstance(assignee, int) and station not in accepted:
+            accepted[station] = assignee
+
+    stations: List[str] = list(sched.keys())
+    for st in accepted.keys():
+        if st not in stations:
+            stations.append(st)
+
+    header = target_date.strftime("%A, %B %d, %Y").replace(" 0", " ")
+    lines: List[str] = [f"**Feeding schedule for {header}**"]
+
+    if not stations:
+        lines.append("No schedule configured.")
+        return "\n".join(lines)
+
+    for station in stations:
+        default_ids = sched.get(station, []) or []
+        sub_uid = accepted.get(station)
+        base_names = [_format_user(bot, uid, mention) for uid in default_ids]
+        if sub_uid:
+            sub_name = _format_user(bot, sub_uid, mention)
+            if default_ids and sub_uid not in default_ids and base_names:
+                roster_text = f"{sub_name} (covering {' '.join(base_names)})"
+            elif default_ids and sub_uid in default_ids:
+                roster_text = f"{sub_name}"
+            else:
+                roster_text = f"{sub_name} (sub)"
+        else:
+            if base_names:
+                roster_text = " ".join(base_names)
+            else:
+                roster_text = "Unassigned."
+        lines.append(f"• **{station}** → {roster_text}")
+
+    return "\n".join(lines)
+
 async def handle_manual_8pm_preview(intent, ctx: Dict[str, Any]) -> None:
     """Admin-only: post a dry-run of the 8pm message to the current channel (no pings)."""
     author = ctx["author"]
@@ -856,3 +923,23 @@ async def handle_feeding_today(intent, ctx: Dict[str, Any]) -> None:
     author = ctx.get("author")
     uid = int(getattr(author, 'id', 0)) if author else 0
     log_action("feeding_today", f"by={uid}", "sent")
+
+
+async def handle_feeding_schedule(intent, ctx: Dict[str, Any]) -> None:
+    ch = ctx.get("channel")
+    bot = ctx.get("bot")
+    data = intent.data if intent else {}
+    iso = data.get("date") or (data.get("dates") or [None])[0]
+    if not iso:
+        await safe_send(ch, "I couldn't understand that date.")
+        return
+    try:
+        target_date = datetime.fromisoformat(str(iso)).date()
+    except Exception:
+        await safe_send(ch, "I couldn't understand that date.")
+        return
+    lines = await build_schedule_for_date(bot, target_date, mention=False)
+    await safe_send(ch, lines)
+    author = ctx.get("author")
+    uid = int(getattr(author, 'id', 0)) if author else 0
+    log_action("feeding_schedule", f"by={uid}", f"date={target_date.isoformat()}")

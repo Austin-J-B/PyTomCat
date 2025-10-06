@@ -1,0 +1,550 @@
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Meow", "attachments": 0}
+{"event": "action", "name": "handle_misc", "trigger": "trigger=Meow", "output": "MEOW MEOW!"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat run dues perks", "attachments": 0}
+{"event": "intent", "kind": "dues_perks", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424624608778125373, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
+{"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, update due paying members", "attachments": 0}
+{"event": "intent", "kind": "dues_update", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424624712763576460, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log the past 250 emails", "attachments": 0}
+{"event": "intent", "kind": "gmail_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424626046346723418, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=gmail_log_recent msg=1424626046346723418", "output": "begin"}
+{"event": "action", "name": "gmail_log_manual_begin", "trigger": "req=250", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "gmail_log_manual_react", "trigger": "msg=1424626046346723418", "output": "+1"}
+{"event": "action", "name": "gmail_log_manual_lock", "trigger": "req=250", "output": "acquired"}
+{"event": "action", "name": "gmail_log_manual_list", "trigger": "req=250", "output": "found=250"}
+{"event": "action", "name": "gmail_log_manual", "trigger": "req=250", "output": "logged=176; skipped=0"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Isabella Klein $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Austin Brown $25.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kylie Crook $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Isabella Klein $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jenny Nguyen $10.00 on 2025-09-03"}
+{"event": "reaction_remove", "user": "unknown", "channel": "#thomas-cat-sandbox", "message_id": 1424626046346723418, "emoji": "👍", "message_preview": "Tomcat log the past 250 emails", "message_author": "austinbaustinb"}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=gmail_log_recent msg=1424626046346723418", "output": "done count=250"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log the past 500 emails", "attachments": 0}
+{"event": "intent", "kind": "gmail_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424626594382745621, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=gmail_log_recent msg=1424626594382745621", "output": "begin"}
+{"event": "action", "name": "gmail_log_manual_begin", "trigger": "req=500", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "gmail_log_manual_react", "trigger": "msg=1424626594382745621", "output": "+1"}
+{"event": "action", "name": "gmail_log_manual_lock", "trigger": "req=500", "output": "acquired"}
+{"event": "action", "name": "gmail_log_manual_list", "trigger": "req=500", "output": "found=500"}
+{"event": "action", "name": "gmail_log_manual", "trigger": "req=500", "output": "logged=250; skipped=0"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Isabella Klein $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Cynthia griffith $10.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Caleb Moran $4.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Alberto $6.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $3.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "tay $5.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maria Olds $10.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Mario Rodriguez $3.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Elisha Taylor $5.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $3.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Isabella Klein $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kylie Crook $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jenny Nguyen $10.00 on 2025-09-03"}
+{"event": "reaction_remove", "user": "unknown", "channel": "#thomas-cat-sandbox", "message_id": 1424626594382745621, "emoji": "👍", "message_preview": "Tomcat log the past 500 emails", "message_author": "austinbaustinb"}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=gmail_log_recent msg=1424626594382745621", "output": "done count=500"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, update due paying members", "attachments": 0}
+{"event": "intent", "kind": "dues_update", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424627392680300554, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
+{"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "message", "author": ".bettercalljack", "channel": "#yapper-committee", "content": "😭", "attachments": 0}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, update due paying members", "attachments": 0}
+{"event": "intent", "kind": "dues_update", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424628394066182175, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
+{"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "reaction_add", "user": ".s3j", "channel": "#yapper-committee", "message_id": 1424612319257821185, "emoji": "😭", "message_preview": "btw this was arlington halls compensatio...", "message_author": "racerdg"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, update due paying members", "attachments": 0}
+{"event": "intent", "kind": "dues_update", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424629953261207663, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
+{"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_update_perks_error", "trigger": "", "output": "'bool' object has no attribute 'strip'"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, update due paying members", "attachments": 0}
+{"event": "intent", "kind": "dues_update", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424631432441102478, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
+{"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_update_perks_error", "trigger": "", "output": "'bool' object has no attribute 'strip'"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#camera-roll", "content": "verizon trade in number: #b3dc76888ed9", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, update due paying members", "attachments": 0}
+{"event": "intent", "kind": "dues_update", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424632635631861910, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
+{"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat run dues perks", "attachments": 0}
+{"event": "intent", "kind": "dues_perks", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424632797347315846, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, check due payments", "attachments": 0}
+{"event": "intent", "kind": "dues_check", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424632857413947465, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, check due payments", "attachments": 0}
+{"event": "intent", "kind": "dues_check", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424634624289800292, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
+{"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, update due paying members", "attachments": 0}
+{"event": "intent", "kind": "dues_update", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424634677754597436, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, update due paying members", "attachments": 0}
+{"event": "intent", "kind": "dues_update", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424636505279959080, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "dues_debug", "name": "begin", "trigger": "", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
+{"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
+{"event": "action", "name": "dues_auto_verify", "trigger": "count=1", "output": "Marked Verified for 1 row(s)."}
+{"event": "action", "name": "dues_auto_cleanup", "trigger": "deleted=1", "output": ""}
+{"event": "action", "name": "dues_membership_open", "trigger": "sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA", "output": "ws=Membership Application List"}
+{"event": "action", "name": "dues_membership_header", "trigger": "row=2", "output": "Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment Username|Phone Number|Membership Type|Dues Or Donation|Discount (Social Media)|Paid Where?"}
+{"event": "action", "name": "dues_membership_rows", "trigger": "total=1002", "output": "usable=858"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log the past 100 finances", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log the last 100 finance s", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log the last 100 finances", "attachments": 0}
+{"event": "intent", "kind": "finance_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424639127923589191, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1424639127923589191", "output": "begin"}
+{"event": "action", "name": "finance_manual_log_begin", "trigger": "count=100", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-12"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-12"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Austin Brown $211.18 on 2025-06-17"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-06-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Wix $25.98 on 2025-06-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-07-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Wix $25.98 on 2025-07-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $74.92 on 2025-07-30"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "NNT PETSMART # $1550002564.00 on 2025-08-06"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Bonfire $36.77 on 2025-08-15"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-08-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $47.62 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kylie Crook $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Austin Brown $211.18 on 2025-06-17"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Isabella Klein $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Austin Brown $25.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jesse Jarrell $25.00 on 2025-09-02"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jenny Nguyen $10.00 on 2025-09-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jessica Ortiz $3.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Wonbin Park $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jordin Baylee $8.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "tay $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "layah r $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rain Castillo $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Danyelle Schofield $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Natalie Pegues $2.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maria Olds $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": " Ray V $3.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Emily Garcia $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Valentin Martinez $2.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Charlotte Clopton $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Ava Wood $1.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Celeste Smith $2.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jayda Green $6.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Michael Amaka $12.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daylen Griffin $10.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Leslie Mancera Orozco $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Bud Davis $25.00 on 2025-09-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kris Mason $6.00 on 2025-10-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Emily Robinson $3.00 on 2025-10-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $49.00 on 2025-10-03"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log last 100 finances", "attachments": 0}
+{"event": "intent", "kind": "finance_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424639612088881252, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1424639612088881252", "output": "begin"}
+{"event": "action", "name": "finance_manual_log_begin", "trigger": "count=100", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-12"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-12"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Austin Brown $211.18 on 2025-06-17"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-06-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Wix $25.98 on 2025-06-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-07-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Wix $25.98 on 2025-07-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $74.92 on 2025-07-30"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "NNT PETSMART # $1550002564.00 on 2025-08-06"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Bonfire $36.77 on 2025-08-15"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-08-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $47.62 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kylie Crook $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Austin Brown $211.18 on 2025-06-17"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Axel Torres $25.00 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Isabella Klein $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Austin Brown $25.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jesse Jarrell $25.00 on 2025-09-02"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jenny Nguyen $10.00 on 2025-09-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jessica Ortiz $3.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Wonbin Park $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jordin Baylee $8.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "tay $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "layah r $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rain Castillo $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Danyelle Schofield $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Natalie Pegues $2.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maria Olds $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": " Ray V $3.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Emily Garcia $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Valentin Martinez $2.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Charlotte Clopton $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Ava Wood $1.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Celeste Smith $2.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jayda Green $6.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Michael Amaka $12.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daylen Griffin $10.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Leslie Mancera Orozco $4.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Bud Davis $25.00 on 2025-09-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kris Mason $6.00 on 2025-10-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Emily Robinson $3.00 on 2025-10-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $49.00 on 2025-10-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-11"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Py Store Here Pantego $54.00 on 2025-05-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Wix $25.98 on 2025-05-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $74.92 on 2025-07-30"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Py Store Here Pantego $54.00 on 2025-08-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $47.62 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Wix $25.98 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $25.98 on 2025-08-26"}
+{"event": "action", "name": "finance_manual_log_done", "trigger": "count=100", "output": "found=100 logged=11 dup=89 already=0 failed=0"}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1424639612088881252", "output": "done count=100"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log last 100 finances", "attachments": 0}
+{"event": "intent", "kind": "finance_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424644275240439868, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1424644275240439868", "output": "begin"}
+{"event": "action", "name": "finance_manual_log_begin", "trigger": "count=100", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "intent_router_error", "trigger": "type=NameError", "output": "name 'body' is not defined"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, log finances", "attachments": 0}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log last 100 finances", "attachments": 0}
+{"event": "intent", "kind": "finance_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424644586642346145, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1424644586642346145", "output": "begin"}
+{"event": "action", "name": "finance_manual_log_begin", "trigger": "count=100", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-12"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-12"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Austin Brown $211.18 on 2025-06-17"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-06-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Wix $25.98 on 2025-06-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-07-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Wix $25.98 on 2025-07-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $74.92 on 2025-07-30"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "NNT PETSMART # $32.46 on 2025-08-06"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Bonfire $36.77 on 2025-08-15"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-08-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Axel Torres $24.25 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $47.62 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kylie Crook $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Axel Torres $24.25 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Isabella Klein $9.70 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jenny Nguyen $9.70 on 2025-09-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-11"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Py Store Here Pantego $54.00 on 2025-05-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $72.45 on 2025-05-23"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Wix $25.98 on 2025-05-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $74.92 on 2025-07-30"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "NNT PETSMART # $32.46 on 2025-08-06"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Py Store Here Pantego $54.00 on 2025-08-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $47.62 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Wix $25.98 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $25.98 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "DOMINO'S $60.57 on 2025-09-09"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $20.00 on 2025-09-10"}
+{"event": "action", "name": "finance_manual_log_done", "trigger": "count=100", "output": "found=100 logged=34 dup=66 already=0 failed=0"}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1424644586642346145", "output": "done count=100"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log last 50 finances", "attachments": 0}
+{"event": "intent", "kind": "finance_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424645911077851180, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1424645911077851180", "output": "begin"}
+{"event": "action", "name": "finance_manual_log_begin", "trigger": "count=50", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-12"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-12"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Austin Brown $211.18 on 2025-06-17"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-06-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Wix $25.98 on 2025-06-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kylie Crook $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jenny Nguyen $9.70 on 2025-09-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-11"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Py Store Here Pantego $54.00 on 2025-05-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $72.45 on 2025-05-23"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Wix $25.98 on 2025-05-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $74.92 on 2025-07-30"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "DOMINO'S $60.57 on 2025-09-09"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $20.00 on 2025-09-10"}
+{"event": "action", "name": "finance_manual_log_done", "trigger": "count=50", "output": "found=50 logged=33 dup=17 already=0 failed=0"}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1424645911077851180", "output": "done count=50"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log last 5 finances", "attachments": 0}
+{"event": "intent", "kind": "finance_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1424646172177600563, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1424646172177600563", "output": "begin"}
+{"event": "action", "name": "finance_manual_log_begin", "trigger": "count=5", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jessica Ortiz $3.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $20.00 on 2025-09-10"}
+{"event": "action", "name": "finance_manual_log_done", "trigger": "count=5", "output": "found=5 logged=3 dup=2 already=0 failed=0"}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1424646172177600563", "output": "done count=5"}

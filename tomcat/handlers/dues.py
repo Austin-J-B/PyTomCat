@@ -349,8 +349,31 @@ def _amount_candidates(text: str) -> list[float]:
             continue
         if has_negative and not has_positive:
             continue
+        if not has_dollar:
+            prev_char = ''
+            j = num_start - 1
+            while j >= 0 and text[j].isspace():
+                j -= 1
+            if j >= 0:
+                prev_char = text[j]
+            next_char = ''
+            k = num_end
+            while k < len(text) and text[k].isspace():
+                k += 1
+            if k < len(text):
+                next_char = text[k]
+            # Skip numbers that are part of URL segments or alphanumeric ids
+            if prev_char and prev_char.isalpha():
+                continue
+            if next_char and next_char.isalpha():
+                continue
+            if prev_char in {'/', '#', '@'}:
+                continue
         try:
-            vals.append(float(match.group(1)))
+            val = float(match.group(1))
+            if not has_dollar and val > float(getattr(settings, 'dues_max_unlabeled_amount', 200.0) or 200.0):
+                continue
+            vals.append(val)
         except Exception:
             continue
     # De-duplicate while preserving order
@@ -520,7 +543,14 @@ def _load_membership_rows():
         out = []
         for r in data:
             def get(i):
-                return (r[i] if i>=0 and i < len(r) else '').strip()
+                if i < 0 or i >= len(r):
+                    return ''
+                val = r[i]
+                if isinstance(val, str):
+                    return val.strip()
+                if val is None:
+                    return ''
+                return str(val).strip()
             def _truthy(s: str) -> bool:
                 v = (s or '').strip().lower()
                 return v in {'true','yes','y','1','paid','verified','done','ok','x','✅'}
@@ -752,7 +782,7 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
         # Batch updates: collect cells to update
         updates = []
         for ri, row in enumerate(rows[header_idx+1:], start=header_idx+2):  # 1-based rows
-            email_val = (row[i_email] if i_email < len(row) else '').strip().lower()
+            email_val = str(row[i_email] if i_email < len(row) else '').strip().lower()
             if email_val and email_val in emails_set:
                 # Only set if different/not already 'TRUE'
                 cur = (row[i_inv] if i_inv < len(row) else '').strip().upper()
@@ -880,8 +910,9 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
         # Build lookup set
         lookup: dict[str, set[str]] = {}
         for e, s in emails_with_sem:
-            if not e: continue
-            lookup.setdefault(e, set()).add((s or '').strip())
+            if not e:
+                continue
+            lookup.setdefault(e, set()).add(str(s or '').strip())
         # Prepare Cell updates similar to _mark_mavorg_invites
         from gspread.cell import Cell  # type: ignore
         cells: list[Cell] = []
@@ -892,10 +923,10 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
                 continue
             want = lookup[email_val]
             if i_sem >= 0 and want and '' not in want:
-                cur_sem = (row[i_sem] if i_sem < len(row) else '').strip()
+                cur_sem = str(row[i_sem] if i_sem < len(row) else '').strip()
                 if cur_sem not in want:
                     continue
-            cur_ver = (row[i_ver] if i_ver < len(row) else '').strip().lower()
+            cur_ver = str(row[i_ver] if i_ver < len(row) else '').strip().lower()
             if cur_ver in {'true','yes','y','1','x','✅'}:
                 continue
             cells.append(Cell(row=ri, col=i_ver+1, value='TRUE'))
@@ -1005,7 +1036,7 @@ async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float
         cells: list[Cell] = []
         applied: set[tuple[str, str]] = set()
         for ri, row in enumerate(rows[header_idx + 1:], start=header_idx + 2):
-            email_val = (row[i_email] if i_email < len(row) else '').strip().lower()
+            email_val = str(row[i_email] if i_email < len(row) else '').strip().lower()
             if not email_val:
                 continue
             sem_val = _norm_sem_label(row[i_sem]) if (i_sem >= 0 and i_sem < len(row) and row[i_sem]) else None
@@ -1158,7 +1189,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
         E = rec.get('primary_email') or None
         if sc < 1.20:
             continue
-        if rec.get('flag_reason') in {'cash','donation'}:
+        if rec.get('flag_reason') in {'cash','donation'} and not rec.get('primary_email'):
             continue
         if not (S and E):
             continue
@@ -1176,10 +1207,14 @@ async def handle_update_dues_members(intent, ctx) -> None:
         except Exception:
             email_ts = None
         if msg_ts and email_ts:
-            delta_days = abs((email_ts.replace(tzinfo=None) - msg_ts.replace(tzinfo=None)).days)
-            wnd = int(getattr(settings, 'dues_email_window_days', 5) or 5)
-            if delta_days > wnd:
-                continue
+            delta = abs((email_ts.replace(tzinfo=None) - msg_ts.replace(tzinfo=None)).total_seconds()) / 86400.0
+            wnd = float(getattr(settings, 'dues_email_window_days', 5) or 5)
+            if delta > wnd:
+                backfill_days = float(getattr(settings, 'dues_email_backfill_days', 30) or 30)
+                if email_ts <= msg_ts and (msg_ts.replace(tzinfo=None) - email_ts.replace(tzinfo=None)).total_seconds() / 86400.0 <= backfill_days:
+                    pass
+                else:
+                    continue
         # Require amount == 15 or email mentions dues/due in subject/body
         subj = (E.get('subject') or '')
         body = (E.get('content') or '')
@@ -1738,7 +1773,21 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         if key and mid:
             _RESOLVED_SHEET_USERNAME_TO_UID[key] = mid
     # Prepare summary for current channel (with coverage)
-    found_labels = sorted({(getattr(m['member'],'name','') or getattr(m['member'],'display_name','')) for m in matched if m.get('member')})
+    matched_labels = []
+    seen_labels: set[str] = set()
+    for m in matched:
+        mem = m.get('member')
+        if not mem:
+            continue
+        label = getattr(mem, 'name', None) or getattr(mem, 'display_name', None) or getattr(mem, 'global_name', None)
+        if not label:
+            continue
+        key = label.strip().lower()
+        if key in seen_labels:
+            continue
+        seen_labels.add(key)
+        matched_labels.append(label)
+    matched_labels.sort()
     # For unmatched, show full row context (name, discord, email)
     def _handles_for_row(r: dict) -> str:
         vals = []
@@ -1747,21 +1796,24 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         if r.get('__agg_handles'): vals.append(str(r.get('__agg_handles')).strip())
         h = ' | '.join([v for v in vals if v])
         return h
-    unmatched_entries = [
-        f"{(r.get('full_name') or '').strip() or '(unknown name)'} — Discord: {(r.get('discord_username') or '').strip() or '(unknown)'} — Pay: {(r.get('payment_username') or '').strip() or '(unknown)'} — Tried: {_handles_for_row(r)} — Email: {(r.get('email') or '').strip()}"
-        for r in unmatched
-    ]
+    unmatched_entries = []
+    for r in unmatched:
+        ver_val = str(r.get('verified') or '').strip().lower()
+        if ver_val in {'true','yes','y','1','x','✅'}:
+            continue
+        unmatched_entries.append(
+            f"{(r.get('full_name') or '').strip() or '(unknown name)'} — Discord: {(r.get('discord_username') or '').strip() or '(unknown)'} — Pay: {(r.get('payment_username') or '').strip() or '(unknown)'} — Tried: {_handles_for_row(r)} — Email: {(r.get('email') or '').strip()}"
+        )
     possible_rows = sorted([(r['row'].get('discord_username') or r['row'].get('full_name') or '(unknown)'), (getattr(r['member'],'name','') or getattr(r['member'],'display_name','') or ''), int(r['score'])] for r in possible)
     # Prepare labels for sandbox error summary
     unmatched_labels = sorted({
         ((r.get('discord_username') or '').strip() or (r.get('full_name') or '').strip() or '(unknown)')
         for r in unmatched
         if (r.get('discord_username') or r.get('full_name'))
+        and str(r.get('verified') or '').strip().lower() not in {'true','yes','y','1','x','✅'}
     })
     parts: list[str] = []
-    parts.append(f"Matched {len(found_labels)}/{len(use_rows_dedup)} (possible={len(possible)}; unmatched={len(unmatched)})")
-    if found_labels:
-        parts.append("Found usernames: " + ", ".join(found_labels))
+    parts.append(f"Matched {len(matched_labels)}/{len(use_rows_dedup)}")
     if unmatched_entries:
         parts.append("Unmatched verified entries:\n" + "\n".join(unmatched_entries))
     if possible_rows:

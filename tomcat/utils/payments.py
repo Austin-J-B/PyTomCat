@@ -11,13 +11,45 @@ def detect_provider(from_addr: str, subject: str = "", body: str = "") -> Option
     f = (from_addr or "").lower()
     s = (subject or "").lower()
     b = (body or "").lower()
+    def _any(text: str, phrases: tuple[str, ...]) -> bool:
+        return any(phrase in text for phrase in phrases)
+
+    venmo_markers = (
+        "paid you",
+        "sent you",
+        "you paid",
+        "you sent",
+        "payment to",
+        "receipt from",
+    )
     if "venmo.com" in f:
-        if ("paid you" in s) or ("sent you" in s) or ("paid you" in b):
+        if _any(s, venmo_markers) or _any(b, venmo_markers):
             return "venmo"
-    if any(domain in f for domain in ("cash.app", "squareup", "square.com", "cashapp")):
-        if ("paid you" in s) or ("sent you" in s) or ("paid you" in b):
+
+    cashapp_domains = ("cash.app", "squareup", "square.com", "cashapp")
+    cashapp_markers = (
+        "paid you",
+        "sent you",
+        "you paid",
+        "you sent",
+        "you spent",
+        "payment to",
+        "receipt",
+    )
+    if any(domain in f for domain in cashapp_domains):
+        if _any(s, cashapp_markers) or _any(b, cashapp_markers):
             return "cashapp"
+
+    paypal_markers = (
+        "you've got money",
+        "sent you",
+        "payment received",
+        "paid you",
+        "you sent",
+        "payment to",
+        "receipt",
+    )
     if "paypal.com" in f or "service@paypal" in f:
-        if ("you've got money" in s) or ("sent you" in s) or ("payment received" in s) or ("paid you" in b):
+        if _any(s, paypal_markers) or _any(b, paypal_markers):
             return "paypal"
     return None

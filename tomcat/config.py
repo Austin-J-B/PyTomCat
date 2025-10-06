@@ -151,6 +151,8 @@ class Settings:
     cat_spreadsheet_id: str | None = os.getenv("CAT_SPREADSHEET_ID") or os.getenv("SHEET_CATABASE_ID")
     aux_spreadsheet_id: str | None = os.getenv("AUX_SPREADSHEET_ID") or os.getenv("SHEET_VISION_ID")
 
+    finance_sheet_throttle_sec: float = float(os.getenv("FINANCE_SHEET_THROTTLE_SEC", "0.5") or "0.5")
+
     # Logging
     log_dir: str = os.getenv("LOG_DIR", "./logs")
 

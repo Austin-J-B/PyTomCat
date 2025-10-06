@@ -24,6 +24,7 @@ FINANCE_INDEX = os.path.join(FINANCE_DIR, "index.jsonl")
 FINANCE_LOCK = asyncio.Lock()
 
 _EMAIL_LOGS_DIR = os.path.join("logs", "emails")
+_DUES_INDEX_PATH = os.path.join("logs", "dues", "index.jsonl")
 
 _DONATION_DEFAULT = "Donations"
 _INCOME_TYPES = {
@@ -79,6 +80,34 @@ SUPPLIES_KEYWORDS = {
     "decor", "decoration", "craft", "glue", "string", "paint", "brush", "bag",
 }
 
+_CURRENCY_RE = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]{2})?)")
+
+
+def _find_currency_amount(*texts: str) -> Optional[float]:
+    """Return the last currency amount found across provided text snippets."""
+    for text in texts:
+        if not text:
+            continue
+        matches = _CURRENCY_RE.findall(text)
+        if matches:
+            amt = matches[-1]
+            try:
+                return float(amt.replace(',', ''))
+            except Exception:
+                continue
+    return None
+
+
+def _coerce_amount(raw: str, *fallback_texts: str) -> float:
+    """Prefer dollar-prefixed matches from context; fall back to raw digits."""
+    amt = _find_currency_amount(*fallback_texts)
+    if amt is not None:
+        return amt
+    try:
+        return float((raw or '').replace(',', ''))
+    except Exception:
+        return 0.0
+
 PROVIDER_NAMES = {
     "paypal": "Paypal",
     "venmo": "Venmo",
@@ -117,6 +146,8 @@ def _load_index() -> Dict[str, dict]:
     out: Dict[str, dict] = {}
     if not os.path.exists(FINANCE_INDEX):
         return out
+    keep: List[dict] = []
+    changed = False
     try:
         with open(FINANCE_INDEX, "r", encoding="utf-8") as f:
             for line in f:
@@ -126,16 +157,30 @@ def _load_index() -> Dict[str, dict]:
                 try:
                     obj = json.loads(line)
                     eid = obj.get("email_id")
-                    if eid:
+                    status = (obj.get("status") or "").lower()
+                    if eid and obj.get("fingerprint") and status in {"income", "expense"}:
                         out[eid] = obj
+                        keep.append(obj)
+                    else:
+                        changed = True
                 except Exception:
+                    changed = True
                     continue
     except Exception:
         return out
+    if changed:
+        try:
+            with open(FINANCE_INDEX, "w", encoding="utf-8") as f:
+                for obj in keep:
+                    f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
     return out
 
 
 def _append_index(record: dict) -> None:
+    if not record.get("fingerprint"):
+        return
     record.setdefault("ts", _now_iso())
     with open(FINANCE_INDEX, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -186,6 +231,55 @@ def _iter_email_logs() -> Iterable[dict]:
             continue
 
 
+def _iter_email_logs_newest_first() -> Iterable[dict]:
+    """Yield logged email payloads newest-first by reading newest files in reverse."""
+    if not os.path.exists(_EMAIL_LOGS_DIR):
+        return []
+    files = [
+        os.path.join(_EMAIL_LOGS_DIR, name)
+        for name in os.listdir(_EMAIL_LOGS_DIR)
+        if name.endswith(".ndjson")
+    ]
+    files.sort(reverse=True)
+    for path in files:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            continue
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except Exception:
+                continue
+
+
+def _load_dues_message_ids() -> Set[str]:
+    """Return set of email message IDs already consumed by the dues pipeline."""
+    ids: Set[str] = set()
+    if not os.path.exists(_DUES_INDEX_PATH):
+        return ids
+    try:
+        with open(_DUES_INDEX_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                mid = obj.get("message_id")
+                if isinstance(mid, str) and mid:
+                    ids.add(mid)
+    except Exception:
+        return ids
+    return ids
+
+
 def _clean_counterparty(name: str) -> str:
     """Normalize sender/payee strings pulled from email subjects."""
     return name.strip().strip('.')
@@ -211,13 +305,136 @@ def _extract_note(text: str) -> str:
     return text.strip()
 
 
+def _looks_amount_like(s: str) -> bool:
+    s = (s or "").strip().replace(",", "")
+    if not s:
+        return False
+    allowed = set("0123456789$.-")
+    if not set(s) <= allowed:
+        return False
+    return any(ch.isdigit() for ch in s)
+
+
+def _extract_note_hints_from_field(field: str) -> Tuple[str, str]:
+    """Parse counterparty and note from a sheet-formatted name field."""
+    base = field or ""
+    rec_idx = base.find("[Recorded")
+    if rec_idx != -1:
+        base = base[:rec_idx].strip()
+    note = ""
+    m = re.search(r"\(Message:\s*(.*?)\)\s*$", base)
+    if m:
+        note = m.group(1).strip()
+        base = base[:m.start()].strip()
+    return base.strip(), note
+
+
+def _extract_venmo_note(subject: str, body: str, existing: Optional[str] = None) -> str:
+    candidates: List[str] = []
+    if existing:
+        candidates.append(existing)
+    m = re.search(r"paid you \$[0-9.,]+\s+for\s+(.+)", subject or "", re.I)
+    if m:
+        candidates.append(m.group(1))
+    if body:
+        lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+        for idx, line in enumerate(lines):
+            if line.lower().startswith("see transaction"):
+                for j in range(idx - 1, -1, -1):
+                    candidate = lines[j]
+                    low = candidate.lower()
+                    if not candidate:
+                        continue
+                    if _looks_amount_like(candidate):
+                        continue
+                    if "paid you" in low or "money credited" in low:
+                        continue
+                    if low.startswith("transaction") or low.startswith("date"):
+                        continue
+                    if low.startswith("sent to") or low.startswith("@"):
+                        continue
+                    if low.startswith("for any issues"):
+                        continue
+                    candidates.append(candidate)
+                    break
+                break
+    note_line = _find_note_in_body(body)
+    if note_line:
+        candidates.append(note_line)
+    for cand in candidates:
+        cleaned = _extract_note(cand)
+        if cleaned and not _looks_amount_like(cleaned):
+            return cleaned
+    return ""
+
+
+def _extract_cashapp_note(subject: str, body: str, existing: Optional[str] = None) -> str:
+    candidates: List[str] = []
+    if existing:
+        candidates.append(existing)
+    m = re.search(r"sent you \$[0-9.,]+\s+for\s+(.+)", subject or "", re.I)
+    if m:
+        candidates.append(m.group(1))
+    body_patterns = [
+        r"(?:Note|Message)\s*:\s*(.+)",
+        r"For\s+(.+)",
+    ]
+    if body:
+        for pat in body_patterns:
+            m2 = re.search(pat, body, re.I)
+            if m2:
+                candidates.append(m2.group(1))
+                break
+    note_line = _find_note_in_body(body)
+    if note_line:
+        candidates.append(note_line)
+    for cand in candidates:
+        cleaned = _extract_note(cand)
+        if cleaned and not cleaned.lower().startswith("for any"):
+            return cleaned
+    return ""
+
+
+def _extract_paypal_note(subject: str, body: str, existing: Optional[str] = None) -> str:
+    candidates: List[str] = []
+    if existing:
+        candidates.append(existing)
+    body_patterns = [
+        r"Note(?:\s+from\s+(?:buyer|customer))?\s*:\s*(.+)",
+        r"Message\s*:\s*(.+)",
+        r"Add\s+a\s+note\s*:\s*(.+)",
+    ]
+    if body:
+        for pat in body_patterns:
+            m = re.search(pat, body, re.I)
+            if m:
+                candidates.append(m.group(1))
+    note_line = _find_note_in_body(body)
+    if note_line:
+        candidates.append(note_line)
+    for cand in candidates:
+        cleaned = _extract_note(cand)
+        if cleaned:
+            return cleaned
+    return ""
+
+
 def _norm_text(s: str) -> str:
     return re.sub(r"[^a-z0-9 ]+", "", (s or "").lower()).strip()
 
 
 def _fingerprint(ev: "FinanceEvent") -> str:
-    d = ev.ts.date().isoformat()
-    base = f"{ev.direction}|{d}|{ev.amount:.2f}|{_norm_text(ev.counterparty)}|{_norm_text(ev.note)[:40]}|{ev.provider}"
+    day = ev.ts.date().isoformat()
+    bucket = ev.ts.date().toordinal() // 2  # two-day bucket for cross-day heuristics
+    base = "|".join([
+        ev.direction,
+        day,
+        f"b{bucket}",
+        f"{ev.amount:.2f}",
+        _norm_text(ev.counterparty),
+        _norm_text(ev.note)[:40],
+        ev.provider,
+    ])
     return base
 
 
@@ -234,8 +451,9 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     m = re.match(r"^(?P<name>.+?)\s+(?:paid|sent)\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
     if m:
         name = _clean_counterparty(m.group("name"))
-        amount = float(m.group("amount").replace(",", ""))
-        note = _extract_note(m.group("note") or _extract_note(_find_note_in_body(body)))
+        amount = _coerce_amount(m.group("amount"), subject, body)
+        note = _extract_venmo_note(subject, body, m.group("note"))
+        note = _extract_note(note)
         blank = not bool(note.strip())
         if _is_likely_dues(amount, f"{subject} {note}"):
             return (None, "dues")
@@ -257,8 +475,9 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     m = re.match(r"^you\s+paid\s+(?P<name>.+?)\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
     if m:
         name = _clean_counterparty(m.group("name"))
-        amount = float(m.group("amount").replace(",", ""))
-        note = _extract_note(m.group("note") or _extract_note(_find_note_in_body(body)))
+        amount = _coerce_amount(m.group("amount"), subject, body)
+        note = _extract_venmo_note(subject, body, m.group("note"))
+        note = _extract_note(note)
         return (FinanceEvent(
             email_id=email.get("id", ""),
             provider="venmo",
@@ -277,8 +496,9 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     m = re.match(r"^receipt\s+from\s+(?P<name>.+?)-?\s*\$?(?P<amount>[0-9.,]+)", text, re.I)
     if m:
         name = _clean_counterparty(m.group("name"))
-        amount = float(m.group("amount").replace(",", ""))
-        note = _extract_note(_find_note_in_body(body))
+        amount = _coerce_amount(m.group("amount"), subject, body)
+        note = _extract_venmo_note(subject, body, None)
+        note = _extract_note(note)
         return (FinanceEvent(
             email_id=email.get("id", ""),
             provider="venmo",
@@ -309,8 +529,9 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     m = re.match(r"^(?P<name>.+?)\s+sent\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
     if m:
         name = _clean_counterparty(m.group("name"))
-        amount = float(m.group("amount").replace(",", ""))
-        note = _extract_note(m.group("note") or _extract_note(_find_note_in_body(body)))
+        amount = _coerce_amount(m.group("amount"), subject, body)
+        note = _extract_cashapp_note(subject, body, m.group("note"))
+        note = _extract_note(note)
         blank = not bool(note.strip())
         if _is_likely_dues(amount, f"{subject} {note}"):
             return (None, "dues")
@@ -331,9 +552,10 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     # Spending via Cash App
     m = re.search(r"You spent \$([0-9.,]+)\s+at\s+([^\n]+)", content, re.I)
     if m:
-        amount = float(m.group(1).replace(",", ""))
+        amount = _coerce_amount(m.group(1), subject, content)
         name = _clean_counterparty(m.group(2))
-        note = ""
+        note = _extract_cashapp_note(subject, body, None)
+        note = _extract_note(note)
         return (FinanceEvent(
             email_id=email.get("id", ""),
             provider="cashapp",
@@ -345,7 +567,7 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             ts=ts,
             raw_subject=subject,
             raw_content=content,
-            message_blank=True,
+            message_blank=not bool(note.strip()),
         ), "expense")
 
     return (None, "ignore")
@@ -358,6 +580,7 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     subject = email.get("subject", "")
     content = email.get("content", "")
     text = subject.strip()
+    body = content
     ts = _parse_timestamp(email)
 
     if "you've got money" in text.lower() or "money received" in text.lower():
@@ -366,8 +589,9 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             m = re.search(r"Money received\s+from\s+([^\n]+)\s+\$([0-9.,]+)", content)
         if m:
             name = _clean_counterparty(m.group(1))
-            amount = float(m.group(2).replace(",", ""))
-            note = _extract_note(_find_note_in_body(content))
+            amount = _coerce_amount(m.group(2), subject, content)
+            note = _extract_paypal_note(subject, content, None)
+            note = _extract_note(note)
             blank = not bool(note.strip())
             if _is_likely_dues(amount, f"{subject} {note}"):
                 return (None, "dues")
@@ -388,9 +612,10 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     # Payment sent (expense)
     m = re.search(r"You\s+sent\s+a?\s*\$([0-9.,]+)\s*(?:usd)?\s+payment\s+to\s+([^\n]+)", content, re.I)
     if m:
-        amount = float(m.group(1).replace(",", ""))
+        amount = _coerce_amount(m.group(1), subject, content)
         name = _clean_counterparty(m.group(2))
-        note = _extract_note(_find_note_in_body(content))
+        note = _extract_paypal_note(subject, content, None)
+        note = _extract_note(note)
         return (FinanceEvent(
             email_id=email.get("id", ""),
             provider="paypal",
@@ -413,8 +638,9 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     m = re.match(r"^(?P<name>.+?):\s*\$?(?P<amount>[0-9.,]+)\s*(?:usd)?", text, re.I)
     if m:
         name = _clean_counterparty(m.group("name"))
-        amount = float(m.group("amount").replace(",", ""))
-        note = _extract_note(_find_note_in_body(content))
+        amount = _coerce_amount(m.group("amount"), subject, body)
+        note = _extract_paypal_note(subject, content, None)
+        note = _extract_note(note)
         blank = not bool(note.strip())
         if _is_likely_dues(amount, f"{subject} {note}"):
             return (None, "dues")
@@ -520,6 +746,8 @@ def _build_expense_row(event: FinanceEvent) -> List[str]:
     note = event.note.strip()
     if note:
         name_field += f" (Message: {note})"
+    else:
+        name_field += " (Message: none)"
     name_field += " [Recorded by the TomCat bot]"
     return [
         timestamp,
@@ -531,12 +759,27 @@ def _build_expense_row(event: FinanceEvent) -> List[str]:
     ]
 
 
+def _sheet_call_delay() -> float:
+    try:
+        delay = float(getattr(settings, 'finance_sheet_throttle_sec', 0.0) or 0.0)
+    except Exception:
+        delay = 0.0
+    return delay if delay > 0 else 0.0
+
+
+async def _throttle_sheet_call() -> None:
+    delay = _sheet_call_delay()
+    if delay > 0:
+        await asyncio.sleep(delay)
+
+
 async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List[Tuple[bool, str]]:
     """Batch append rows while automatically backing off on quota errors."""
     if not rows:
         return []
     if hasattr(ws, "append_rows"):
         try:
+            await _throttle_sheet_call()
             ws.append_rows(rows, value_input_option='USER_ENTERED')
             return [(True, "ok") for _ in rows]
         except Exception as e:
@@ -548,6 +791,7 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
         last_error = "ok"
         for attempt in range(5):
             try:
+                await _throttle_sheet_call()
                 ws.append_row(row, value_input_option='USER_ENTERED')
                 success = True
                 last_error = "ok"
@@ -587,11 +831,13 @@ def _fetch_recent_records(ws, kind: str, max_rows: int = 800) -> List[dict]:
                 date_s = (r[0] if len(r) > 0 else '').strip()
                 name_field = (r[4] if len(r) > 4 else '').strip()
                 amount_s = (r[6] if len(r) > 6 else '').strip().replace('$', '')
+                provider = (r[7] if len(r) > 7 else '').strip()
             else:
                 # [date, month, year, name_field, category, amount]
                 date_s = (r[0] if len(r) > 0 else '').strip()
                 name_field = (r[3] if len(r) > 3 else '').strip()
                 amount_s = (r[5] if len(r) > 5 else '').strip().replace('$', '')
+                provider = ''
             # Parse date
             dt = None
             if date_s:
@@ -606,10 +852,14 @@ def _fetch_recent_records(ws, kind: str, max_rows: int = 800) -> List[dict]:
                 amt = float(amount_s.replace(',', '')) if amount_s else None
             except Exception:
                 amt = None
+            counterparty, note = _extract_note_hints_from_field(name_field)
             recs.append({
                 'date': dt,
                 'amount': amt,
                 'text': name_field,
+                'provider': provider,
+                'counterparty': counterparty,
+                'note': note,
             })
         except Exception:
             continue
@@ -630,22 +880,99 @@ def _similar_enough(a: str, b: str) -> bool:
         return difflib.SequenceMatcher(None, a, b).ratio() >= 0.75
 
 
+def _has_refund_word(text: str) -> bool:
+    t = _norm_text(text)
+    return any(word in t for word in ("refund", "reimburse", "reimburs", "return"))
+
+
 def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
-    """Heuristic: same day, amount within $1, and similar counterparty/note text."""
+    """Heuristic duplicate detection that tolerates close-day repeats."""
     ev_date = ev.ts.date()
-    ev_amt = ev.amount
-    needle = f"{ev.counterparty} {ev.note}".strip()
+    ev_amt = float(ev.amount)
+    ev_counterparty = ev.counterparty or ""
+    ev_note = ev.note or ""
+    ev_provider = (ev.payment_type or "").strip().lower()
+    norm_counterparty = _norm_text(ev_counterparty)
+    norm_note = _norm_text(ev_note)
+
     for r in recs:
-        if r.get('date') != ev_date:
+        r_date = r.get('date')
+        if not r_date:
+            continue
+        day_gap = abs((r_date - ev_date).days)
+        if day_gap > 3:
             continue
         amt = r.get('amount')
         if amt is None:
             continue
-        if abs(float(amt) - float(ev_amt)) > 1.00:
+        if abs(float(amt) - ev_amt) > (0.25 if ev_amt < 5 else 1.00):
             continue
-        text = r.get('text') or ''
-        if _similar_enough(text, needle) or _similar_enough(text, ev.counterparty):
+        provider = (r.get('provider') or '').strip().lower()
+        if provider and ev_provider and provider != ev_provider:
+            continue
+        counterparty = r.get('counterparty') or ''
+        note = r.get('note') or ''
+        norm_counter = _norm_text(counterparty)
+        norm_note_sheet = _norm_text(note)
+        combined_sheet = r.get('text') or ''
+        combined_event = f"{ev_counterparty} {ev_note}".strip()
+        combined_match = False
+        if combined_sheet and combined_event:
+            combined_match = _similar_enough(combined_sheet, combined_event)
+
+        counterparty_match = bool(norm_counter and norm_counterparty and _similar_enough(counterparty, ev_counterparty))
+        note_match = False
+        if norm_note_sheet and norm_note:
+            note_match = _similar_enough(note, ev_note)
+        elif not norm_note_sheet and not norm_note:
+            note_match = True
+
+        # Strict same-day match on counterparty or combined text
+        if day_gap == 0 and (counterparty_match or note_match or combined_match):
             return True
+
+        # Near-day match requires stronger agreement
+        if day_gap <= 2:
+            if counterparty_match and (note_match or not norm_note_sheet or not norm_note or combined_match):
+                return True
+            if note_match and counterparty_match:
+                return True
+            # Treat refund/reimbursement adjustments as duplicates even if wording differs
+            if counterparty_match and (_has_refund_word(note) or _has_refund_word(ev_note)):
+                return True
+
+        # Fallback: if the full text matches closely within a short window, treat as duplicate
+        if day_gap <= 3 and combined_match:
+            return True
+    return False
+
+
+def _events_maybe_duplicate(a: "FinanceEvent", b: "FinanceEvent") -> bool:
+    if a.direction != b.direction:
+        return False
+    if (a.provider or "").lower() != (b.provider or "").lower():
+        return False
+    if abs(float(a.amount) - float(b.amount)) > (0.25 if a.amount < 5 else 1.00):
+        return False
+    day_gap = abs((a.ts.date() - b.ts.date()).days)
+    if day_gap > 3:
+        return False
+    if _similar_enough(a.counterparty, b.counterparty):
+        if not a.note and not b.note:
+            return True
+        if a.note and b.note and _similar_enough(a.note, b.note):
+            return True
+        if day_gap == 0:
+            return True
+        if _has_refund_word(a.note) or _has_refund_word(b.note):
+            return True
+    if a.note and b.note and _similar_enough(a.note, b.note) and day_gap <= 1:
+        return True
+    # Combined text similarity as a final guardrail
+    combined_a = f"{a.counterparty} {a.note}".strip()
+    combined_b = f"{b.counterparty} {b.note}".strip()
+    if combined_a and combined_b and _similar_enough(combined_a, combined_b) and day_gap <= 2:
+        return True
     return False
 
 
@@ -727,6 +1054,120 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
     for ev in events:
         results.setdefault(ev.email_id, (False, 'dup_skipped'))
     return results
+
+
+async def _process_finance_events(
+    bot,
+    events: List[FinanceEvent],
+    processed: Dict[str, dict],
+    notify: bool = True,
+) -> List[Tuple[FinanceEvent, Tuple[bool, str], bool]]:
+    """Append income/expense events to Sheets, update index, and optionally notify Discord."""
+    if not events:
+        return []
+
+    buffer_results: List[Tuple[FinanceEvent, Tuple[bool, str], bool]] = []
+    unique_events: List[FinanceEvent] = []
+    for ev in events:
+        if any(_events_maybe_duplicate(ev, other) for other in unique_events):
+            try:
+                log_action('finance_skip_duplicate', 'buffer', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
+            except Exception:
+                pass
+            buffer_results.append((ev, (False, 'dup_buffer'), False))
+            continue
+        unique_events.append(ev)
+
+    events = unique_events
+
+    income_counts: Dict[datetime.date, Counter] = defaultdict(Counter)
+    income_events: List[Tuple[FinanceEvent, bool]] = []
+    expense_events: List[Tuple[FinanceEvent, bool]] = []
+
+    for event in events:
+        if event.direction == 'income':
+            _, inferred = _assign_income_category(event, income_counts)
+            income_events.append((event, inferred))
+        else:
+            _, inferred = _assign_expense_category(event)
+            expense_events.append((event, inferred))
+
+    income_result_map = await _append_income_rows([ev for ev, _ in income_events])
+    expense_result_map = await _append_expense_rows([ev for ev, _ in expense_events])
+
+    results: List[Tuple[FinanceEvent, Tuple[bool, str], bool]] = []
+
+    for event, inferred in income_events:
+        sheet_res = income_result_map.get(event.email_id, (False, 'not_logged'))
+        if sheet_res[0]:
+            _append_index({
+                "email_id": event.email_id,
+                "status": event.direction,
+                "category": event.category,
+                "amount": event.amount,
+                "counterparty": event.counterparty,
+                "note": event.note,
+                "provider": event.provider,
+                "fingerprint": _fingerprint(event),
+            })
+            processed[event.email_id] = True
+        if notify and not (not sheet_res[0] and str(sheet_res[1]).startswith('dup_')):
+            blank = event.note.strip() == ""
+            await _notify_sandbox(bot, event, event.direction, sheet_res, inferred, blank)
+        results.append((event, sheet_res, inferred))
+
+    for event, inferred in expense_events:
+        sheet_res = expense_result_map.get(event.email_id, (False, 'not_logged'))
+        if sheet_res[0]:
+            _append_index({
+                "email_id": event.email_id,
+                "status": event.direction,
+                "category": event.category,
+                "amount": event.amount,
+                "counterparty": event.counterparty,
+                "note": event.note,
+                "provider": event.provider,
+                "fingerprint": _fingerprint(event),
+            })
+            processed[event.email_id] = True
+        if notify and not (not sheet_res[0] and str(sheet_res[1]).startswith('dup_')):
+            blank = event.note.strip() == ""
+            await _notify_sandbox(bot, event, event.direction, sheet_res, inferred, blank)
+        results.append((event, sheet_res, inferred))
+
+    results.extend(buffer_results)
+    return results
+
+
+def _collect_recent_finance_events(limit: int) -> Tuple[List[FinanceEvent], int, int]:
+    """Return the most recent finance events up to the requested count."""
+    if limit <= 0:
+        return [], 0, 0
+    dues_ids = _load_dues_message_ids()
+    events: List[FinanceEvent] = []
+    scanned = 0
+    skipped_dues = 0
+    for email in _iter_email_logs_newest_first():
+        email_id = email.get('id')
+        if not email_id:
+            continue
+        scanned += 1
+        if email_id in dues_ids:
+            skipped_dues += 1
+            continue
+        event, status = _classify_email(email)
+        if event is None:
+            if status == 'dues':
+                skipped_dues += 1
+            continue
+        if event.direction == 'income' and event.email_id in dues_ids:
+            skipped_dues += 1
+            continue
+        events.append(event)
+        if len(events) >= limit:
+            break
+    events.sort(key=lambda ev: ev.ts)
+    return events, scanned, skipped_dues
 
 
 async def _notify_sandbox(
@@ -835,67 +1276,186 @@ async def process_financial_emails(bot) -> None:
     """Main entrypoint: read new email logs, file into Sheets, notify Discord."""
     async with FINANCE_LOCK:
         processed = _load_index()
+        processed_ids = set(processed.keys())
+        dues_ids = _load_dues_message_ids()
         events: List[FinanceEvent] = []
         for email in _iter_email_logs():
             email_id = email.get('id')
             if not email_id:
                 continue
-            if email_id in processed:
+            if email_id in processed_ids:
+                continue
+            if email_id in dues_ids:
                 continue
             event, status = _classify_email(email)
             if event is None:
-                _append_index({
-                    "email_id": email_id,
-                    "status": status,
-                    "subject": email.get('subject', ''),
-                })
-                processed[email_id] = True
                 continue
             events.append(event)
         if not events:
             return
+        await _process_finance_events(bot, events, processed, notify=True)
 
-        income_counts: Dict[datetime.date, Counter] = defaultdict(Counter)
-        income_events: List[Tuple[FinanceEvent, bool]] = []
-        expense_events: List[Tuple[FinanceEvent, bool]] = []
-        for event in events:
-            if event.direction == 'income':
-                _, inferred = _assign_income_category(event, income_counts)
-                income_events.append((event, inferred))
+
+async def handle_log_recent_finances(intent, ctx) -> None:
+    """Manual command: attempt to log the last N finance events from email logs."""
+    ch = ctx.get("channel")
+    bot = ctx.get("bot")
+    if ch is None:
+        return
+
+    msg = ctx.get("message")
+    bot_user = getattr(bot, 'user', None) if bot else None
+    thumb_added = False
+
+    async def _flip_reaction(success: bool) -> None:
+        if not msg:
+            return
+        emoji = "✅" if success else "❌"
+        try:
+            await msg.add_reaction(emoji)
+        except Exception:
+            pass
+        if thumb_added and bot_user:
+            try:
+                await msg.remove_reaction("👍", bot_user)
+            except Exception:
+                pass
+
+    try:
+        try:
+            if msg:
+                await msg.add_reaction("👍")
+                thumb_added = True
+        except Exception:
+            pass
+
+        raw_count = (intent.data or {}).get("count") if intent else None
+        try:
+            count = int(raw_count) if raw_count is not None else 10
+        except Exception:
+            count = 10
+        count = max(1, min(count, 200))
+
+        log_action('finance_manual_log_begin', f'count={count}', f'ch={getattr(ch, "id", None)}')
+
+        async with FINANCE_LOCK:
+            processed = _load_index()
+            initial_processed = set(processed.keys())
+            events, scanned, skipped_dues = _collect_recent_finance_events(count)
+
+            if not events:
+                note = f"Scanned {scanned} email(s)"
+                if skipped_dues:
+                    note += f"; skipped {skipped_dues} dues entries"
+                await safe_send(ch, f"No finance entries found. {note}.")
+                log_action('finance_manual_log_done', f'count={count}', 'found=0')
+                await _flip_reaction(True)
+                return
+
+            to_process = [ev for ev in events if ev.email_id not in initial_processed]
+            result_map: Dict[str, Tuple[Tuple[bool, str], bool]] = {}
+            if to_process:
+                processed_results = await _process_finance_events(bot, to_process, processed, notify=True)
+                for ev, sheet_res, inferred in processed_results:
+                    result_map[ev.email_id] = (sheet_res, inferred)
+
+        def _shorten(text: str, limit: int = 60) -> str:
+            clean = (text or "").replace("\n", " ").strip()
+            if len(clean) <= limit:
+                return clean
+            return clean[: limit - 1] + "…"
+
+        summary_lines: List[str] = []
+        logged = 0
+        duplicates = 0
+        already = 0
+        failed = 0
+
+        header = f"Finance log results — requested {count}, processed {len(events)}"
+        header += f", scanned {scanned} email(s)"
+        if skipped_dues:
+            header += f", skipped {skipped_dues} dues"
+        summary_lines.append(header)
+
+        for idx, event in enumerate(events, start=1):
+            base = f"{idx}. {'Income' if event.direction == 'income' else 'Expense'}"
+            base += f" • {event.payment_type} • ${event.amount:.2f} • {event.counterparty or '(unknown)'}"
+            category = event.category or (
+                _DONATION_DEFAULT if event.direction == 'income' else _EXPENSE_TYPES['misc']
+            )
+            note_text = event.note.strip() or MESSAGE_EMPTY_SENTINEL
+            sheet_info = result_map.get(event.email_id)
+            if event.email_id in initial_processed and event.email_id not in result_map:
+                status_text = "already logged"
+                already += 1
+            elif sheet_info:
+                (ok, msg), inferred = sheet_info
+                if ok:
+                    logged += 1
+                    detail = "logged"
+                    if msg and msg != 'ok':
+                        detail += f" ({msg})"
+                    if inferred:
+                        detail += "; category inferred"
+                    status_text = detail
+                else:
+                    if str(msg).startswith('dup_'):
+                        duplicates += 1
+                        status_text = "duplicate (skipped)"
+                    else:
+                        failed += 1
+                        status_text = f"failed ({msg})"
             else:
-                _, inferred = _assign_expense_category(event)
-                expense_events.append((event, inferred))
+                # Should not happen, but guard anyway
+                status_text = "no action"
 
-        income_result_map = await _append_income_rows([ev for ev, _ in income_events])
-        expense_result_map = await _append_expense_rows([ev for ev, _ in expense_events])
+            line = f"{base} — {status_text} ({category})"
+            short_note = _shorten(note_text)
+            if short_note and short_note != MESSAGE_EMPTY_SENTINEL:
+                line += f" • note: {short_note}"
+            elif event.direction == 'income':
+                line += f" • note: {MESSAGE_EMPTY_SENTINEL}"
+            summary_lines.append(line)
 
-        for event, inferred in income_events:
-            sheet_res = income_result_map.get(event.email_id, (False, 'not_logged'))
-            if sheet_res[0]:
-                _append_index({
-                    "email_id": event.email_id,
-                    "status": event.direction,
-                    "category": event.category,
-                    "amount": event.amount,
-                    "fingerprint": _fingerprint(event),
-                })
-                processed[event.email_id] = True
-            # Skip sandbox notice for duplicates
-            if not (not sheet_res[0] and str(sheet_res[1]).startswith('dup_')):
-                blank = event.note.strip() == ""
-                await _notify_sandbox(bot, event, event.direction, sheet_res, inferred, blank)
+        footer_bits = []
+        if logged:
+            footer_bits.append(f"logged {logged}")
+        if duplicates:
+            footer_bits.append(f"duplicates {duplicates}")
+        if already:
+            footer_bits.append(f"already logged {already}")
+        if failed:
+            footer_bits.append(f"failed {failed}")
+        if footer_bits:
+            summary_lines.append("Totals: " + ", ".join(footer_bits))
 
-        for event, inferred in expense_events:
-            sheet_res = expense_result_map.get(event.email_id, (False, 'not_logged'))
-            if sheet_res[0]:
-                _append_index({
-                    "email_id": event.email_id,
-                    "status": event.direction,
-                    "category": event.category,
-                    "amount": event.amount,
-                    "fingerprint": _fingerprint(event),
-                })
-                processed[event.email_id] = True
-            if not (not sheet_res[0] and str(sheet_res[1]).startswith('dup_')):
-                blank = event.note.strip() == ""
-                await _notify_sandbox(bot, event, event.direction, sheet_res, inferred, blank)
+        # Send in chunks to respect Discord limits
+        chunk: List[str] = []
+        char_count = 0
+        for line in summary_lines:
+            line_len = len(line) + 1
+            if char_count + line_len > 1900 and chunk:
+                await safe_send(ch, "\n".join(chunk))
+                chunk = []
+                char_count = 0
+            chunk.append(line)
+            char_count += line_len
+        if chunk:
+            await safe_send(ch, "\n".join(chunk))
+
+        log_action(
+            'finance_manual_log_done',
+            f'count={count}',
+            f'found={len(events)} logged={logged} dup={duplicates} already={already} failed={failed}',
+        )
+
+        await _flip_reaction(True)
+
+    except Exception as e:
+        await safe_send(ch, f"Finance logging error: {e}")
+        log_action('finance_manual_log_error', '', str(e))
+        await _flip_reaction(False)
+    else:
+        if not msg and thumb_added and bot_user:
+            # fallback cleanup if message disappeared; no action needed
+            pass

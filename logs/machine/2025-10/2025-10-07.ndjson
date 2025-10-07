@@ -1,0 +1,53 @@
+{"event": "reaction_add", "user": "vasyline", "channel": "#yapper-committee", "message_id": 1424975849093992600, "emoji": "😭", "message_preview": "Do any of you guys know wtf is up with t...", "message_author": "toad5545"}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "yall this is a shot in the dark but does anyone have a dell laptop and would let me borrow their charger", "attachments": 0}
+{"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "straight up just lost mine…", "attachments": 0}
+{"event": "message", "author": "kitadan", "channel": "#bot-spam", "content": "||Word with double N||", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "Apparently you can win a game of fetch", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "toothless won this one by just not bringing it back", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "he beat me!", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#purrley-pawsitive-pussy-pals", "content": "That is how dede plays fetch with me", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#itty-bitty-kitty-commitee", "content": "i went out for a midnight stroll to see if it would help me focus on studying afterwards and eraser and eggs are at the building gazebo and i heard something coming from above so im like yay it's twix the business trio is all here! then i locked eyes with the creature. it was a possum", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#itty-bitty-kitty-commitee", "content": "oh i found twix the gang is all hereee", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#pictures-of-the-cats", "content": "sorry i got shaky hands", "attachments": 1}
+{"event": "message", "author": "emiximez", "channel": "#pictures-of-the-cats", "content": "eraser and eggs are like an old married couple", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#pictures-of-the-cats", "content": "don't go to bed angry", "attachments": 2}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=2"}
+{"event": "reaction_add", "user": "ludavis", "channel": "#pet-pictures", "message_id": 1424948965467623446, "emoji": "❤️", "message_preview": "", "message_author": "shynebwoy"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log last 10 finances", "attachments": 0}
+{"event": "intent", "kind": "finance_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1425008393038336070, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1425008393038336070", "output": "begin"}
+{"event": "action", "name": "finance_manual_log_begin", "trigger": "count=10", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jenny Nguyen $9.70 on 2025-09-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "DOMINO'S $60.57 on 2025-09-09"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $20.00 on 2025-09-10"}
+{"event": "action", "name": "finance_manual_log_done", "trigger": "count=10", "output": "found=10 logged=7 dup=3 already=0 failed=0"}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1425008393038336070", "output": "done count=10"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Tomcat log last 50 finances", "attachments": 0}
+{"event": "intent", "kind": "finance_log_recent", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1425008748921094156, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1425008748921094156", "output": "begin"}
+{"event": "action", "name": "finance_manual_log_begin", "trigger": "count=50", "output": "ch=1341696618688286720"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-12"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-12"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Austin Brown $211.18 on 2025-06-17"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-06-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Wix $25.98 on 2025-06-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kylie Crook $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jenny Nguyen $9.70 on 2025-09-03"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "TOMAHAWK LIVE TRAP $581.62 on 2025-05-11"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Py Store Here Pantego $54.00 on 2025-05-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $72.45 on 2025-05-23"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Wix $25.98 on 2025-05-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $74.92 on 2025-07-30"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "DOMINO'S $60.57 on 2025-09-09"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $20.00 on 2025-09-10"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $89.91 on 2025-10-05"}
+{"event": "action", "name": "finance_manual_log_done", "trigger": "count=50", "output": "found=50 logged=25 dup=18 already=7 failed=0"}
+{"event": "action", "name": "intent_dispatch", "trigger": "type=finance_log_recent msg=1425008748921094156", "output": "done count=50"}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "I hate programming. I’m giving up ASAP!!! Or just manually entering the old ones as “already marked” so tomcat only worries about the new ones. There can’t be duplicates if he made them all! (From this point forward).", "attachments": 1}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "Either way, gn chat", "attachments": 0}

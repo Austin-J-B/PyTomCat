@@ -1,0 +1,53 @@
+[10/07/2025 12:15:48.658 AM] React+   || User: vasyline            || Channel: #yapper-committee                    || emoji=😭; msg="Do any of you guys know wtf is up with t..." by toad5545
+[10/07/2025 12:21:21.206 AM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: yall this is a shot in the dark but does anyone have a dell laptop a...
+[10/07/2025 12:21:38.479 AM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: straight up just lost mine…
+[10/07/2025 12:22:42.207 AM] Message  || User: kitadan             || Channel: #bot-spam                            || Content: ||Word with double N||
+[10/07/2025 12:51:12.942 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: Apparently you can win a game of fetch
+[10/07/2025 12:51:20.296 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: toothless won this one by just not bringing it back
+[10/07/2025 12:51:27.124 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: he beat me!
+[10/07/2025 01:00:43.183 AM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: That is how dede plays fetch with me
+[10/07/2025 01:03:40.667 AM] Message  || User: emiximez            || Channel: #itty-bitty-kitty-commitee           || Content: i went out for a midnight stroll to see if it would help me focus on...
+[10/07/2025 01:04:34.538 AM] Message  || User: emiximez            || Channel: #itty-bitty-kitty-commitee           || Content: oh i found twix the gang is all hereee
+[10/07/2025 01:05:37.993 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: sorry i got shaky hands
+[10/07/2025 01:08:52.489 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: eraser and eggs are like an old married couple
+[10/07/2025 01:09:10.536 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: don't go to bed angry
+[10/07/2025 01:09:11.523 AM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=2
+[10/07/2025 01:20:24.241 AM] React+   || User: ludavis             || Channel: #pet-pictures                        || emoji=❤️; msg=1424948965467623446
+[10/07/2025 01:33:38.284 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[10/07/2025 01:33:39.189 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[10/07/2025 01:33:39.630 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[10/07/2025 01:33:40.030 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[10/07/2025 01:33:40.421 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[10/07/2025 01:33:40.673 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[10/07/2025 01:34:36.991 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: Tomcat log last 10 finances
+[10/07/2025 01:34:37.001 AM] Intent   || finance_log_recent        ||                                              
+[10/07/2025 01:34:37.003 AM] Action   || Name: intent_dispatch     || Trigger: type=finance_log_recent msg=14250... || Output: begin
+[10/07/2025 01:34:37.631 AM] Action   || Name: finance_manual_l... || Trigger: count=10                             || Output: ch=1341696618688286720
+[10/07/2025 01:34:39.178 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jenny Nguyen $9.70 on 2025-09-03
+[10/07/2025 01:34:42.260 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: DOMINO'S $60.57 on 2025-09-09
+[10/07/2025 01:34:42.260 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $20.00 on 2025-09-10
+[10/07/2025 01:34:48.591 AM] Action   || Name: finance_manual_l... || Trigger: count=10                             || Output: found=10 logged=7 dup=3 already=0 failed=0
+[10/07/2025 01:34:48.593 AM] Action   || Name: intent_dispatch     || Trigger: type=finance_log_recent msg=14250... || Output: done count=10
+[10/07/2025 01:36:01.885 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: Tomcat log last 50 finances
+[10/07/2025 01:36:01.886 AM] Intent   || finance_log_recent        ||                                              
+[10/07/2025 01:36:01.886 AM] Action   || Name: intent_dispatch     || Trigger: type=finance_log_recent msg=14250... || Output: begin
+[10/07/2025 01:36:02.403 AM] Action   || Name: finance_manual_l... || Trigger: count=50                             || Output: ch=1341696618688286720
+[10/07/2025 01:36:02.428 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-12
+[10/07/2025 01:36:02.428 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-12
+[10/07/2025 01:36:02.429 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Austin Brown $211.18 on 2025-06-17
+[10/07/2025 01:36:02.429 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Py Store Here Pantego $54.00 on 2025-06-20
+[10/07/2025 01:36:02.430 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Wix $25.98 on 2025-06-26
+[10/07/2025 01:36:02.430 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Kylie Crook $5.00 on 2025-09-16
+[10/07/2025 01:36:03.862 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jenny Nguyen $9.70 on 2025-09-03
+[10/07/2025 01:36:10.982 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-11
+[10/07/2025 01:36:10.985 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-05-20
+[10/07/2025 01:36:10.986 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $72.45 on 2025-05-23
+[10/07/2025 01:36:10.987 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-05-26
+[10/07/2025 01:36:10.988 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $74.92 on 2025-07-30
+[10/07/2025 01:36:10.990 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: DOMINO'S $60.57 on 2025-09-09
+[10/07/2025 01:36:10.991 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $20.00 on 2025-09-10
+[10/07/2025 01:36:10.992 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $89.91 on 2025-10-05
+[10/07/2025 01:36:44.304 AM] Action   || Name: finance_manual_l... || Trigger: count=50                             || Output: found=50 logged=25 dup=18 already=7 failed=0
+[10/07/2025 01:36:44.304 AM] Action   || Name: intent_dispatch     || Trigger: type=finance_log_recent msg=14250... || Output: done count=50
+[10/07/2025 01:37:58.109 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: I hate programming. I’m giving up ASAP!!! Or just manually entering ...
+[10/07/2025 01:38:04.084 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: Either way, gn chat

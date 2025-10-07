@@ -46,19 +46,25 @@ _DUES_AMOUNT = 15.0
 _DUES_TOL = 0.75
 
 FOODS_GOODS_KEYWORDS = {
-    "bake", "cookie", "cookies", "brownie", "brownies", "cupcake", "cupcakes",
-    "drink", "drinks", "soda", "snack", "snacks", "lemonade", "scone", "dessert",
-    "food", "goods", "pastry", "pastries", "chai", "coffee", "tea", "candy",
+    "bake", "bakesale", "bake sale", "cookie", "cookies", "brownie", "brownies",
+    "cupcake", "cupcakes", "cake", "cakes", "scone", "banana bread", "lemonade",
+    "drink", "drinks", "dr pepper", "soda", "snack", "snacks", "dessert",
+    "food", "foods", "goods", "pastry", "pastries", "chai", "coffee", "tea",
+    "candy",
 }
 OTHER_FUNDRAISER_KEYWORDS = {
     "sticker", "stickers", "merch", "shirt", "shirts", "hoodie", "hoodies",
     "sweater", "pin", "pins", "button", "buttons", "keychain", "keychains",
     "crochet", "plush", "plushie", "bookmark", "bracelet", "earring", "earrings",
+    "redbubble", "etsy", "table fee", "vendor fee",
 }
 ADOPTION_KEYWORDS = {
     "adoption", "adopt", "adopting", "adoption fee", "adopt fee", "adopted",
+    "rehoming fee",
 }
 DEDUCTION_WORDS = {"dues", "membership", "member", "due"}
+
+_DUES_MESSAGE_IDS: Set[str] = set()
 
 VET_KEYWORDS = {
     "vet", "veterinary", "clinic", "vaccine", "vaccination", "spay", "neuter",
@@ -67,6 +73,8 @@ VET_KEYWORDS = {
 FOOD_EXPENSE_KEYWORDS = {
     "petco", "petsmart", "pet smart", "chewy", "cat food", "food", "litter", "kibble",
     "treat", "treats", "wet food", "dry food", "purina", "friskies", "royal canin",
+    "walmart", "kroger", "heb", "costco", "sams", "sam's", "tractor supply",
+    "temptations", "fancy feast",
 }
 STORAGE_KEYWORDS = {
     "py store", "storage unit", "storage fee", "ps store here", "ps store",
@@ -78,9 +86,23 @@ SUPPLIES_KEYWORDS = {
     "supply", "supplies", "poster", "flyer", "table", "banner", "balloon", "cups",
     "plates", "sign", "marker", "ink", "toner", "printing", "tape", "scissors",
     "decor", "decoration", "craft", "glue", "string", "paint", "brush", "bag",
+    "trap", "traps", "transfer cage", "carrier", "paper towels", "bleach", "gloves",
+    "zip tie", "zip ties",
 }
 
 _CURRENCY_RE = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]{2})?)")
+_RECENT_ROWS_LIMIT = 1000
+
+_TXN_PATTERNS = [
+    re.compile(p, re.I)
+    for p in (
+        r"Transaction ID[:\s#]*([A-Z0-9\-]{10,})",
+        r"Receipt ID[:\s#]*([A-Z0-9\-]{8,})",
+        r"Payment ID[:\s#]*([A-Z0-9\-]{10,})",
+        r"Authorization ID[:\s#]*([A-Z0-9\-]{10,})",
+        r"\bID[:\s#]*([A-Z0-9]{10,})",
+    )
+]
 
 
 def _find_currency_amount(*texts: str) -> Optional[float]:
@@ -108,6 +130,17 @@ def _coerce_amount(raw: str, *fallback_texts: str) -> float:
     except Exception:
         return 0.0
 
+
+def _extract_txn_id(*texts: str) -> Optional[str]:
+    for text in texts:
+        if not text:
+            continue
+        for pat in _TXN_PATTERNS:
+            m = pat.search(text)
+            if m:
+                return m.group(1).strip()
+    return None
+
 PROVIDER_NAMES = {
     "paypal": "Paypal",
     "venmo": "Venmo",
@@ -131,6 +164,9 @@ class FinanceEvent:
     raw_subject: str
     raw_content: str
     message_blank: bool
+    message_id: Optional[str] = None
+    txn_id: Optional[str] = None
+    provider_ts: Optional[datetime] = None
 
     @property
     def payment_type(self) -> str:
@@ -204,6 +240,44 @@ def _load_fingerprints() -> Set[str]:
     except Exception:
         return fps
     return fps
+
+
+def _load_txn_ids() -> Set[str]:
+    txn: Set[str] = set()
+    if not os.path.exists(FINANCE_INDEX):
+        return txn
+    try:
+        with open(FINANCE_INDEX, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                tx = obj.get("txn_id")
+                if isinstance(tx, str) and tx:
+                    txn.add(tx)
+    except Exception:
+        return txn
+    return txn
+
+
+def _load_message_ids() -> Set[str]:
+    mids: Set[str] = set()
+    if not os.path.exists(FINANCE_INDEX):
+        return mids
+    try:
+        with open(FINANCE_INDEX, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                mid = obj.get("message_id")
+                if isinstance(mid, str) and mid:
+                    mids.add(mid)
+    except Exception:
+        return mids
+    return mids
 
 
 def _iter_email_logs() -> Iterable[dict]:
@@ -293,6 +367,19 @@ def _is_likely_dues(amount: Optional[float], text: str) -> bool:
     if amount is None:
         return False
     return abs(amount - _DUES_AMOUNT) <= _DUES_TOL
+
+
+def _ensure_dues_ids() -> None:
+    if not _DUES_MESSAGE_IDS:
+        _DUES_MESSAGE_IDS.update(_load_dues_message_ids())
+
+
+def _is_dues_email(amount: Optional[float], text: str, message_id: Optional[str]) -> bool:
+    if message_id:
+        _ensure_dues_ids()
+        if message_id in _DUES_MESSAGE_IDS:
+            return True
+    return _is_likely_dues(amount, text)
 
 
 def _extract_note(text: str) -> str:
@@ -424,8 +511,9 @@ def _norm_text(s: str) -> str:
 
 
 def _fingerprint(ev: "FinanceEvent") -> str:
-    day = ev.ts.date().isoformat()
-    bucket = ev.ts.date().toordinal() // 2  # two-day bucket for cross-day heuristics
+    event_date = (ev.provider_ts or ev.ts).date()
+    day = event_date.isoformat()
+    bucket = event_date.toordinal() // 2  # two-day bucket for cross-day heuristics
     base = "|".join([
         ev.direction,
         day,
@@ -446,6 +534,8 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     text = subject.strip()
     body = content
     ts = _parse_timestamp(email)
+    message_id = email.get("message_id")
+    txn_id = _extract_txn_id(subject, content)
 
     # Paid you
     m = re.match(r"^(?P<name>.+?)\s+(?:paid|sent)\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
@@ -455,8 +545,9 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
         note = _extract_venmo_note(subject, body, m.group("note"))
         note = _extract_note(note)
         blank = not bool(note.strip())
-        if _is_likely_dues(amount, f"{subject} {note}"):
+        if _is_dues_email(amount, f"{subject} {note}", message_id):
             return (None, "dues")
+        category = _categorize_income(note or subject, subject)
         return (FinanceEvent(
             email_id=email.get("id", ""),
             provider="venmo",
@@ -464,11 +555,13 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             note=note,
             amount=amount,
             direction="income",
-            category=_categorize_income(note or subject),
+            category=category,
             ts=ts,
             raw_subject=subject,
             raw_content=content,
             message_blank=blank,
+            message_id=message_id,
+            txn_id=txn_id,
         ), "income")
 
     # You paid someone
@@ -490,6 +583,8 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             raw_subject=subject,
             raw_content=content,
             message_blank=not bool(note.strip()),
+            message_id=message_id,
+            txn_id=txn_id,
         ), "expense")
 
     # Receipt from
@@ -511,6 +606,8 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             raw_subject=subject,
             raw_content=content,
             message_blank=not bool(note.strip()),
+            message_id=message_id,
+            txn_id=txn_id,
         ), "expense")
 
     return (None, "ignore")
@@ -525,6 +622,8 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     text = subject.strip()
     body = content
     ts = _parse_timestamp(email)
+    message_id = email.get("message_id")
+    txn_id = _extract_txn_id(subject, content)
 
     m = re.match(r"^(?P<name>.+?)\s+sent\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
     if m:
@@ -533,8 +632,9 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
         note = _extract_cashapp_note(subject, body, m.group("note"))
         note = _extract_note(note)
         blank = not bool(note.strip())
-        if _is_likely_dues(amount, f"{subject} {note}"):
+        if _is_dues_email(amount, f"{subject} {note}", message_id):
             return (None, "dues")
+        category = _categorize_income(note or subject, subject)
         return (FinanceEvent(
             email_id=email.get("id", ""),
             provider="cashapp",
@@ -542,11 +642,13 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             note=note,
             amount=amount,
             direction="income",
-            category=_categorize_income(note or subject),
+            category=category,
             ts=ts,
             raw_subject=subject,
             raw_content=content,
             message_blank=blank,
+            message_id=message_id,
+            txn_id=txn_id,
         ), "income")
 
     # Spending via Cash App
@@ -568,6 +670,8 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             raw_subject=subject,
             raw_content=content,
             message_blank=not bool(note.strip()),
+            message_id=message_id,
+            txn_id=txn_id,
         ), "expense")
 
     return (None, "ignore")
@@ -582,6 +686,8 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     text = subject.strip()
     body = content
     ts = _parse_timestamp(email)
+    message_id = email.get("message_id")
+    txn_id = _extract_txn_id(subject, content)
 
     if "you've got money" in text.lower() or "money received" in text.lower():
         m = re.search(r"([A-Za-z][A-Za-z '\.-]+)\s+sent\s+you\s+\$([0-9.,]+)", content)
@@ -593,8 +699,9 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             note = _extract_paypal_note(subject, content, None)
             note = _extract_note(note)
             blank = not bool(note.strip())
-            if _is_likely_dues(amount, f"{subject} {note}"):
+            if _is_dues_email(amount, f"{subject} {note}", message_id):
                 return (None, "dues")
+            category = _categorize_income(note or subject, subject) or _DONATION_DEFAULT
             return (FinanceEvent(
                 email_id=email.get("id", ""),
                 provider="paypal",
@@ -602,14 +709,15 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
                 note=note,
                 amount=amount,
                 direction="income",
-                category=_categorize_income(note or subject),
+                category=category,
                 ts=ts,
                 raw_subject=subject,
                 raw_content=content,
                 message_blank=blank,
+                message_id=message_id,
+                txn_id=txn_id,
             ), "income")
 
-    # Payment sent (expense)
     m = re.search(r"You\s+sent\s+a?\s*\$([0-9.,]+)\s*(?:usd)?\s+payment\s+to\s+([^\n]+)", content, re.I)
     if m:
         amount = _coerce_amount(m.group(1), subject, content)
@@ -628,13 +736,13 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             raw_subject=subject,
             raw_content=content,
             message_blank=not bool(note.strip()),
+            message_id=message_id,
+            txn_id=txn_id,
         ), "expense")
 
-    # Statements or receipts that imply expenses can be ignored during ingestion
     if re.search(r"statement", text, re.I):
         return (None, "ignore")
 
-    # Payouts like "Bonfire: $36.77 USD" treated as income by default
     m = re.match(r"^(?P<name>.+?):\s*\$?(?P<amount>[0-9.,]+)\s*(?:usd)?", text, re.I)
     if m:
         name = _clean_counterparty(m.group("name"))
@@ -642,8 +750,9 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
         note = _extract_paypal_note(subject, content, None)
         note = _extract_note(note)
         blank = not bool(note.strip())
-        if _is_likely_dues(amount, f"{subject} {note}"):
+        if _is_dues_email(amount, f"{subject} {note}", message_id):
             return (None, "dues")
+        category = _categorize_income(note or subject, subject)
         return (FinanceEvent(
             email_id=email.get("id", ""),
             provider="paypal",
@@ -651,11 +760,13 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             note=note,
             amount=amount,
             direction="income",
-            category=_categorize_income(note or subject),
+            category=category,
             ts=ts,
             raw_subject=subject,
             raw_content=content,
             message_blank=blank,
+            message_id=message_id,
+            txn_id=txn_id,
         ), "income")
 
     return (None, "ignore")
@@ -681,16 +792,16 @@ def _find_note_in_body(body: str) -> str:
     return ""
 
 
-def _categorize_income(text: str) -> Optional[str]:
+def _categorize_income(text: str, subject_hint: str = "") -> Optional[str]:
     """Map free-form notes to our Income form categories."""
-    lower = (text or "").lower()
+    lower = f"{text or ''} {subject_hint or ''}".lower()
     if any(word in lower for word in ADOPTION_KEYWORDS):
         return _INCOME_TYPES["adoption"]
     if any(word in lower for word in FOODS_GOODS_KEYWORDS):
         return _INCOME_TYPES["foods_goods"]
     if any(word in lower for word in OTHER_FUNDRAISER_KEYWORDS):
         return _INCOME_TYPES["other"]
-    if lower:
+    if lower.strip():
         return None
     return _INCOME_TYPES["donations"]
 
@@ -713,7 +824,7 @@ def _categorize_expense(counterparty: str, text: str) -> str:
 
 def _build_income_row(event: FinanceEvent) -> List[str]:
     """Translate a FinanceEvent into the Income sheet row schema."""
-    ts = event.ts.astimezone(timezone.utc)
+    ts = (event.provider_ts or event.ts).astimezone(timezone.utc)
     timestamp = format_mmddyyyy(ts)
     month = ts.strftime('%B')
     year = str(ts.year)
@@ -738,7 +849,7 @@ def _build_income_row(event: FinanceEvent) -> List[str]:
 
 def _build_expense_row(event: FinanceEvent) -> List[str]:
     """Translate a FinanceEvent into the Expenses sheet row schema."""
-    ts = event.ts.astimezone(timezone.utc)
+    ts = (event.provider_ts or event.ts).astimezone(timezone.utc)
     timestamp = format_mmddyyyy(ts)
     month = ts.strftime('%B')
     year = str(ts.year)
@@ -810,7 +921,7 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
     return results
 
 
-def _fetch_recent_records(ws, kind: str, max_rows: int = 800) -> List[dict]:
+def _fetch_recent_records(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> List[dict]:
     """Fetch recent rows from a worksheet and normalize into comparable records.
     kind: 'income' or 'expense'
     """
@@ -821,7 +932,8 @@ def _fetch_recent_records(ws, kind: str, max_rows: int = 800) -> List[dict]:
         return []
     if not vals:
         return []
-    rows = vals[-max_rows:] if len(vals) > max_rows else vals
+    limit = max_rows if max_rows > 0 else _RECENT_ROWS_LIMIT
+    rows = vals[-limit:] if len(vals) > limit else vals
     recs: List[dict] = []
     for r in rows:
         try:
@@ -990,28 +1102,78 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
         log_action('finance_sheet_error', 'income_open', str(e))
         return {event.email_id: (False, str(e)) for event in events}
 
-    # Load dedupe context
     existing = _fetch_recent_records(ws, 'income')
     seen_fp = _load_fingerprints()
+    seen_txn = _load_txn_ids()
+    seen_msg = _load_message_ids()
+
     results: Dict[str, Tuple[bool, str]] = {}
     rows: List[List[str]] = []
-    idx_map: List[str] = []  # map row index -> email_id
+    idx_events: List[FinanceEvent] = []
+
     for ev in events:
-        fp = _fingerprint(ev)
-        if fp in seen_fp or _looks_duplicate(ev, existing):
+        # Skip known dues just in case classifier missed
+        if _is_dues_email(ev.amount, f"{ev.raw_subject} {ev.note}", ev.message_id):
             try:
-                log_action('finance_skip_duplicate', f'kind=income', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
+                log_action('finance_skip_duplicate', 'kind=income_dues', f'{ev.counterparty} ${ev.amount:.2f}')
+            except Exception:
+                pass
+            results[ev.email_id] = (False, 'dues_skip')
+            continue
+
+        if ev.txn_id and ev.txn_id in seen_txn:
+            try:
+                log_action('finance_skip_duplicate', 'income_txn', f'{ev.counterparty} ${ev.amount:.2f}')
             except Exception:
                 pass
             results[ev.email_id] = (False, 'dup_skipped')
             continue
+        if ev.message_id and ev.message_id in seen_msg:
+            try:
+                log_action('finance_skip_duplicate', 'income_msg', f'{ev.counterparty} ${ev.amount:.2f}')
+            except Exception:
+                pass
+            results[ev.email_id] = (False, 'dup_skipped')
+            continue
+
+        fp = _fingerprint(ev)
+        if fp in seen_fp or _looks_duplicate(ev, existing):
+            try:
+                log_action('finance_skip_duplicate', 'kind=income', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
+            except Exception:
+                pass
+            results[ev.email_id] = (False, 'dup_skipped')
+            continue
+
         rows.append(_build_income_row(ev))
-        idx_map.append(ev.email_id)
+        idx_events.append(ev)
+
     if rows:
-        appended = await _append_rows_with_retry(ws, rows, 'income')
-        for i, eid in enumerate(idx_map):
-            results[eid] = appended[i]
-    # Ensure all events present in mapping
+        append_results = await _append_rows_with_retry(ws, rows, 'income')
+        for ev, (ok, msg) in zip(idx_events, append_results):
+            results[ev.email_id] = (ok, msg)
+            if ok:
+                seen_fp.add(_fingerprint(ev))
+                if ev.txn_id:
+                    seen_txn.add(ev.txn_id)
+                if ev.message_id:
+                    seen_msg.add(ev.message_id)
+                _append_index({
+                    "email_id": ev.email_id,
+                    "status": ev.direction,
+                    "category": ev.category,
+                    "amount": ev.amount,
+                    "counterparty": ev.counterparty,
+                    "note": ev.note,
+                    "provider": ev.provider,
+                    "fingerprint": _fingerprint(ev),
+                    "message_id": ev.message_id,
+                    "txn_id": ev.txn_id,
+                    "provider_ts": (ev.provider_ts or ev.ts).isoformat(),
+                })
+            else:
+                log_action('finance_sheet_error', f'income_append_error', msg)
+
     for ev in events:
         results.setdefault(ev.email_id, (False, 'dup_skipped'))
     return results
@@ -1033,10 +1195,29 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
 
     existing = _fetch_recent_records(ws, 'expense')
     seen_fp = _load_fingerprints()
+    seen_txn = _load_txn_ids()
+    seen_msg = _load_message_ids()
+
     results: Dict[str, Tuple[bool, str]] = {}
     rows: List[List[str]] = []
-    idx_map: List[str] = []
+    idx_events: List[FinanceEvent] = []
+
     for ev in events:
+        if ev.txn_id and ev.txn_id in seen_txn:
+            try:
+                log_action('finance_skip_duplicate', 'expense_txn', f'{ev.counterparty} ${ev.amount:.2f}')
+            except Exception:
+                pass
+            results[ev.email_id] = (False, 'dup_skipped')
+            continue
+        if ev.message_id and ev.message_id in seen_msg:
+            try:
+                log_action('finance_skip_duplicate', 'expense_msg', f'{ev.counterparty} ${ev.amount:.2f}')
+            except Exception:
+                pass
+            results[ev.email_id] = (False, 'dup_skipped')
+            continue
+
         fp = _fingerprint(ev)
         if fp in seen_fp or _looks_duplicate(ev, existing):
             try:
@@ -1045,12 +1226,36 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
                 pass
             results[ev.email_id] = (False, 'dup_skipped')
             continue
+
         rows.append(_build_expense_row(ev))
-        idx_map.append(ev.email_id)
+        idx_events.append(ev)
+
     if rows:
-        appended = await _append_rows_with_retry(ws, rows, 'expense')
-        for i, eid in enumerate(idx_map):
-            results[eid] = appended[i]
+        append_results = await _append_rows_with_retry(ws, rows, 'expense')
+        for ev, (ok, msg) in zip(idx_events, append_results):
+            results[ev.email_id] = (ok, msg)
+            if ok:
+                seen_fp.add(_fingerprint(ev))
+                if ev.txn_id:
+                    seen_txn.add(ev.txn_id)
+                if ev.message_id:
+                    seen_msg.add(ev.message_id)
+                _append_index({
+                    "email_id": ev.email_id,
+                    "status": ev.direction,
+                    "category": ev.category,
+                    "amount": ev.amount,
+                    "counterparty": ev.counterparty,
+                    "note": ev.note,
+                    "provider": ev.provider,
+                    "fingerprint": _fingerprint(ev),
+                    "message_id": ev.message_id,
+                    "txn_id": ev.txn_id,
+                    "provider_ts": (ev.provider_ts or ev.ts).isoformat(),
+                })
+            else:
+                log_action('finance_sheet_error', 'expense_append_error', msg)
+
     for ev in events:
         results.setdefault(ev.email_id, (False, 'dup_skipped'))
     return results
@@ -1100,18 +1305,9 @@ async def _process_finance_events(
     for event, inferred in income_events:
         sheet_res = income_result_map.get(event.email_id, (False, 'not_logged'))
         if sheet_res[0]:
-            _append_index({
-                "email_id": event.email_id,
-                "status": event.direction,
-                "category": event.category,
-                "amount": event.amount,
-                "counterparty": event.counterparty,
-                "note": event.note,
-                "provider": event.provider,
-                "fingerprint": _fingerprint(event),
-            })
             processed[event.email_id] = True
-        if notify and not (not sheet_res[0] and str(sheet_res[1]).startswith('dup_')):
+        skip_reason = str(sheet_res[1])
+        if notify and not (not sheet_res[0] and (skip_reason.startswith('dup_') or skip_reason == 'dues_skip')):
             blank = event.note.strip() == ""
             await _notify_sandbox(bot, event, event.direction, sheet_res, inferred, blank)
         results.append((event, sheet_res, inferred))
@@ -1119,18 +1315,9 @@ async def _process_finance_events(
     for event, inferred in expense_events:
         sheet_res = expense_result_map.get(event.email_id, (False, 'not_logged'))
         if sheet_res[0]:
-            _append_index({
-                "email_id": event.email_id,
-                "status": event.direction,
-                "category": event.category,
-                "amount": event.amount,
-                "counterparty": event.counterparty,
-                "note": event.note,
-                "provider": event.provider,
-                "fingerprint": _fingerprint(event),
-            })
             processed[event.email_id] = True
-        if notify and not (not sheet_res[0] and str(sheet_res[1]).startswith('dup_')):
+        skip_reason = str(sheet_res[1])
+        if notify and not (not sheet_res[0] and skip_reason.startswith('dup_')):
             blank = event.note.strip() == ""
             await _notify_sandbox(bot, event, event.direction, sheet_res, inferred, blank)
         results.append((event, sheet_res, inferred))
@@ -1144,6 +1331,8 @@ def _collect_recent_finance_events(limit: int) -> Tuple[List[FinanceEvent], int,
     if limit <= 0:
         return [], 0, 0
     dues_ids = _load_dues_message_ids()
+    if dues_ids:
+        _DUES_MESSAGE_IDS.update(dues_ids)
     events: List[FinanceEvent] = []
     scanned = 0
     skipped_dues = 0

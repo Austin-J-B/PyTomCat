@@ -123,26 +123,30 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
         pass
 
     names: list[str] = []
+    name_arg = str(args.get("name") or "").strip()
     try:
         gc = sheets_client()
         ws = gc.open_by_key(settings.sheet_vision_id).worksheet("RecentPics")
         rows = ws.get_all_values()
-        if args.get("name"):
-            # Resolve one cat to actual FULL_NAME from CatDatabase if possible
-            from ..services.catsheets import get_cat_profile
-            prof = await get_cat_profile(str(args.get("name")))
-            if isinstance(prof, dict) and prof.get("actual_name"):
-                names = [prof["actual_name"]]
+        if name_arg:
+            if name_arg.lower() in {"all", "*", "photos", "cache", "profiles"}:
+                names = []
             else:
-                # fallback: try to match first column loosely
-                q = str(args.get("name") or "").strip().lower()
-                for r in rows[1:]:
-                    full = (r[0] if r else '').strip()
-                    if full and q in full.lower():
-                        names = [full]
-                        break
-                if not names:
-                    names = [q]
+                # Resolve one cat to actual FULL_NAME from CatDatabase if possible
+                from ..services.catsheets import get_cat_profile
+                prof = await get_cat_profile(name_arg)
+                if isinstance(prof, dict) and prof.get("actual_name"):
+                    names = [prof["actual_name"]]
+                else:
+                    # fallback: try to match first column loosely
+                    q = name_arg.lower()
+                    for r in rows[1:]:
+                        full = (r[0] if r else '').strip()
+                        if full and q in full.lower():
+                            names = [full]
+                            break
+                    if not names:
+                        names = [name_arg]
         else:
             for r in rows[1:]:
                 full = (r[0] if r else '').strip()
@@ -155,6 +159,17 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
         except Exception:
             pass
         return
+
+    # Fallback to profile cache if we failed to collect names from RecentPics
+    if not names:
+        try:
+            from ..services import profile_cache as PC
+            if PC.cached_count() == 0:
+                await PC.refresh_async()
+            names = PC.all_actual_names()
+        except Exception as e:
+            log_action("recache_error", "fallback_profiles", str(e))
+            names = names or []
 
     # Wipe and refill per cat with gentle concurrency
     base = settings.show_cache_dir
@@ -183,6 +198,18 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
     except Exception:
         pass
 
+    # Deduplicate while preserving order
+    seen_names = set()
+    unique_names = []
+    for nm in names:
+        key = nm.strip()
+        if not key:
+            continue
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        unique_names.append(key)
+
     async def _one(nm: str):
         nonlocal total
         async with sem:
@@ -193,9 +220,16 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
                 log_action("recache_error", nm, str(e))
             await asyncio.sleep(0.2)
 
-    await asyncio.gather(*[_one(n) for n in names])
+    from ..services import show_cache as _sc
+    _sc.reset_recentpics_cache()
+
+    await asyncio.gather(*[_one(n) for n in unique_names])
     try:
-        await message.channel.send(f"Recache complete for {total} cats.")
+        _sc.rebuild_name_index()
+    except Exception:
+        pass
+    try:
+        await message.channel.send(f"Recache complete for {total} cat(s).")
     except Exception:
         pass
 

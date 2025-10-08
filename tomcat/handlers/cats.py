@@ -15,6 +15,7 @@ from ..services.catsheets import (
 from ..logger import log_action, log_event 
 import re
 import os, io, asyncio, aiohttp
+from datetime import datetime, timezone
 from ..vision import vision as V
 from ..services.show_cache import pop_one_cached, ensure_cat_cache, latest_cached_bytes
 from pathlib import Path
@@ -29,6 +30,78 @@ from discord.errors import NotFound
 def _display_name(full: str) -> str:
     """Drop leading 'ID. ' from names like '1. Microwave'."""
     return re.sub(r"^\s*\d+\.\s*", "", str(full or "")).strip()
+
+
+def _format_age_value(raw) -> str:
+    """Convert various birthday/age representations into friendly text.
+
+    - If provided an integer/float: interpret as years (with <1 treated as months).
+    - If provided a date string: compute the age using today's date.
+    - Otherwise return the original text.
+    """
+    if raw in (None, ""):
+        return ""
+
+    def _months_to_text(months: int) -> str:
+        if months <= 0:
+            return "Less than 1 month"
+        if months == 1:
+            return "1 month"
+        return f"{months} months"
+
+    def _years_to_text(years: int) -> str:
+        if years == 1:
+            return "1 year"
+        return f"{years} years"
+
+    # Numeric values: treat as approximate years
+    if isinstance(raw, (int, float)):
+        value = float(raw)
+        if value < 1:
+            months = max(1, int(round(value * 12)))
+            return _months_to_text(months)
+        years = int(round(value))
+        years = max(1, years)
+        return _years_to_text(years)
+
+    text = str(raw).strip()
+    if not text:
+        return ""
+
+    # Parse date strings (mm/dd/yyyy, yyyy-mm-dd, etc.)
+    parsed = None
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            parsed_dt = datetime.strptime(text, fmt)
+            parsed = parsed_dt.date()
+            break
+        except Exception:
+            continue
+    if parsed is None:
+        try:
+            parsed = datetime.fromisoformat(text).date()
+        except Exception:
+            parsed = None
+
+    if parsed is None:
+        return text
+
+    today = datetime.now(timezone.utc).date()
+    if parsed > today:
+        return text
+
+    # Compute months difference
+    months_total = (today.year - parsed.year) * 12 + (today.month - parsed.month)
+    if today.day < parsed.day:
+        months_total -= 1
+
+    if months_total <= 0:
+        return "Less than 1 month"
+    if months_total < 12:
+        return _months_to_text(months_total)
+
+    years = months_total // 12
+    return _years_to_text(years)
 
 
 class PhotoView(discord.ui.View):
@@ -459,9 +532,10 @@ async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
     loc = prof.get("location")
     if loc:
         lines.append(f"**Location:** {loc}")
-    age = prof.get("birthday_estimate") or prof.get("age")
-    if age:
-        lines.append(f"**Age Estimate:** {age}")
+    age_raw = prof.get("birthday_estimate") or prof.get("age")
+    age_formatted = _format_age_value(age_raw)
+    if age_formatted:
+        lines.append(f"**Age Estimate:** {age_formatted}")
     sex = prof.get("sex")
     if sex:
         lines.append(f"**Sex:** {sex}")

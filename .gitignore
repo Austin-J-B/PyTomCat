@@ -3,8 +3,8 @@
 !logs/human/.gitkeep
 !logs/machine/.gitkeep
 ## Secrets and OAuth material live outside of version control.
-#.env
-#credentials/*
+.env
+credentials/*
 #!credentials/service_account.json
 #credentials/service_account.json
 #gmail_token.json

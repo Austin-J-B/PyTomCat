@@ -3,98 +3,13 @@
 from __future__ import annotations
 import asyncio, os, shutil
 import discord
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from ..config import settings
 from ..logger import log_action
 from ..services.show_cache import ensure_cat_cache
 from ..services.catsheets import sheets_client  # type: ignore
 from ..services import profile_cache as PC
 from .. import aliases as ALIAS
-
-class UITestView(discord.ui.View):
-    """Button that launches the configured embedded Activity invite on demand."""
-    def __init__(self, *, app_id: Optional[int]):
-        super().__init__(timeout=180)
-        self._app_id: Optional[int] = app_id
-
-    @discord.ui.button(label="Test", style=discord.ButtonStyle.primary, custom_id="uitest_launch")
-    async def launch(self, interaction: discord.Interaction, button: discord.ui.Button):
-        app_id = self._app_id
-        if not app_id:
-            msg = (
-                "UITEST_ACTIVITY_APP_ID is not configured yet. "
-                "Set it in the environment and restart TomCat to enable this button."
-            )
-            await interaction.response.send_message(msg, ephemeral=True)
-            return
-
-        member = getattr(interaction, "user", None)
-        voice_state = getattr(member, "voice", None)
-        channel = getattr(voice_state, "channel", None)
-        if channel is None:
-            await interaction.response.send_message(
-                "Join a voice or stage channel first so I know where to launch the Activity.",
-                ephemeral=True,
-            )
-            return
-
-        if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
-            await interaction.response.send_message(
-                "Activities can only launch inside voice or stage channels.",
-                ephemeral=True,
-            )
-            return
-
-        try:
-            invite = await channel.create_invite(
-                max_age=300,
-                max_uses=0,
-                target_application_id=int(app_id),
-                target_type=discord.InviteTarget.embedded_application,
-                reason="TomCat UI test activity launch",
-            )
-        except Exception as exc:
-            log_action(
-                "uitest_launch_error",
-                f"user={getattr(member, 'id', 0)}; channel={getattr(channel, 'id', 0)}",
-                str(exc),
-            )
-            responder = interaction.followup if interaction.response.is_done() else interaction.response
-            try:
-                await responder.send(
-                    "I couldn't create an Activity invite. "
-                    "Check my Create Invite permission and that the configured application is an Activity.",
-                    ephemeral=True,
-                )
-            except Exception:
-                pass
-            return
-
-        open_view = discord.ui.View()
-        open_view.add_item(discord.ui.Button(label="Open TomCat UI Test", url=str(invite.url)))
-        responder = interaction.followup if interaction.response.is_done() else interaction.response
-        try:
-            await responder.send(
-                content=(
-                    "Activity invite ready! Click below to launch the TomCat UI test. "
-                    "Invites expire in 5 minutes."
-                ),
-                view=open_view,
-                ephemeral=True,
-            )
-        except Exception as exc:
-            log_action(
-                "uitest_launch_send_error",
-                f"user={getattr(member, 'id', 0)}; channel={getattr(channel, 'id', 0)}",
-                str(exc),
-            )
-            return
-
-        log_action(
-            "uitest_launch",
-            f"user={getattr(member, 'id', 0)}; channel={getattr(channel, 'id', 0)}",
-            f"invite={getattr(invite, 'code', '?')}",
-        )
 
 
 async def handle_silent_mode(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
@@ -111,46 +26,6 @@ async def handle_silent_mode(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
         await ctx["message"].add_reaction("👍")
     except Exception:
         pass
-
-
-async def handle_ui_test(intent: Dict[str, Any], ctx: Dict[str, Any]) -> None:
-    """Admin-only: surface the UI test Activity launcher button."""
-    channel = ctx["channel"]
-    author = ctx["author"]
-    is_admin = int(getattr(author, "id", 0)) in (getattr(settings, "admin_ids", []) or []) or \
-        getattr(getattr(author, "guild_permissions", None), "administrator", False)
-    if not is_admin:
-        log_action("uitest_denied", f"user={getattr(author, 'id', 0)}", "not_admin")
-        return
-
-    app_id = getattr(settings, "uitest_activity_app_id", None)
-    notes: list[str] = [
-        "Press **Test** to create a time-limited Activity invite tied to your current voice channel.",
-        "Join a voice or stage channel first so Discord knows where to host the Activity.",
-        "Invites expire after 5 minutes and require TomCat to have Create Invite permissions.",
-    ]
-    if not app_id:
-        notes.append("Configure `UITEST_ACTIVITY_APP_ID` in `.env` to point at your embedded Activity.")
-
-    description = "\n".join(f"• {line}" for line in notes)
-    embed = discord.Embed(
-        title="TomCat UI Test",
-        description=description,
-        color=0x5865F2,
-    )
-
-    view = UITestView(app_id=app_id)
-    try:
-        await channel.send(embed=embed, view=view)
-    except Exception as exc:
-        log_action("uitest_send_error", f"channel={getattr(channel, 'id', None)}", str(exc))
-        return
-
-    log_action(
-        "uitest_command",
-        f"user={getattr(author, 'id', 0)}; channel={getattr(channel, 'id', None)}",
-        f"app_id={app_id or 'unset'}",
-    )
 
 
 # Guild-scoped admin actions target the primary CCC server.

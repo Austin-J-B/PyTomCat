@@ -219,6 +219,18 @@ def cached_count() -> int:
     """Return how many profiles are currently cached."""
     return int(_COUNT)
 
+def all_actual_names() -> list[str]:
+    """Return a list of full cat names (with numeric prefixes) from cache."""
+    _ensure_loaded()
+    if not _CACHE:
+        return []
+    names: list[str] = []
+    for entry in _CACHE.values():
+        full = entry.get("actual_name")
+        if full:
+            names.append(str(full))
+    return names
+
 def _ensure_loaded() -> None:
     """Lazy-load the cache if nothing has been loaded yet."""
     global _CACHE, _TS

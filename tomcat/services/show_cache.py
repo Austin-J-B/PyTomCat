@@ -100,6 +100,13 @@ def _set_recentpics_rows(rows: Optional[List[List[str]]]) -> None:
     _RECENTPICS_ROWS = rows
     _RECENTPICS_TS = time.monotonic()
 
+
+def reset_recentpics_cache() -> None:
+    """Clear the cached RecentPics rows so the next call refetches from Sheets."""
+    global _RECENTPICS_ROWS, _RECENTPICS_TS
+    _RECENTPICS_ROWS = None
+    _RECENTPICS_TS = 0.0
+
 async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
     """Return cached (url, display) entries for a cat from RecentPics."""
     """Return URL/SERIAL pairs from RecentPics for a given FULL_NAME."""
@@ -321,6 +328,11 @@ def _build_name_index() -> None:
                     continue
         except Exception:
             continue
+
+
+def rebuild_name_index() -> None:
+    """Expose a public hook to refresh the cached name index."""
+    _build_name_index()
 
 def _resolve_cat_id(query: str) -> Optional[int]:
     """Resolve a fuzzy cat query into an ID using the alias index."""

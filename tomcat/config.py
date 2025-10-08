@@ -126,6 +126,11 @@ class Settings:
     # Optional embedded Activity for admin UI experiments
     uitest_activity_app_id: int | None = int(os.getenv("UITEST_ACTIVITY_APP_ID", "0") or "0") or None
 
+    @property
+    def ui_activity_app_id(self) -> int | None:
+        """Preferred attr name; kept backward-compatible with uitest_activity_app_id."""
+        return self.uitest_activity_app_id
+
     # Channels
     ch_due_portal: int | None = int(os.getenv("CH_DUE_PORTAL", "0")) or None
     ch_feeding_team: int | None = int(os.getenv("CH_FEEDING_TEAM", "0")) or None

@@ -2674,3 +2674,13 @@
 {"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "didnt know that was happening but of course it is", "attachments": 0}
 {"event": "message", "author": "kitadan", "channel": "#yapper-committee", "content": "As of now nothing serious to worry about.  Just showmanship from a dog and pony show.", "attachments": 0}
 {"event": "message", "author": "racerdg", "channel": "#yapper-committee", "content": "🫩", "attachments": 0}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, UItest", "attachments": 0}
+{"event": "intent", "kind": "ui_launch", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1425343841757823098, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "ui_activity_prompt", "trigger": "user=624440365595754496; channel=1341696618688286720", "output": "message_id=1425343844945236012; app_id=1341667150066225192; invite=ysq2RXr"}
+{"event": "message", "author": "kitadan", "channel": "#yapper-committee", "content": "For context, I'm both former active Army and Texas National Guard.", "attachments": 0}

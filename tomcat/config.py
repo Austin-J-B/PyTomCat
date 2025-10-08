@@ -123,6 +123,8 @@ class Settings:
         int(x) for x in _get_env_list("ADMIN_IDS") if x.strip().lstrip("-").isdigit()
     ])
     silent_mode: bool = field(default_factory=lambda: _get_env_bool("SILENT_MODE", False))
+    # Optional embedded Activity for admin UI experiments
+    uitest_activity_app_id: int | None = int(os.getenv("UITEST_ACTIVITY_APP_ID", "0") or "0") or None
 
     # Channels
     ch_due_portal: int | None = int(os.getenv("CH_DUE_PORTAL", "0")) or None

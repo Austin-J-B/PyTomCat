@@ -155,6 +155,15 @@ def _write_sub_file(path: str, rows: List[dict]) -> None:
     os.replace(tmp_path, path)
 
 
+def _message_preview(text: Optional[str], *, max_len: int = 200) -> str:
+    if not text:
+        return ""
+    cleaned = str(text).replace("\n", " ").strip()
+    if len(cleaned) <= max_len:
+        return cleaned
+    return cleaned[: max_len - 1] + "…"
+
+
 def _append_sub_record(record: dict, month_key: Optional[str] = None) -> None:
     if not month_key:
         month_key = record.get("log_month")
@@ -188,6 +197,42 @@ def _normalize_dates(dates: Iterable[str]) -> List[str]:
         if iso:
             out.append(iso)
     return sorted(set(out))
+
+def _weekday_token(date_iso: str) -> Optional[str]:
+    try:
+        dt = datetime.fromisoformat(str(date_iso))
+    except Exception:
+        try:
+            dt = datetime.fromisoformat(str(date_iso).replace('Z', '+00:00'))
+        except Exception:
+            return None
+    return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dt.date().weekday()]
+
+
+def _authorized_requesters_for_sub(station: str, dates: Iterable[str], files: List[Tuple[str, List[dict]]]) -> set[int]:
+    normalized_dates = _normalize_dates(dates) or [_today_iso()]
+    station_key = _canonical_station(station) or station
+    allowed: set[int] = set()
+    for iso in normalized_dates:
+        weekday = _weekday_token(iso)
+        if not weekday:
+            continue
+        sched = _read_schedule_for_weekday(weekday)
+        allowed.update(sched.get(station_key, []))
+
+    for _, rows in files:
+        for record in rows:
+            if record.get("status") != "accepted":
+                continue
+            record_station = _canonical_station(record.get("station")) or record.get("station")
+            if record_station != station_key:
+                continue
+            record_dates = _normalize_dates(record.get("dates") or [])
+            if set(record_dates) & set(normalized_dates):
+                assignee = record.get("assignee")
+                if isinstance(assignee, int):
+                    allowed.add(assignee)
+    return allowed
 
 
 def _month_key_for_dates(dates: Iterable[str]) -> Optional[str]:
@@ -569,14 +614,35 @@ async def handle_sub_request_event(event, ctx: Dict[str, Any]) -> None:
     if not dates:
         dates = [_today_iso()]
     now_iso = _now_iso()
+    snippet = _message_preview(event.text)
+    trigger_phrase = event.trigger_phrase or ""
 
     async with _SUBS_LOCK:
-        files = _load_sub_files(_recent_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
-        if _update_existing_sub_request(files, station, dates, event, now_iso):
+        recent_files = _load_sub_files(_recent_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
+        all_files = _load_sub_files(_all_sub_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
+
+        allowed_requesters = _authorized_requesters_for_sub(station, dates, all_files)
+        admin_ids = set(getattr(settings, "admin_ids", []) or [])
+        if allowed_requesters and event.user_id not in allowed_requesters and event.user_id not in admin_ids:
+            allowed_str = ",".join(str(uid) for uid in sorted(allowed_requesters))
+            log_action(
+                "sub_request_denied",
+                f"station={station}; dates={','.join(dates)}",
+                f"user={event.user_id}; allowed={allowed_str}; text={snippet}",
+            )
             return
 
-        files = _load_sub_files(_all_sub_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
-        if _update_existing_sub_request(files, station, dates, event, now_iso):
+        if not allowed_requesters:
+            log_action(
+                "sub_request_warn",
+                f"station={station}; dates={','.join(dates)}",
+                f"user={event.user_id}; reason=no_schedule; text={snippet}",
+            )
+
+        if _update_existing_sub_request(recent_files, station, dates, event, now_iso):
+            return
+
+        if _update_existing_sub_request(all_files, station, dates, event, now_iso):
             return
 
         month_key = _month_key_for_dates(dates) or _sub_month_key_from_datetime(datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now())
@@ -592,9 +658,15 @@ async def handle_sub_request_event(event, ctx: Dict[str, Any]) -> None:
             "message_id": event.message_id,
             "created_at": now_iso,
             "log_month": month_key,
+            "message_preview": snippet,
+            "trigger_phrase": trigger_phrase,
         }
         _append_sub_record(rec, month_key)
-        log_action("sub_request", f"station={station}; dates={','.join(dates)}", "logged")
+        log_action(
+            "sub_request",
+            f"station={station}; dates={','.join(dates)}",
+            f"status=logged; trigger={trigger_phrase}; text={snippet}",
+        )
 
     # No UI; subs are fully silent by design
 
@@ -602,7 +674,17 @@ async def handle_sub_accept_event(event, ctx: Dict[str, Any]) -> None:
     """
     Someone said 'sure/I can cover'. Assign them to the most recent open request in this channel.
     """
-    accepted_id = await _accept_latest_open_sub_in_channel(event.channel_id, event.user_id)
+    desired_dates = _normalize_dates(event.dates or [])
+    station_canon = _canonical_station(event.station) if event.station else None
+    preview = _message_preview(event.text)
+    accepted_id = await _accept_latest_open_sub_in_channel(
+        event.channel_id,
+        event.user_id,
+        station=station_canon,
+        dates=desired_dates,
+        message_preview=preview,
+        trigger_phrase=event.trigger_phrase or "",
+    )
     if accepted_id:
         accept_record = {
             "kind": "sub_accept",
@@ -611,45 +693,99 @@ async def handle_sub_accept_event(event, ctx: Dict[str, Any]) -> None:
             "channel_id": event.channel_id,
             "message_id": event.message_id,
             "ts": _now_iso(),
+            "message_preview": preview,
+            "trigger_phrase": event.trigger_phrase or "",
         }
         async with _SUBS_LOCK:
             month_key = _derive_month_key(accept_record)
             accept_record["log_month"] = month_key
             _append_sub_record(accept_record, month_key)
-        log_action("sub_accept", f"user={event.user_id}", "ok")
+        log_action(
+            "sub_accept",
+            f"user={event.user_id}; sub_id={accepted_id}",
+            f"status=ok; text={preview}",
+        )
     else:
-        log_action("sub_accept", f"user={event.user_id}", "no_open_request")
+        log_action(
+            "sub_accept",
+            f"user={event.user_id}",
+            f"no_open_request; text={preview}",
+        )
 
 # ------------- persistence for subs ------------
-async def _accept_latest_open_sub_in_channel(channel_id: int, assignee_id: int) -> Optional[str]:
+async def _accept_latest_open_sub_in_channel(
+    channel_id: int,
+    assignee_id: int,
+    *,
+    station: Optional[str] = None,
+    dates: Optional[List[str]] = None,
+    message_preview: str = "",
+    trigger_phrase: str = "",
+) -> Optional[str]:
     """Helper that marks the newest open sub request as filled."""
     async with _SUBS_LOCK:
         files = _load_sub_files(_recent_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
-        accepted = _accept_sub_in_files(files, channel_id, assignee_id)
+        accepted = _accept_sub_in_files(
+            files,
+            channel_id,
+            assignee_id,
+            station=station,
+            dates=dates,
+            message_preview=message_preview,
+            trigger_phrase=trigger_phrase,
+        )
         if accepted:
             return accepted
         # Fallback to full history if not found in recent months
         files = _load_sub_files(_all_sub_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
-        return _accept_sub_in_files(files, channel_id, assignee_id)
+        return _accept_sub_in_files(
+            files,
+            channel_id,
+            assignee_id,
+            station=station,
+            dates=dates,
+            message_preview=message_preview,
+            trigger_phrase=trigger_phrase,
+        )
 
 
-def _accept_sub_in_files(files: List[Tuple[str, List[dict]]], channel_id: int, assignee_id: int) -> Optional[str]:
+def _accept_sub_in_files(
+    files: List[Tuple[str, List[dict]]],
+    channel_id: int,
+    assignee_id: int,
+    *,
+    station: Optional[str] = None,
+    dates: Optional[List[str]] = None,
+    message_preview: str = "",
+    trigger_phrase: str = "",
+) -> Optional[str]:
     today_iso = _today_iso()
     now_iso = _now_iso()
+    desired_station = _canonical_station(station) if station else None
+    desired_dates = _normalize_dates(dates or [])
     for path, rows in files:
         for idx in range(len(rows) - 1, -1, -1):
             record = rows[idx]
             if record.get("channel_id") != channel_id or record.get("status") != "requested":
                 continue
-            record["status"] = "accepted"
-            record["assignee"] = assignee_id
+            record_station = _canonical_station(record.get("station")) or record.get("station")
+            if desired_station and record_station != desired_station:
+                continue
             record_dates = _normalize_dates(record.get("dates") or [])
             if not record_dates:
                 record_dates = [today_iso]
+            if desired_dates and not (set(record_dates) & set(desired_dates)):
+                continue
+            record["status"] = "accepted"
+            record["assignee"] = assignee_id
             record["dates"] = record_dates
-            record["station"] = _canonical_station(record.get("station")) or record.get("station")
+            record["station"] = record_station
             record["updated_at"] = now_iso
             record["log_month"] = record.get("log_month") or _derive_month_key(record)
+            if message_preview:
+                record["accept_message_preview"] = message_preview
+            if trigger_phrase:
+                record["accept_trigger_phrase"] = trigger_phrase
             rows[idx] = record
             _write_sub_file(path, rows)
             return str(record.get("id")) if record.get("id") else None
@@ -675,6 +811,7 @@ def _update_existing_sub_request(
             if not set(existing_dates) & set(dates):
                 continue
             merged_dates = sorted(set(existing_dates) | set(dates))
+            preview = _message_preview(event.text)
             record.update({
                 "station": station,
                 "dates": merged_dates,
@@ -682,11 +819,17 @@ def _update_existing_sub_request(
                 "channel_id": event.channel_id,
                 "message_id": event.message_id,
                 "updated_at": now_iso,
+                "message_preview": preview,
+                "trigger_phrase": event.trigger_phrase or record.get("trigger_phrase"),
             })
             record["log_month"] = record.get("log_month") or _derive_month_key(record)
             rows[idx] = record
             _write_sub_file(path, rows)
-            log_action("sub_request", f"station={station}; dates={','.join(merged_dates)}", "updated")
+            log_action(
+                "sub_request",
+                f"station={station}; dates={','.join(merged_dates)}",
+                f"status=updated; trigger={event.trigger_phrase or ''}; text={preview}",
+            )
             return True
     return False
 

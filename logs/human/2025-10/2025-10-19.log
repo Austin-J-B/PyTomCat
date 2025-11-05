@@ -1,0 +1,879 @@
+[10/19/2025 12:00:09.587 AM] Message  || User: diaxart             || Channel: #memes                               || Content: https://tenor.com/view/cat-kitty-pussycat-feline-gif-26001328
+[10/19/2025 12:07:17.472 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: which cat is this? by the engineering building
+[10/19/2025 12:07:38.739 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: no ear clip
+[10/19/2025 12:08:18.028 AM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: what the fick
+[10/19/2025 12:08:46.226 AM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: i thought toothless was back ngl
+[10/19/2025 12:17:30.329 AM] Message  || User: kitadan             || Channel: #pictures-of-the-cats                || Content: Wing or Stop (I don't know the exact details of naming).  First I've...
+[10/19/2025 12:17:53.447 AM] React+   || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || emoji=❤️; msg="Wing or Stop (I don't know the exact det..." by kitadan
+[10/19/2025 12:18:29.625 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: they like came up to me
+[10/19/2025 12:19:13.300 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: They let me rub their belly too, and they were drooling and purring
+[10/19/2025 12:34:30.304 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: he's a boy
+[10/19/2025 12:43:04.372 AM] Message  || User: lifeye              || Channel: #feeding-team                        || Content: super late maintenance fed
+[10/19/2025 12:43:04.388 AM] Action   || Name: feed_pending_exp... || Trigger: ch=643586809166561310; user=80239... || Output: 
+[10/19/2025 12:43:05.016 AM] Intent   || feed_update               ||                                               || station=Maintenance; dates=['2025-10-19']
+[10/19/2025 12:43:06.756 AM] Action   || Name: sheet_mark          || Trigger: station=Maintenance date=2025-10-19  || Output: ok
+[10/19/2025 12:43:06.758 AM] Action   || Name: feed_update         || Trigger: station=Maintenance; dates=2025-1... || Output: ok
+[10/19/2025 12:43:45.278 AM] React+   || User: _costco_wholesale_  || Channel: #feeding-team                        || emoji=💀; msg="super late maintenance fed" by lifeye
+[10/19/2025 12:44:56.530 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: he rolls over and since he was being so docile i tried lifting him a...
+[10/19/2025 12:45:42.593 AM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: AWWWW
+[10/19/2025 12:45:52.251 AM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: a baby
+[10/19/2025 12:46:34.619 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: i'm scared he's gonna get run over though he keeps wanting to cross ...
+[10/19/2025 12:50:07.180 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat silent mode off
+[10/19/2025 12:50:07.180 AM] Intent   || silent_mode               ||                                              
+[10/19/2025 12:50:07.180 AM] Action   || Name: silent_mode         || Trigger: by=624440365595754496                || Output: off
+[10/19/2025 12:50:11.918 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat who is stop
+[10/19/2025 12:50:11.918 AM] Intent   || who_is                    ||                                               || cat=Stop
+[10/19/2025 12:50:16.467 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat who is wing
+[10/19/2025 12:50:16.467 AM] Intent   || who_is                    ||                                               || cat=Wing
+[10/19/2025 12:50:22.258 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat who is bdubs
+[10/19/2025 12:50:22.258 AM] Intent   || who_is                    ||                                               || cat=BDubs
+[10/19/2025 12:51:02.813 AM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: Wing is a calico kitten, Stop is a black kitten, and bdubs is an adu...
+[10/19/2025 12:51:17.028 AM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: so if it is one of the same 3 I saw that day, the one in that video ...
+[10/19/2025 12:51:35.657 AM] Message  || User: austinbaustinb      || Channel: #pictures-of-the-cats                || Content: however bdubs was a little shy at the time so it may be another blac...
+[10/19/2025 12:53:29.160 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: construction committe plywood usage feels like that thing in oppenhe...
+[10/19/2025 12:53:47.705 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: there has been a good few times ive been at the fablab and theyve on...
+[10/19/2025 12:53:53.924 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: i need 10 ! per station!
+[10/19/2025 12:56:30.494 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: microwave is so photogenic (last photo)
+[10/19/2025 12:56:31.899 AM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=4
+[10/19/2025 01:02:13.451 AM] React+   || User: kitadan             || Channel: #pictures-of-the-cats                || emoji=👍; msg="Wing is a calico kitten, Stop is a black..." by austinbaustinb
+[10/19/2025 01:03:06.757 AM] Message  || User: kitadan             || Channel: #pictures-of-the-cats                || Content: The last photo is a Halloween mask
+[10/19/2025 01:03:49.245 AM] React+   || User: kitadan             || Channel: #feeding-team                        || emoji=💀; msg="super late maintenance fed" by lifeye
+[10/19/2025 01:04:06.891 AM] Message  || User: .bettercalljack     || Channel: #pictures-of-the-cats                || Content: analog horror microwave
+[10/19/2025 01:04:15.246 AM] Message  || User: lifeye              || Channel: #feeding-team                        || Content: yeah bro i was lying in bed after my shift before i realized i had f...
+[10/19/2025 01:06:16.758 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: not microwave following me
+[10/19/2025 01:06:58.073 AM] Message  || User: emiximez            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[10/19/2025 02:10:07.101 AM] Action   || Name: profile_update_e... || Trigger: id=1                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:08.270 AM] Action   || Name: profile_update_e... || Trigger: id=1                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:09.338 AM] Action   || Name: profile_update_e... || Trigger: id=2                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:10.271 AM] Action   || Name: profile_update_e... || Trigger: id=2                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:11.288 AM] Action   || Name: profile_update_e... || Trigger: id=4                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:12.096 AM] Action   || Name: profile_update_e... || Trigger: id=4                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:12.824 AM] Action   || Name: profile_update_e... || Trigger: id=5                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:13.538 AM] Action   || Name: profile_update_e... || Trigger: id=5                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:14.264 AM] Action   || Name: profile_update_e... || Trigger: id=6                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:14.947 AM] Action   || Name: profile_update_e... || Trigger: id=6                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:14.995 AM] Action   || Name: profile_update_e... || Trigger: id=7                                 || Output: APIError: [429]: Quota exceeded for quota metric 'Read requests' and ...
+[10/19/2025 02:10:15.043 AM] Action   || Name: profile_update_e... || Trigger: id=9                                 || Output: APIError: [429]: Quota exceeded for quota metric 'Read requests' and ...
+[10/19/2025 02:10:15.091 AM] Action   || Name: profile_update_e... || Trigger: id=17                                || Output: APIError: [429]: Quota exceeded for quota metric 'Read requests' and ...
+[10/19/2025 02:10:15.144 AM] Action   || Name: profile_update_e... || Trigger: id=67                                || Output: APIError: [429]: Quota exceeded for quota metric 'Read requests' and ...
+[10/19/2025 02:10:15.155 AM] Action   || Name: profile_update_f... || Trigger: count=9                              || Output: 1,2,4,5,6,7,9,17,67
+[10/19/2025 02:10:15.155 AM] Action   || Name: profiles_scheduler  || Trigger: update_all                           || Output: ran
+[10/19/2025 02:10:15.384 AM] Action   || Name: profile_update_e... || Trigger: id=7                                 || Output: 404 Not Found (error code: 10008): Unknown Message
+[10/19/2025 02:10:15.432 AM] Action   || Name: profile_update_e... || Trigger: id=9                                 || Output: APIError: [429]: Quota exceeded for quota metric 'Read requests' and ...
+[10/19/2025 02:10:15.481 AM] Action   || Name: profile_update_e... || Trigger: id=17                                || Output: APIError: [429]: Quota exceeded for quota metric 'Read requests' and ...
+[10/19/2025 02:10:15.522 AM] Action   || Name: profile_update_e... || Trigger: id=67                                || Output: APIError: [429]: Quota exceeded for quota metric 'Read requests' and ...
+[10/19/2025 02:10:15.522 AM] Action   || Name: profile_update_f... || Trigger: count=9                              || Output: 1,2,4,5,6,7,9,17,67
+[10/19/2025 02:10:15.522 AM] Action   || Name: profiles_scheduler  || Trigger: update_all                           || Output: ran
+[10/19/2025 02:16:21.756 AM] React+   || User: vasyline            || Channel: #feeding-team                        || emoji=💀; msg="super late maintenance fed" by lifeye
+[10/19/2025 03:00:01.804 AM] Action   || Name: dues_membership_... || Trigger: sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJ... || Output: ws=Membership Application List
+[10/19/2025 03:00:04.844 AM] Action   || Name: dues_membership_... || Trigger: row=2                                || Output: Date|Mavorgs Invite|Semester|Email|Full Name|Discord Username|Payment...
+[10/19/2025 03:00:04.844 AM] Action   || Name: dues_membership_... || Trigger: total=1002                           || Output: usable=858
+[10/19/2025 03:00:04.844 AM] Action   || Name: dues_scheduler      || Trigger: count=0                              || Output: done
+[10/19/2025 03:00:04.844 AM] Action   || Name: dues_membership_... || Trigger: sheet=1PBvCd6gTwc1_aqlCtn93xPW7XJ... || Output: ws=Membership Application List
+[10/19/2025 03:00:04.844 AM] Action   || Name: dues_scheduler      || Trigger: count=0                              || Output: done
+[10/19/2025 03:17:56.663 AM] Action   || Name: gmail_log_scheduler || Trigger: found=1                              || Output: logged=1
+[10/19/2025 03:17:56.771 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 03:17:56.771 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jordin Baylee $5.00 on 2025-08-26
+[10/19/2025 03:17:56.771 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Axel Torres $24.25 on 2025-08-22
+[10/19/2025 03:17:56.771 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $47.62 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: M. Padron $20.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Addison Loera $8.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Amber Thomas $5.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jordin Baylee $5.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Kathleen Cantu $1.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Amber Thomas $3.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Rob Jimenez $3.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Daniel Brantley $3.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Isabella Klein $9.70 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Wix $25.98 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Nelda Hernandez $2.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Troy Broome $1.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Div Bits $2.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jacob Sandoval $1.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[10/19/2025 03:17:56.787 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Maxwell Preston $5.00 on 2025-08-26
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Derek Fuentes $25.98 on 2025-08-26
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Miguel V $5.00 on 2025-08-26
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Nelda Hernandez $3.00 on 2025-08-26
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $130.00 on 2025-08-26
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Pedro Savala $5.00 on 2025-08-27
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: NNT PETSMART # $32.46 on 2025-08-06
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Py Store Here Pantego $54.00 on 2025-08-20
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $74.92 on 2025-07-30
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-12
+[10/19/2025 03:17:56.803 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-12
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Cynthia griffith $10.00 on 2025-04-16
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Caleb Moran $4.00 on 2025-04-16
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Alberto $6.00 on 2025-04-16
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $2.91 on 2025-04-16
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: tay $5.00 on 2025-04-16
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-04-16
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maria Olds $10.00 on 2025-04-16
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Mario Rodriguez $3.00 on 2025-04-16
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Elisha Taylor $5.00 on 2025-04-16
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $3.00 on 2025-04-16
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Isabella Klein $9.70 on 2025-08-26
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-08-26
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Troy Broome $1.00 on 2025-08-26
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Div Bits $2.00 on 2025-08-26
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $1.00 on 2025-08-26
+[10/19/2025 03:18:01.829 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maxwell Preston $5.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Miguel V $5.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $3.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Megan Digiovanni $130.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Pedro Savala $5.00 on 2025-08-27
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Axel Torres $24.25 on 2025-08-22
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: M. Padron $20.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Addison Loera $8.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $5.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kathleen Cantu $1.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $3.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Rob Jimenez $3.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Daniel Brantley $3.00 on 2025-08-26
+[10/19/2025 03:18:01.845 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kylie Crook $5.00 on 2025-09-16
+[10/19/2025 03:18:01.861 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jenny Nguyen $9.70 on 2025-09-03
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-04-20
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: j s $11.68 on 2025-04-22
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-04-26
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-08-26
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $25.98 on 2025-08-26
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-08-20
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $47.62 on 2025-08-26
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: NNT PETSMART # $32.46 on 2025-08-06
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $74.92 on 2025-07-30
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-11
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-05-20
+[10/19/2025 03:18:03.367 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $72.45 on 2025-05-23
+[10/19/2025 03:18:03.382 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-05-26
+[10/19/2025 03:18:03.382 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $89.91 on 2025-10-05
+[10/19/2025 03:18:03.382 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: DOMINO'S $60.57 on 2025-09-09
+[10/19/2025 03:18:03.382 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $20.00 on 2025-09-10
+[10/19/2025 03:31:16.211 AM] Action   || Name: gmail_log_scheduler || Trigger: found=1                              || Output: logged=0
+[10/19/2025 03:31:16.256 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 03:31:16.258 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jordin Baylee $5.00 on 2025-08-26
+[10/19/2025 03:31:16.258 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Axel Torres $24.25 on 2025-08-22
+[10/19/2025 03:31:16.260 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $47.62 on 2025-08-26
+[10/19/2025 03:31:16.260 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: M. Padron $20.00 on 2025-08-26
+[10/19/2025 03:31:16.262 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 03:31:16.262 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Addison Loera $8.00 on 2025-08-26
+[10/19/2025 03:31:16.262 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Amber Thomas $5.00 on 2025-08-26
+[10/19/2025 03:31:16.264 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jordin Baylee $5.00 on 2025-08-26
+[10/19/2025 03:31:16.264 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Kathleen Cantu $1.00 on 2025-08-26
+[10/19/2025 03:31:16.266 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Amber Thomas $3.00 on 2025-08-26
+[10/19/2025 03:31:16.266 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Rob Jimenez $3.00 on 2025-08-26
+[10/19/2025 03:31:16.268 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Daniel Brantley $3.00 on 2025-08-26
+[10/19/2025 03:31:16.268 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Isabella Klein $9.70 on 2025-08-26
+[10/19/2025 03:31:16.270 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Wix $25.98 on 2025-08-26
+[10/19/2025 03:31:16.270 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Nelda Hernandez $2.00 on 2025-08-26
+[10/19/2025 03:31:16.272 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Troy Broome $1.00 on 2025-08-26
+[10/19/2025 03:31:16.272 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Div Bits $2.00 on 2025-08-26
+[10/19/2025 03:31:16.274 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jacob Sandoval $1.00 on 2025-08-26
+[10/19/2025 03:31:16.274 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[10/19/2025 03:31:16.276 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Maxwell Preston $5.00 on 2025-08-26
+[10/19/2025 03:31:16.276 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 03:31:16.276 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Derek Fuentes $25.98 on 2025-08-26
+[10/19/2025 03:31:16.278 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Miguel V $5.00 on 2025-08-26
+[10/19/2025 03:31:16.278 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Nelda Hernandez $3.00 on 2025-08-26
+[10/19/2025 03:31:16.280 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $130.00 on 2025-08-26
+[10/19/2025 03:31:16.280 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Pedro Savala $5.00 on 2025-08-27
+[10/19/2025 03:31:16.282 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[10/19/2025 03:31:16.282 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: NNT PETSMART # $32.46 on 2025-08-06
+[10/19/2025 03:31:16.284 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Py Store Here Pantego $54.00 on 2025-08-20
+[10/19/2025 03:31:16.284 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $74.92 on 2025-07-30
+[10/19/2025 03:31:16.286 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-12
+[10/19/2025 03:31:16.286 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-12
+[10/19/2025 03:31:19.055 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Cynthia griffith $10.00 on 2025-04-16
+[10/19/2025 03:31:19.055 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Caleb Moran $4.00 on 2025-04-16
+[10/19/2025 03:31:19.055 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Alberto $6.00 on 2025-04-16
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $2.91 on 2025-04-16
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: tay $5.00 on 2025-04-16
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-04-16
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maria Olds $10.00 on 2025-04-16
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Mario Rodriguez $3.00 on 2025-04-16
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Elisha Taylor $5.00 on 2025-04-16
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $3.00 on 2025-04-16
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Isabella Klein $9.70 on 2025-08-26
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-08-26
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Troy Broome $1.00 on 2025-08-26
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Div Bits $2.00 on 2025-08-26
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $1.00 on 2025-08-26
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maxwell Preston $5.00 on 2025-08-26
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 03:31:19.061 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Miguel V $5.00 on 2025-08-26
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $3.00 on 2025-08-26
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Megan Digiovanni $130.00 on 2025-08-26
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Pedro Savala $5.00 on 2025-08-27
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Axel Torres $24.25 on 2025-08-22
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: M. Padron $20.00 on 2025-08-26
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Addison Loera $8.00 on 2025-08-26
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $5.00 on 2025-08-26
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kathleen Cantu $1.00 on 2025-08-26
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $3.00 on 2025-08-26
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Rob Jimenez $3.00 on 2025-08-26
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Daniel Brantley $3.00 on 2025-08-26
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kylie Crook $5.00 on 2025-09-16
+[10/19/2025 03:31:19.077 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jenny Nguyen $9.70 on 2025-09-03
+[10/19/2025 03:31:20.954 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-04-20
+[10/19/2025 03:31:20.954 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: j s $11.68 on 2025-04-22
+[10/19/2025 03:31:20.954 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-04-26
+[10/19/2025 03:31:20.954 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-08-26
+[10/19/2025 03:31:20.954 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $25.98 on 2025-08-26
+[10/19/2025 03:31:20.954 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-08-20
+[10/19/2025 03:31:20.954 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $47.62 on 2025-08-26
+[10/19/2025 03:31:20.967 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: NNT PETSMART # $32.46 on 2025-08-06
+[10/19/2025 03:31:20.967 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $74.92 on 2025-07-30
+[10/19/2025 03:31:20.967 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-11
+[10/19/2025 03:31:20.967 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-05-20
+[10/19/2025 03:31:20.967 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $72.45 on 2025-05-23
+[10/19/2025 03:31:20.967 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-05-26
+[10/19/2025 03:31:20.967 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $89.91 on 2025-10-05
+[10/19/2025 03:31:20.967 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: DOMINO'S $60.57 on 2025-09-09
+[10/19/2025 03:31:20.967 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $20.00 on 2025-09-10
+[10/19/2025 06:36:10.837 AM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=‼️; msg="microwave is so photogenic (last photo)" by emiximez
+[10/19/2025 07:12:13.192 AM] React+   || User: simplyshadow171295  || Channel: #feeding-team                        || emoji=💀; msg="super late maintenance fed" by lifeye
+[10/19/2025 07:20:48.760 AM] Message  || User: simplyshadow171295  || Channel: #yapper-committee                    || Content: it’s 56° feels like 50° life is GOOD
+[10/19/2025 07:32:12.692 AM] Message  || User: a1darek             || Channel: #yapper-committee                    || Content: FOR FUCKING REAL
+[10/19/2025 07:59:35.555 AM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: @Austin B [Records Director] working with the doctor that looked at ...
+[10/19/2025 08:01:55.569 AM] React+   || User: adeyumii            || Channel: #pet-pictures                        || emoji=💖; msg=1428577424957898795
+[10/19/2025 08:03:02.029 AM] Message  || User: adeyumii            || Channel: #yapper-committee                    || Content: High of 90 tomorrow :(
+[10/19/2025 08:05:16.730 AM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=👎; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:05:21.115 AM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=💔; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:05:24.589 AM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=🍅; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:09:37.656 AM] React+   || User: simplyshadow171295  || Channel: #yapper-committee                    || emoji=👎; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:09:38.158 AM] React+   || User: simplyshadow171295  || Channel: #yapper-committee                    || emoji=💔; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:09:38.293 AM] React-   || User: unknown             || Channel: #yapper-committee                    || emoji=💔; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:09:39.090 AM] React+   || User: simplyshadow171295  || Channel: #yapper-committee                    || emoji=💔; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:09:39.550 AM] React+   || User: simplyshadow171295  || Channel: #yapper-committee                    || emoji=🍅; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:28:34.969 AM] React+   || User: a1darek             || Channel: #yapper-committee                    || emoji=🍅; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:28:42.857 AM] Message  || User: a1darek             || Channel: #yapper-committee                    || Content: <:SHAME:1418029043399266355>
+[10/19/2025 08:32:20.759 AM] React+   || User: .bettercalljack     || Channel: #yapper-committee                    || emoji=👎; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:32:21.100 AM] React+   || User: .bettercalljack     || Channel: #yapper-committee                    || emoji=💔; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:32:21.395 AM] React+   || User: .bettercalljack     || Channel: #yapper-committee                    || emoji=🍅; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 08:38:10.335 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: He did some fine work
+[10/19/2025 08:38:54.232 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: Ma boy is up and running on this beautiful Sunday morning
+[10/19/2025 08:43:05.411 AM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: it’s 68 and windy run it feels great in the sun
+[10/19/2025 08:43:17.530 AM] Message  || User: kcreepertux04       || Channel: #pet-pictures                        || Content: hunting squirrels
+[10/19/2025 08:44:06.453 AM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: feels so fucking good outside i could cry
+[10/19/2025 08:49:57.299 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=🎉; msg="feels so fucking good outside i could cr..." by slayc127
+[10/19/2025 08:50:19.113 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=🔥; msg="Ma boy is up and running on this beautif..." by austinbaustinb
+[10/19/2025 08:51:59.960 AM] Message  || User: the.lemonade.stand  || Channel: #purrley-pawsitive-pussy-pals        || Content: it’s officially fall !
+[10/19/2025 09:02:47.667 AM] React+   || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="feels so fucking good outside i could cr..." by slayc127
+[10/19/2025 09:02:49.018 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: (no text; attachments=1)
+[10/19/2025 09:02:49.191 AM] React+   || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="it’s officially fall !" by the.lemonade.stand
+[10/19/2025 09:06:32.287 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="it’s officially fall !" by the.lemonade.stand
+[10/19/2025 09:06:56.257 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=❤️; msg=1429469845467955291
+[10/19/2025 09:06:59.120 AM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: AWEEHDHDHD
+[10/19/2025 09:07:18.382 AM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=❤️; msg=1429469845467955291
+[10/19/2025 09:07:18.707 AM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="it’s officially fall !" by the.lemonade.stand
+[10/19/2025 09:07:30.887 AM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: sobbing
+[10/19/2025 09:07:41.176 AM] React+   || User: slayc127            || Channel: #pet-pictures                        || emoji=😆; msg="hunting squirrels" by kcreepertux04
+[10/19/2025 09:08:21.142 AM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: my friends vs being on time 😔✊️
+[10/19/2025 09:20:59.945 AM] React+   || User: otirain_butdiscorb  || Channel: #yapper-committee                    || emoji=👎; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 09:21:14.403 AM] Message  || User: otirain_butdiscorb  || Channel: #yapper-committee                    || Content: finally my closet can strive <:happycat:834819172546510868>
+[10/19/2025 09:21:26.739 AM] Message  || User: otirain_butdiscorb  || Channel: #yapper-committee                    || Content: I deadass only have long sleeve items
+[10/19/2025 09:22:41.291 AM] Message  || User: thedan5000          || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[10/19/2025 09:22:41.610 AM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 09:23:42.780 AM] React+   || User: kitadan             || Channel: #yapper-committee                    || emoji=👎; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 09:23:57.211 AM] React+   || User: kitadan             || Channel: #pet-pictures                        || emoji=😆; msg="hunting squirrels" by kcreepertux04
+[10/19/2025 09:40:02.062 AM] React+   || User: mochenoch           || Channel: #yapper-committee                    || emoji=👎; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 09:50:29.509 AM] React+   || User: m_digio             || Channel: #feeding-team                        || emoji=🔥; msg="yeah bro i was lying in bed after my shi..." by lifeye
+[10/19/2025 10:01:53.500 AM] Message  || User: kitadan             || Channel: #yapper-committee                    || Content: Reminder:  The next few days are going to feel much hotter than toda...
+[10/19/2025 10:02:49.896 AM] Message  || User: kitadan             || Channel: #yapper-committee                    || Content: Also to all vehicle owners, if your low tire pressure sensor comes o...
+[10/19/2025 10:05:02.237 AM] Message  || User: ludavis             || Channel: #yapper-committee                    || Content: Quiktrip has free air btw
+[10/19/2025 10:09:08.654 AM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=❤️; msg="Reminder:  The next few days are going t..." by kitadan
+[10/19/2025 10:31:44.923 AM] React+   || User: emiximez            || Channel: #pictures-of-the-cats                || emoji=🩷; msg=1429474846047473694
+[10/19/2025 10:38:41.740 AM] React+   || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || emoji=🔥; msg="Ma boy is up and running on this beautif..." by austinbaustinb
+[10/19/2025 10:38:45.687 AM] React+   || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="it’s officially fall !" by the.lemonade.stand
+[10/19/2025 10:38:50.439 AM] React+   || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || emoji=🎉; msg="feels so fucking good outside i could cr..." by slayc127
+[10/19/2025 10:38:50.675 AM] React+   || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="feels so fucking good outside i could cr..." by slayc127
+[10/19/2025 10:39:05.471 AM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: IM WORKING OUT SIDE IN MY SWEATRR ‼️‼️‼️‼️‼️
+[10/19/2025 10:39:19.963 AM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: I KNOW LOVE I KNOW WHAT IT MEANS TO LIVE ‼️‼️‼️‼️
+[10/19/2025 10:39:29.108 AM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="IM WORKING OUT SIDE IN MY SWEATRR ‼️‼️‼️..." by a1darek
+[10/19/2025 10:39:36.540 AM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: SO TRUE
+[10/19/2025 10:40:24.170 AM] React+   || User: adeyumii            || Channel: #pictures-of-the-cats                || emoji=🩷; msg=1429474846047473694
+[10/19/2025 10:43:33.148 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="IM WORKING OUT SIDE IN MY SWEATRR ‼️‼️‼️..." by a1darek
+[10/19/2025 10:48:26.205 AM] Message  || User: coziidruid          || Channel: #pictures-of-the-cats                || Content: he likes to make sure people r safe at night!!!
+[10/19/2025 10:48:39.968 AM] Message  || User: coziidruid          || Channel: #pictures-of-the-cats                || Content: he used to walk me to my car after work all the time
+[10/19/2025 10:50:10.362 AM] Message  || User: .bettercalljack     || Channel: #pictures-of-the-cats                || Content: Aww
+[10/19/2025 10:50:14.157 AM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=🩷; msg=1429474846047473694
+[10/19/2025 10:51:05.497 AM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: He likes being followed
+[10/19/2025 10:51:28.804 AM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=🩷; msg=1429474846047473694
+[10/19/2025 10:51:40.255 AM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=‼️; msg="he likes to make sure people r safe at n..." by coziidruid
+[10/19/2025 10:52:08.951 AM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=‼️; msg="he likes to make sure people r safe at n..." by coziidruid
+[10/19/2025 11:08:14.156 AM] React+   || User: orphean_            || Channel: #feeding-team                        || emoji=💀; msg="super late maintenance fed" by lifeye
+[10/19/2025 11:08:15.152 AM] React+   || User: orphean_            || Channel: #feeding-team                        || emoji=🔥; msg="yeah bro i was lying in bed after my shi..." by lifeye
+[10/19/2025 11:08:29.611 AM] React+   || User: orphean_            || Channel: #feeding-team                        || emoji=❤️; msg="we could make an insta reel of him “sing..." by simplyshadow17...
+[10/19/2025 11:08:32.644 AM] React+   || User: orphean_            || Channel: #feeding-team                        || emoji=‼️; msg="insane high notes" by _costco_wholesale_
+[10/19/2025 11:13:24.559 AM] React+   || User: kitadan             || Channel: #pictures-of-the-cats                || emoji=🩷; msg=1429474846047473694
+[10/19/2025 11:18:14.809 AM] Action   || Name: gmail_log_scheduler || Trigger: found=2                              || Output: logged=2
+[10/19/2025 11:18:14.900 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 11:18:14.900 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jordin Baylee $5.00 on 2025-08-26
+[10/19/2025 11:18:14.900 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Axel Torres $24.25 on 2025-08-22
+[10/19/2025 11:18:14.900 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $47.62 on 2025-08-26
+[10/19/2025 11:18:14.900 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: M. Padron $20.00 on 2025-08-26
+[10/19/2025 11:18:14.900 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Addison Loera $8.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Amber Thomas $5.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jordin Baylee $5.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Kathleen Cantu $1.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Amber Thomas $3.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Rob Jimenez $3.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Daniel Brantley $3.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Isabella Klein $9.70 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Wix $25.98 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Nelda Hernandez $2.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Troy Broome $1.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Div Bits $2.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jacob Sandoval $1.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Maxwell Preston $5.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Derek Fuentes $25.98 on 2025-08-26
+[10/19/2025 11:18:14.916 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Miguel V $5.00 on 2025-08-26
+[10/19/2025 11:18:14.932 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Nelda Hernandez $3.00 on 2025-08-26
+[10/19/2025 11:18:14.932 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $130.00 on 2025-08-26
+[10/19/2025 11:18:14.932 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Pedro Savala $5.00 on 2025-08-27
+[10/19/2025 11:18:14.932 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[10/19/2025 11:18:14.932 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: NNT PETSMART # $32.46 on 2025-08-06
+[10/19/2025 11:18:14.932 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Py Store Here Pantego $54.00 on 2025-08-20
+[10/19/2025 11:18:14.932 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $74.92 on 2025-07-30
+[10/19/2025 11:18:14.932 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-12
+[10/19/2025 11:18:14.932 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-12
+[10/19/2025 11:18:18.291 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Cynthia griffith $10.00 on 2025-04-16
+[10/19/2025 11:18:18.291 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Caleb Moran $4.00 on 2025-04-16
+[10/19/2025 11:18:18.291 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Alberto $6.00 on 2025-04-16
+[10/19/2025 11:18:18.291 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $2.91 on 2025-04-16
+[10/19/2025 11:18:18.291 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: tay $5.00 on 2025-04-16
+[10/19/2025 11:18:18.291 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-04-16
+[10/19/2025 11:18:18.291 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maria Olds $10.00 on 2025-04-16
+[10/19/2025 11:18:18.291 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Mario Rodriguez $3.00 on 2025-04-16
+[10/19/2025 11:18:18.291 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Elisha Taylor $5.00 on 2025-04-16
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $3.00 on 2025-04-16
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Isabella Klein $9.70 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Troy Broome $1.00 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Div Bits $2.00 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $1.00 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maxwell Preston $5.00 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Miguel V $5.00 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $3.00 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Megan Digiovanni $130.00 on 2025-08-26
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Pedro Savala $5.00 on 2025-08-27
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Axel Torres $24.25 on 2025-08-22
+[10/19/2025 11:18:18.307 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: M. Padron $20.00 on 2025-08-26
+[10/19/2025 11:18:18.322 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Addison Loera $8.00 on 2025-08-26
+[10/19/2025 11:18:18.322 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $5.00 on 2025-08-26
+[10/19/2025 11:18:18.322 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kathleen Cantu $1.00 on 2025-08-26
+[10/19/2025 11:18:18.322 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $3.00 on 2025-08-26
+[10/19/2025 11:18:18.322 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Rob Jimenez $3.00 on 2025-08-26
+[10/19/2025 11:18:18.322 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Daniel Brantley $3.00 on 2025-08-26
+[10/19/2025 11:18:18.322 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kylie Crook $5.00 on 2025-09-16
+[10/19/2025 11:18:18.322 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jenny Nguyen $9.70 on 2025-09-03
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-04-20
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: j s $11.68 on 2025-04-22
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-04-26
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-08-26
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $25.98 on 2025-08-26
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-08-20
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $47.62 on 2025-08-26
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: NNT PETSMART # $32.46 on 2025-08-06
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $74.92 on 2025-07-30
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-11
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-05-20
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $72.45 on 2025-05-23
+[10/19/2025 11:18:19.346 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-05-26
+[10/19/2025 11:18:19.361 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $89.91 on 2025-10-05
+[10/19/2025 11:18:19.361 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: DOMINO'S $60.57 on 2025-09-09
+[10/19/2025 11:18:19.361 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $20.00 on 2025-09-10
+[10/19/2025 11:23:27.042 AM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: @mckayla [retired] candy at petco
+[10/19/2025 11:31:13.025 AM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: A man with infinite food and water
+[10/19/2025 11:31:22.221 AM] Action   || Name: gmail_log_scheduler || Trigger: found=2                              || Output: logged=0
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jordin Baylee $5.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Axel Torres $24.25 on 2025-08-22
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $47.62 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: M. Padron $20.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Addison Loera $8.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Amber Thomas $5.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jordin Baylee $5.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Kathleen Cantu $1.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Amber Thomas $3.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Rob Jimenez $3.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Daniel Brantley $3.00 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Isabella Klein $9.70 on 2025-08-26
+[10/19/2025 11:31:22.269 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Wix $25.98 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Nelda Hernandez $2.00 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Troy Broome $1.00 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Div Bits $2.00 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jacob Sandoval $1.00 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Maxwell Preston $5.00 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Derek Fuentes $25.98 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Miguel V $5.00 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Nelda Hernandez $3.00 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $130.00 on 2025-08-26
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Pedro Savala $5.00 on 2025-08-27
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: NNT PETSMART # $32.46 on 2025-08-06
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Py Store Here Pantego $54.00 on 2025-08-20
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $74.92 on 2025-07-30
+[10/19/2025 11:31:22.285 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-12
+[10/19/2025 11:31:22.301 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-12
+[10/19/2025 11:31:24.741 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Cynthia griffith $10.00 on 2025-04-16
+[10/19/2025 11:31:24.741 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Caleb Moran $4.00 on 2025-04-16
+[10/19/2025 11:31:24.741 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Alberto $6.00 on 2025-04-16
+[10/19/2025 11:31:24.741 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $2.91 on 2025-04-16
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: tay $5.00 on 2025-04-16
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-04-16
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maria Olds $10.00 on 2025-04-16
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Mario Rodriguez $3.00 on 2025-04-16
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Elisha Taylor $5.00 on 2025-04-16
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $3.00 on 2025-04-16
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Isabella Klein $9.70 on 2025-08-26
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-08-26
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Troy Broome $1.00 on 2025-08-26
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Div Bits $2.00 on 2025-08-26
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $1.00 on 2025-08-26
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maxwell Preston $5.00 on 2025-08-26
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[10/19/2025 11:31:24.757 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Miguel V $5.00 on 2025-08-26
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $3.00 on 2025-08-26
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Megan Digiovanni $130.00 on 2025-08-26
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Pedro Savala $5.00 on 2025-08-27
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Axel Torres $24.25 on 2025-08-22
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: M. Padron $20.00 on 2025-08-26
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Addison Loera $8.00 on 2025-08-26
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $5.00 on 2025-08-26
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kathleen Cantu $1.00 on 2025-08-26
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $3.00 on 2025-08-26
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Rob Jimenez $3.00 on 2025-08-26
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Daniel Brantley $3.00 on 2025-08-26
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kylie Crook $5.00 on 2025-09-16
+[10/19/2025 11:31:24.773 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jenny Nguyen $9.70 on 2025-09-03
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-04-20
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: j s $11.68 on 2025-04-22
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-04-26
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-08-26
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $25.98 on 2025-08-26
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-08-20
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $47.62 on 2025-08-26
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: NNT PETSMART # $32.46 on 2025-08-06
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $74.92 on 2025-07-30
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: TOMAHAWK LIVE TRAP $581.62 on 2025-05-11
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-05-20
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $72.45 on 2025-05-23
+[10/19/2025 11:31:25.847 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-05-26
+[10/19/2025 11:31:25.862 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $89.91 on 2025-10-05
+[10/19/2025 11:31:25.862 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: DOMINO'S $60.57 on 2025-09-09
+[10/19/2025 11:31:25.862 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $20.00 on 2025-09-10
+[10/19/2025 11:33:20.761 AM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: ITS WATERMELOM JOLLY RANCHER
+[10/19/2025 11:33:31.994 AM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: that’s the lando norris monster flavor
+[10/19/2025 11:33:38.598 AM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: i’ve finally figured it out
+[10/19/2025 11:34:44.423 AM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="A man with infinite food and water" by austinbaustinb
+[10/19/2025 11:34:51.975 AM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="ITS WATERMELOM JOLLY RANCHER" by kcreepertux04
+[10/19/2025 11:34:55.908 AM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: jesus
+[10/19/2025 11:35:08.312 AM] React+   || User: .bettercalljack     || Channel: #yapper-committee                    || emoji=😭; msg="ITS WATERMELOM JOLLY RANCHER" by kcreepertux04
+[10/19/2025 11:41:02.159 AM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: it’s so bright
+[10/19/2025 11:52:04.350 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=👀; msg="@mckayla [retired] candy at petco" by slayc127
+[10/19/2025 11:52:08.329 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="A man with infinite food and water" by austinbaustinb
+[10/19/2025 11:52:10.555 AM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😆; msg="A man with infinite food and water" by austinbaustinb
+[10/19/2025 11:52:24.717 AM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: gah. new things to check the expiration dates on…😭
+[10/19/2025 11:52:29.428 AM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: LMAOOOO
+[10/19/2025 11:52:40.007 AM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: maybe this will train u to put the seat down<3 /lh
+[10/19/2025 11:55:35.030 AM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="gah. new things to check the expiration ..." by nostalgicsapphic
+[10/19/2025 11:55:37.160 AM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="maybe this will train u to put the seat ..." by nostalgicsapphic
+[10/19/2025 11:55:48.787 AM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: real
+[10/19/2025 12:05:41.529 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: being bored is a crime
+[10/19/2025 12:05:46.983 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: everyone’s booing the rich people who bought paddock passes, love to...
+[10/19/2025 12:08:31.352 PM] React+   || User: otirain_butdiscorb  || Channel: #pictures-of-the-cats                || emoji=🩷; msg=1429474846047473694
+[10/19/2025 12:09:21.596 PM] Message  || User: baseketballin       || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[10/19/2025 12:09:22.518 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 12:09:51.271 PM] Message  || User: baseketballin       || Channel: #pictures-of-the-cats                || Content: hes been so friendly recently everytime i visit him he gives me this...
+[10/19/2025 12:10:10.905 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=😭; msg=1429516790224125952
+[10/19/2025 12:11:09.365 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: old man switches moods on the dime
+[10/19/2025 12:15:24.932 PM] React+   || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || emoji=❤️; msg="maybe this will train u to put the seat ..." by nostalgicsapphic
+[10/19/2025 12:17:32.482 PM] Message  || User: baseketballin       || Channel: #pictures-of-the-cats                || Content: everytime i open the food box his hungry ahh always comes over 😭 😭 😭
+[10/19/2025 12:17:33.162 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=2
+[10/19/2025 12:23:26.584 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: is the pre race show always this far before the race 😭
+[10/19/2025 12:24:25.029 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: college hall faculty isn't here to listen to his begging for food so...
+[10/19/2025 12:24:28.894 PM] React+   || User: moineau_l.oiseau    || Channel: #itty-bitty-kitty-commitee           || emoji=<:happycat:834819172546510868>; msg="Also a very friendly squirrel" by ...
+[10/19/2025 12:24:47.616 PM] React+   || User: moineau_l.oiseau    || Channel: #itty-bitty-kitty-commitee           || emoji=‼️; msg="Yeah , I’m done with all math related cl..." by pancakemixteamdj
+[10/19/2025 12:25:00.581 PM] React+   || User: moineau_l.oiseau    || Channel: #yapper-committee                    || emoji=👎; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 12:25:00.856 PM] React+   || User: moineau_l.oiseau    || Channel: #yapper-committee                    || emoji=💔; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 12:25:01.099 PM] React+   || User: moineau_l.oiseau    || Channel: #yapper-committee                    || emoji=🍅; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 12:25:26.221 PM] React+   || User: moineau_l.oiseau    || Channel: #yapper-committee                    || emoji=❤️; msg="Reminder:  The next few days are going t..." by kitadan
+[10/19/2025 12:25:35.857 PM] React+   || User: moineau_l.oiseau    || Channel: #yapper-committee                    || emoji=<:catthumbsup:931115163317329920>; msg="Also to all vehicle owners, if ...
+[10/19/2025 12:25:35.873 PM] Message  || User: cici4f3             || Channel: #pictures-of-the-cats                || Content: so big and greedy
+[10/19/2025 12:25:43.314 PM] React+   || User: moineau_l.oiseau    || Channel: #yapper-committee                    || emoji=<:balls:949786884979167253>; msg="Quiktrip has free air btw" by ludavis
+[10/19/2025 12:26:04.493 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: driver parade is 2 hours before the race
+[10/19/2025 12:26:16.376 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: (no text; attachments=1)
+[10/19/2025 12:26:25.719 PM] React+   || User: moineau_l.oiseau    || Channel: #pet-pictures                        || emoji=😆; msg="judgemental george over here" by lemonelon_
+[10/19/2025 12:26:31.075 PM] React+   || User: moineau_l.oiseau    || Channel: #pet-pictures                        || emoji=‼️; msg="meester mulch" by slayc127
+[10/19/2025 12:26:36.109 PM] React+   || User: moineau_l.oiseau    || Channel: #pet-pictures                        || emoji=<:balloonboi:933099871257382983>; msg="the guy" by cici4f3
+[10/19/2025 12:26:40.947 PM] React+   || User: moineau_l.oiseau    || Channel: #pet-pictures                        || emoji=😭; msg=1429110937327108196
+[10/19/2025 12:26:48.016 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: national anthem will go so hard
+[10/19/2025 12:26:52.593 PM] Edit     || User: kcreepertux04       || Channel: #yapper-committee                    || national anthem will go so hard -> national anthem here will go so hard
+[10/19/2025 12:26:58.225 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: (no text; attachments=1)
+[10/19/2025 12:26:59.142 PM] React+   || User: moineau_l.oiseau    || Channel: #pet-pictures                        || emoji=‼️; msg=1429293485332103300
+[10/19/2025 12:26:59.318 PM] React+   || User: moineau_l.oiseau    || Channel: #pet-pictures                        || emoji=❤️; msg=1429293485332103300
+[10/19/2025 12:27:14.528 PM] React+   || User: moineau_l.oiseau    || Channel: #pet-pictures                        || emoji=😆; msg="Everyone here should put their pets next..." by .bettercalljack
+[10/19/2025 12:27:41.403 PM] React+   || User: moineau_l.oiseau    || Channel: #memes                               || emoji=😭; msg="@kazius [membership+fundraising]" by adeyumii
+[10/19/2025 12:27:41.702 PM] React+   || User: moineau_l.oiseau    || Channel: #memes                               || emoji=‼️; msg="@kazius [membership+fundraising]" by adeyumii
+[10/19/2025 12:27:43.238 PM] React+   || User: moineau_l.oiseau    || Channel: #memes                               || emoji=🤝; msg="@kazius [membership+fundraising]" by adeyumii
+[10/19/2025 12:27:53.658 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: my blood is flowing with pure patriotism this weekend and there ain’...
+[10/19/2025 12:27:59.147 PM] React+   || User: moineau_l.oiseau    || Channel: #memes                               || emoji=🤣; msg="https://x.com/TheCumpound/status/1979020..." by ludavis
+[10/19/2025 12:28:01.444 PM] React+   || User: moineau_l.oiseau    || Channel: #memes                               || emoji=😭; msg="https://x.com/TheCumpound/status/1979020..." by ludavis
+[10/19/2025 12:28:37.291 PM] Message  || User: kcreepertux04       || Channel: #yapper-committee                    || Content: i claim bottas as an american too he’s racing for cadillac next year...
+[10/19/2025 12:29:28.532 PM] React+   || User: moineau_l.oiseau    || Channel: #memes                               || emoji=🤣; msg="https://youtube.com/shorts/M03ph-aPrrY?s..." by .bettercalljack
+[10/19/2025 12:29:34.640 PM] React+   || User: moineau_l.oiseau    || Channel: #memes                               || emoji=<:smilecat:836868602220380160>; msg="https://tenor.com/view/cat-kitty-p...
+[10/19/2025 12:29:41.859 PM] React+   || User: moineau_l.oiseau    || Channel: #pictures-of-the-cats                || emoji=‼️; msg="microwave is so photogenic (last photo)" by emiximez
+[10/19/2025 12:29:47.275 PM] React+   || User: moineau_l.oiseau    || Channel: #pictures-of-the-cats                || emoji=🩷; msg=1429474846047473694
+[10/19/2025 12:29:51.382 PM] React+   || User: moineau_l.oiseau    || Channel: #pictures-of-the-cats                || emoji=‼️; msg="he likes to make sure people r safe at n..." by coziidruid
+[10/19/2025 12:29:56.860 PM] React+   || User: moineau_l.oiseau    || Channel: #pictures-of-the-cats                || emoji=😭; msg=1429516790224125952
+[10/19/2025 12:30:10.829 PM] React+   || User: moineau_l.oiseau    || Channel: #cat-name-ideas                      || emoji=❤️; msg="gunjan’s suggestion: “a piece of cardboa..." by simplyshadow17...
+[10/19/2025 12:30:11.674 PM] React-   || User: unknown             || Channel: #cat-name-ideas                      || emoji=❤️; msg="gunjan’s suggestion: “a piece of cardboa..." by simplyshadow17...
+[10/19/2025 12:30:36.599 PM] React+   || User: moineau_l.oiseau    || Channel: #external-promotions                 || emoji=💀; msg="The ra took it from under us and then cr..." by adeyumii
+[10/19/2025 12:31:32.757 PM] React+   || User: moineau_l.oiseau    || Channel: #executive-board                     || emoji=‼️; msg="agreed, we need to use the next availabl..." by celeryiscelery
+[10/19/2025 12:32:21.956 PM] React+   || User: moineau_l.oiseau    || Channel: #executive-board                     || emoji=✨; msg="ooo smart i like" by celeryiscelery
+[10/19/2025 12:32:24.742 PM] React+   || User: moineau_l.oiseau    || Channel: #executive-board                     || emoji=‼️; msg="i really dont want us waiting longer tha..." by slayc127
+[10/19/2025 12:35:47.450 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="being bored is a crime" by slayc127
+[10/19/2025 12:35:54.057 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: being bored=podcast time
+[10/19/2025 12:36:21.758 PM] Message  || User: baseketballin       || Channel: #feeding-team                        || Content: west hall fed 😋
+[10/19/2025 12:36:21.760 PM] Intent   || feed_update               ||                                               || station=West Hall; dates=['2025-10-19']
+[10/19/2025 12:36:23.639 PM] Action   || Name: sheet_mark          || Trigger: station=West Hall date=2025-10-19    || Output: ok
+[10/19/2025 12:36:23.639 PM] Action   || Name: feed_update         || Trigger: station=West Hall; dates=2025-10-19  || Output: ok
+[10/19/2025 12:36:31.768 PM] React+   || User: moineau_l.oiseau    || Channel: #purrley-pawsitive-pussy-pals        || emoji=❤️; msg=1429469845467955291
+[10/19/2025 12:36:38.644 PM] React+   || User: moineau_l.oiseau    || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="AWEEHDHDHD" by nostalgicsapphic
+[10/19/2025 12:36:56.801 PM] React+   || User: moineau_l.oiseau    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="A man with infinite food and water" by austinbaustinb
+[10/19/2025 12:36:57.027 PM] React+   || User: moineau_l.oiseau    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😆; msg="A man with infinite food and water" by austinbaustinb
+[10/19/2025 12:43:51.640 PM] React+   || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="A man with infinite food and water" by austinbaustinb
+[10/19/2025 12:45:58.015 PM] React+   || User: gupguppy            || Channel: #yapper-committee                    || emoji=<:balls:949786884979167253>; msg="Quiktrip has free air btw" by ludavis
+[10/19/2025 12:46:21.054 PM] React+   || User: gupguppy            || Channel: #yapper-committee                    || emoji=😆; msg="my blood is flowing with pure patriotism..." by kcreepertux04
+[10/19/2025 12:46:23.238 PM] React+   || User: kitadan             || Channel: #yapper-committee                    || emoji=😆; msg="my blood is flowing with pure patriotism..." by kcreepertux04
+[10/19/2025 12:47:03.598 PM] Message  || User: kitadan             || Channel: #feeding-team                        || Content: Zen fed.
+[10/19/2025 12:47:03.609 PM] Intent   || feed_update               ||                                               || station=Mary Kay and Zen; dates=['2025-10-19']
+[10/19/2025 12:47:05.400 PM] Action   || Name: sheet_mark          || Trigger: station=Mary Kay and Zen date=202... || Output: ok
+[10/19/2025 12:47:05.400 PM] Action   || Name: feed_update         || Trigger: station=Mary Kay and Zen; dates=2... || Output: ok
+[10/19/2025 12:48:40.229 PM] Message  || User: baseketballin       || Channel: #pictures-of-the-cats                || Content: first coba cat in a while !!!
+[10/19/2025 12:48:40.630 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=2
+[10/19/2025 12:55:33.693 PM] React+   || User: _costco_wholesale_  || Channel: #pet-pictures                        || emoji=😆; msg="hunting squirrels" by kcreepertux04
+[10/19/2025 12:56:29.160 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: twiggy
+[10/19/2025 12:57:45.657 PM] React+   || User: gupguppy            || Channel: #pictures-of-the-cats                || emoji=<:happycat:834819172546510868>; msg="first coba cat in a while !!!" by ...
+[10/19/2025 12:58:45.554 PM] React+   || User: cici4f3             || Channel: #pictures-of-the-cats                || emoji=<:happycat:834819172546510868>; msg="first coba cat in a while !!!" by ...
+[10/19/2025 12:59:13.541 PM] Message  || User: cici4f3             || Channel: #pictures-of-the-cats                || Content: one twig and no more
+[10/19/2025 01:00:07.941 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😆; msg="my blood is flowing with pure patriotism..." by kcreepertux04
+[10/19/2025 01:00:28.054 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: I WAS LISTENING
+[10/19/2025 01:00:32.877 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: and then i had classes 💔😔✊️
+[10/19/2025 01:03:07.625 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="and then i had classes 💔😔✊️" by slayc127
+[10/19/2025 01:03:36.694 PM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: had to beg and cry to get him to sit w me
+[10/19/2025 01:03:52.412 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=😭; msg=1429516790224125952
+[10/19/2025 01:05:01.609 PM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="had to beg and cry to get him to sit w m..." by nostalgicsapphic
+[10/19/2025 01:05:07.302 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: this should be me
+[10/19/2025 01:08:45.375 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😆; msg="this should be me" by slayc127
+[10/19/2025 01:09:25.351 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: ds cosgrove bought us lunch <:powaahhhhhhh:1284949152685490216>
+[10/19/2025 01:09:34.580 PM] Edit     || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || ds cosgrove bought us lunch <:powaahhhhhhh:1284949152685490216> -> dr cosgrov...
+[10/19/2025 01:13:22.740 PM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: (no text; attachments=1)
+[10/19/2025 01:13:54.518 PM] Message  || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || Content: My son bit my arm he was mad I stopped him from falling off my lap
+[10/19/2025 01:14:06.964 PM] React+   || User: vasyline            || Channel: #introductions                       || emoji=<:happycat:834819172546510868>; msg=1428703362530148489
+[10/19/2025 01:14:12.140 PM] React+   || User: vasyline            || Channel: #yapper-committee                    || emoji=😭; msg="ITS WATERMELOM JOLLY RANCHER" by kcreepertux04
+[10/19/2025 01:14:30.093 PM] React+   || User: vasyline            || Channel: #pictures-of-the-cats                || emoji=🩷; msg=1429474846047473694
+[10/19/2025 01:15:25.398 PM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="My son bit my arm he was mad I stopped h..." by austinbaustinb
+[10/19/2025 01:15:29.594 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: how dare u austin
+[10/19/2025 01:15:56.429 PM] React+   || User: austinbaustinb      || Channel: #purrley-pawsitive-pussy-pals        || emoji=❤️; msg="how dare u austin" by slayc127
+[10/19/2025 01:20:22.753 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="My son bit my arm he was mad I stopped h..." by austinbaustinb
+[10/19/2025 01:20:26.585 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=❤️; msg="how dare u austin" by slayc127
+[10/19/2025 01:20:27.084 PM] React-   || User: unknown             || Channel: #purrley-pawsitive-pussy-pals        || emoji=❤️; msg="how dare u austin" by slayc127
+[10/19/2025 01:20:28.766 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="how dare u austin" by slayc127
+[10/19/2025 01:20:59.101 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: (no text; attachments=2)
+[10/19/2025 01:20:59.455 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=2
+[10/19/2025 01:21:09.521 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: needywave
+[10/19/2025 01:21:32.012 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Ope he just left me nvm
+[10/19/2025 01:21:47.416 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: I put my bag on his feeder and he thought I was gonna feed him. I th...
+[10/19/2025 01:22:27.479 PM] React+   || User: slayc127            || Channel: #pictures-of-the-cats                || emoji=😭; msg="I put my bag on his feeder and he though..." by adeyumii
+[10/19/2025 01:22:48.208 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=😭; msg="I put my bag on his feeder and he though..." by adeyumii
+[10/19/2025 01:24:55.024 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=😭; msg="I put my bag on his feeder and he though..." by adeyumii
+[10/19/2025 01:28:15.032 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: @Jacob [Fundraising Officer] are u available to table 11-2 on wed?
+[10/19/2025 01:28:30.137 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: whos available for set up and whos available for tear down as well ?...
+[10/19/2025 01:30:35.939 PM] Message  || User: slayc127            || Channel: #announcements                       || Content: @​here reminders!
+-PLEASE apply for our officer positions if you are...
+[10/19/2025 01:31:21.908 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: I miss my daughter
+[10/19/2025 01:31:26.596 PM] Message  || User: littletechyyy       || Channel: #yapper-committee                    || Content: dew point was 37 this morning
+[10/19/2025 01:31:29.944 PM] Message  || User: littletechyyy       || Channel: #yapper-committee                    || Content: it felt amazing
+[10/19/2025 01:31:32.359 PM] React+   || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="My son bit my arm he was mad I stopped h..." by austinbaustinb
+[10/19/2025 01:31:34.840 PM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="I miss my daughter" by a1darek
+[10/19/2025 01:32:24.036 PM] Message  || User: a1darek             || Channel: #announcements                       || Content: (also I'm seeking 1-3 potential tnr team leads/assistant officers if...
+[10/19/2025 01:32:35.582 PM] React+   || User: slayc127            || Channel: #announcements                       || emoji=‼️; msg="(also I'm seeking 1-3 potential tnr team..." by a1darek
+[10/19/2025 01:32:57.449 PM] React+   || User: the_frog.sorcerer   || Channel: #announcements                       || emoji=‼️; msg="(also I'm seeking 1-3 potential tnr team..." by a1darek
+[10/19/2025 01:33:05.644 PM] Message  || User: _rambone_           || Channel: #executive-board                     || Content: I have work at 12:30 so I can't stay the whole time
+[10/19/2025 01:33:11.606 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: logan sargeant was mishandled
+[10/19/2025 01:33:12.959 PM] Message  || User: _rambone_           || Channel: #executive-board                     || Content: I can fs help set up tho
+[10/19/2025 01:33:24.985 PM] React+   || User: _rambone_           || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="it’s officially fall !" by the.lemonade.stand
+[10/19/2025 01:33:32.230 PM] React+   || User: _rambone_           || Channel: #purrley-pawsitive-pussy-pals        || emoji=👀; msg="@mckayla [retired] candy at petco" by slayc127
+[10/19/2025 01:34:10.923 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: okay
+[10/19/2025 01:34:18.160 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: @Megan [Feeding Head & PR] are u available to table wednesday ?
+[10/19/2025 01:34:24.524 PM] React+   || User: slayc127            || Channel: #executive-board                     || emoji=❤️; msg="I can fs help set up tho" by _rambone_
+[10/19/2025 01:36:30.562 PM] React+   || User: the.lemonade.stand  || Channel: #announcements                       || emoji=‼️; msg="(also I'm seeking 1-3 potential tnr team..." by a1darek
+[10/19/2025 01:36:50.759 PM] React+   || User: the.lemonade.stand  || Channel: #yapper-committee                    || emoji=😆; msg="my blood is flowing with pure patriotism..." by kcreepertux04
+[10/19/2025 01:37:07.720 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="I miss my daughter" by a1darek
+[10/19/2025 01:38:32.032 PM] Message  || User: m_digio             || Channel: #executive-board                     || Content: Yes but my class ends at 1050
+[10/19/2025 01:40:00.356 PM] React+   || User: the_frog.sorcerer   || Channel: #pictures-of-the-cats                || emoji=😆; msg="rubber..." by a1darek
+[10/19/2025 01:42:52.197 PM] Message  || User: the_frog.sorcerer   || Channel: #pet-pictures                        || Content: (no text; attachments=2)
+[10/19/2025 01:43:16.723 PM] Message  || User: the_frog.sorcerer   || Channel: #pet-pictures                        || Content: Ash the Russian blue
+[10/19/2025 01:43:42.652 PM] React+   || User: the_frog.sorcerer   || Channel: #pet-pictures                        || emoji=😆; msg="hunting squirrels" by kcreepertux04
+[10/19/2025 01:44:43.057 PM] React+   || User: the_frog.sorcerer   || Channel: #yapper-committee                    || emoji=🍅; msg="High of 90 tomorrow :(" by adeyumii
+[10/19/2025 01:45:01.336 PM] React+   || User: the_frog.sorcerer   || Channel: #yapper-committee                    || emoji=❤️; msg="dew point was 37 this morning" by littletechyyy
+[10/19/2025 01:45:27.158 PM] Message  || User: the_frog.sorcerer   || Channel: #yapper-committee                    || Content: Had to be up at 6 am for work omggg its FALLL
+[10/19/2025 01:46:32.086 PM] Message  || User: the_frog.sorcerer   || Channel: #yapper-committee                    || Content: I can leave stuff in my car now 🐸
+[10/19/2025 01:47:11.283 PM] Message  || User: adeyumii            || Channel: #yapper-committee                    || Content: It'll be 90 tomorrow so maybe don't leave just anything
+[10/19/2025 01:47:18.530 PM] Message  || User: the_frog.sorcerer   || Channel: #yapper-committee                    || Content: O
+[10/19/2025 01:47:21.713 PM] Message  || User: the_frog.sorcerer   || Channel: #yapper-committee                    || Content: Good call
+[10/19/2025 01:49:40.654 PM] React+   || User: the.lemonade.stand  || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="A man with infinite food and water" by austinbaustinb
+[10/19/2025 03:18:19.391 PM] Action   || Name: gmail_log_scheduler || Trigger: auth                                 || Output: pending
+[10/19/2025 03:31:25.867 PM] Action   || Name: gmail_log_scheduler || Trigger: auth                                 || Output: pending
+[10/19/2025 04:49:42.750 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[10/19/2025 04:49:44.074 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[10/19/2025 04:49:44.401 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[10/19/2025 04:49:44.744 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[10/19/2025 04:49:45.104 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[10/19/2025 04:49:45.315 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[10/19/2025 04:51:35.159 PM] Leave    || User: _shaz_21 (803756... || Guild: Campus Cat Coalition                  
+[10/19/2025 04:54:48.681 PM] Message  || User: kitadan             || Channel: #feeding-team                        || Content: Plus one that arrived later than this picture, Noir
+[10/19/2025 05:00:16.303 PM] React+   || User: a1darek             || Channel: #feeding-team                        || emoji=🔥; msg="Zen fed." by kitadan
+[10/19/2025 05:05:19.353 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Today has good vibes
+[10/19/2025 05:05:28.943 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Solely because of the amazing weather
+[10/19/2025 05:05:35.796 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: Also i got free lunch
+[10/19/2025 05:08:00.239 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: im glad it does for u ♥️ /gen
+[10/19/2025 05:08:04.455 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: today has rancid vibes for kazius
+[10/19/2025 05:22:03.237 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: just got flashbanged w the reminder ill have to answer questions abo...
+[10/19/2025 05:27:40.812 PM] React+   || User: mochenoch           || Channel: #announcements                       || emoji=‼️; msg="(also I'm seeking 1-3 potential tnr team..." by a1darek
+[10/19/2025 05:35:25.171 PM] React+   || User: vasyline            || Channel: #feeding-team                        || emoji=🔥; msg="Zen fed." by kitadan
+[10/19/2025 05:40:22.027 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😆; msg="if u have ever been a customer do better" by slayc127
+[10/19/2025 05:40:26.962 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="today has rancid vibes for kazius" by slayc127
+[10/19/2025 05:40:29.522 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="just got flashbanged w the reminder ill ..." by slayc127
+[10/19/2025 05:47:34.449 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: has not moved
+[10/19/2025 05:47:35.333 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 05:49:05.955 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: she gives me such bad cuteness aggression
+[10/19/2025 05:52:17.500 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[10/19/2025 05:56:15.944 PM] Message  || User: adeyumii            || Channel: #report-new-cats                     || Content: Gorgreg kitten #3, her name is Selena
+[10/19/2025 05:56:16.464 PM] Action   || Name: image_intake        || Trigger: channel=639882573199441930           || Output: rows=4
+[10/19/2025 05:56:52.718 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: coba (twix) fed
+[10/19/2025 05:56:52.718 PM] Intent   || feed_update               ||                                               || station=Business; dates=['2025-10-19']
+[10/19/2025 05:56:54.059 PM] Action   || Name: sheet_mark          || Trigger: station=Business date=2025-10-19     || Output: ok
+[10/19/2025 05:56:54.060 PM] Action   || Name: feed_update         || Trigger: station=Business; dates=2025-10-19   || Output: ok
+[10/19/2025 05:58:26.492 PM] Message  || User: cici4f3             || Channel: #feeding-team                        || Content: waver fed
+[10/19/2025 05:58:26.508 PM] Intent   || feed_update               ||                                               || station=Microwave; dates=['2025-10-19']
+[10/19/2025 05:58:27.115 PM] Action   || Name: sheet_mark          || Trigger: station=Microwave date=2025-10-19    || Output: ok
+[10/19/2025 05:58:27.115 PM] Action   || Name: feed_update         || Trigger: station=Microwave; dates=2025-10-19  || Output: ok
+[10/19/2025 05:58:32.459 PM] Message  || User: racerdg             || Channel: #feeding-team                        || Content: she didnt even eat she just inspected the food
+[10/19/2025 05:58:37.876 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: impatient
+[10/19/2025 05:58:38.210 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 05:59:04.731 PM] Message  || User: cici4f3             || Channel: #pictures-of-the-cats                || Content: he too was impatient
+[10/19/2025 05:59:05.060 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=4
+[10/19/2025 06:01:05.153 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: hes both the most muscular and the most flabby cat ive ever seen
+[10/19/2025 06:02:29.405 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: hes like when they make old actors get buff for movies
+[10/19/2025 06:02:48.840 PM] Message  || User: adeyumii            || Channel: #feeding-team                        || Content: lot 50 fed
+[10/19/2025 06:02:48.840 PM] Intent   || feed_update               ||                                               || station=Lot 50; dates=['2025-10-19']
+[10/19/2025 06:02:49.640 PM] Action   || Name: sheet_mark          || Trigger: station=Lot 50 date=2025-10-19       || Output: ok
+[10/19/2025 06:02:49.640 PM] Action   || Name: feed_update         || Trigger: station=Lot 50; dates=2025-10-19     || Output: ok
+[10/19/2025 06:03:22.521 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: im about to spam this channel with pics chat
+[10/19/2025 06:03:22.709 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: ralph fiennes the return
+[10/19/2025 06:03:26.695 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: yay
+[10/19/2025 06:03:42.059 PM] Message  || User: not_d3fault_1420    || Channel: #pictures-of-the-cats                || Content: he’s too fat for my phone to load
+[10/19/2025 06:03:42.503 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 06:05:20.720 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Ariel (and him playing with Yumi)
+[10/19/2025 06:05:21.056 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=10
+[10/19/2025 06:05:37.276 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Rubber
+[10/19/2025 06:05:37.565 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 06:05:42.296 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: my perception of fuji kaze was completely shifted when I learned tha...
+[10/19/2025 06:05:57.030 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Mr Stinky
+[10/19/2025 06:05:57.345 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=3
+[10/19/2025 06:05:59.322 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: https://tenor.com/view/dacapo-vtube-vtuber-concert-vtuber-concert-gi...
+[10/19/2025 06:06:11.715 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: shitbag cuntface
+[10/19/2025 06:06:12.007 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 06:06:19.510 PM] Message  || User: a1darek             || Channel: #report-new-cats                     || Content: pretty babby
+[10/19/2025 06:07:21.011 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Gregory, gregory with conan
+[10/19/2025 06:07:21.340 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=6
+[10/19/2025 06:07:37.119 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: singular gorygreg
+[10/19/2025 06:07:37.415 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 06:08:23.613 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: i lied gorygreg is also here.
+gorygrey, conan, keaton, and yumi
+[10/19/2025 06:08:23.907 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=3
+[10/19/2025 06:08:37.567 PM] Message  || User: the.lemonade.stand  || Channel: #purrley-pawsitive-pussy-pals        || Content: the afternoon haze this weekend was lethal
+[10/19/2025 06:08:58.907 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: I think Keaton is this litter's baby daddy btw. it works out genetic...
+[10/19/2025 06:10:09.323 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: kittens
+[10/19/2025 06:10:09.788 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=4
+[10/19/2025 06:10:57.172 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: nefarious
+[10/19/2025 06:10:57.530 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=3
+[10/19/2025 06:11:01.050 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: ok spam over
+[10/19/2025 06:37:41.206 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[10/19/2025 06:37:42.305 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[10/19/2025 06:37:42.618 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[10/19/2025 06:37:42.936 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[10/19/2025 06:37:43.305 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[10/19/2025 06:37:43.516 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[10/19/2025 06:49:25.605 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[10/19/2025 06:49:26.954 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[10/19/2025 06:49:27.336 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[10/19/2025 06:49:27.673 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[10/19/2025 06:49:28.006 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[10/19/2025 06:49:28.255 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[10/19/2025 06:52:04.322 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=‼️; msg="@kazius [membership+fundraising]" by vasyline
+[10/19/2025 06:52:23.150 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="This funny ass video" by austinbaustinb
+[10/19/2025 06:58:21.860 PM] React+   || User: cici4f3             || Channel: #pictures-of-the-cats                || emoji=‼️; msg="@kazius [membership+fundraising]" by vasyline
+[10/19/2025 06:59:50.288 PM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="This funny ass video" by austinbaustinb
+[10/19/2025 07:03:01.192 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[10/19/2025 07:22:28.970 PM] Message  || User: doggo53             || Channel: #pictures-of-the-cats                || Content: Who are the two cats outside west hall
+(Other one ran into the bushes)
+[10/19/2025 07:22:29.357 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 07:27:04.519 PM] Message  || User: adeyumii            || Channel: #pictures-of-the-cats                || Content: Simba and timon prob
+[10/19/2025 07:27:12.633 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: looks like barbie tbh
+[10/19/2025 07:27:20.137 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: maybe simba
+[10/19/2025 07:35:51.792 PM] Message  || User: ludavis             || Channel: #report-new-cats                     || Content: Omg she's so cute
+[10/19/2025 07:36:41.691 PM] React+   || User: kitadan             || Channel: #pictures-of-the-cats                || emoji=<:cute:933104767348134018>; msg="just some babies" by simplyshadow171295
+[10/19/2025 07:55:45.808 PM] Message  || User: cici4f3             || Channel: #yapper-committee                    || Content: being in college is nice sometimes shoutouts to the mom in AH who ma...
+[10/19/2025 08:00:05.521 PM] Action   || Name: feeding_8pm         || Trigger: unfed=3                              || Output: sent
+[10/19/2025 08:00:05.537 PM] Action   || Name: feeding_8pm         || Trigger: unfed=3                              || Output: sent
+[10/19/2025 08:00:05.569 PM] Action   || Name: feeding_8pm         || Trigger: unfed=3                              || Output: sent
+[10/19/2025 08:00:05.729 PM] Action   || Name: feeding_8pm         || Trigger: unfed=3                              || Output: sent
+[10/19/2025 08:00:08.480 PM] Action   || Name: feeding_8pm         || Trigger: unfed=3                              || Output: sent
+[10/19/2025 08:01:27.857 PM] Message  || User: void_now            || Channel: #feeding-team                        || Content: I take it tomcat is being worked on
+[10/19/2025 08:02:49.426 PM] Message  || User: m_digio             || Channel: #feeding-team                        || Content: @Austin B [Records Director]
+[10/19/2025 08:04:04.981 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: Meow
+[10/19/2025 08:04:05.189 PM] Action   || Name: handle_misc         || Trigger: trigger=Meow                         || Output: mrrp?
+[10/19/2025 08:04:11.803 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: Tomcat silent mode on
+[10/19/2025 08:04:11.803 PM] Intent   || silent_mode               ||                                              
+[10/19/2025 08:04:11.803 PM] Action   || Name: silent_mode         || Trigger: by=624440365595754496                || Output: on
+[10/19/2025 08:04:31.642 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: Ah I’m sorry guys. Forgot to turn it on to silent mode again
+[10/19/2025 08:05:18.293 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: Every time there is a WiFi blip, which is apparently frequent at my ...
+[10/19/2025 08:05:22.748 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: And yeah just haven’t had time
+[10/19/2025 08:06:27.695 PM] Message  || User: m_digio             || Channel: #feeding-team                        || Content: Ez okay js wanted to let you know
+[10/19/2025 08:06:27.695 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=49903... || Output: stations=Mary Kay and Zen; text=Ez okay js wanted to let you know
+[10/19/2025 08:08:53.356 PM] Message  || User: catasourus          || Channel: #feeding-team                        || Content: Definitely didn't forget I swear
+[10/19/2025 08:10:19.719 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=❤️; msg="being in college is nice sometimes shout..." by cici4f3
+[10/19/2025 08:20:21.576 PM] React+   || User: vasyline            || Channel: #yapper-committee                    || emoji=❤️; msg="being in college is nice sometimes shout..." by cici4f3
+[10/19/2025 08:26:13.293 PM] React+   || User: kitadan             || Channel: #yapper-committee                    || emoji=❤️; msg="being in college is nice sometimes shout..." by cici4f3
+[10/19/2025 08:27:16.513 PM] Message  || User: catasourus          || Channel: #feeding-team                        || Content: Hops and greens fed
+[10/19/2025 08:27:16.513 PM] Intent   || feed_update               ||                                               || station=Greens; dates=['2025-10-19']
+[10/19/2025 08:27:17.520 PM] Action   || Name: sheet_mark          || Trigger: station=Greens date=2025-10-19       || Output: ok
+[10/19/2025 08:27:17.520 PM] Action   || Name: feed_update         || Trigger: station=Greens; dates=2025-10-19     || Output: ok
+[10/19/2025 08:27:19.769 PM] Action   || Name: sheet_mark          || Trigger: station=HOP date=2025-10-19          || Output: ok
+[10/19/2025 08:27:19.769 PM] Action   || Name: feed_update         || Trigger: station=HOP; dates=2025-10-19        || Output: ok
+[10/19/2025 08:44:21.592 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: bugs
+[10/19/2025 08:44:29.804 PM] Message  || User: racerdg             || Channel: #yapper-committee                    || Content: my camera cant pick them up
+[10/19/2025 08:47:03.030 PM] React+   || User: _rambone_           || Channel: #executive-board                     || emoji=❤️; msg="i can try to help tear down at 1:30-2, m..." by the.lemonade.s...
+[10/19/2025 08:52:53.818 PM] React+   || User: .bettercalljack     || Channel: #yapper-committee                    || emoji=❤️; msg="being in college is nice sometimes shout..." by cici4f3
+[10/19/2025 08:56:54.675 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: mck forcibly turned off my phone at work meeting bc she didnt wanna ...
+[10/19/2025 08:57:14.876 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg="mck forcibly turned off my phone at work..." by slayc127
+[10/19/2025 08:57:31.105 PM] Message  || User: slayc127            || Channel: #executive-board                     || Content: looks great!!!!!
+[10/19/2025 08:57:43.526 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: why was today so exhausting
+[10/19/2025 08:57:55.541 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: Final conclusion: i need men to not do what they do and i need custo...
+[10/19/2025 08:58:11.394 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: there exists NO class connsciousness i in fact hate everyone else
+[10/19/2025 08:58:16.710 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: spelling hard.
+[10/19/2025 08:59:54.897 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😆; msg="there exists NO class connsciousness i i..." by slayc127
+[10/19/2025 09:04:03.450 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[10/19/2025 09:04:03.875 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 09:04:08.922 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: <a:crying_skype:524824027236270110>
+[10/19/2025 09:04:18.360 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: shes so beautiful
+[10/19/2025 09:10:25.485 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: im punching a wall
+[10/19/2025 09:10:31.328 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: i cant TAKE THIS ANYMORE
+[10/19/2025 09:10:35.855 PM] Message  || User: slayc127            || Channel: #pictures-of-the-cats                || Content: https://tenor.com/view/orange-cat-gets-flung-and-explodes-orange-cat...
+[10/19/2025 09:16:05.619 PM] React+   || User: austinbaustinb      || Channel: #feeding-team                        || emoji=❤️; msg="Ez okay js wanted to let you know" by m_digio
+[10/19/2025 09:16:26.500 PM] React+   || User: spitonme            || Channel: #yapper-committee                    || emoji=🐙; msg="being in college is nice sometimes shout..." by cici4f3
+[10/19/2025 09:16:38.553 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: And snickers has been fed too so idk why that didn’t pick up
+[10/19/2025 09:16:38.553 PM] Intent   || feed_update               ||                                               || station=Snickers; dates=['2025-10-19']
+[10/19/2025 09:16:40.521 PM] Action   || Name: sheet_mark          || Trigger: station=Snickers date=2025-10-19     || Output: ok
+[10/19/2025 09:16:40.521 PM] Action   || Name: feed_update         || Trigger: station=Snickers; dates=2025-10-19   || Output: ok
+[10/19/2025 09:20:10.507 PM] React+   || User: vasyline            || Channel: #pictures-of-the-cats                || emoji=💙; msg=1429651352320999504
+[10/19/2025 09:33:08.508 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: (no text; attachments=2)
+[10/19/2025 09:33:08.839 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=2
+[10/19/2025 09:36:07.188 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[10/19/2025 09:36:07.663 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 09:36:13.683 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[10/19/2025 09:36:13.968 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 09:37:22.521 PM] Delete   || User: racerdg             || Channel: #pictures-of-the-cats                || Content: 
+[10/19/2025 09:37:28.658 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: (no text; attachments=1)
+[10/19/2025 09:37:28.971 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 09:38:34.585 PM] Message  || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || Content: https://tenor.com/view/glee-brittany-pierce-stop-the-violence-stop-f...
+[10/19/2025 09:41:14.220 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: (no text; attachments=1)
+[10/19/2025 09:46:33.411 PM] React+   || User: the.lemonade.stand  || Channel: #pictures-of-the-cats                || emoji=💙; msg=1429651352320999504
+[10/19/2025 09:46:57.891 PM] React+   || User: kitadan             || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1429651352320999504
+[10/19/2025 09:50:52.318 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: yay
+[10/19/2025 09:56:21.280 PM] React+   || User: skelehusk           || Channel: #pictures-of-the-cats                || emoji=💖; msg="kittens" by adeyumii
+[10/19/2025 09:56:37.437 PM] React+   || User: skelehusk           || Channel: #pictures-of-the-cats                || emoji=<:cute:933104767348134018>; msg="just some babies" by simplyshadow171295
+[10/19/2025 09:56:46.191 PM] React+   || User: skelehusk           || Channel: #pictures-of-the-cats                || emoji=💙; msg=1429651352320999504
+[10/19/2025 09:56:46.526 PM] React+   || User: skelehusk           || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1429651352320999504
+[10/19/2025 09:57:42.567 PM] React+   || User: lifeye              || Channel: #feeding-team                        || emoji=❤️; msg="Plus one that arrived later than this pi..." by kitadan
+[10/19/2025 10:00:43.163 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: CITLALI MY BABY
+[10/19/2025 10:00:57.706 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: @e l u s i v e i told you we’d seen citlali recently
+[10/19/2025 10:01:24.716 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: oh coatl you are so stupid /silly
+[10/19/2025 10:01:41.851 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=🎉; msg="yay" by racerdg
+[10/19/2025 10:01:44.624 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=💖; msg="yay" by racerdg
+[10/19/2025 10:01:46.644 PM] React+   || User: celeryiscelery      || Channel: #purrley-pawsitive-pussy-pals        || emoji=<:gaga:1413361490634870969>; msg=1429660709112778853
+[10/19/2025 10:02:09.915 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1429651352320999504
+[10/19/2025 10:02:42.456 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: many babies
+[10/19/2025 10:02:43.065 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=4
+[10/19/2025 10:03:37.256 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: fr. mama atzi with her tiny ear tip
+[10/19/2025 10:03:44.238 PM] Edit     || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || fr. mama atzi with her tiny ear tip -> ft.  mama atzi with her tiny ear tip
+[10/19/2025 10:03:45.058 PM] React+   || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || emoji=❤️; msg="mck forcibly turned off my phone at work..." by slayc127
+[10/19/2025 10:04:22.272 PM] Message  || User: celeryiscelery      || Channel: #executive-board                     || Content: i love
+[10/19/2025 10:09:07.339 PM] React+   || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1429651352320999504
+[10/19/2025 10:09:07.524 PM] React+   || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || emoji=💙; msg=1429651352320999504
+[10/19/2025 10:09:20.575 PM] React+   || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || emoji=❤️; msg="@e l u s i v e i told you we’d seen citl..." by simplyshadow17...
+[10/19/2025 10:09:49.411 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: she’s still a baby to me 😭
+[10/19/2025 10:09:57.030 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: IKR
+[10/19/2025 10:10:37.851 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: (no text; attachments=1)
+[10/19/2025 10:11:55.347 PM] React+   || User: m_digio             || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1429651352320999504
+[10/19/2025 10:18:35.906 PM] Message  || User: kcreepertux04       || Channel: #memes                               || Content: (no text; attachments=1)
+[10/19/2025 10:19:30.359 PM] React+   || User: otirain_butdiscorb  || Channel: #pictures-of-the-cats                || emoji=💙; msg=1429651352320999504
+[10/19/2025 10:19:30.777 PM] React+   || User: otirain_butdiscorb  || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1429651352320999504
+[10/19/2025 10:21:18.299 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: lmfao i was confused trying to id her cause i couldnt get close enou...
+[10/19/2025 10:21:38.851 PM] Message  || User: racerdg             || Channel: #pictures-of-the-cats                || Content: i was like im pretty sure this is her but her ear looks intact
+[10/19/2025 10:21:55.200 PM] Message  || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || Content: she’s the only adult gray cat around if it helps
+[10/19/2025 10:28:27.122 PM] React+   || User: kitadan             || Channel: #pictures-of-the-cats                || emoji=💖; msg="yay" by racerdg
+[10/19/2025 10:29:08.441 PM] React+   || User: kitadan             || Channel: #pictures-of-the-cats                || emoji=❤️; msg="@e l u s i v e i told you we’d seen citl..." by simplyshadow17...
+[10/19/2025 10:39:11.707 PM] Message  || User: hatshura            || Channel: #feeding-team                        || Content: maybe bc the msg said "Snicker" instead of "Snickers"
+[10/19/2025 10:39:11.710 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=20468... || Output: stations=Snickers; text=maybe bc the msg said "Snicker" instead of "S...
+[10/19/2025 10:41:54.395 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: yeah but I tried to build in a bit of a "fuzzy matching" algorithm a...
+[10/19/2025 10:46:16.252 PM] React+   || User: bubblebee5866       || Channel: #pet-pictures                        || emoji=😭; msg="what is this position?" by largerosco
+[10/19/2025 10:46:33.614 PM] React+   || User: bubblebee5866       || Channel: #pet-pictures                        || emoji=<:sideglance:854112451771760641>; msg="Diva" by m_digio
+[10/19/2025 10:46:37.957 PM] React+   || User: bubblebee5866       || Channel: #pet-pictures                        || emoji=❤️; msg=1428825234370335053
+[10/19/2025 10:46:49.691 PM] React+   || User: bubblebee5866       || Channel: #pet-pictures                        || emoji=‼️; msg="meester mulch" by slayc127
+[10/19/2025 10:46:54.712 PM] React+   || User: bubblebee5866       || Channel: #pet-pictures                        || emoji=<:balloonboi:933099871257382983>; msg="the guy" by cici4f3
+[10/19/2025 10:46:58.820 PM] React+   || User: bubblebee5866       || Channel: #pet-pictures                        || emoji=<:cute:933104767348134018>; msg=1429110937327108196
+[10/19/2025 10:47:07.336 PM] React+   || User: bubblebee5866       || Channel: #pet-pictures                        || emoji=❤️; msg=1429293485332103300
+[10/19/2025 10:47:36.356 PM] React+   || User: bubblebee5866       || Channel: #pet-pictures                        || emoji=❤️; msg=1429540323255779490
+[10/19/2025 10:49:02.198 PM] Message  || User: bubblebee5866       || Channel: #pet-pictures                        || Content: Naptime on the new blankie
+[10/19/2025 10:49:02.455 PM] Message  || User: hatshura            || Channel: #feeding-team                        || Content: https://tenor.com/view/anya-forger-anya-spy-x-family-okey-dokey-gif-...
+[10/19/2025 10:52:11.280 PM] React+   || User: bubblebee5866       || Channel: #pet-pictures                        || emoji=💖; msg=1428577424957898795
+[10/19/2025 10:56:03.772 PM] React+   || User: bubblebee5866       || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1429651352320999504
+[10/19/2025 11:08:28.073 PM] React+   || User: kitadan             || Channel: #pet-pictures                        || emoji=💤; msg="Naptime on the new blankie" by bubblebee5866
+[10/19/2025 11:12:16.901 PM] React+   || User: pancakemixteamdj    || Channel: #pictures-of-the-cats                || emoji=💙; msg=1429651352320999504
+[10/19/2025 11:13:38.457 PM] Message  || User: pancakemixteamdj    || Channel: #pictures-of-the-cats                || Content: Her husband by the way
+[10/19/2025 11:13:38.945 PM] Action   || Name: image_intake        || Trigger: channel=551084964318543904           || Output: rows=1
+[10/19/2025 11:17:51.646 PM] React+   || User: petrichor           || Channel: #pet-pictures                        || emoji=💤; msg="Naptime on the new blankie" by bubblebee5866
+[10/19/2025 11:21:12.856 PM] Message  || User: void_now            || Channel: #pictures-of-the-cats                || Content: Unreal
+[10/19/2025 11:35:12.775 PM] React+   || User: m_digio             || Channel: #pet-pictures                        || emoji=💤; msg="Naptime on the new blankie" by bubblebee5866
+[10/19/2025 11:40:09.808 PM] React+   || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || emoji=💀; msg="Her husband by the way" by pancakemixteamdj
+[10/19/2025 11:40:51.704 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=💀; msg="Her husband by the way" by pancakemixteamdj
+[10/19/2025 11:40:56.629 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=💙; msg=1429651352320999504
+[10/19/2025 11:40:57.061 PM] React+   || User: .bettercalljack     || Channel: #pictures-of-the-cats                || emoji=❤️; msg=1429651352320999504
+[10/19/2025 11:41:51.207 PM] Message  || User: _costco_wholesale_  || Channel: #pictures-of-the-cats                || Content: I didn’t notice how small her ear tip was :O
+[10/19/2025 11:44:34.630 PM] React+   || User: _costco_wholesale_  || Channel: #yapper-committee                    || emoji=❤️; msg="being in college is nice sometimes shout..." by cici4f3
+[10/19/2025 11:44:56.902 PM] Message  || User: _costco_wholesale_  || Channel: #yapper-committee                    || Content: that’s terrifying
+[10/19/2025 11:46:37.650 PM] React+   || User: simplyshadow171295  || Channel: #pictures-of-the-cats                || emoji=💀; msg="Her husband by the way" by pancakemixteamdj
+[10/19/2025 11:49:20.585 PM] React+   || User: gupguppy            || Channel: #yapper-committee                    || emoji=❤️; msg="being in college is nice sometimes shout..." by cici4f3

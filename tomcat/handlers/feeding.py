@@ -837,6 +837,9 @@ def _update_existing_sub_request(
 
 _FEEDING_SCHEDULER_LOCK = asyncio.Lock()
 _FEEDING_SCHEDULER_STARTED = False
+_FEEDING_8PM_LOCK = asyncio.Lock()
+_LAST_FEEDING_ALERT_KEY: Optional[str] = None
+_LAST_FEEDING_ALERT_TS: Optional[datetime] = None
 
 async def start_feeding_scheduler(bot: discord.Client) -> None:
     """Kick off the nightly reminder loop that pings unfed stations."""
@@ -869,17 +872,38 @@ async def _sleep_until_local_time(hour: int, minute: int):
         target = target + timedelta(days=1)
     await asyncio.sleep((target - now).total_seconds())
 
-async def _run_8pm_check(bot: discord.Client) -> None:
+async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> None:
     """Build and send the 8PM summary of remaining feed duties."""
+    global _LAST_FEEDING_ALERT_KEY, _LAST_FEEDING_ALERT_TS
+    now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+    today_key = now.date().isoformat()
+    async with _FEEDING_8PM_LOCK:
+        if not force and _LAST_FEEDING_ALERT_KEY == today_key:
+            log_action("feeding_8pm", f"date={today_key}", "duplicate_skip")
+            return
+        _LAST_FEEDING_ALERT_KEY = today_key
+        _LAST_FEEDING_ALERT_TS = now
+
+    sent_or_logged = False
+
     # Use feeding team channel for alerts
     channel_id = getattr(settings, "ch_feeding_team", None)
     if not channel_id:
         log_action("feeding_8pm", "channel=None", "skipped (no alert channel configured)")
+        sent_or_logged = False
+        async with _FEEDING_8PM_LOCK:
+            if _LAST_FEEDING_ALERT_KEY == today_key:
+                _LAST_FEEDING_ALERT_KEY = None
+                _LAST_FEEDING_ALERT_TS = None
         return
 
     ch = bot.get_channel(int(channel_id))
     if not ch:
         log_action("feeding_8pm", f"channel={channel_id}", "not_found")
+        async with _FEEDING_8PM_LOCK:
+            if _LAST_FEEDING_ALERT_KEY == today_key:
+                _LAST_FEEDING_ALERT_KEY = None
+                _LAST_FEEDING_ALERT_TS = None
         return
 
     unfed = await _list_unfed_stations_today()
@@ -891,10 +915,17 @@ async def _run_8pm_check(bot: discord.Client) -> None:
             if isinstance(ch, Messageable):
                 await safe_send(ch, msg)
                 log_action("feeding_8pm", "unfed=0", "celebrated")
+                sent_or_logged = True
             else:
                 log_action("feeding_8pm", f"channel={channel_id}; type={type(ch).__name__}", "not_messageable")
+                sent_or_logged = True
         except Exception as e:
             log_action("feeding_8pm_error", "unfed=0", str(e))
+        if not sent_or_logged:
+            async with _FEEDING_8PM_LOCK:
+                if _LAST_FEEDING_ALERT_KEY == today_key:
+                    _LAST_FEEDING_ALERT_KEY = None
+                    _LAST_FEEDING_ALERT_TS = None
         return
 
     # choose who to ping: subs first, else default schedule
@@ -909,10 +940,19 @@ async def _run_8pm_check(bot: discord.Client) -> None:
         if isinstance(ch, Messageable):
             await safe_send(ch, lines)  # silent mode respected here
             log_action("feeding_8pm", f"unfed={len(unfed)}", "sent")
+            sent_or_logged = True
         else:
             log_action("feeding_8pm", f"channel={channel_id}; type={type(ch).__name__}", "not_messageable")
+            sent_or_logged = True
     except Exception as e:
         log_action("feeding_8pm_error", f"unfed={len(unfed)}", str(e))
+        sent_or_logged = False
+
+    if not sent_or_logged:
+        async with _FEEDING_8PM_LOCK:
+            if _LAST_FEEDING_ALERT_KEY == today_key:
+                _LAST_FEEDING_ALERT_KEY = None
+                _LAST_FEEDING_ALERT_TS = None
 
 async def build_8pm_lines(
     bot: discord.Client,

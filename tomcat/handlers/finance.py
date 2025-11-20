@@ -50,13 +50,13 @@ FOODS_GOODS_KEYWORDS = {
     "cupcake", "cupcakes", "cake", "cakes", "scone", "banana bread", "lemonade",
     "drink", "drinks", "dr pepper", "soda", "snack", "snacks", "dessert",
     "food", "foods", "goods", "pastry", "pastries", "chai", "coffee", "tea",
-    "candy",
+    "candy", "pretzel", "dirt cup", "rice krisp", "treat", "sweet treat"
 }
 OTHER_FUNDRAISER_KEYWORDS = {
     "sticker", "stickers", "merch", "shirt", "shirts", "hoodie", "hoodies",
     "sweater", "pin", "pins", "button", "buttons", "keychain", "keychains",
     "crochet", "plush", "plushie", "bookmark", "bracelet", "earring", "earrings",
-    "redbubble", "etsy", "table fee", "vendor fee",
+    "redbubble", "etsy", "table fee", "vendor fee", "activity fair"
 }
 ADOPTION_KEYWORDS = {
     "adoption", "adopt", "adopting", "adoption fee", "adopt fee", "adopted",
@@ -69,6 +69,7 @@ _DUES_MESSAGE_IDS: Set[str] = set()
 VET_KEYWORDS = {
     "vet", "veterinary", "clinic", "vaccine", "vaccination", "spay", "neuter",
     "appointment", "banfield", "animal hospital", "exam", "surgery", "meds", "medicine",
+    "tcap", "flea", "prevention", "treatment"
 }
 FOOD_EXPENSE_KEYWORDS = {
     "petco", "petsmart", "pet smart", "chewy", "cat food", "food", "litter", "kibble",
@@ -77,7 +78,7 @@ FOOD_EXPENSE_KEYWORDS = {
     "temptations", "fancy feast",
 }
 STORAGE_KEYWORDS = {
-    "py store", "storage unit", "storage fee", "ps store here", "ps store",
+    "py store", "storage unit", "storage fee", "ps store here", "ps store", "store here"
 }
 WEBSITE_KEYWORDS = {
     "wix", "domain", "website", "site fee", "hosting", "catsofuta.org", "squarespace",
@@ -87,7 +88,7 @@ SUPPLIES_KEYWORDS = {
     "plates", "sign", "marker", "ink", "toner", "printing", "tape", "scissors",
     "decor", "decoration", "craft", "glue", "string", "paint", "brush", "bag",
     "trap", "traps", "transfer cage", "carrier", "paper towels", "bleach", "gloves",
-    "zip tie", "zip ties",
+    "zip tie", "zip ties", "home depot", "lowes", "hardware"
 }
 
 _CURRENCY_RE = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]{2})?)")
@@ -364,9 +365,9 @@ def _is_likely_dues(amount: Optional[float], text: str) -> bool:
     text_low = text.lower()
     if any(word in text_low for word in DEDUCTION_WORDS):
         return True
-    if amount is None:
-        return False
-    return abs(amount - _DUES_AMOUNT) <= _DUES_TOL
+    # Dues are usually exact or close to 15/20/25, but fundraisers can be small.
+    # We rely on keywords more than amount unless it's explicitly "Membership".
+    return False
 
 
 def _ensure_dues_ids() -> None:
@@ -387,8 +388,10 @@ def _extract_note(text: str) -> str:
     if not text:
         return ""
     text = text.strip()
-    if text.startswith("for "):
-        text = text[4:]
+    if text.lower().startswith("for "):
+        text = text[3:].strip()
+    if text.lower().startswith("note:"):
+        text = text[5:].strip()
     return text.strip()
 
 
@@ -420,34 +423,32 @@ def _extract_venmo_note(subject: str, body: str, existing: Optional[str] = None)
     candidates: List[str] = []
     if existing:
         candidates.append(existing)
-    m = re.search(r"paid you \$[0-9.,]+\s+for\s+(.+)", subject or "", re.I)
-    if m:
-        candidates.append(m.group(1))
+    
+    # Venmo Subject: "Name paid you $X.XX" -> Usually doesn't have note
+    # Venmo Body usually looks like:
+    # Name paid you
+    # $
+    # 15
+    # .
+    # 00
+    # 
+    # Note Here
+    # See transaction
+
     if body:
         lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
-        for idx, line in enumerate(lines):
-            if line.lower().startswith("see transaction"):
-                for j in range(idx - 1, -1, -1):
-                    candidate = lines[j]
-                    low = candidate.lower()
-                    if not candidate:
-                        continue
-                    if _looks_amount_like(candidate):
-                        continue
-                    if "paid you" in low or "money credited" in low:
-                        continue
-                    if low.startswith("transaction") or low.startswith("date"):
-                        continue
-                    if low.startswith("sent to") or low.startswith("@"):
-                        continue
-                    if low.startswith("for any issues"):
-                        continue
-                    candidates.append(candidate)
+        try:
+            for idx, line in enumerate(lines):
+                if "see transaction" in line.lower():
+                    # The note is typically the line immediately preceding "See transaction"
+                    # UNLESS that line is the amount.
+                    prev = lines[idx-1]
+                    if not _looks_amount_like(prev) and "paid you" not in prev.lower() and "credited to" not in prev.lower():
+                         candidates.append(prev)
                     break
-                break
-    note_line = _find_note_in_body(body)
-    if note_line:
-        candidates.append(note_line)
+        except Exception:
+            pass
+
     for cand in candidates:
         cleaned = _extract_note(cand)
         if cleaned and not _looks_amount_like(cleaned):
@@ -459,9 +460,12 @@ def _extract_cashapp_note(subject: str, body: str, existing: Optional[str] = Non
     candidates: List[str] = []
     if existing:
         candidates.append(existing)
+    
+    # CashApp Subject: "[Name] sent you $[Amount] for [Note]" - PRIORITIZE THIS
     m = re.search(r"sent you \$[0-9.,]+\s+for\s+(.+)", subject or "", re.I)
     if m:
-        candidates.append(m.group(1))
+        candidates.insert(0, m.group(1)) # Top priority
+    
     body_patterns = [
         r"(?:Note|Message)\s*:\s*(.+)",
         r"For\s+(.+)",
@@ -472,12 +476,10 @@ def _extract_cashapp_note(subject: str, body: str, existing: Optional[str] = Non
             if m2:
                 candidates.append(m2.group(1))
                 break
-    note_line = _find_note_in_body(body)
-    if note_line:
-        candidates.append(note_line)
+    
     for cand in candidates:
         cleaned = _extract_note(cand)
-        if cleaned and not cleaned.lower().startswith("for any"):
+        if cleaned and not cleaned.lower().startswith("for any") and not "view your receipt" in cleaned.lower():
             return cleaned
     return ""
 
@@ -486,19 +488,24 @@ def _extract_paypal_note(subject: str, body: str, existing: Optional[str] = None
     candidates: List[str] = []
     if existing:
         candidates.append(existing)
-    body_patterns = [
-        r"Note(?:\s+from\s+(?:buyer|customer))?\s*:\s*(.+)",
-        r"Message\s*:\s*(.+)",
-        r"Add\s+a\s+note\s*:\s*(.+)",
-    ]
+    
+    # PayPal Body: "Note from [Name] \n [Note]"
     if body:
+        # Try multi-line match first for "Note from X \n content"
+        m_multi = re.search(r"Note(?:\s+from\s+.*?)?\s*\n\s*\n\s*(.+?)\n", body, re.I | re.DOTALL)
+        if m_multi:
+             candidates.append(m_multi.group(1))
+
+        # Fallback patterns
+        body_patterns = [
+            r"Note(?:\s+from\s+(?:buyer|customer|.*?))?\s*:\s*(.+)",
+            r"Message\s*:\s*(.+)",
+        ]
         for pat in body_patterns:
             m = re.search(pat, body, re.I)
             if m:
                 candidates.append(m.group(1))
-    note_line = _find_note_in_body(body)
-    if note_line:
-        candidates.append(note_line)
+    
     for cand in candidates:
         cleaned = _extract_note(cand)
         if cleaned:
@@ -513,14 +520,13 @@ def _norm_text(s: str) -> str:
 def _fingerprint(ev: "FinanceEvent") -> str:
     event_date = (ev.provider_ts or ev.ts).date()
     day = event_date.isoformat()
-    bucket = event_date.toordinal() // 2  # two-day bucket for cross-day heuristics
+    # Include cleaned note in fingerprint to differentiate same-day payments
     base = "|".join([
         ev.direction,
         day,
-        f"b{bucket}",
         f"{ev.amount:.2f}",
         _norm_text(ev.counterparty),
-        _norm_text(ev.note)[:40],
+        _norm_text(ev.note),
         ev.provider,
     ])
     return base
@@ -570,29 +576,6 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
         name = _clean_counterparty(m.group("name"))
         amount = _coerce_amount(m.group("amount"), subject, body)
         note = _extract_venmo_note(subject, body, m.group("note"))
-        note = _extract_note(note)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="venmo",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="expense",
-            category=_categorize_expense(name, note or subject),
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=not bool(note.strip()),
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "expense")
-
-    # Receipt from
-    m = re.match(r"^receipt\s+from\s+(?P<name>.+?)-?\s*\$?(?P<amount>[0-9.,]+)", text, re.I)
-    if m:
-        name = _clean_counterparty(m.group("name"))
-        amount = _coerce_amount(m.group("amount"), subject, body)
-        note = _extract_venmo_note(subject, body, None)
         note = _extract_note(note)
         return (FinanceEvent(
             email_id=email.get("id", ""),
@@ -743,7 +726,11 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     if re.search(r"statement", text, re.I):
         return (None, "ignore")
 
+    # Fallback: [Name] sent you $[Amount]
     m = re.match(r"^(?P<name>.+?):\s*\$?(?P<amount>[0-9.,]+)\s*(?:usd)?", text, re.I)
+    if not m:
+         m = re.match(r"^(?P<name>.+?)\s+sent\s+you\s+\$?(?P<amount>[0-9.,]+)", text, re.I)
+
     if m:
         name = _clean_counterparty(m.group("name"))
         amount = _coerce_amount(m.group("amount"), subject, body)
@@ -802,7 +789,9 @@ def _categorize_income(text: str, subject_hint: str = "") -> Optional[str]:
     if any(word in lower for word in OTHER_FUNDRAISER_KEYWORDS):
         return _INCOME_TYPES["other"]
     if lower.strip():
-        return None
+        # If we have a note but no match, it might be a donation or unclassified
+        # Default to Donations for now per specs, unless it looks like dues (handled elsewhere)
+        pass
     return _INCOME_TYPES["donations"]
 
 
@@ -824,10 +813,15 @@ def _categorize_expense(counterparty: str, text: str) -> str:
 
 def _build_income_row(event: FinanceEvent) -> List[str]:
     """Translate a FinanceEvent into the Income sheet row schema."""
+    # Schema: Timestamp, Month, Year, Email Address, Name, Income type, Amount, Payment Type
     ts = (event.provider_ts or event.ts).astimezone(timezone.utc)
-    timestamp = format_mmddyyyy(ts)
+    # Note: Assuming central/local time might be better for Month/Year, 
+    # but we'll stick to UTC for consistency unless configured otherwise.
+    # For format matching CSV: 10/22/2025
+    timestamp = f"{ts.month}/{ts.day}/{ts.year}" 
     month = ts.strftime('%B')
     year = str(ts.year)
+    
     name_field = f"{event.counterparty}"
     note = event.note.strip()
     if note:
@@ -835,24 +829,27 @@ def _build_income_row(event: FinanceEvent) -> List[str]:
     else:
         name_field += " (Message: none)"
     name_field += " [Recorded by the TomCat bot]"
+    
     return [
         timestamp,
         month,
         year,
-        "",
+        "", # Email Address (blank)
         name_field,
         event.category or _DONATION_DEFAULT,
-        f"{event.amount:.2f}",
+        f"${event.amount:.2f}",
         event.payment_type,
     ]
 
 
 def _build_expense_row(event: FinanceEvent) -> List[str]:
     """Translate a FinanceEvent into the Expenses sheet row schema."""
+    # Schema: Timestamp, Month, Year, Name, Expense Type, Amount
     ts = (event.provider_ts or event.ts).astimezone(timezone.utc)
-    timestamp = format_mmddyyyy(ts)
+    timestamp = f"{ts.month}/{ts.day}/{ts.year}"
     month = ts.strftime('%B')
     year = str(ts.year)
+    
     name_field = f"{event.counterparty}"
     note = event.note.strip()
     if note:
@@ -860,13 +857,14 @@ def _build_expense_row(event: FinanceEvent) -> List[str]:
     else:
         name_field += " (Message: none)"
     name_field += " [Recorded by the TomCat bot]"
+    
     return [
         timestamp,
         month,
         year,
         name_field,
         event.category or _EXPENSE_TYPES['misc'],
-        f"{event.amount:.2f}",
+        f"${event.amount:.2f}",
     ]
 
 
@@ -885,7 +883,7 @@ async def _throttle_sheet_call() -> None:
 
 
 async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List[Tuple[bool, str]]:
-    """Batch append rows while automatically backing off on quota errors."""
+    """Batch append rows while automatically backing off on quota/service errors."""
     if not rows:
         return []
     if hasattr(ws, "append_rows"):
@@ -894,7 +892,9 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
             ws.append_rows(rows, value_input_option='USER_ENTERED')
             return [(True, "ok") for _ in rows]
         except Exception as e:
+            # Fallback to row-by-row if batch fails, but log first
             log_action('finance_sheet_error', f'{label}_append_batch', str(e))
+            
     results: List[Tuple[bool, str]] = []
     for row in rows:
         delay = 1.0
@@ -910,7 +910,8 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
             except Exception as e:
                 last_error = str(e)
                 msg_lower = last_error.lower()
-                if 'quota' in msg_lower or '429' in msg_lower:
+                # Retry on Quota (429) AND Service Unavailable (500/502/503)
+                if any(code in msg_lower for code in ('quota', '429', '500', '502', '503')):
                     await asyncio.sleep(delay)
                     delay = min(delay * 2.0, 8.0)
                     continue
@@ -939,22 +940,22 @@ def _fetch_recent_records(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> 
         try:
             # Normalize columns by schema
             if kind == 'income':
-                # [date, month, year, '', name_field, category, amount, payment_type]
+                # [Timestamp, Month, Year, Email, Name, Type, Amount, Payment]
                 date_s = (r[0] if len(r) > 0 else '').strip()
                 name_field = (r[4] if len(r) > 4 else '').strip()
                 amount_s = (r[6] if len(r) > 6 else '').strip().replace('$', '')
                 provider = (r[7] if len(r) > 7 else '').strip()
             else:
-                # [date, month, year, name_field, category, amount]
+                # [Timestamp, Month, Year, Name, Type, Amount]
                 date_s = (r[0] if len(r) > 0 else '').strip()
                 name_field = (r[3] if len(r) > 3 else '').strip()
                 amount_s = (r[5] if len(r) > 5 else '').strip().replace('$', '')
                 provider = ''
-            # Parse date
+            
+            # Parse date mm/dd/yyyy
             dt = None
             if date_s:
                 try:
-                    # mm/dd/yyyy
                     m, d, y = [int(x) for x in date_s.split('/')]
                     dt = datetime(y, m, d).date()
                 except Exception:
@@ -1019,15 +1020,19 @@ def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
             continue
         if abs(float(amt) - ev_amt) > (0.25 if ev_amt < 5 else 1.00):
             continue
+        
+        # Provider check (Venmo vs Cashapp)
         provider = (r.get('provider') or '').strip().lower()
         if provider and ev_provider and provider != ev_provider:
             continue
+
         counterparty = r.get('counterparty') or ''
         note = r.get('note') or ''
         norm_counter = _norm_text(counterparty)
         norm_note_sheet = _norm_text(note)
+        
         combined_sheet = r.get('text') or ''
-        combined_event = f"{ev_counterparty} {ev_note}".strip()
+        combined_event = f"{ev_counterparty} (Message: {ev_note})".strip()
         combined_match = False
         if combined_sheet and combined_event:
             combined_match = _similar_enough(combined_sheet, combined_event)
@@ -1069,6 +1074,8 @@ def _events_maybe_duplicate(a: "FinanceEvent", b: "FinanceEvent") -> bool:
     day_gap = abs((a.ts.date() - b.ts.date()).days)
     if day_gap > 3:
         return False
+    
+    # Compare names & notes
     if _similar_enough(a.counterparty, b.counterparty):
         if not a.note and not b.note:
             return True
@@ -1078,9 +1085,8 @@ def _events_maybe_duplicate(a: "FinanceEvent", b: "FinanceEvent") -> bool:
             return True
         if _has_refund_word(a.note) or _has_refund_word(b.note):
             return True
-    if a.note and b.note and _similar_enough(a.note, b.note) and day_gap <= 1:
-        return True
-    # Combined text similarity as a final guardrail
+    
+    # Fallback text match
     combined_a = f"{a.counterparty} {a.note}".strip()
     combined_b = f"{b.counterparty} {b.note}".strip()
     if combined_a and combined_b and _similar_enough(combined_a, combined_b) and day_gap <= 2:
@@ -1646,5 +1652,4 @@ async def handle_log_recent_finances(intent, ctx) -> None:
         await _flip_reaction(False)
     else:
         if not msg and thumb_added and bot_user:
-            # fallback cleanup if message disappeared; no action needed
             pass

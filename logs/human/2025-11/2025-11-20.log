@@ -106,3 +106,98 @@
 [11/20/2025 10:28:44.337 AM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: u should take my shift! /j
 [11/20/2025 10:29:17.389 AM] Message  || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || Content: no<3!
 [11/20/2025 10:29:44.213 AM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: sigh
+[11/20/2025 10:44:15.024 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/20/2025 10:44:15.917 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/20/2025 10:44:16.518 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/20/2025 10:44:17.005 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/20/2025 10:44:17.621 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/20/2025 10:44:18.001 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/20/2025 10:44:18.364 AM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/20/2025 10:44:19.065 AM] Action   || Name: gmail_log_scheduler || Trigger: found=4                              || Output: logged=0
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Axel Torres $24.25 on 2025-08-22
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $47.62 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: M. Padron $20.00 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Addison Loera $8.00 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Amber Thomas $5.00 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jordin Baylee $5.00 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Kathleen Cantu $1.00 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Amber Thomas $3.00 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Rob Jimenez $3.00 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Daniel Brantley $3.00 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Isabella Klein $9.70 on 2025-08-26
+[11/20/2025 10:44:19.109 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Wix $25.98 on 2025-08-26
+[11/20/2025 10:44:19.124 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Nelda Hernandez $2.00 on 2025-08-26
+[11/20/2025 10:44:19.124 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Troy Broome $1.00 on 2025-08-26
+[11/20/2025 10:44:19.124 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Div Bits $2.00 on 2025-08-26
+[11/20/2025 10:44:19.124 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jacob Sandoval $1.00 on 2025-08-26
+[11/20/2025 10:44:19.128 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[11/20/2025 10:44:19.128 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Maxwell Preston $5.00 on 2025-08-26
+[11/20/2025 10:44:19.128 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Sophia Herrera $6.00 on 2025-08-26
+[11/20/2025 10:44:19.128 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Derek Fuentes $25.98 on 2025-08-26
+[11/20/2025 10:44:19.131 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Miguel V $5.00 on 2025-08-26
+[11/20/2025 10:44:19.132 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Nelda Hernandez $3.00 on 2025-08-26
+[11/20/2025 10:44:19.132 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $130.00 on 2025-08-26
+[11/20/2025 10:44:19.132 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Pedro Savala $5.00 on 2025-08-27
+[11/20/2025 10:44:19.132 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[11/20/2025 10:44:19.132 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Py Store Here Pantego $54.00 on 2025-08-20
+[11/20/2025 10:44:19.132 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Megan Digiovanni $74.92 on 2025-07-30
+[11/20/2025 10:44:19.132 AM] Action   || Name: finance_skip_dup... || Trigger: buffer                               || Output: Cassandra Nelson $7.00 on 2025-11-04
+[11/20/2025 10:44:22.718 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Cynthia griffith $10.00 on 2025-04-16
+[11/20/2025 10:44:22.718 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Caleb Moran $4.00 on 2025-04-16
+[11/20/2025 10:44:22.718 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Alberto $6.00 on 2025-04-16
+[11/20/2025 10:44:22.718 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $2.91 on 2025-04-16
+[11/20/2025 10:44:22.718 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: tay $5.00 on 2025-04-16
+[11/20/2025 10:44:22.718 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-04-16
+[11/20/2025 10:44:22.718 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maria Olds $10.00 on 2025-04-16
+[11/20/2025 10:44:22.718 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Mario Rodriguez $3.00 on 2025-04-16
+[11/20/2025 10:44:22.727 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Elisha Taylor $5.00 on 2025-04-16
+[11/20/2025 10:44:22.727 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $3.00 on 2025-04-16
+[11/20/2025 10:44:22.727 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Isabella Klein $9.70 on 2025-08-26
+[11/20/2025 10:44:22.727 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $2.00 on 2025-08-26
+[11/20/2025 10:44:22.727 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Troy Broome $1.00 on 2025-08-26
+[11/20/2025 10:44:22.727 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Div Bits $2.00 on 2025-08-26
+[11/20/2025 10:44:22.727 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jacob Sandoval $1.00 on 2025-08-26
+[11/20/2025 10:44:22.727 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Aubrey Cunningham $10.00 on 2025-08-26
+[11/20/2025 10:44:22.727 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Maxwell Preston $5.00 on 2025-08-26
+[11/20/2025 10:44:22.727 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $6.00 on 2025-08-26
+[11/20/2025 10:44:22.737 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Miguel V $5.00 on 2025-08-26
+[11/20/2025 10:44:22.737 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Nelda Hernandez $3.00 on 2025-08-26
+[11/20/2025 10:44:22.737 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Megan Digiovanni $130.00 on 2025-08-26
+[11/20/2025 10:44:22.737 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Pedro Savala $5.00 on 2025-08-27
+[11/20/2025 10:44:22.737 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jonathan Mcgeever $5.00 on 2025-08-27
+[11/20/2025 10:44:22.742 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Axel Torres $24.25 on 2025-08-22
+[11/20/2025 10:44:22.743 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: M. Padron $20.00 on 2025-08-26
+[11/20/2025 10:44:22.743 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Addison Loera $8.00 on 2025-08-26
+[11/20/2025 10:44:22.743 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $5.00 on 2025-08-26
+[11/20/2025 10:44:22.743 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Jordin Baylee $5.00 on 2025-08-26
+[11/20/2025 10:44:22.743 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kathleen Cantu $1.00 on 2025-08-26
+[11/20/2025 10:44:22.743 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Amber Thomas $3.00 on 2025-08-26
+[11/20/2025 10:44:22.743 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Rob Jimenez $3.00 on 2025-08-26
+[11/20/2025 10:44:22.743 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Daniel Brantley $3.00 on 2025-08-26
+[11/20/2025 10:44:22.743 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Cassandra Nelson $6.00 on 2025-11-04
+[11/20/2025 10:44:22.752 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kristyn Jackson $9.00 on 2025-10-22
+[11/20/2025 10:44:22.752 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Victoria Elkins $5.00 on 2025-10-22
+[11/20/2025 10:44:22.752 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Alexander  Martinez $3.00 on 2025-10-22
+[11/20/2025 10:44:22.752 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Richa  Desai $6.00 on 2025-10-22
+[11/20/2025 10:44:22.752 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Emily Lanham $6.00 on 2025-10-22
+[11/20/2025 10:44:22.752 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Mariah Hall $3.00 on 2025-10-22
+[11/20/2025 10:44:22.752 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Sophia Herrera $5.00 on 2025-10-22
+[11/20/2025 10:44:22.759 AM] Action   || Name: finance_skip_dup... || Trigger: kind=income                          || Output: Kylie Crook $5.00 on 2025-09-16
+[11/20/2025 10:44:24.578 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-04-20
+[11/20/2025 10:44:24.580 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: j s $11.68 on 2025-04-22
+[11/20/2025 10:44:24.581 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-04-26
+[11/20/2025 10:44:24.582 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-08-26
+[11/20/2025 10:44:24.583 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $25.98 on 2025-08-26
+[11/20/2025 10:44:24.584 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-08-20
+[11/20/2025 10:44:24.585 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $47.62 on 2025-08-26
+[11/20/2025 10:44:24.586 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $74.92 on 2025-07-30
+[11/20/2025 10:44:24.587 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Py Store Here Pantego $54.00 on 2025-05-20
+[11/20/2025 10:44:24.588 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $72.45 on 2025-05-23
+[11/20/2025 10:44:24.590 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Wix $25.98 on 2025-05-26
+[11/20/2025 10:44:24.591 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Megan Digiovanni $89.91 on 2025-10-05
+[11/20/2025 10:44:24.592 AM] Action   || Name: finance_skip_dup... || Trigger: kind=expense                         || Output: Derek Fuentes $20.00 on 2025-09-10
+[11/20/2025 10:44:50.566 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, UItest
+[11/20/2025 10:44:50.570 AM] Intent   || ui_launch                 ||                                              
+[11/20/2025 10:44:51.122 AM] Action   || Name: ui_activity_prompt  || Trigger: user=624440365595754496; channel=... || Output: message_id=1441107032852791367; app_id=1341667150066225192; invite=tS...

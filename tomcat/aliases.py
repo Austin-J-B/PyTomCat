@@ -280,7 +280,7 @@ def _fallback_lookup_cat(text_norm: str, tokens: Iterable[str]) -> Optional[str]
             return _FALLBACK_CAT_ALIAS_MAP[cand]
 
     for cand in candidate_order:
-        match = best_match(cand, _FALLBACK_CAT_ALIAS_PAIRS, threshold=86)
+        match = best_match(cand, _FALLBACK_CAT_ALIAS_PAIRS, threshold=70)
         if match:
             return match[0]
 

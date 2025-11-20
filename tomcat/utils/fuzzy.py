@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from typing import Iterable, Optional, Sequence, Tuple
 
 try:
@@ -58,3 +57,33 @@ def any_match(query: str, targets: Iterable[str], *, threshold: int = 80) -> boo
         if fuzzy_ratio(query, target) >= threshold:
             return True
     return False
+
+
+def levenshtein_distance(a: str, b: str) -> int:
+    """Compute simple Levenshtein distance for short tokens."""
+    a_norm = (a or "").strip().lower()
+    b_norm = (b or "").strip().lower()
+    if a_norm == b_norm:
+        return 0
+    if not a_norm:
+        return len(b_norm)
+    if not b_norm:
+        return len(a_norm)
+    rows = len(a_norm) + 1
+    cols = len(b_norm) + 1
+    dp = [[0] * cols for _ in range(rows)]
+    for i in range(rows):
+        dp[i][0] = i
+    for j in range(cols):
+        dp[0][j] = j
+    for i in range(1, rows):
+        ca = a_norm[i - 1]
+        for j in range(1, cols):
+            cb = b_norm[j - 1]
+            cost = 0 if ca == cb else 1
+            dp[i][j] = min(
+                dp[i - 1][j] + 1,      # deletion
+                dp[i][j - 1] + 1,      # insertion
+                dp[i - 1][j - 1] + cost,  # substitution
+            )
+    return dp[-1][-1]

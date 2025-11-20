@@ -1,5 +1,5 @@
 # ===== Discord =====
-DISCORD_TOKEN=MTM0MTY2NzE1MDA2NjIyNTE5Mg.G7JlTu.ZxvnVob3Pah7yBvcvIH80jwd7qiSvOH0bk_9mo
+DISCORD_TOKEN=#
 COMMAND_PREFIX=! # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago

@@ -49,7 +49,7 @@ from UserInterface.ui_launcher import handle_ui_launch
 
 # ---- Aliases and optional NLP ------------------------------------------------
 from .aliases import resolve_station_or_cat, alias_vocab
-from .utils.fuzzy import fuzzy_ratio
+from .utils.fuzzy import fuzzy_ratio, levenshtein_distance
 from .nlp.model import NLPModel  # returns None if not available
 
 # ---- Time zone handling (America/Chicago) -----------------------------------
@@ -81,6 +81,7 @@ WAKE_WORDS = [
     "tom cat.",
 ]
 WAKE_THRESHOLD = 82
+WAKE_EDIT_DISTANCE = 2
 
 
 def _first_token(text: str) -> Tuple[str, str]:
@@ -96,19 +97,28 @@ def _normalize_wake_token(token: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (token or "").lower())
 
 
+def _wake_match(candidate: str) -> bool:
+    """Allow fuzzy or edit-distance wake matches."""
+    if not candidate:
+        return False
+    for wake in WAKE_WORDS:
+        target = _normalize_wake_token(wake)
+        if not target:
+            continue
+        if fuzzy_ratio(candidate, target) >= WAKE_THRESHOLD:
+            return True
+        if levenshtein_distance(candidate, target) <= WAKE_EDIT_DISTANCE:
+            return True
+    return False
+
+
 def _matches_wake_word(text: str) -> bool:
     """Return True when the message text starts with the bot wake word."""
     if TOMCAT_PREFIX.search(text):
         return True
     token, _ = _first_token(text)
     candidate = _normalize_wake_token(token)
-    if not candidate:
-        return False
-    for wake in WAKE_WORDS:
-        target = _normalize_wake_token(wake)
-        if fuzzy_ratio(candidate, target) >= WAKE_THRESHOLD:
-            return True
-    return False
+    return _wake_match(candidate)
 
 
 def _strip_wake_word(text: str) -> str:
@@ -117,12 +127,8 @@ def _strip_wake_word(text: str) -> str:
         return TOMCAT_PREFIX.sub("", text, count=1).lstrip(" \t\n,:-").strip()
     token, rest = _first_token(text)
     candidate = _normalize_wake_token(token)
-    if not candidate:
-        return text
-    for wake in WAKE_WORDS:
-        target = _normalize_wake_token(wake)
-        if fuzzy_ratio(candidate, target) >= WAKE_THRESHOLD:
-            return rest.lstrip(" \t\n,:-")
+    if _wake_match(candidate):
+        return rest.lstrip(" \t\n,:-")
     return text
 
 # ==============================================================================
@@ -240,6 +246,8 @@ WEEKDAYS = {w.lower(): i for i, w in enumerate(["Mon","Tue","Wed","Thu","Fri","S
 FUZZY_ACCEPT = 88
 FUZZY_LEN_BIAS = 82
 FUZZY_LEN_DELTA = 3
+FUZZY_TYPO_MIN = 0.6
+CAT_TYPO_MAX_DISTANCE = 2
 
 # confidence gates
 CONF_HIGH = 0.88
@@ -1406,6 +1414,13 @@ class IntentRouter:
                 return best_name
             if best_score >= 0.82 and abs(len(best_token) - len(best_name)) <= FUZZY_LEN_DELTA:
                 return best_name
+            if best_score >= FUZZY_TYPO_MIN:
+                token_clean = re.sub(r"[^a-z0-9]", "", best_token.lower())
+                name_clean = re.sub(r"[^a-z0-9]", "", best_name.lower())
+                if token_clean and name_clean:
+                    dist = levenshtein_distance(token_clean, name_clean)
+                    if 0 < dist <= CAT_TYPO_MAX_DISTANCE:
+                        return best_name
 
         # 3) optional model scoring
         if allow_model and self._nlp is not None:

@@ -9,6 +9,11 @@ credentials/*
 #credentials/service_account.json
 #gmail_token.json
 
+# allow credential template files to be committed (but keep real credentials ignored)
+!credentials/*TEMPLATE.json
+!credentials/*.json.TEMPLATE
+!credentials/gmail_oauth_client TEMPLATE.json
+
 ## Model weights and other large artifacts
 weights/
 !weights/.gitkeep
@@ -29,6 +34,7 @@ cache/
 venv/
 env/
 ENV/
+.ultra
 
 ## Local editor/IDE config
 .vscode/

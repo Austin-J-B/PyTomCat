@@ -1,10 +1,10 @@
 # TomCat VI
 
-TomCat VI is the Campus Cat Coalition’s Discord automation suite. The bot keeps
-feeding operations on schedule, documents dues and donations, runs computer
-vision lookups, and provides a “memory” of everything that happens in the server
-through rich log files. The codebase embraces a router-first architecture with
-small, composable handlers so every feature stays easy to reason about.
+TomCat is the Campus Cat Coalition’s Discord automation. The bot checks feeding,
+documents dues and finances, runs computer vision tasks, and keeps large amounts
+of data stored and organized for each of the campus cats.
+The codebase is built around our 'Intent_router' to give some amount of 
+intelligence.
 
 ---
 

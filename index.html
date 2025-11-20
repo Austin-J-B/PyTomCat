@@ -353,6 +353,18 @@
 
 <script>
 // --- CONFIG ---
+const urlParams = new URLSearchParams(window.location.search);
+const manualApiBase = urlParams.get("api");
+const apiBaseCandidate = (
+    window.__TOMCAT_API_BASE__ ||
+    manualApiBase ||
+    window.location.origin
+);
+const API_BASE = (apiBaseCandidate && apiBaseCandidate !== "null" && apiBaseCandidate !== "file://")
+    ? apiBaseCandidate
+    : "http://localhost:8080";
+const MEMBERS_ENDPOINT = `${API_BASE.replace(/\/$/, "")}/api/members`;
+
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
@@ -392,7 +404,7 @@ async function fetchMembers() {
     searchInput.disabled = true;
     searchInput.placeholder = "Loading volunteers...";
     try {
-        const response = await fetch("/api/members", { cache: "no-store" });
+        const response = await fetch(MEMBERS_ENDPOINT, { cache: "no-store" });
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
@@ -413,9 +425,16 @@ async function fetchMembers() {
     } catch (e) {
         console.error("Failed to fetch members", e);
         members = [];
+        searchInput.placeholder = "Unable to load volunteers";
     } finally {
         searchInput.disabled = false;
-        searchInput.placeholder = members.length ? "Search volunteer..." : "No volunteers available";
+        if (members.length === 0) {
+            selectionBadge.innerHTML = "No Volunteer Selected";
+            selectionBadge.className = 'selection-badge empty';
+        }
+        if (members.length) {
+            searchInput.placeholder = "Search volunteer...";
+        }
     }
 }
 

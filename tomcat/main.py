@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import Any, Dict, Union
+from aiohttp import web
 
 import discord
 from discord.ext import commands
@@ -152,8 +153,7 @@ async def handle_cat_photo(intent: Intent, ctx: Dict[str, Any]) -> None:
 
 
 
-# ------- Optional: invite cache you already had -------
-invites_cache: dict[int, dict[str, int]] = {}
+#invites_cache
 message_cache: dict[int, str] = {}
 
 async def _refresh_invites(guild: discord.Guild):
@@ -163,6 +163,57 @@ async def _refresh_invites(guild: discord.Guild):
         return
     invites = await guild.invites()
     invites_cache[guild.id] = {inv.code: inv.uses or 0 for inv in invites}
+
+#TomCatUI
+async def start_web_server(bot):
+    """Simple web server to serve the UI and API."""
+    app = web.Application()
+
+    async def get_index(request):
+        """Serve the index.html file."""
+        try:
+            with open("index.html", "r", encoding="utf-8") as f:
+                return web.Response(text=f.read(), content_type="text/html")
+        except FileNotFoundError:
+            return web.Response(text="index.html not found. Please upload it to the bot root.", status=404)
+
+    async def get_members(request):
+        """Return JSON list of members with the Feeding Team role."""
+        FEEDING_TEAM_ROLE_ID = 643587274797481988
+        found_members = []
+        
+        for guild in bot.guilds:
+            role = guild.get_role(FEEDING_TEAM_ROLE_ID)
+            if role:
+                for member in role.members:
+                    # Use display_name (nickname) if available, fallback to username
+                    name = member.display_name
+                    found_members.append({
+                        "name": name,
+                        "user": member.name,
+                        "id": str(member.id),
+                        "color": str(member.color) if member.color else "#000000"
+                    })
+
+        # Deduplicate by ID in case multiple guilds are involved
+        unique_members = {m['id']: m for m in found_members}.values()
+        # Sort alphabetically
+        sorted_members = sorted(unique_members, key=lambda x: x['name'].lower())
+        
+        return web.json_response(list(sorted_members))
+
+    app.add_routes([
+        web.get('/', get_index),
+        web.get('/api/members', get_members)
+    ])
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # Listen on all interfaces at port 8080
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    print("[TomCat-UI] Web server starting on http://localhost:8080")
+    await site.start()
+
 
 # ------- Lifecycle -------
 @bot.event
@@ -214,7 +265,7 @@ async def on_ready():
                 pass
     except Exception:
         pass
-
+    asyncio.create_task(start_web_server(bot))
     asyncio.create_task(start_profile_scheduler(bot))
     # Warm the show-photo cache in background
     try:

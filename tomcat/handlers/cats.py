@@ -6,6 +6,7 @@ from typing import Any
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..intent_router import Intent  # type: ignore
+from ..aliases import resolve_station_or_cat
 from ..services.catsheets import (
     get_cat_profile,
     get_recent_photo as get_random_photo,

@@ -1384,13 +1384,28 @@ class IntentRouter:
 
         # 2) fuzzy over union
         vocab = self._alias_vocab["cats"] if want == "cat" else self._alias_vocab["stations"]
-        token = self._best_token_for_fuzzy(text)
-        if token:
+        
+        tokens = [t for t in re.split(r"[^a-z0-9]+", text.lower()) if t]
+        
+        from .aliases import STOPWORDS
+        tokens = [t for t in tokens if t not in STOPWORDS]
+
+        best_score = 0
+        best_name = None
+        best_token = None
+
+        for token in tokens:
             name, score = _fuzzy_one(token, vocab)
-            if score >= CONF_HIGH:
-                return name
-            if score >= 0.82 and abs(len(token) - len(name)) <= FUZZY_LEN_DELTA:
-                return name
+            if score > best_score:
+                best_score = score
+                best_name = name
+                best_token = token
+
+        if best_name and best_token:
+            if best_score >= CONF_HIGH:
+                return best_name
+            if best_score >= 0.82 and abs(len(best_token) - len(best_name)) <= FUZZY_LEN_DELTA:
+                return best_name
 
         # 3) optional model scoring
         if allow_model and self._nlp is not None:

@@ -834,19 +834,32 @@ def _update_existing_sub_request(
     return False
 
 # ------------- scheduler: 8:00 pm ping ----------
+
+_FEEDING_SCHEDULER_LOCK = asyncio.Lock()
+_FEEDING_SCHEDULER_STARTED = False
+
 async def start_feeding_scheduler(bot: discord.Client) -> None:
     """Kick off the nightly reminder loop that pings unfed stations."""
-    async def _runner():
-        while True:
-            try:
-                # sleep until next 20:00 America/Chicago
-                await _sleep_until_local_time(20, 0)
-                await _run_8pm_check(bot)
-            except Exception as e:
-                log_action("feeding_scheduler_error", "loop", str(e))
-                await asyncio.sleep(10)
+    global _FEEDING_SCHEDULER_STARTED
+    async with _FEEDING_SCHEDULER_LOCK:
+        if _FEEDING_SCHEDULER_STARTED:
+            log_action("feeding_scheduler", "already_started", "skipped")
+            return
 
-    asyncio.create_task(_runner())
+        async def _runner():
+            while True:
+                try:
+                    # sleep until next 20:00 America/Chicago
+                    await _sleep_until_local_time(20, 0)
+                    await _run_8pm_check(bot)
+                except Exception as e:
+                    log_action("feeding_scheduler_error", "loop", str(e))
+                    await asyncio.sleep(10)
+
+        asyncio.create_task(_runner())
+        _FEEDING_SCHEDULER_STARTED = True
+        log_action("feeding_scheduler", "started", "ok")
+
 
 async def _sleep_until_local_time(hour: int, minute: int):
     """Suspend until the next scheduled run in the configured timezone."""

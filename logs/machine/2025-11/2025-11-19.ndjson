@@ -1140,3 +1140,137 @@
 {"event": "message", "author": "pancakemixteamdj", "channel": "#pictures-of-the-cats", "content": "I look in the kitten direction and they book  it", "attachments": 0}
 {"event": "reaction_add", "user": "simplyshadow171295", "channel": "#pictures-of-the-cats", "message_id": 1440910798946832415, "emoji": "😆", "message_preview": "I look in the kitten direction and they ...", "message_author": "pancakemixteamdj"}
 {"event": "message", "author": "pancakemixteamdj", "channel": "#pictures-of-the-cats", "content": "The photo woukd just been a small blob with my camera quality", "attachments": 0}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#yapper-committee", "message_id": 1440903650263175168, "emoji": "‼️", "message_preview": "permanently tattoo \"no feeding the cats\"...", "message_author": "cici4f3"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#yapper-committee", "message_id": 1440903650263175168, "emoji": "😆", "message_preview": "permanently tattoo \"no feeding the cats\"...", "message_author": "cici4f3"}
+{"event": "message", "author": "austinbaustinb", "channel": "#pictures-of-the-cats", "content": "meow", "attachments": 0}
+{"event": "action", "name": "handle_misc", "trigger": "trigger=meow", "output": "*stretches*"}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "the feeding station are wood right?", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "hear me out on this one guys…staples", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "he's getting a little smart", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "tomcar show me tiwx", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 624440365595754496, "message_id": 1440911578353369169, "has_image": false, "slots": {"cat": "Twix", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1-a83fYPLt2KSDUnSRH8valC7kc8ydhP2", "output": "sn=6006 attempt=1 size=845452"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "tocmat show me swix", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 624440365595754496, "message_id": 1440911611241042192, "has_image": false, "slots": {"cat": "Twix", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1Sg-rkicuM7zaobPV9wnerFUZCy8cEXHj", "output": "sn=5677 attempt=1 size=1210338"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "tomat show me miowave", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 624440365595754496, "message_id": 1440911655226839141, "has_image": false, "slots": {"cat": "Microwave", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Microwave", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1sZvrvcTcAL94m8Oi439wuAk0YNgg3Xea", "output": "sn=6206 attempt=1 size=1394470"}
+{"event": "message", "author": "void_now", "channel": "#bot-spam", "content": "toat show me Twix", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 972653971728633896, "message_id": 1440911677301198878, "has_image": false, "slots": {"cat": "Twix", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1ad9d2kQ6b6dnYn5qzQ89UwOl5mW9NVld", "output": "sn=6264 attempt=1 size=475712"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "Damn", "attachments": 0}
+{"event": "message", "author": "void_now", "channel": "#bot-spam", "content": "Impressive", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "the math is finally mathin", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, UItest", "attachments": 0}
+{"event": "intent", "kind": "ui_launch", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1440911774470770809, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "ui_activity_prompt", "trigger": "user=624440365595754496; channel=1341696618688286720", "output": "message_id=1440911776500678781; app_id=1341667150066225192; invite=m7GTJZq"}
+{"event": "message", "author": "void_now", "channel": "#bot-spam", "content": "What’d you do?", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "i’m just gonna get a custom stamp and start stamping folks foreheads", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "content": "meow", "attachments": 0}
+{"event": "action", "name": "handle_misc", "trigger": "trigger=meow", "output": "mrow!"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "Essentially just fuzzy matching but theres a database now", "attachments": 0}
+{"event": "message", "author": "not_d3fault_1420", "channel": "#bot-spam", "content": "tomcat show me microwave", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 980567857849045032, "message_id": 1440912006436618381, "has_image": false, "slots": {"cat": "Microwave", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Microwave", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1nU_yepb_JG8_sgyI__zGTeAOaBoT-1o5", "output": "sn=6254 attempt=1 size=1885337"}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#bot-spam", "message_id": 1440912009163182191, "emoji": "‼️", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "it grabs from the spreadsheet fairly often so it keeps up to date with the names.\nIt then splits the commands into parts.\n\"tomcat\" call as one,\n\"show me\"/\"who is\", etc as the function\nand then the cat name\nWe can apply some regex and fuzzy matching to get it to really have a lot of leeway without being too wrong", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "i'll have to crunch some numbers but like if ur 80% correct on a name, it'll assume its that", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "I am curious though", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "tomcat show me boo", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 624440365595754496, "message_id": 1440912334171148379, "has_image": false, "slots": {"cat": "Voidling", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Voidling", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1EIi-eRPuAx_kF39JxOJU26wc-RsJDxOA", "output": "sn=0244 attempt=1 size=6325945"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "tomcat show me boot", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 624440365595754496, "message_id": 1440912358556958770, "has_image": false, "slots": {"cat": "Boots", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Boots", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1uQQf-fg11XUsLsLJewMEbaEqgOR3ph8o", "output": "sn=4706 attempt=1 size=959079"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "Tomcat show me boto", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 624440365595754496, "message_id": 1440912398474149930, "has_image": false, "slots": {"cat": "Voidling", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Voidling", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1OrAuDxiDwQd-JYAbHDtU3GlWk9owcBOR", "output": "sn=4481 attempt=1 size=1826918"}
+{"event": "reaction_add", "user": "celeryiscelery", "channel": "#due-paying-portal", "message_id": 1440849441295695942, "emoji": "🔥", "message_preview": "For Spring 2026.  Two 20 lbs bags of cat...", "message_author": "kitadan"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "tomcaat show me botos", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 624440365595754496, "message_id": 1440912438366044161, "has_image": false, "slots": {"cat": "Boots", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Boots", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1MgbvlM50kcfly_MywJysL-EWeuQCmWin", "output": "sn=5517 attempt=1 size=1731504"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "tomcat show me three million beers", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "ok!", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "But you should still see the quicker response for bringing up photos compared to v5.6.\n\nIts really coming together nicely. Giving it a memory and then some 'thought' behind it made it really nice", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "hey hey that myth was debunked!", "attachments": 0}
+{"event": "message", "author": "void_now", "channel": "#bot-spam", "content": "Its fucking awesome 🔥", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "wasnt even *close *to being pencil shaped", "attachments": 0}
+{"event": "message_edit", "author": "celeryiscelery", "channel": "#yapper-committee", "before": "wasnt even *close *to being pencil shaped", "after": "wasnt even *close * to being pencil shaped"}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "it has been almost four hours.", "attachments": 0}
+{"event": "reaction_add", "user": "austinbaustinb", "channel": "#bot-spam", "message_id": 1440912824913104917, "emoji": "❤️", "message_preview": "Its fucking awesome 🔥", "message_author": "void_now"}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "NUH HUH , in my heart it was pencil", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "Whatre u waiting on", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "is somethin just processing", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "no i am still editing", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "i will be editing for anothe 4 hours", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "good grief", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "im absolutely dying at this", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1440913083156402179, "emoji": "‼️", "message_preview": "good grief", "message_author": "austinbaustinb"}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "as someone who regularly edits things, it doesn't get better the projects just get bigger", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "vro doesnt knoe 💔", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "and alas!", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "this makes me cry bc apparently he assigns 10 minute video essays for his regular cclasses", "attachments": 0}
+{"event": "message", "author": "cici4f3", "channel": "#yapper-committee", "content": "and was low-key the wrong color too 😭😭", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "and guess who i am taking again next sem!", "attachments": 0}
+{"event": "reaction_add", "user": "a1darek", "channel": "#yapper-committee", "message_id": 1440913125217144886, "emoji": "❤️", "message_preview": "vro doesnt knoe 💔", "message_author": "spitonme"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1440913121806913566, "emoji": "😭", "message_preview": "as someone who regularly edits things, i...", "message_author": "celeryiscelery"}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "i'm gonna find you free editing programs with user friendly UI's bc i soley hate davinci for that reason", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "it's layout is just dumb", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#bot-spam", "content": "tomcat show me eg", "attachments": 0}
+{"event": "reaction_add", "user": "celeryiscelery", "channel": "#yapper-committee", "message_id": 1440913232427487302, "emoji": "‼️", "message_preview": "and was low-key the wrong color too 😭😭", "message_author": "cici4f3"}
+{"event": "message", "author": "spitonme", "channel": "#bot-spam", "content": "tomcat show me egs", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 956398865421074462, "user_id": 543969877619245068, "message_id": 1440913529904300164, "has_image": false, "slots": {"cat": "Eggs", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Eggs", "intent:show_photo"]}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "iz okay for neow but i appreciate it", "attachments": 0}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1WmhwOzFxBTBmEOd5y3dPwKYwR2vJV2yw", "output": "sn=5882 attempt=1 size=1148441"}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "i know full well someone took that cat home", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "next sem i shall harass u abt it :3", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "^^", "attachments": 0}
+{"event": "message", "author": "cici4f3", "channel": "#yapper-committee", "content": "for sure", "attachments": 0}
+{"event": "reaction_add", "user": "spitonme", "channel": "#yapper-committee", "message_id": 1440913559910482001, "emoji": "🐙", "message_preview": "i know full well someone took that cat h...", "message_author": "celeryiscelery"}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "😔", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "with the way he was letting people carry him?? bro is probably sprawled out on someones bed asleep as i type this", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "ofc ofc, kazius must be free from the shackles of davinci", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "I have only ever used shotcut but its pretty good for the basic stuff", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "leonardo is rolling in his grave rn", "attachments": 0}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#bot-spam", "message_id": 1440912482377138186, "emoji": "😭", "message_preview": "tomcat show me three million beers", "message_author": "austinbaustinb"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1440914069065302046, "emoji": "❤️", "message_preview": "ofc ofc, kazius must be free from the sh...", "message_author": "celeryiscelery"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1440914096353443941, "emoji": "😭", "message_preview": "leonardo is rolling in his grave rn", "message_author": "celeryiscelery"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1440913559910482001, "emoji": "🐙", "message_preview": "i know full well someone took that cat h...", "message_author": "celeryiscelery"}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#yapper-committee", "message_id": 1440913125217144886, "emoji": "❤️", "message_preview": "vro doesnt knoe 💔", "message_author": "spitonme"}
+{"event": "reaction_remove", "user": "unknown", "channel": "#yapper-committee", "message_id": 1440913125217144886, "emoji": "❤️", "message_preview": "vro doesnt knoe 💔", "message_author": "spitonme"}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#yapper-committee", "message_id": 1440913232427487302, "emoji": "‼️", "message_preview": "and was low-key the wrong color too 😭😭", "message_author": "cici4f3"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1440913685362249869, "emoji": "‼️", "message_preview": "with the way he was letting people carry...", "message_author": "celeryiscelery"}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#yapper-committee", "message_id": 1440913685362249869, "emoji": "‼️", "message_preview": "with the way he was letting people carry...", "message_author": "celeryiscelery"}
+{"event": "message", "author": "simplyshadow171295", "channel": "#yapper-committee", "content": "who has a good video essay i can watch while i do hw", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "what's your preferred topic?", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#yapper-committee", "content": "lowk history", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "oh period ik just the person", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "@mckayla [retired]", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "MCKKKKKKKKK", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "YOOHOOOOOOO", "attachments": 0}
+{"event": "show_photo_page", "cat": "4. Eggs", "source": "cache", "serial": "sn6175", "reverse_index": "474", "total": "487", "delivery": "edit", "message_id": 1440913536967639180, "delivered_message_id": 1440913536967639180, "user_id": 624440365595754496}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1ZxbViw73w-cDJPZPVOWvhau1eQ-9yFLu", "output": "sn=6185 attempt=1 size=313782"}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "hollon they take a second<:politecat:834821732439162910>", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "@mckayla [retired]", "attachments": 0}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#bot-spam", "message_id": 1440913536967639180, "emoji": "‼️", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "message", "author": "simplyshadow171295", "channel": "#yapper-committee", "content": "i mean as long as i can listen in the bg i’ll be good i’ll watch just about anything these days", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#yapper-committee", "content": "my yt feed hates me lmaooo", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "vro wheres the lesbian video essay watcher when u need them", "attachments": 0}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#bot-spam", "message_id": 1440913536967639180, "emoji": "❤️", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "sagan hawkes is my go to always", "attachments": 0}
+{"event": "reaction_remove", "user": "unknown", "channel": "#bot-spam", "message_id": 1440913536967639180, "emoji": "‼️", "message_preview": "", "message_author": "Tom Cat"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "love his ghost in the machine vid", "attachments": 0}
+{"event": "reaction_add", "user": "celeryiscelery", "channel": "#yapper-committee", "message_id": 1440914891442622535, "emoji": "‼️", "message_preview": "vro wheres the lesbian video essay watch...", "message_author": "slayc127"}
+{"event": "message", "author": "celeryiscelery", "channel": "#yapper-committee", "content": "gonna have to resort to other languages", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "glad to see its not like totally imploding.\n\nTook some time off to forget what I was doing. I now have a fresh mind and am getting rid of problems in the first place instead of trying to solve them. I am excited for some feeding team stuff. I'm gonna be done with tomcat stuff by monday, one way or another, so hopefully I can get that churned out", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1440915044455153705, "emoji": "‼️", "message_preview": "gonna have to resort to other languages", "message_author": "celeryiscelery"}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#yapper-committee", "message_id": 1440914891442622535, "emoji": "‼️", "message_preview": "vro wheres the lesbian video essay watch...", "message_author": "slayc127"}
+{"event": "message", "author": "austinbaustinb", "channel": "#bot-spam", "content": "Formally going to bed. tomcat too", "attachments": 0}

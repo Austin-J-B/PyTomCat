@@ -962,3 +962,26 @@
 {"event": "reaction_add", "user": "nostalgicsapphic", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1440784639009624165, "emoji": "😭", "message_preview": "this one girl in my korean class was wri...", "message_author": "celeryiscelery"}
 {"event": "reaction_add", "user": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1440784639009624165, "emoji": "😭", "message_preview": "this one girl in my korean class was wri...", "message_author": "celeryiscelery"}
 {"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "who up lounging their english", "attachments": 0}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "action", "name": "gmail_auth_url", "trigger": "", "output": "https://accounts.google.com/o/oauth2/auth?response_type=code&client_id=1060012833432-juct0ve2bt20jmdg2l49ht0egps13ujf.apps.googleusercontent.com&redirect_uri=http%3A%2F%2Flocalhost%3A8765%2F&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.readonly&state=sNus4QTptLG3POAAp7eAHLlSXhibS1&access_type=offline&include_granted_scopes=true&prompt=consent"}
+{"event": "action", "name": "gmail_log_scheduler", "trigger": "auth", "output": "pending"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "TomCat, auth url http://localhost:8765/?state=sNus4QTptLG3POAAp7eAHLlSXhibS1&code=4/0Ab32j90FYdUGj29nP2Zz8_SJlq7uXg7y4_kLOZ-zljfzfw6Rp4EPl9-GG5Ray39zgfZiFw&scope=https://www.googleapis.com/auth/gmail.readonly", "attachments": 0}
+{"event": "intent", "kind": "gmail_auth_code", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1440867714892828753, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "gmail_auth_complete", "trigger": "by=624440365595754496", "output": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "Meow", "attachments": 0}
+{"event": "action", "name": "handle_misc", "trigger": "trigger=Meow", "output": "MEOW MEOW!"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat show me twix", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1440867736933630003, "has_image": false, "slots": {"cat": "Twix", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1RHgK40MVWPhuhB51dmLW8DtnpBfMNjRH", "output": "sn=5627 attempt=1 size=858843"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "toncar show me twix", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcar show me twix", "attachments": 0}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1440867806580183172, "has_image": false, "slots": {"cat": "Twix", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=157PribUdN06323qACQv1fJXT1qNLIBaV", "output": "sn=6191 attempt=1 size=483122"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcar show me tiwx", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat show me swix", "attachments": 0}

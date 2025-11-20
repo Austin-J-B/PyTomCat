@@ -6,17 +6,24 @@
     <title>TomCat Feeding Schedule</title>
     <style>
         :root {
-            --bg-color: #f8fafc;
+            /* Theme: Pastel & Grass Green, Beige/Tan Accents */
+            --bg-color: #fdfcf8;       /* Very light cream */
             --card-bg: #ffffff;
-            --text-main: #1e293b;
-            --text-light: #64748b;
-            --primary: #6366f1;
-            --primary-light: #e0e7ff;
-            --highlight-dim: rgba(99, 102, 241, 0.15);
-            --highlight-border: #6366f1;
-            --border: #e2e8f0;
-            --header-bg: #f1f5f9;
-            --station-bg: #f8fafc;
+            --text-main: #4a5d23;      /* Dark olive/grass green text */
+            --text-light: #8c9e75;
+            
+            --primary: #78b159;        /* Grass Green */
+            --primary-hover: #659e46;
+            --primary-light: #e6f4db;  /* Pastel Green Highlight */
+            
+            --accent: #e8dcb5;         /* Tan/Beige */
+            --accent-light: #f7f3e8;
+            
+            --highlight-dim: rgba(120, 177, 89, 0.2); /* Selection Color */
+            --border: #e0e5d0;
+            
+            --header-bg: #f4f9ed;      /* Light Mint for headers */
+            --station-bg: #ffffff;
         }
 
         body {
@@ -28,29 +35,30 @@
             height: 100vh;
             display: flex;
             flex-direction: column;
-            overflow: hidden; /* Prevent body scroll, handle in components */
+            overflow: hidden;
         }
 
         /* --- Toolbar / Header --- */
         .toolbar {
             background: var(--card-bg);
             padding: 0.75rem 1.5rem;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 2px solid var(--border);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            box-shadow: 0 4px 6px -2px rgba(74, 93, 35, 0.05);
             z-index: 20;
             flex-shrink: 0;
         }
 
         .logo {
-            font-weight: 700;
-            font-size: 1.1rem;
+            font-weight: 800;
+            font-size: 1.2rem;
             color: var(--primary);
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            letter-spacing: -0.02em;
         }
 
         .controls {
@@ -67,11 +75,12 @@
 
         #member-search {
             width: 100%;
-            padding: 8px 12px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
+            padding: 10px 16px;
+            border: 2px solid var(--border);
+            border-radius: 12px;
             font-size: 0.9rem;
-            background: #f8fafc;
+            background: var(--accent-light);
+            color: var(--text-main);
             transition: all 0.2s;
         }
 
@@ -79,18 +88,18 @@
             background: white;
             border-color: var(--primary);
             outline: none;
-            box-shadow: 0 0 0 3px var(--primary-light);
+            box-shadow: 0 0 0 4px var(--primary-light);
         }
 
         .search-results {
             position: absolute;
-            top: 110%;
+            top: 115%;
             left: 0;
             right: 0;
             background: white;
             border: 1px solid var(--border);
-            border-radius: 8px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            box-shadow: 0 10px 20px -5px rgba(74, 93, 35, 0.15);
             max-height: 400px;
             overflow-y: auto;
             display: none;
@@ -98,111 +107,126 @@
         }
 
         .result-item {
-            padding: 10px 12px;
+            padding: 12px 16px;
             border-bottom: 1px solid var(--border);
             cursor: pointer;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            transition: background 0.1s;
         }
 
         .result-item:last-child { border-bottom: none; }
         .result-item:hover, .result-item.active { background-color: var(--primary-light); }
-        .result-name { font-weight: 600; font-size: 0.9rem; }
-        .result-roles { font-size: 0.75rem; color: var(--text-light); background: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
+        
+        .result-name { font-weight: 700; font-size: 0.9rem; }
+        .result-username { font-size: 0.8rem; color: var(--text-light); }
 
         /* Zoom Controls */
         .zoom-controls {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
-            background: #f1f5f9;
+            gap: 0.25rem;
+            background: var(--accent-light);
             padding: 4px;
-            border-radius: 6px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
         }
 
         .zoom-btn {
             border: none;
             background: white;
-            width: 24px;
-            height: 24px;
-            border-radius: 4px;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
-            color: var(--text-light);
+            color: var(--text-main);
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            transition: 0.1s;
         }
 
-        .zoom-btn:hover { color: var(--primary); }
-        #zoom-level { font-size: 0.8rem; font-variant-numeric: tabular-nums; width: 40px; text-align: center; }
+        .zoom-btn:hover { color: var(--primary); background: #fff; transform: translateY(-1px); }
+        #zoom-level { font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; width: 45px; text-align: center; color: var(--text-light); }
 
         /* Selected Member Display */
         .selection-badge {
-            padding: 6px 12px;
-            background: var(--primary-light);
-            color: var(--primary);
-            border-radius: 6px;
-            font-size: 0.85rem;
+            padding: 8px 16px;
+            background: var(--primary);
+            color: white;
+            border-radius: 10px;
+            font-size: 0.9rem;
             font-weight: 600;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
+            box-shadow: 0 4px 10px -3px rgba(120, 177, 89, 0.4);
         }
         .selection-badge.empty {
-            background: #f1f5f9;
+            background: var(--accent-light);
             color: var(--text-light);
-            font-weight: 400;
+            box-shadow: none;
+            font-weight: 500;
+            border: 1px solid var(--border);
         }
 
         /* --- Main Grid Area --- */
         .workspace {
             flex: 1;
-            overflow: auto; /* This scrolls the visible area */
-            background: #e2e8f0; /* Darker background behind the sheet */
-            padding: 20px;
+            overflow: auto;
+            background: var(--bg-color); 
+            padding: 40px;
             display: grid;
-            place-items: start center; /* Center horizontally if smaller */
+            place-items: start center;
         }
 
         .sheet-container {
             background: white;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            transform-origin: top center; /* Zoom from top center */
-            transition: transform 0.1s ease-out;
+            border-radius: 8px;
+            box-shadow: 0 8px 30px -5px rgba(74, 93, 35, 0.1);
+            transform-origin: top center;
+            transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1);
+            border: 1px solid var(--border);
+            overflow: hidden; /* Clip corners */
         }
 
         table {
-            border-collapse: collapse;
+            border-collapse: separate; /* Needed for sticky to work nicely with borders sometimes */
+            border-spacing: 0;
             font-size: 0.9rem;
             table-layout: fixed;
             user-select: none;
+            min-width: 800px;
         }
 
         /* Headers */
         th {
             background-color: var(--header-bg);
-            color: var(--text-light);
-            font-weight: 600;
-            padding: 10px;
+            color: var(--text-main);
+            font-weight: 700;
+            padding: 12px;
             text-transform: uppercase;
-            font-size: 0.75rem;
-            letter-spacing: 0.05em;
-            border: 1px solid var(--border);
+            font-size: 0.7rem;
+            letter-spacing: 0.08em;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
             height: 40px;
         }
 
         /* Station Column (Row Headers) */
         .station-cell {
-            background-color: var(--station-bg);
+            background-color: var(--card-bg);
             color: var(--text-main);
-            font-weight: 600;
+            font-weight: 700;
+            font-size: 0.85rem;
             text-align: left;
             padding: 0 16px;
-            width: 180px; /* Fixed width */
-            border: 1px solid var(--border);
+            width: 180px;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
             position: sticky;
             left: 0;
             z-index: 2;
@@ -212,12 +236,10 @@
         thead th {
             position: sticky;
             top: 0;
-            z-index: 3; /* Above station cells */
+            z-index: 3;
         }
-        
-        /* Top-Left Corner */
         thead th:first-child {
-            z-index: 4; /* Topmost */
+            z-index: 4;
             left: 0;
             background-color: var(--header-bg);
         }
@@ -225,19 +247,22 @@
         /* Data Cells */
         td.data-cell {
             width: 140px;
-            height: 48px;
-            border: 1px solid var(--border);
+            height: 52px;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
             text-align: center;
             vertical-align: middle;
-            cursor: default;
+            cursor: pointer;
             position: relative;
             background: white;
             color: var(--text-main);
+            font-weight: 500;
+            transition: background-color 0.05s;
         }
 
         /* --- Interaction States --- */
         
-        /* The "Anchor" cell (active focus) */
+        /* Active Focus (Cursor) */
         td.data-cell.focus {
             outline: 2px solid var(--primary);
             outline-offset: -2px;
@@ -246,44 +271,43 @@
 
         /* Selected Range */
         td.data-cell.selected {
-            background-color: var(--highlight-dim);
+            background-color: var(--highlight-dim) !important; /* Override assigned color slightly */
         }
 
-        /* Specific styling for filled cells vs empty */
-        td.data-cell:not(:empty) {
-            font-weight: 500;
+        /* Assigned Cell Styling */
+        td.data-cell.assigned {
+            /* Background color set dynamically via JS */
+            color: #1a2e05; /* Very dark green text for contrast */
+            font-weight: 600;
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.03);
         }
 
-        /* Overwriting indicator */
-        td.data-cell.selected.has-value {
-            color: var(--primary);
-            font-style: italic;
-        }
-        
         /* Loading Overlay */
         #loading-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(255,255,255,0.9);
+            background: rgba(253, 252, 248, 0.95);
             z-index: 999;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             font-size: 1.2rem;
-            color: var(--text-light);
+            font-weight: 600;
+            color: var(--primary);
+            backdrop-filter: blur(4px);
         }
     </style>
 </head>
 <body>
 
     <div id="loading-overlay">
-        <div>Fetching Team Members...</div>
+        <div>🌱 Fetching Feeding Team...</div>
     </div>
 
     <header class="toolbar">
         <div class="logo">
-            <span>🐱</span> TomCat Schedule
+            <span>🌿</span> TomCat Schedule
         </div>
 
         <div class="controls">
@@ -296,7 +320,7 @@
             </div>
 
             <div class="search-wrapper">
-                <input type="text" id="member-search" placeholder="Search Feeding Team..." autocomplete="off">
+                <input type="text" id="member-search" placeholder="Search volunteer..." autocomplete="off">
                 <div id="search-results" class="search-results"></div>
             </div>
 
@@ -328,35 +352,28 @@
     </div>
 
 <script>
-/**
- * CONFIGURATION
- */
+// --- CONFIG ---
 const ROLE_ID_FEEDING_TEAM = "643587274797481988";
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const STATIONS = [
+    "Microwave", "Snickers", "Business", "The Greens", "HOP", 
+    "Lot 50", "Mary Kay & Zen", "West Hall", "Maintenance"
+];
 
-// Initial Data (Matches your Config.py, but keys cleaned for display)
-const SCHEDULE = {
-    "Microwave":         ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
-    "Snickers":          ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
-    "Business":          ["Atlas", "Alexa", "Morgan", "Bunny", "Abigail", "Zoe", "Elusive"],
-    "The Greens":        ["Jaeden", "Isabella", "Julia", "Micaela", "Brooke", "Peter", "Elusive"],
-    "HOP":               ["Jaeden", "Victoria", "Anabelle", "Brian", "Sophia", "Victoria", "Sophia"],
-    "Lot 50":            ["Miranda", "Brian", "Bryan", "Brian", "Bryan", "Zahara", "Miranda"],
-    "Mary Kay & Zen":    ["Kitadan", "Emma", "Kitadan", "Kitadan", "Jack", "Jack", "Jack"],
-    "West Hall":         ["Loren", "Charlotte", "Autumn", "Michael", "Loren", "Roach", "Emmaleigh"],
-    "Maintenance":       ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"]
-};
+// --- DATA MODEL ---
+// Start EMPTY as requested
+let scheduleData = {};
+STATIONS.forEach(st => {
+    scheduleData[st] = new Array(7).fill(""); 
+});
 
-const STATIONS = Object.keys(SCHEDULE);
-
-// --- STATE ---
-let members = []; // Will be populated by "Live" fetch
-let currentVolunteer = null; // The user selected from search
+let members = []; 
+let currentVolunteer = null;
 let zoomLevel = 1.0;
 
-// Grid Selection State
-let anchorCell = null; // {r, c} - Where selection started
-let focusCell = null;  // {r, c} - The active cell (cursor)
+// --- SELECTION STATE ---
+let anchorCell = null; // {r, c}
+let focusCell = null;  // {r, c}
 let selectionRange = null; // {rMin, rMax, cMin, cMax}
 
 /**
@@ -370,66 +387,88 @@ async function init() {
 }
 
 /**
- * MOCK API - Replace this with actual API call to your bot
+ * API / DATA FETCHING
  */
 async function fetchMembers() {
-    // SIMULATED NETWORK DELAY
-    await new Promise(r => setTimeout(r, 800));
+    try {
+        // ---------------------------------------------------------
+        // TO CONNECT TO BOT: Replace this URL with your actual bot endpoint
+        // e.g. const response = await fetch('/api/members');
+        // ---------------------------------------------------------
+        
+        // MOCK DATA for Playground
+        // Simulating a fetch delay
+        await new Promise(r => setTimeout(r, 600)); 
+        
+        const rawData = [
+            { name: "Nicole", user: "nicole", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Lynn", user: "lynn", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Atlas", user: "atlas", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "CiCi", user: "cici", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Roach", user: "roach", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Elusive", user: "elusive", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Miranda", user: "miranda", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Ben", user: "ben", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Brooke", user: "brooke", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Alex", user: "alex", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Morgan", user: "morgan", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Anabelle", user: "anabelle", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Zahara", user: "zahara", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Bryan", user: "hatshura", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Jaeden", user: "jaeden", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Kitadan", user: "kitadan", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Felix", user: "felix", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Izzy", user: "izzy", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Kaz", user: "kaz", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Thorin", user: "not_d3fault_1429", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Acacia", user: "spitonme", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Rinne", user: "petrichor", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Emmaleigh", user: "emiximez", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Alexa", user: "marieealexa", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Bunny", user: "bubblebee5866", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Abigail", user: "abstractly_", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Zoe", user: "zoe.cronin", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Isabella", user: "lemonelon_", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Julia", user: "iliekwatchingnarutoowo", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Micaela", user: "mica.aaa", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Peter", user: "bluedragon5864", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Victoria", user: "ratcorn.", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Brian", user: "frostfire312", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Sophia", user: "Le_nuit_sans_fin", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Charlotte", user: "phat_cat_207", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Autumn", user: "autumn065829", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Michael", user: "orphean_", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Loren", user: "baseketballin", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Lucas", user: "lifeye", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Emma", user: "emlenisgremlin", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Jack", user: ".bettercalljack", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "Megan", user: "vasyline", roles: [ROLE_ID_FEEDING_TEAM] },
+            { name: "NonMember", user: "intruder", roles: ["999"] } // Should be filtered out
+        ];
 
-    // In a real app, fetch('/api/members') here.
-    // Using the list from your config.py, but filtered as if by the role.
-    // I added "roles" array to simulate the check you requested.
-    
-    const rawData = [
-        { name: "Nicole", user: "nicole", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Lynn", user: "lynn", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Atlas", user: "atlas", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "CiCi", user: "cici", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Roach", user: "roach", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Elusive", user: "elusive", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Miranda", user: "miranda", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Ben", user: "ben", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Brooke", user: "brooke", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Alex", user: "alex", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Morgan", user: "morgan", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Anabelle", user: "anabelle", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Zahara", user: "zahara", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Bryan", user: "hatshura", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Jaeden", user: "jaeden", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Kitadan", user: "kitadan", roles: [ROLE_ID_FEEDING_TEAM] }, // Example Match
-        { name: "Felix", user: "felix", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Izzy", user: "izzy", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Kaz", user: "kaz", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Thorin", user: "not_d3fault_1429", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Acacia", user: "spitonme", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Rinne", user: "petrichor", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Emmaleigh", user: "emiximez", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Alexa", user: "marieealexa", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Bunny", user: "bubblebee5866", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Abigail", user: "abstractly_", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Zoe", user: "zoe.cronin", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Isabella", user: "lemonelon_", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Julia", user: "iliekwatchingnarutoowo", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Micaela", user: "mica.aaa", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Peter", user: "bluedragon5864", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Victoria", user: "ratcorn.", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Brian", user: "frostfire312", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Sophia", user: "Le_nuit_sans_fin", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Charlotte", user: "phat_cat_207", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Autumn", user: "autumn065829", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Michael", user: "orphean_", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Loren", user: "baseketballin", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Lucas", user: "lifeye", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Emma", user: "emlenisgremlin", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Jack", user: ".bettercalljack", roles: [ROLE_ID_FEEDING_TEAM] },
-        { name: "Megan", user: "vasyline", roles: [ROLE_ID_FEEDING_TEAM] },
-        // Example of someone NOT on team
-        { name: "RandomUser", user: "random", roles: ["000000000"] } 
-    ];
+        // Filter by Role ID
+        members = rawData.filter(m => m.roles.includes(ROLE_ID_FEEDING_TEAM));
+        
+    } catch (e) {
+        console.error("Failed to fetch members", e);
+        alert("Could not load team members.");
+    }
+}
 
-    // Filtering logic requested
-    members = rawData.filter(m => m.roles.includes(ROLE_ID_FEEDING_TEAM));
-    console.log(`Loaded ${members.length} members for Feeding Team.`);
+/**
+ * HELPER: GENERATE PASTEL COLOR FROM STRING
+ * Creates a unique, pleasant hex code for each volunteer name.
+ */
+function getVolunteerColor(name) {
+    if (!name) return 'white';
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    // Restrict Hue to 0-360
+    const h = Math.abs(hash % 360);
+    // Keep Saturation high (60-80%) and Lightness high (80-90%) for pastel look
+    return `hsl(${h}, 70%, 85%)`; 
 }
 
 /**
@@ -449,13 +488,23 @@ function renderGrid() {
         tr.appendChild(th);
 
         // Days
-        SCHEDULE[station].forEach((name, cIndex) => {
+        scheduleData[station].forEach((volunteerName, cIndex) => {
             const td = document.createElement('td');
             td.className = 'data-cell';
             td.dataset.r = rIndex;
             td.dataset.c = cIndex;
-            td.textContent = name || "";
             
+            td.textContent = volunteerName || "";
+            
+            // Apply Volunteer Color
+            if (volunteerName) {
+                td.classList.add('assigned');
+                td.style.backgroundColor = getVolunteerColor(volunteerName);
+            } else {
+                td.style.backgroundColor = ''; // Reset
+            }
+
+            // Mouse Events for Drag Selection
             td.onmousedown = (e) => handleMouseDown(e, rIndex, cIndex);
             td.onmouseover = (e) => handleMouseOver(e, rIndex, cIndex);
             
@@ -466,10 +515,17 @@ function renderGrid() {
     });
 }
 
+function getCell(r, c) {
+    return document.querySelector(`.data-cell[data-r="${r}"][data-c="${c}"]`);
+}
+
 function updateSelectionVisuals() {
-    // Clear previous
+    // Reset visual state only (not data)
     document.querySelectorAll('.data-cell').forEach(td => {
-        td.classList.remove('selected', 'focus', 'has-value');
+        td.classList.remove('selected', 'focus');
+        // Re-apply volunteer colors if they exist (drag might temporarily cover them)
+        // Actually CSS .selected will use !important background color for highlight,
+        // which is what we want.
     });
 
     if (!focusCell) return;
@@ -479,132 +535,132 @@ function updateSelectionVisuals() {
         for (let r = selectionRange.rMin; r <= selectionRange.rMax; r++) {
             for (let c = selectionRange.cMin; c <= selectionRange.cMax; c++) {
                 const cell = getCell(r, c);
-                if (cell) {
-                    cell.classList.add('selected');
-                    if (cell.textContent.trim() !== "") cell.classList.add('has-value');
-                }
+                if (cell) cell.classList.add('selected');
             }
         }
     }
 
-    // Highlight Focus
+    // Focus Cursor
     const fCell = getCell(focusCell.r, focusCell.c);
     if (fCell) fCell.classList.add('focus');
 }
 
-function getCell(r, c) {
-    return document.querySelector(`.data-cell[data-r="${r}"][data-c="${c}"]`);
-}
 
 /**
- * INPUT & SEARCH LOGIC
+ * SEARCH & SELECTION
  */
 const searchInput = document.getElementById('member-search');
 const resultsBox = document.getElementById('search-results');
 const selectionBadge = document.getElementById('selection-display');
 
-searchInput.addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    resultsBox.innerHTML = '';
-    
-    if (!q) {
-        resultsBox.style.display = 'none';
-        return;
-    }
+function setupEventListeners() {
+    searchInput.addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase();
+        resultsBox.innerHTML = '';
+        
+        if (!q) {
+            resultsBox.style.display = 'none';
+            return;
+        }
 
-    const matches = members.filter(m => 
-        m.name.toLowerCase().includes(q) || 
-        m.user.toLowerCase().includes(q)
-    );
+        const matches = members.filter(m => 
+            m.name.toLowerCase().includes(q) || 
+            m.user.toLowerCase().includes(q)
+        );
 
-    if (matches.length > 0) {
-        resultsBox.style.display = 'block';
-        matches.forEach(m => {
-            const div = document.createElement('div');
-            div.className = 'result-item';
-            div.innerHTML = `
-                <span class="result-name">${m.name}</span>
-                <span class="result-roles">@${m.user}</span>
-            `;
-            div.onclick = () => selectVolunteer(m);
-            resultsBox.appendChild(div);
-        });
-    } else {
-        resultsBox.style.display = 'none';
-    }
-});
+        if (matches.length > 0) {
+            resultsBox.style.display = 'block';
+            matches.forEach(m => {
+                const div = document.createElement('div');
+                div.className = 'result-item';
+                div.innerHTML = `
+                    <span class="result-name">${m.name}</span>
+                    <span class="result-username">@${m.user}</span>
+                `;
+                div.onmousedown = (ev) => {
+                    // Prevent input blur
+                    ev.preventDefault();
+                    selectVolunteer(m);
+                };
+                resultsBox.appendChild(div);
+            });
+        } else {
+            resultsBox.style.display = 'none';
+        }
+    });
+
+    // Keyboard Nav
+    document.addEventListener('keydown', handleKeydown);
+    document.addEventListener('mouseup', () => isDragging = false);
+}
 
 function selectVolunteer(m) {
     currentVolunteer = m;
     selectionBadge.className = 'selection-badge';
+    selectionBadge.style.backgroundColor = getVolunteerColor(m.name);
+    selectionBadge.style.color = '#1a2e05'; // Dark text for pastel bg
     selectionBadge.innerHTML = `<span>👤</span> ${m.name}`;
     searchInput.value = '';
     resultsBox.style.display = 'none';
 }
 
 /**
- * GRID INTERACTION (Google Sheets Style)
+ * GRID INTERACTION
  */
 let isDragging = false;
 
 function handleMouseDown(e, r, c) {
     isDragging = true;
     if (e.shiftKey && anchorCell) {
-        // Extend selection
         updateSelectionRange(r, c);
     } else {
-        // New selection
         anchorCell = {r, c};
         focusCell = {r, c};
         updateSelectionRange(r, c);
     }
-    // Ensure focus doesn't jump to input
-    e.preventDefault(); 
+    // Prevent text selection cursor
+    if(e.detail > 1) e.preventDefault(); 
 }
 
 function handleMouseOver(e, r, c) {
-    if (isDragging) {
-        updateSelectionRange(r, c);
-    }
+    if (isDragging) updateSelectionRange(r, c);
 }
-
-document.addEventListener('mouseup', () => isDragging = false);
 
 function updateSelectionRange(currR, currC) {
     if (!anchorCell) return;
-    
-    // Calculate bounding box
     const rMin = Math.min(anchorCell.r, currR);
     const rMax = Math.max(anchorCell.r, currR);
     const cMin = Math.min(anchorCell.c, currC);
     const cMax = Math.max(anchorCell.c, currC);
-
     selectionRange = {rMin, rMax, cMin, cMax};
     updateSelectionVisuals();
 }
 
-// KEYBOARD NAVIGATION
-document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT') return; // Ignore inside search
+function handleKeydown(e) {
+    if (e.target.tagName === 'INPUT') {
+        // Allow Escape to blur input
+        if(e.key === 'Escape') e.target.blur();
+        return; 
+    }
 
-    // Hotkeys: Backspace/Delete -> Clear
     if (e.key === 'Backspace' || e.key === 'Delete') {
-        applyToSelection(null);
+        applyToSelection("");
         return;
     }
 
-    // Hotkey: Enter -> Assign
     if (e.key === 'Enter') {
         if (currentVolunteer) {
             applyToSelection(currentVolunteer.name);
         } else {
-            alert("Please search and select a volunteer first!");
+            // Shake effect or alert
+            const badge = document.getElementById('selection-display');
+            badge.style.transform = 'translateX(5px)';
+            setTimeout(() => badge.style.transform = 'translateX(0)', 100);
             searchInput.focus();
         }
         return;
     }
 
-    // Hotkey: Escape -> Deselect
     if (e.key === 'Escape') {
         selectionRange = null;
         anchorCell = null;
@@ -613,12 +669,12 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Navigation (Arrows)
+    // Arrow Navigation
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();
         if (!focusCell) {
-            focusCell = {r:0, c:0};
-            anchorCell = {r:0, c:0};
+            // Start top left if nothing selected
+            anchorCell = focusCell = {r:0, c:0};
             updateSelectionRange(0,0);
             return;
         }
@@ -626,7 +682,7 @@ document.addEventListener('keydown', (e) => {
         let nr = focusCell.r;
         let nc = focusCell.c;
         
-        // Jump to edge if CTRL/CMD is held
+        // Ctrl/Cmd jumps to edge
         if (e.ctrlKey || e.metaKey) {
              if (e.key === 'ArrowUp') nr = 0;
              if (e.key === 'ArrowDown') nr = STATIONS.length - 1;
@@ -641,8 +697,6 @@ document.addEventListener('keydown', (e) => {
 
         focusCell = {r: nr, c: nc};
         
-        // If Shift is held, anchor stays put, selection grows. 
-        // If NOT held, anchor moves with focus (reset selection).
         if (e.shiftKey) {
             updateSelectionRange(nr, nc);
         } else {
@@ -650,40 +704,39 @@ document.addEventListener('keydown', (e) => {
             updateSelectionRange(nr, nc);
         }
         
-        // Auto-scroll to keep in view
         getCell(nr, nc)?.scrollIntoView({block: 'nearest', inline: 'nearest'});
     }
-});
+}
 
 function applyToSelection(value) {
     if (!selectionRange) return;
-
+    // Update Data
     for (let r = selectionRange.rMin; r <= selectionRange.rMax; r++) {
         const station = STATIONS[r];
         for (let c = selectionRange.cMin; c <= selectionRange.cMax; c++) {
-            // Update Data Model
-            SCHEDULE[station][c] = value || "";
-            // Update UI
-            getCell(r, c).textContent = value || "";
+            scheduleData[station][c] = value;
         }
     }
+    // Full re-render to apply colors correctly
+    renderGrid();
+    // Re-apply selection visual because render wipes it
+    updateSelectionVisuals();
 }
 
 /**
  * ZOOM LOGIC
  */
 function adjustZoom(delta) {
-    zoomLevel = Math.max(0.5, Math.min(2.0, zoomLevel + delta));
+    zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
     applyZoom();
 }
 
 function resetZoom() {
-    // "Fit" logic: try to fit width
     const containerW = document.getElementById('workspace').clientWidth;
     const tableW = document.getElementById('schedule-table').offsetWidth;
-    // Calculate ratio to fit, minus a little padding
-    const fitRatio = (containerW - 40) / tableW; 
-    zoomLevel = Math.min(1.0, fitRatio); // Don't zoom in past 100% for fit
+    // Fit width with some padding
+    let ratio = (containerW - 60) / tableW;
+    zoomLevel = Math.min(1.0, Math.max(0.5, ratio));
     applyZoom();
 }
 
@@ -692,7 +745,7 @@ function applyZoom() {
     document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
 }
 
-// Start
+// Kickoff
 init();
 
 </script>

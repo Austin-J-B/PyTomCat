@@ -1,133 +1,498 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>TomCat-UI</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TomCat Feeding Schedule</title>
     <style>
-      :root {
-        color-scheme: light;
-        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
-          Helvetica, Arial, sans-serif;
-      }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background-color: #f2f5ff;
-        transition: background-color 0.45s ease;
-      }
-      .card {
-        text-align: center;
-        padding: 56px 72px;
-        border-radius: 28px;
-        background: rgba(255, 255, 255, 0.85);
-        box-shadow: 0 24px 50px rgba(32, 45, 78, 0.18);
-        backdrop-filter: blur(12px);
-      }
-      h1 {
-        margin: 0;
-        font-size: 3rem;
-        letter-spacing: 1px;
-        text-transform: uppercase;
-        color: #1f2430;
-        font-weight: 500;
-      }
-      h2 {
-        margin: 20px 0 40px;
-        font-weight: 400;
-        color: #5c6474;
-      }
-      button {
-        position: relative;
-        padding: 16px 48px;
-        font-size: 1.1rem;
-        font-weight: 600;
-        border: none;
-        border-radius: 999px;
-        background: linear-gradient(145deg, #6474ff, #7f5bfa);
-        color: #fff;
-        cursor: pointer;
-        box-shadow: 0 18px 40px rgba(113, 101, 242, 0.35);
-        transition: transform 0.12s ease, box-shadow 0.2s ease;
-      }
-      button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 22px 48px rgba(113, 101, 242, 0.45);
-      }
-      button:active {
-        transform: scale(0.97);
-      }
-      button.pulse::after {
-        content: "";
-        position: absolute;
-        inset: -6px;
-        border-radius: inherit;
-        border: 2px solid rgba(129, 116, 255, 0.45);
-        opacity: 0;
-        animation: pulse 0.35s ease;
-      }
-      @keyframes pulse {
-        0% {
-          transform: scale(0.95);
-          opacity: 0.9;
+        :root {
+            --bg-color: #f4f7fc;
+            --card-bg: #ffffff;
+            --text-main: #333;
+            --text-light: #777;
+            --primary: #6366f1;
+            --primary-light: #e0e7ff;
+            --highlight-dim: rgba(99, 102, 241, 0.15);
+            --highlight-strong: rgba(99, 102, 241, 0.4);
+            --border: #e2e8f0;
         }
-        100% {
-          transform: scale(1.1);
-          opacity: 0;
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
         }
-      }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        /* --- Header & Search --- */
+        header {
+            margin-bottom: 2rem;
+            position: relative;
+            z-index: 10;
+        }
+
+        h1 {
+            margin: 0 0 1rem 0;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .search-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+        }
+
+        #member-search {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 1rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            transition: border-color 0.2s;
+            outline: none;
+        }
+
+        #member-search:focus {
+            border-color: var(--primary);
+        }
+
+        .search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-top: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            display: none; /* Hidden by default */
+        }
+
+        .result-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .result-item:hover, .result-item.active {
+            background-color: var(--primary-light);
+        }
+
+        .result-name {
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .result-username {
+            font-size: 0.85rem;
+            color: var(--text-light);
+        }
+
+        .current-selection {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: var(--text-light);
+            height: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .badge {
+            background-color: var(--primary);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        /* --- Schedule Grid --- */
+        .table-wrapper {
+            overflow-x: auto;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 800px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: center;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+        }
+
+        th {
+            background-color: #f8fafc;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-light);
+        }
+
+        th:first-child {
+            text-align: left;
+            position: sticky;
+            left: 0;
+            background-color: #f8fafc;
+            z-index: 5;
+            width: 180px;
+        }
+
+        td:first-child {
+            text-align: left;
+            font-weight: 600;
+            position: sticky;
+            left: 0;
+            background-color: white;
+            z-index: 5;
+        }
+
+        td {
+            height: 50px;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.1s;
+            position: relative;
+        }
+
+        td:hover {
+            background-color: #f9fafb;
+        }
+
+        /* Interaction States */
+        td.selected {
+            background-color: var(--highlight-dim);
+            box-shadow: inset 0 0 0 2px var(--primary);
+        }
+
+        td.selected.overwriting {
+            background-color: var(--highlight-strong);
+            color: rgba(0,0,0,0.5); /* Dim text to show overwriting */
+        }
+
+        td.selected::after {
+            /* Optional subtle checkmark or indicator */
+            content: "";
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 6px;
+            height: 6px;
+            background-color: var(--primary);
+            border-radius: 50%;
+        }
+        
+        .instructions {
+            margin-top: 2rem;
+            padding: 1rem;
+            background-color: #f8fafc;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            color: var(--text-light);
+            line-height: 1.6;
+        }
+        kbd {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-family: monospace;
+            font-weight: bold;
+            color: #333;
+        }
+
     </style>
-  </head>
-  <body>
-    <main class="card">
-      <h1>TomCat-UI</h1>
-      <h2>Standby for future updates! In the meantime, here's a button.</h2>
-      <button id="color-button" type="button">Click Me</button>
-    </main>
+</head>
+<body>
 
-    <script>
-      const pastelPalette = [
-        "#dee6ff",
-        "#ffd6e3",
-        "#d7f0e6",
-        "#ece0ff",
-        "#ffe0bd",
-        "#d4f1ff",
-        "#ffd6ee",
-        "#def5d9",
-        "#ffe8c7",
-      ];
+    <div class="container">
+        <header>
+            <h1>Feeding Schedule Playground</h1>
+            <div class="search-container">
+                <input type="text" id="member-search" placeholder="Search volunteer (e.g. 'Brian', 'frost')..." autocomplete="off">
+                <div id="search-results" class="search-results"></div>
+            </div>
+            <div class="current-selection">
+                Selected: <span id="selected-name">None</span>
+            </div>
+        </header>
 
-      const body = document.body;
-      const button = document.getElementById("color-button");
+        <div class="table-wrapper">
+            <table id="schedule-table">
+                <thead>
+                    <tr>
+                        <th>Station</th>
+                        <th>Sunday</th>
+                        <th>Monday</th>
+                        <th>Tuesday</th>
+                        <th>Wednesday</th>
+                        <th>Thursday</th>
+                        <th>Friday</th>
+                        <th>Saturday</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    </tbody>
+            </table>
+        </div>
 
-      function pickNextColor(current) {
-        let next = pastelPalette[Math.floor(Math.random() * pastelPalette.length)];
-        if (next === current && pastelPalette.length > 1) {
-          return pickNextColor(current);
+        <div class="instructions">
+            <strong>Controls:</strong><br>
+            1. Search and click a volunteer to select them.<br>
+            2. Click squares to highlight them.<br>
+            3. Press <kbd>Enter</kbd> to assign the selected volunteer to highlighted squares.<br>
+            4. Press <kbd>Backspace</kbd> or <kbd>Delete</kbd> to clear highlighted squares.<br>
+            5. Press <kbd>Esc</kbd> to cancel highlighting.
+        </div>
+    </div>
+
+<script>
+// --- DATA MOCKED FROM CONFIG.PY ---
+const MEMBERS = [
+    { name: "Nicole", user: "nicole" },
+    { name: "Lynn", user: "lynn" },
+    { name: "Atlas", user: "atlas" },
+    { name: "CiCi", user: "cici" },
+    { name: "Roach", user: "roach" },
+    { name: "Elusive", user: "elusive" },
+    { name: "Miranda", user: "miranda" },
+    { name: "Ben", user: "ben" },
+    { name: "Brooke", user: "brooke" },
+    { name: "Alex", user: "alex" },
+    { name: "Morgan", user: "morgan" },
+    { name: "Anabelle", user: "anabelle" },
+    { name: "Zahara", user: "zahara" },
+    { name: "Bryan", user: "hatshura" },
+    { name: "Jaeden", user: "jaeden" },
+    { name: "Kitadan", user: "kitadan" },
+    { name: "Felix", user: "felix" },
+    { name: "Izzy", user: "izzy" },
+    { name: "Kaz", user: "kaz" },
+    { name: "Thorin", user: "not_d3fault_1429" },
+    { name: "Acacia", user: "spitonme" },
+    { name: "Rinne", user: "petrichor" },
+    { name: "Emmaleigh", user: "emiximez" },
+    { name: "Alexa", user: "marieealexa" },
+    { name: "Bunny", user: "bubblebee5866" },
+    { name: "Abigail", user: "abstractly_" },
+    { name: "Zoe", user: "zoe.cronin" },
+    { name: "Isabella", user: "lemonelon_" },
+    { name: "Julia", user: "iliekwatchingnarutoowo" },
+    { name: "Micaela", user: "mica.aaa" },
+    { name: "Peter", user: "bluedragon5864" },
+    { name: "Victoria", user: "ratcorn." },
+    { name: "Brian", user: "frostfire312" },
+    { name: "Sophia", user: "Le_nuit_sans_fin" },
+    { name: "Charlotte", user: "phat_cat_207" },
+    { name: "Autumn", user: "autumn065829" },
+    { name: "Michael", user: "orphean_" },
+    { name: "Loren", user: "baseketballin" },
+    { name: "Lucas", user: "lifeye" },
+    { name: "Emma", user: "emlenisgremlin" },
+    { name: "Jack", user: ".bettercalljack" },
+    { name: "Megan", user: "vasyline" }
+];
+
+// Initial Schedule State (Sun-Sat)
+const SCHEDULE = {
+    "Microwave":         ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
+    "Snickers":          ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
+    "Business":          ["Atlas", "Alexa", "Morgan", "Bunny", "Abigail", "Zoe", "Elusive"],
+    "The Greens":        ["Jaeden", "Isabella", "Julia", "Micaela", "Brooke", "Peter", "Elusive"],
+    "HOP":               ["Jaeden", "Victoria", "Anabelle", "Brian", "Sophia", "Victoria", "Sophia"],
+    "Lot 50":            ["Miranda", "Brian", "Bryan", "Brian", "Bryan", "Zahara", "Miranda"],
+    "Mary Kay and Zen":  ["Kitadan", "Emma", "Kitadan", "Kitadan", "Jack", "Jack", "Jack"],
+    "West Hall":         ["Loren", "Charlotte", "Autumn", "Michael", "Loren", "Roach", "Emmaleigh"],
+    "Maintenance":       ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"]
+};
+
+const STATIONS = Object.keys(SCHEDULE);
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+// --- STATE ---
+let currentSelection = null; // { name, user }
+let selectedCells = new Set(); // Set of "StationName|DayIndex" strings
+
+// --- DOM ELEMENTS ---
+const searchInput = document.getElementById('member-search');
+const resultsBox = document.getElementById('search-results');
+const selectedNameDisplay = document.getElementById('selected-name');
+const tableBody = document.querySelector('#schedule-table tbody');
+
+// --- INIT ---
+function init() {
+    renderTable();
+    
+    // Search Listeners
+    searchInput.addEventListener('input', handleSearch);
+    searchInput.addEventListener('focus', handleSearch);
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-container')) {
+            resultsBox.style.display = 'none';
         }
-        return next;
-      }
+    });
 
-      function initBackground() {
-        const initial = pastelPalette[0];
-        body.style.backgroundColor = initial;
-        body.dataset.currentColor = initial;
-      }
+    // Keyboard Controls
+    document.addEventListener('keydown', handleKeydown);
+}
 
-      button.addEventListener("click", () => {
-        const current = body.dataset.currentColor || pastelPalette[0];
-        const next = pickNextColor(current);
-        body.style.backgroundColor = next;
-        body.dataset.currentColor = next;
-        button.classList.add("pulse");
-        setTimeout(() => button.classList.remove("pulse"), 200);
-      });
+// --- RENDERING ---
+function renderTable() {
+    tableBody.innerHTML = '';
+    STATIONS.forEach(station => {
+        const row = document.createElement('tr');
+        
+        // Station Header (Row Label)
+        const th = document.createElement('td'); // Using td for sticky styling, acting as th
+        th.textContent = station;
+        th.style.fontWeight = "bold";
+        th.style.backgroundColor = "#f8fafc";
+        row.appendChild(th);
 
-      document.addEventListener("DOMContentLoaded", initBackground);
-    </script>
-  </body>
+        // Day Cells
+        SCHEDULE[station].forEach((volunteer, dayIndex) => {
+            const cell = document.createElement('td');
+            const cellId = `${station}|${dayIndex}`;
+            
+            cell.textContent = volunteer || "";
+            cell.dataset.id = cellId;
+            
+            // Apply selection visuals
+            if (selectedCells.has(cellId)) {
+                cell.classList.add('selected');
+                // If overwriting (cell has text) and we have a new person selected
+                if (cell.textContent && currentSelection && cell.textContent !== currentSelection.name) {
+                    cell.classList.add('overwriting');
+                }
+            }
+
+            // Click Handler
+            cell.addEventListener('click', () => toggleCellSelection(cellId));
+            
+            row.appendChild(cell);
+        });
+        tableBody.appendChild(row);
+    });
+}
+
+// --- INTERACTION HANDLERS ---
+
+function handleSearch(e) {
+    const query = e.target.value.toLowerCase();
+    if (!query && e.type === 'input') {
+        resultsBox.style.display = 'none';
+        return;
+    }
+
+    const matches = MEMBERS.filter(m => 
+        m.name.toLowerCase().includes(query) || 
+        (m.user && m.user.toLowerCase().includes(query))
+    );
+
+    resultsBox.innerHTML = '';
+    if (matches.length > 0) {
+        resultsBox.style.display = 'block';
+        matches.forEach(m => {
+            const div = document.createElement('div');
+            div.className = 'result-item';
+            div.innerHTML = `
+                <div class="result-name">${m.name}</div>
+                <div class="result-username">@${m.user}</div>
+            `;
+            div.addEventListener('click', () => selectMember(m));
+            resultsBox.appendChild(div);
+        });
+    } else {
+        resultsBox.style.display = 'none';
+    }
+}
+
+function selectMember(member) {
+    currentSelection = member;
+    selectedNameDisplay.innerHTML = `<span class="badge">${member.name}</span> (@${member.user})`;
+    searchInput.value = '';
+    resultsBox.style.display = 'none';
+    
+    // Re-render to update "overwriting" dimming states based on new member
+    renderTable();
+}
+
+function toggleCellSelection(cellId) {
+    if (selectedCells.has(cellId)) {
+        selectedCells.delete(cellId);
+    } else {
+        selectedCells.add(cellId);
+    }
+    renderTable();
+}
+
+function handleKeydown(e) {
+    if (e.target.tagName === 'INPUT') return; // Ignore if typing in search
+
+    if (e.key === 'Enter') {
+        applySelection();
+    } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        clearSelection();
+    } else if (e.key === 'Escape') {
+        selectedCells.clear();
+        renderTable();
+    }
+}
+
+function applySelection() {
+    if (!currentSelection) {
+        alert("Please select a volunteer from the search bar first.");
+        return;
+    }
+    
+    selectedCells.forEach(cellId => {
+        const [station, dayIdx] = cellId.split('|');
+        SCHEDULE[station][parseInt(dayIdx)] = currentSelection.name;
+    });
+    
+    selectedCells.clear();
+    renderTable();
+}
+
+function clearSelection() {
+    selectedCells.forEach(cellId => {
+        const [station, dayIdx] = cellId.split('|');
+        SCHEDULE[station][parseInt(dayIdx)] = ""; // Clear entry
+    });
+    selectedCells.clear();
+    renderTable();
+}
+
+// Start
+init();
+
+</script>
+</body>
 </html>

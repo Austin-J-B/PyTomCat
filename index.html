@@ -302,7 +302,7 @@
 <body>
 
     <div id="loading-overlay">
-        <div>🌱 Fetching Feeding Team...</div>
+        <div> Fetching Feeding Team...</div>
     </div>
 
     <header class="toolbar">
@@ -313,10 +313,10 @@
         <div class="controls">
             
             <div class="zoom-controls">
-                <button class="zoom-btn" onclick="adjustZoom(-0.1)">−</button>
+                <button class="zoom-btn" id="zoom-out" type="button">−</button>
                 <span id="zoom-level">100%</span>
-                <button class="zoom-btn" onclick="adjustZoom(0.1)">+</button>
-                <button class="zoom-btn" onclick="resetZoom()" title="Fit to Screen">Fit</button>
+                <button class="zoom-btn" id="zoom-in" type="button">+</button>
+                <button class="zoom-btn" id="zoom-fit" type="button" title="Fit to Screen">Fit</button>
             </div>
 
             <div class="search-wrapper">
@@ -353,7 +353,6 @@
 
 <script>
 // --- CONFIG ---
-const ROLE_ID_FEEDING_TEAM = "643587274797481988";
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
@@ -381,8 +380,8 @@ let selectionRange = null; // {rMin, rMax, cMin, cMax}
  */
 async function init() {
     renderGrid();
-    await fetchMembers();
     setupEventListeners();
+    await fetchMembers();
     document.getElementById('loading-overlay').style.display = 'none';
 }
 
@@ -390,68 +389,33 @@ async function init() {
  * API / DATA FETCHING
  */
 async function fetchMembers() {
+    searchInput.disabled = true;
+    searchInput.placeholder = "Loading volunteers...";
     try {
-        // ---------------------------------------------------------
-        // TO CONNECT TO BOT: Replace this URL with your actual bot endpoint
-        // e.g. const response = await fetch('/api/members');
-        // ---------------------------------------------------------
-        
-        // MOCK DATA for Playground
-        // Simulating a fetch delay
-        await new Promise(r => setTimeout(r, 600)); 
-        
-        const rawData = [
-            { name: "Nicole", user: "nicole", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Lynn", user: "lynn", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Atlas", user: "atlas", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "CiCi", user: "cici", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Roach", user: "roach", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Elusive", user: "elusive", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Miranda", user: "miranda", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Ben", user: "ben", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Brooke", user: "brooke", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Alex", user: "alex", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Morgan", user: "morgan", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Anabelle", user: "anabelle", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Zahara", user: "zahara", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Bryan", user: "hatshura", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Jaeden", user: "jaeden", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Kitadan", user: "kitadan", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Felix", user: "felix", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Izzy", user: "izzy", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Kaz", user: "kaz", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Thorin", user: "not_d3fault_1429", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Acacia", user: "spitonme", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Rinne", user: "petrichor", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Emmaleigh", user: "emiximez", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Alexa", user: "marieealexa", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Bunny", user: "bubblebee5866", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Abigail", user: "abstractly_", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Zoe", user: "zoe.cronin", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Isabella", user: "lemonelon_", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Julia", user: "iliekwatchingnarutoowo", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Micaela", user: "mica.aaa", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Peter", user: "bluedragon5864", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Victoria", user: "ratcorn.", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Brian", user: "frostfire312", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Sophia", user: "Le_nuit_sans_fin", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Charlotte", user: "phat_cat_207", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Autumn", user: "autumn065829", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Michael", user: "orphean_", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Loren", user: "baseketballin", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Lucas", user: "lifeye", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Emma", user: "emlenisgremlin", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Jack", user: ".bettercalljack", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "Megan", user: "vasyline", roles: [ROLE_ID_FEEDING_TEAM] },
-            { name: "NonMember", user: "intruder", roles: ["999"] } // Should be filtered out
-        ];
-
-        // Filter by Role ID
-        members = rawData.filter(m => m.roles.includes(ROLE_ID_FEEDING_TEAM));
-        
+        const response = await fetch("/api/members", { cache: "no-store" });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        if (Array.isArray(data)) {
+            members = data
+                .map(entry => {
+                    const name = (entry?.name || "").trim();
+                    const user = (entry?.user || entry?.username || "").trim();
+                    const id = entry?.id ? String(entry.id) : undefined;
+                    return name ? { name, user, id } : null;
+                })
+                .filter(Boolean)
+                .sort((a, b) => a.name.localeCompare(b.name));
+        } else {
+            members = [];
+        }
     } catch (e) {
         console.error("Failed to fetch members", e);
-        alert("Could not load team members.");
+        members = [];
+    } finally {
+        searchInput.disabled = false;
+        searchInput.placeholder = members.length ? "Search volunteer..." : "No volunteers available";
     }
 }
 
@@ -552,8 +516,15 @@ function updateSelectionVisuals() {
 const searchInput = document.getElementById('member-search');
 const resultsBox = document.getElementById('search-results');
 const selectionBadge = document.getElementById('selection-display');
+const zoomOutBtn = document.getElementById('zoom-out');
+const zoomInBtn = document.getElementById('zoom-in');
+const zoomFitBtn = document.getElementById('zoom-fit');
 
 function setupEventListeners() {
+    zoomOutBtn?.addEventListener('click', () => adjustZoom(-0.1));
+    zoomInBtn?.addEventListener('click', () => adjustZoom(0.1));
+    zoomFitBtn?.addEventListener('click', () => resetZoom());
+
     searchInput.addEventListener('input', (e) => {
         const q = e.target.value.toLowerCase();
         resultsBox.innerHTML = '';

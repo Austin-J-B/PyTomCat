@@ -11,26 +11,22 @@
 
     <style>
         :root {
-            /* --- SITE IDENTITY COLORS --- */
-            --site-bg: #FFF9F3;       /* Cream/Beige from your site body */
-            --site-text: #414B3B;     /* Dark Olive from your site headers */
-            --site-accent: #8CA87C;   /* Sage Green from your site UI */
+            /* --- SITE COLORS --- */
+            --site-bg: #FFF9F3;       
+            --site-text: #414B3B;     
+            --site-accent: #8CA87C;   
             --site-white: #FFFFFF;
             
             /* --- FUNCTIONAL COLORS --- */
             --grid-line: #E0E5D0;
-            --selection-highlight: rgba(140, 168, 124, 0.25); /* Sage tint */
+            --selection-highlight: rgba(140, 168, 124, 0.25); 
             --focus-ring: #414B3B;
-            
-            /* --- DIMENSIONS --- */
-            --header-height: 80px;
-            --toolbar-height: 60px;
         }
 
         * { box-sizing: border-box; }
 
         body {
-            font-family: 'Montserrat', sans-serif; /* Your site body font */
+            font-family: 'Montserrat', sans-serif;
             background-color: var(--site-bg);
             color: var(--site-text);
             margin: 0;
@@ -54,9 +50,9 @@
         }
 
         h1.page-title {
-            font-family: 'Corben', cursive; /* Your site header font */
+            font-family: 'Corben', cursive;
             font-weight: 700;
-            font-size: 1.8rem;
+            font-size: 1.6rem;
             color: var(--site-text);
             margin: 0;
             letter-spacing: -0.02em;
@@ -71,7 +67,7 @@
             align-items: center;
         }
 
-        /* --- SEARCH BAR (Pill Shape) --- */
+        /* --- SEARCH BAR --- */
         .search-container {
             position: relative;
             width: 280px;
@@ -80,9 +76,9 @@
         input#member-search {
             width: 100%;
             padding: 10px 20px;
-            border: 1px solid var(--site-text); /* Dark border like your buttons */
+            border: 1px solid var(--site-text);
             background: transparent;
-            border-radius: 50px; /* Pill shape */
+            border-radius: 50px;
             font-family: 'Montserrat', sans-serif;
             font-size: 0.9rem;
             color: var(--site-text);
@@ -98,7 +94,7 @@
         input#member-search::placeholder {
             color: var(--site-accent);
             font-weight: 300;
-            font-style: italic; /* Matching the Bree Serif italic vibe from your logs */
+            font-style: italic;
         }
 
         .search-results {
@@ -174,7 +170,7 @@
         }
         
         .current-selection.empty {
-            background: rgba(65, 75, 59, 0.1); /* Low opacity dark green */
+            background: rgba(65, 75, 59, 0.1);
             color: var(--site-text);
             box-shadow: none;
         }
@@ -186,14 +182,13 @@
             padding: 40px;
             display: grid;
             place-items: start center;
-            /* Subtle grid pattern background */
             background-image: radial-gradient(rgba(65, 75, 59, 0.1) 1px, transparent 1px);
             background-size: 20px 20px;
         }
 
         .sheet-wrapper {
             background: white;
-            padding: 10px; /* White border spacing around table */
+            padding: 10px;
             border-radius: 4px;
             box-shadow: 0 10px 30px -10px rgba(65, 75, 59, 0.2);
             transform-origin: top center;
@@ -216,7 +211,7 @@
             letter-spacing: 0.1em;
             padding: 15px;
             background-color: white;
-            border-bottom: 2px solid var(--site-text); /* Strong header line */
+            border-bottom: 2px solid var(--site-text);
             color: var(--site-text);
             position: sticky;
             top: 0;
@@ -232,12 +227,12 @@
 
         /* --- ROW HEADERS (Stations) --- */
         .station-cell {
-            font-family: 'Corben', cursive; /* Serif for stations looks classy */
+            font-family: 'Corben', cursive;
             font-weight: 400;
             font-size: 0.9rem;
             padding: 0 20px;
             text-align: left;
-            background-color: #F9FBF7; /* Very subtle green tint */
+            background-color: #F9FBF7;
             border-bottom: 1px solid var(--grid-line);
             border-right: 2px solid var(--site-text);
             position: sticky;
@@ -261,7 +256,6 @@
             transition: background-color 0.05s;
         }
 
-        /* --- INTERACTION STATES --- */
         td.data-cell.focus {
             outline: 2px solid var(--focus-ring);
             outline-offset: -2px;
@@ -272,10 +266,9 @@
             background-color: var(--selection-highlight) !important;
         }
 
-        /* When text is assigned */
         td.data-cell.assigned {
             font-weight: 600;
-            color: #2b3326; /* Darker for contrast on pastel */
+            color: #2b3326;
             text-shadow: 0 1px 0 rgba(255,255,255,0.5);
         }
 
@@ -294,19 +287,19 @@
 <body>
 
     <div id="loading">
-        <div>🐾 Loading Schedule...</div>
+        <div>Loading Schedule...</div>
     </div>
 
     <header class="site-header">
         <h1 class="page-title">
-            <span>🐈</span> Campus Cat Coalition
+            Campus Cat Coalition
         </h1>
 
         <div class="controls-area">
-            <button class="tool-btn" onclick="adjustZoom(-0.1)" title="Zoom Out">−</button>
+            <button class="tool-btn" onclick="adjustZoom(-0.1)" title="Zoom Out">-</button>
             <div id="zoom-display">100%</div>
             <button class="tool-btn" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
-            <button class="tool-btn" onclick="resetZoom()" title="Fit Screen">⤢</button>
+            <button class="tool-btn" onclick="resetZoom()" title="Fit Screen">Fit</button>
 
             <div class="search-container">
                 <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
@@ -343,7 +336,6 @@
 <script>
 // --- CONFIG ---
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-// Matches your config.py keys
 const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
     "Lot 50", "Mary Kay & Zen", "West Hall", "Maintenance"
@@ -367,7 +359,7 @@ async function init() {
     });
 
     renderGrid();
-    setupEvents();
+    // (Events are already set up by inline/global listeners below)
     
     // 2. Fetch Data
     await fetchMembers();
@@ -379,11 +371,18 @@ async function init() {
 // --- API CALL ---
 async function fetchMembers() {
     try {
-        const res = await fetch('/api/members');
+        // Parse ?api= URL parameter or default to local relative path
+        const urlParams = new URLSearchParams(window.location.search);
+        const apiBase = urlParams.get('api');
+        
+        // If api param exists, append /api/members, otherwise assume relative
+        const endpoint = apiBase ? `${apiBase.replace(/\/$/, '')}/api/members` : '/api/members';
+        
+        const res = await fetch(endpoint);
         if (!res.ok) throw new Error("API Failed");
         members = await res.json();
     } catch (e) {
-        console.warn("API unavailable, using mock data.");
+        console.warn("API unavailable, using mock data.", e);
         // Mock data for testing if bot isn't running yet
         members = [
             { name: "Austin B", user: "austin" },
@@ -402,7 +401,6 @@ function getVolunteerColor(name) {
     }
     const h = Math.abs(hash % 360);
     // Settings adjusted for organic/vintage pastel look
-    // Saturation: 40-60%, Lightness: 80-90%
     return `hsl(${h}, 55%, 85%)`;
 }
 
@@ -488,9 +486,6 @@ function handleMouseDown(e, r, c) {
 
 function handleMouseOver(e, r, c) {
     if (isDragging && anchor) {
-        // Standard drag behavior: Creates range from anchor
-        // Note: Dragging clears disjoint selections in standard spreadsheets
-        // We will stick to standard behavior for predictability
         selectedCells.clear();
         selectRange(anchor.r, anchor.c, r, c);
         updateVisualsOnly();
@@ -549,7 +544,7 @@ function setVolunteer(m) {
     selectionBadge.className = 'current-selection';
     selectionBadge.style.backgroundColor = getVolunteerColor(m.name);
     selectionBadge.style.color = '#2b3326';
-    selectionBadge.innerHTML = `<span>👤</span> ${m.name}`;
+    selectionBadge.textContent = m.name;
     searchInput.value = '';
     resultsBox.style.display = 'none';
 }
@@ -563,7 +558,6 @@ document.addEventListener('keydown', (e) => {
     } else if (e.key === 'Enter') {
         if (currentVolunteer) applyValue(currentVolunteer.name);
         else {
-            // Visual shake cue could go here
             searchInput.focus();
         }
     } else if (e.key === 'Escape') {
@@ -590,17 +584,12 @@ document.addEventListener('keydown', (e) => {
         anchor = {r, c};
 
         if (e.shiftKey) {
-            // Extend selection
-            // We need to track where the selection *started* for shift+arrow to work nicely
-            // But for simplicity, we'll just expand from the current range logic
-            // (Implementing full Excel shift-select logic requires tracking a separate 'pivot' point)
-             selectedCells.add(`${r}|${c}`); // Simple add
+             selectedCells.add(`${r}|${c}`); 
         } else {
             selectedCells.clear();
             selectedCells.add(`${r}|${c}`);
         }
         
-        // Auto-scroll
         const cell = document.querySelector(`.data-cell[data-coord="${r}|${c}"]`);
         cell?.scrollIntoView({block: 'nearest', inline: 'nearest'});
         

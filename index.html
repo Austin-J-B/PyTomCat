@@ -17,9 +17,13 @@
             --site-accent: #8CA87C;   
             --site-white: #FFFFFF;
             
+            /* --- NEW GREEN BACKGROUNDS --- */
+            --workspace-bg: #EAF4E8;
+            --workspace-grid: #CFE0CC;
+
             /* --- FUNCTIONAL COLORS --- */
             --grid-line: #E0E5D0;
-            --selection-highlight: rgba(140, 168, 124, 0.25); 
+            --selection-highlight: rgba(140, 168, 124, 0.4); 
             --focus-ring: #414B3B;
         }
 
@@ -40,25 +44,94 @@
         /* --- HEADER & TOOLBAR --- */
         header.site-header {
             background-color: var(--site-bg);
-            padding: 15px 40px;
+            padding: 15px 30px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             border-bottom: 1px solid rgba(65, 75, 59, 0.1);
             flex-shrink: 0;
-            z-index: 20;
+            z-index: 200; /* High z-index for header */
+            position: relative;
         }
 
+        /* --- HAMBURGER MENU --- */
+        .menu-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            position: relative;
+        }
+
+        .hamburger-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .hamburger-btn span {
+            display: block;
+            width: 24px;
+            height: 3px;
+            background-color: var(--site-text);
+            border-radius: 2px;
+        }
+
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            padding: 10px 0;
+            min-width: 200px;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            z-index: 300;
+            margin-top: 10px;
+            border: 1px solid var(--grid-line);
+        }
+
+        .dropdown-menu.active {
+            display: flex;
+        }
+
+        .menu-item {
+            padding: 10px 20px;
+            text-decoration: none;
+            color: var(--site-text);
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: background 0.1s;
+        }
+
+        .menu-item:hover {
+            background-color: #f0f0f0;
+        }
+
+        /* --- TITLE --- */
         h1.page-title {
-            font-family: 'Corben', cursive;
+            margin: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        h1.page-title a {
+            font-family: 'Corben', cursive; /* Times New Roman look */
             font-weight: 700;
             font-size: 1.6rem;
             color: var(--site-text);
-            margin: 0;
             letter-spacing: -0.02em;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            text-decoration: none;
+            transition: opacity 0.2s;
+        }
+
+        h1.page-title a:hover {
+            opacity: 0.7;
         }
 
         .controls-area {
@@ -139,6 +212,13 @@
             justify-content: center;
             font-size: 1rem;
             transition: all 0.2s;
+            padding: 0;
+        }
+
+        .tool-btn svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
         }
 
         .tool-btn:hover {
@@ -182,7 +262,9 @@
             padding: 40px;
             display: grid;
             place-items: start center;
-            background-image: radial-gradient(rgba(65, 75, 59, 0.1) 1px, transparent 1px);
+            /* Green Background Update */
+            background-color: var(--workspace-bg);
+            background-image: radial-gradient(var(--workspace-grid) 1px, transparent 1px);
             background-size: 20px 20px;
         }
 
@@ -211,15 +293,19 @@
             letter-spacing: 0.1em;
             padding: 15px;
             background-color: white;
-            border-bottom: 2px solid var(--site-text);
+            /* Thicker border and shadow for the "put together" look */
+            border-bottom: 4px solid var(--site-text); 
+            box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1);
             color: var(--site-text);
             position: sticky;
             top: 0;
-            z-index: 10;
+            /* Increased Z-Index to prevent content from scrolling over it */
+            z-index: 100; 
         }
 
         th:first-child {
-            z-index: 20;
+            /* Highest z-index for the top-left corner */
+            z-index: 110;
             left: 0;
             background: white;
             border-right: 2px solid var(--site-text);
@@ -228,8 +314,8 @@
         /* --- ROW HEADERS (Stations) --- */
         .station-cell {
             font-family: 'Corben', cursive;
-            font-weight: 400;
-            font-size: 0.9rem;
+            font-weight: 700; /* Bolder as requested */
+            font-size: 0.95rem;
             padding: 0 20px;
             text-align: left;
             background-color: #F9FBF7;
@@ -237,14 +323,14 @@
             border-right: 2px solid var(--site-text);
             position: sticky;
             left: 0;
-            z-index: 5;
+            z-index: 50; /* Higher z-index than normal cells */
             width: 220px;
         }
 
         /* --- DATA CELLS --- */
         td.data-cell {
             width: 160px;
-            height: 65px;
+            height: 75px; /* Slightly taller for subtitle */
             border-bottom: 1px solid var(--grid-line);
             border-right: 1px solid var(--grid-line);
             text-align: center;
@@ -254,22 +340,37 @@
             cursor: pointer;
             position: relative;
             transition: background-color 0.05s;
+            padding: 5px;
+            line-height: 1.2;
+        }
+
+        /* Cell content styling */
+        .cell-name {
+            display: block;
+            font-weight: 600;
+            color: #2b3326;
+        }
+        
+        .cell-user {
+            display: block;
+            font-size: 0.7rem;
+            color: #666; /* Gray-ish text */
+            margin-top: 2px;
+            font-weight: 400;
         }
 
         td.data-cell.focus {
             outline: 2px solid var(--focus-ring);
             outline-offset: -2px;
-            z-index: 6;
+            z-index: 60;
         }
 
         td.data-cell.selected {
             background-color: var(--selection-highlight) !important;
         }
 
-        td.data-cell.assigned {
-            font-weight: 600;
-            color: #2b3326;
-            text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+        td.data-cell.assigned .cell-name {
+            text-shadow: 0 1px 0 rgba(255,255,255,0.4);
         }
 
         /* Loading Overlay */
@@ -291,15 +392,30 @@
     </div>
 
     <header class="site-header">
-        <h1 class="page-title">
-            Campus Cat Coalition
-        </h1>
+        <div class="menu-container">
+            <button class="hamburger-btn" onclick="toggleMenu()" title="Menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <div id="main-menu" class="dropdown-menu">
+                <a href="#" class="menu-item" onclick="toggleMenu()">Feeding schedule</a>
+                </div>
+
+            <h1 class="page-title">
+                <a href="https://www.catsofuta.org/">Campus Cat Coalition</a>
+            </h1>
+        </div>
 
         <div class="controls-area">
             <button class="tool-btn" onclick="adjustZoom(-0.1)" title="Zoom Out">-</button>
             <div id="zoom-display">100%</div>
             <button class="tool-btn" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
-            <button class="tool-btn" onclick="resetZoom()" title="Fit Screen">Fit</button>
+            <button class="tool-btn" onclick="resetZoom()" title="Reset Zoom">
+                <svg viewBox="0 0 24 24">
+                    <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                </svg>
+            </button>
 
             <div class="search-container">
                 <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
@@ -359,7 +475,6 @@ async function init() {
     });
 
     renderGrid();
-    // (Events are already set up by inline/global listeners below)
     
     // 2. Fetch Data
     await fetchMembers();
@@ -371,11 +486,8 @@ async function init() {
 // --- API CALL ---
 async function fetchMembers() {
     try {
-        // Parse ?api= URL parameter or default to local relative path
         const urlParams = new URLSearchParams(window.location.search);
         const apiBase = urlParams.get('api');
-        
-        // If api param exists, append /api/members, otherwise assume relative
         const endpoint = apiBase ? `${apiBase.replace(/\/$/, '')}/api/members` : '/api/members';
         
         const res = await fetch(endpoint);
@@ -383,26 +495,42 @@ async function fetchMembers() {
         members = await res.json();
     } catch (e) {
         console.warn("API unavailable, using mock data.", e);
-        // Mock data for testing if bot isn't running yet
         members = [
             { name: "Austin B", user: "austin" },
             { name: "Kitadan", user: "kitadan" },
+            { name: "Seja", user: ".s3j" },
             { name: "Volunteer 1", user: "v1" }
         ];
     }
 }
 
-// --- PASTEL COLOR GENERATOR ---
+// --- COLOR GENERATOR (VIBRANT) ---
 function getVolunteerColor(name) {
     if (!name) return 'white';
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
         hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
+    // More vibrant: Saturation ~70%, Lightness ~75%
+    // Range covers full 360 spectrum
     const h = Math.abs(hash % 360);
-    // Settings adjusted for organic/vintage pastel look
-    return `hsl(${h}, 55%, 85%)`;
+    return `hsl(${h}, 70%, 75%)`;
 }
+
+// --- MENU TOGGLE ---
+function toggleMenu() {
+    const menu = document.getElementById('main-menu');
+    menu.classList.toggle('active');
+}
+
+// Close menu when clicking outside
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('main-menu');
+    const btn = document.querySelector('.hamburger-btn');
+    if (!menu.contains(e.target) && !btn.contains(e.target)) {
+        menu.classList.remove('active');
+    }
+});
 
 // --- RENDERING ---
 function renderGrid() {
@@ -423,11 +551,22 @@ function renderGrid() {
             const td = document.createElement('td');
             td.className = 'data-cell';
             td.dataset.coord = `${r}|${c}`;
-            td.textContent = val;
 
             if (val) {
                 td.classList.add('assigned');
                 td.style.backgroundColor = getVolunteerColor(val);
+                
+                // Find user info for subtitle
+                const member = members.find(m => m.name === val);
+                const userHandle = member ? `@${member.user}` : '';
+
+                // HTML with subtitle
+                td.innerHTML = `
+                    <span class="cell-name">${val}</span>
+                    ${userHandle ? `<span class="cell-user">${userHandle}</span>` : ''}
+                `;
+            } else {
+                td.innerHTML = '';
             }
 
             // Re-apply selection visual
@@ -468,15 +607,12 @@ function handleMouseDown(e, r, c) {
     const coord = `${r}|${c}`;
 
     if (e.shiftKey && anchor) {
-        // Range selection
         selectRange(anchor.r, anchor.c, r, c);
     } else if (e.ctrlKey || e.metaKey) {
-        // Multi-select (disjoint)
         if (selectedCells.has(coord)) selectedCells.delete(coord);
         else selectedCells.add(coord);
-        anchor = {r, c}; // Update focus but don't clear
+        anchor = {r, c}; 
     } else {
-        // Single click
         selectedCells.clear();
         selectedCells.add(coord);
         anchor = {r, c};
@@ -529,7 +665,7 @@ searchInput.addEventListener('input', (e) => {
             div.className = 'result-item';
             div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
             div.onmousedown = (ev) => {
-                ev.preventDefault(); // Keep focus
+                ev.preventDefault();
                 setVolunteer(m);
             };
             resultsBox.appendChild(div);
@@ -573,7 +709,6 @@ document.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowLeft') c = Math.max(0, c-1);
         if (e.key === 'ArrowRight') c = Math.min(6, c+1);
 
-        // Ctrl/Cmd jump to edge
         if (e.ctrlKey || e.metaKey) {
             if (e.key === 'ArrowUp') r = 0;
             if (e.key === 'ArrowDown') r = STATIONS.length-1;

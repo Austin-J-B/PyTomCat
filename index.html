@@ -17,9 +17,10 @@
             --site-accent: #8CA87C;   
             --site-white: #FFFFFF;
             
-            /* --- NEW GREEN BACKGROUNDS --- */
-            --workspace-bg: #EAF4E8;
-            --workspace-grid: #CFE0CC;
+            /* --- NEW DARKER GREEN THEME --- */
+            /* Scaled darker to match the "dark green" grid request */
+            --workspace-bg: #9CAF88;   /* Sage/Darker Green Background */
+            --workspace-grid: #414B3B; /* Matches site text color (Darkest Green) */
 
             /* --- FUNCTIONAL COLORS --- */
             --grid-line: #E0E5D0;
@@ -82,10 +83,16 @@
             align-items: center;
         }
 
-        .sidebar-title {
+        /* Sidebar Title Link */
+        .sidebar-title a {
             font-family: 'Merriweather', serif;
             font-weight: 700;
             font-size: 1.2rem;
+            color: var(--site-text);
+            text-decoration: none;
+        }
+        .sidebar-title a:hover {
+            text-decoration: underline;
         }
 
         .close-menu-btn {
@@ -162,7 +169,7 @@
         }
 
         h1.page-title a {
-            font-family: 'Merriweather', serif; /* CLASSIC SERIF FONT */
+            font-family: 'Merriweather', serif;
             font-weight: 900;
             font-size: 1.6rem;
             color: var(--site-text);
@@ -303,6 +310,7 @@
             padding: 40px;
             display: grid;
             place-items: start center;
+            /* Updated to Darker Green Scheme */
             background-color: var(--workspace-bg);
             background-image: radial-gradient(var(--workspace-grid) 1px, transparent 1px);
             background-size: 20px 20px;
@@ -310,28 +318,31 @@
 
         .sheet-wrapper {
             background: white;
-            padding: 0; /* Remove padding to let legend sit flush if needed, or keep small */
+            padding: 0;
             border-radius: 4px;
-            box-shadow: 0 10px 30px -10px rgba(65, 75, 59, 0.2);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.4); /* Stronger shadow for contrast */
             transform-origin: top center;
             transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
             display: flex;
             flex-direction: column;
         }
 
-        /* --- CONTROLS LEGEND --- */
+        /* --- CONTROLS LEGEND (EARLY 2000s STYLE) --- */
         .controls-legend {
-            background: #f4f4f4;
-            color: #666;
-            font-size: 0.75rem;
-            padding: 8px 20px;
-            border-bottom: 1px solid var(--grid-line);
+            /* Background matches the sheet slightly to look like a tab */
+            background: white; 
+            color: var(--site-text);
+            padding: 10px 20px;
+            border-bottom: 2px solid var(--site-text);
             display: flex;
-            gap: 20px;
+            gap: 25px;
             justify-content: center;
-            font-family: 'Montserrat', sans-serif;
-            font-weight: 500;
-            border-radius: 4px 4px 0 0;
+            
+            /* The 'Comic Sans' request for the retro vibe */
+            font-family: 'Comic Sans MS', 'Chalkboard SE', 'Comic Neue', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
         }
 
         .key-combo {
@@ -339,15 +350,7 @@
             align-items: center;
             gap: 5px;
         }
-        .key {
-            background: white;
-            border: 1px solid #ccc;
-            border-radius: 3px;
-            padding: 2px 5px;
-            font-family: monospace;
-            font-size: 0.9em;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-        }
+        /* Removed key boxes, just text */
 
         table {
             border-collapse: collapse;
@@ -364,9 +367,16 @@
             font-weight: 600;
             letter-spacing: 0.1em;
             padding: 15px;
-            background-color: white;
+            
+            /* STICKY FIX: Solid background to prevent transparency peeking */
+            background-color: white; 
+            background-clip: padding-box; /* Ensures background stops at padding */
+            
             border-bottom: 4px solid var(--site-text); 
-            box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1);
+            
+            /* Box shadow to cover sub-pixel gaps */
+            box-shadow: 0 1px 0 var(--site-text);
+            
             color: var(--site-text);
             position: sticky;
             top: 0;
@@ -376,18 +386,21 @@
         th:first-child {
             z-index: 110;
             left: 0;
-            background: white;
+            background-color: white;
             border-right: 2px solid var(--site-text);
         }
 
         /* --- ROW HEADERS (Stations) --- */
         .station-cell {
-            font-family: 'Merriweather', serif; /* SAME AS TITLE */
+            font-family: 'Merriweather', serif;
             font-weight: 700;
             font-size: 0.95rem;
             padding: 0 20px;
             text-align: left;
-            background-color: #F9FBF7;
+            
+            /* Solid BG for stickiness */
+            background-color: #F9FBF7; 
+            
             border-bottom: 1px solid var(--grid-line);
             border-right: 2px solid var(--site-text);
             position: sticky;
@@ -463,13 +476,14 @@
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMenu()"></div>
     <div class="sidebar-menu" id="main-menu">
         <div class="sidebar-header">
-            <span class="sidebar-title">TomCat</span>
+            <span class="sidebar-title">
+                <a href="https://github.com/austin-j-b/pytomcat" target="_blank">TomCat-VI UI</a>
+            </span>
             <button class="close-menu-btn" onclick="toggleMenu()">×</button>
         </div>
         <div class="sidebar-content">
             <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
-            <a href="#" class="menu-item">Volunteer Database</a>
-            <a href="#" class="menu-item">Station Management</a>
+            <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat VI Repository</a>
         </div>
     </div>
 
@@ -482,7 +496,7 @@
             </button>
             
             <h1 class="page-title">
-                <a href="https://www.catsofuta.org/">Campus Cat Coalition</a>
+                <a href="https://www.catsofuta.org/" target="_blank">Campus Cat Coalition</a>
             </h1>
         </div>
 
@@ -510,11 +524,11 @@
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
             <div class="controls-legend">
-                <div class="key-combo"><span class="key">Click</span> Select</div>
-                <div class="key-combo"><span class="key">Ctrl</span>+<span class="key">Click</span> Multi-Select</div>
-                <div class="key-combo"><span class="key">Shift</span>+<span class="key">Click</span> Range</div>
-                <div class="key-combo"><span class="key">Enter</span> Assign</div>
-                <div class="key-combo"><span class="key">Del</span> Clear</div>
+                <div class="key-combo">Click to select</div>
+                <div class="key-combo">Ctrl + Click to multi-select</div>
+                <div class="key-combo">Shift + Click for range</div>
+                <div class="key-combo">Enter to assign</div>
+                <div class="key-combo">Del to erase</div>
             </div>
 
             <table id="schedule-table">
@@ -588,19 +602,15 @@ async function fetchMembers() {
     }
 }
 
-// --- COLOR GENERATOR (GOLDEN ANGLE DISTRIBUTION) ---
-// This ensures that even if names are similar, the colors are vastly different
+// --- COLOR GENERATOR (GOLDEN ANGLE) ---
 function getVolunteerColor(name) {
     if (!name) return 'white';
     
-    // Hash the name to a large integer
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
         hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
     
-    // Use Golden Angle (137.5 degrees) to distribute hues uniformly
-    // We multiply hash by the golden angle approximation
     const goldenAngle = 137.508;
     const hue = Math.abs((hash * goldenAngle) % 360);
     
@@ -608,7 +618,7 @@ function getVolunteerColor(name) {
     return `hsl(${hue}, 80%, 75%)`; 
 }
 
-// --- MENU TOGGLE (SIDEBAR) ---
+// --- MENU TOGGLE ---
 function toggleMenu() {
     const menu = document.getElementById('main-menu');
     const overlay = document.getElementById('sidebar-overlay');
@@ -720,7 +730,7 @@ function selectRange(r1, c1, r2, c2) {
 
 document.addEventListener('mouseup', () => isDragging = false);
 
-// --- SEARCH & SELECTION FIX ---
+// --- SEARCH & ASSIGN ---
 const searchInput = document.getElementById('member-search');
 const resultsBox = document.getElementById('search-results');
 const selectionBadge = document.getElementById('selection-display');
@@ -742,7 +752,7 @@ searchInput.addEventListener('input', (e) => {
             div.className = 'result-item';
             div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
             div.onmousedown = (ev) => {
-                ev.preventDefault(); // Prevent default focus loss logic
+                ev.preventDefault();
                 setVolunteer(m);
             };
             resultsBox.appendChild(div);
@@ -759,24 +769,19 @@ function setVolunteer(m) {
     selectionBadge.style.color = '#2b3326';
     selectionBadge.textContent = m.name;
     
-    // CLEAR UI
     searchInput.value = '';
     resultsBox.style.display = 'none';
-    
-    // CRITICAL FIX: Blur the input so 'Enter' works for the grid immediately
     searchInput.blur();
 }
 
 // --- KEYBOARD ---
 document.addEventListener('keydown', (e) => {
-    // If typing in search box, let it behave normally (unless it's Enter handled below)
     if (e.target.tagName === 'INPUT' && e.key !== 'Enter') return;
 
     if (e.key === 'Backspace' || e.key === 'Delete') {
         applyValue("");
     } else if (e.key === 'Enter') {
         if (e.target.tagName === 'INPUT') {
-            // If they hit enter in the search box without clicking a result, focus the grid
              e.target.blur();
              return;
         }

@@ -7,7 +7,7 @@
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Corben:wght@400;700&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
 
     <style>
         :root {
@@ -41,6 +41,82 @@
             overflow: hidden;
         }
 
+        /* --- SIDEBAR MENU (GITHUB STYLE) --- */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.4);
+            z-index: 900;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .sidebar-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .sidebar-menu {
+            position: fixed;
+            top: 0; left: 0; bottom: 0;
+            width: 280px;
+            background: white;
+            z-index: 1000;
+            transform: translateX(-100%);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 0;
+        }
+
+        .sidebar-menu.active {
+            transform: translateX(0);
+        }
+
+        .sidebar-header {
+            padding: 0 24px 20px 24px;
+            border-bottom: 1px solid var(--grid-line);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-title {
+            font-family: 'Merriweather', serif;
+            font-weight: 700;
+            font-size: 1.2rem;
+        }
+
+        .close-menu-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--site-text);
+        }
+
+        .sidebar-content {
+            padding: 10px 0;
+            overflow-y: auto;
+        }
+
+        .menu-item {
+            display: block;
+            padding: 12px 24px;
+            text-decoration: none;
+            color: var(--site-text);
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: background 0.1s;
+            border-left: 3px solid transparent;
+        }
+
+        .menu-item:hover {
+            background-color: #f7f9f5;
+            border-left-color: var(--site-accent);
+        }
+
         /* --- HEADER & TOOLBAR --- */
         header.site-header {
             background-color: var(--site-bg);
@@ -50,16 +126,14 @@
             justify-content: space-between;
             border-bottom: 1px solid rgba(65, 75, 59, 0.1);
             flex-shrink: 0;
-            z-index: 200; /* High z-index for header */
+            z-index: 200;
             position: relative;
         }
 
-        /* --- HAMBURGER MENU --- */
         .menu-container {
             display: flex;
             align-items: center;
             gap: 15px;
-            position: relative;
         }
 
         .hamburger-btn {
@@ -69,48 +143,15 @@
             padding: 5px;
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 5px;
         }
 
         .hamburger-btn span {
             display: block;
-            width: 24px;
-            height: 3px;
+            width: 20px;
+            height: 2px;
             background-color: var(--site-text);
             border-radius: 2px;
-        }
-
-        .dropdown-menu {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            padding: 10px 0;
-            min-width: 200px;
-            display: none; /* Hidden by default */
-            flex-direction: column;
-            z-index: 300;
-            margin-top: 10px;
-            border: 1px solid var(--grid-line);
-        }
-
-        .dropdown-menu.active {
-            display: flex;
-        }
-
-        .menu-item {
-            padding: 10px 20px;
-            text-decoration: none;
-            color: var(--site-text);
-            font-weight: 500;
-            font-size: 0.95rem;
-            transition: background 0.1s;
-        }
-
-        .menu-item:hover {
-            background-color: #f0f0f0;
         }
 
         /* --- TITLE --- */
@@ -121,11 +162,11 @@
         }
 
         h1.page-title a {
-            font-family: 'Corben', cursive; /* Times New Roman look */
-            font-weight: 700;
+            font-family: 'Merriweather', serif; /* CLASSIC SERIF FONT */
+            font-weight: 900;
             font-size: 1.6rem;
             color: var(--site-text);
-            letter-spacing: -0.02em;
+            letter-spacing: -0.01em;
             text-decoration: none;
             transition: opacity 0.2s;
         }
@@ -180,7 +221,7 @@
             box-shadow: 0 8px 20px rgba(65, 75, 59, 0.15);
             overflow: hidden;
             display: none;
-            z-index: 100;
+            z-index: 300;
             max-height: 300px;
             overflow-y: auto;
         }
@@ -262,7 +303,6 @@
             padding: 40px;
             display: grid;
             place-items: start center;
-            /* Green Background Update */
             background-color: var(--workspace-bg);
             background-image: radial-gradient(var(--workspace-grid) 1px, transparent 1px);
             background-size: 20px 20px;
@@ -270,11 +310,43 @@
 
         .sheet-wrapper {
             background: white;
-            padding: 10px;
+            padding: 0; /* Remove padding to let legend sit flush if needed, or keep small */
             border-radius: 4px;
             box-shadow: 0 10px 30px -10px rgba(65, 75, 59, 0.2);
             transform-origin: top center;
             transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- CONTROLS LEGEND --- */
+        .controls-legend {
+            background: #f4f4f4;
+            color: #666;
+            font-size: 0.75rem;
+            padding: 8px 20px;
+            border-bottom: 1px solid var(--grid-line);
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 500;
+            border-radius: 4px 4px 0 0;
+        }
+
+        .key-combo {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .key {
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            padding: 2px 5px;
+            font-family: monospace;
+            font-size: 0.9em;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
 
         table {
@@ -293,18 +365,15 @@
             letter-spacing: 0.1em;
             padding: 15px;
             background-color: white;
-            /* Thicker border and shadow for the "put together" look */
             border-bottom: 4px solid var(--site-text); 
             box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1);
             color: var(--site-text);
             position: sticky;
             top: 0;
-            /* Increased Z-Index to prevent content from scrolling over it */
             z-index: 100; 
         }
 
         th:first-child {
-            /* Highest z-index for the top-left corner */
             z-index: 110;
             left: 0;
             background: white;
@@ -313,8 +382,8 @@
 
         /* --- ROW HEADERS (Stations) --- */
         .station-cell {
-            font-family: 'Corben', cursive;
-            font-weight: 700; /* Bolder as requested */
+            font-family: 'Merriweather', serif; /* SAME AS TITLE */
+            font-weight: 700;
             font-size: 0.95rem;
             padding: 0 20px;
             text-align: left;
@@ -323,14 +392,14 @@
             border-right: 2px solid var(--site-text);
             position: sticky;
             left: 0;
-            z-index: 50; /* Higher z-index than normal cells */
+            z-index: 50; 
             width: 220px;
         }
 
         /* --- DATA CELLS --- */
         td.data-cell {
             width: 160px;
-            height: 75px; /* Slightly taller for subtitle */
+            height: 75px; 
             border-bottom: 1px solid var(--grid-line);
             border-right: 1px solid var(--grid-line);
             text-align: center;
@@ -344,7 +413,6 @@
             line-height: 1.2;
         }
 
-        /* Cell content styling */
         .cell-name {
             display: block;
             font-weight: 600;
@@ -354,9 +422,10 @@
         .cell-user {
             display: block;
             font-size: 0.7rem;
-            color: #666; /* Gray-ish text */
+            color: #555;
             margin-top: 2px;
             font-weight: 400;
+            opacity: 0.8;
         }
 
         td.data-cell.focus {
@@ -380,7 +449,7 @@
             z-index: 9999;
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
-            color: var(--site-text); font-family: 'Corben', cursive;
+            color: var(--site-text); font-family: 'Merriweather', serif;
             font-size: 1.5rem;
         }
     </style>
@@ -391,17 +460,27 @@
         <div>Loading Schedule...</div>
     </div>
 
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMenu()"></div>
+    <div class="sidebar-menu" id="main-menu">
+        <div class="sidebar-header">
+            <span class="sidebar-title">TomCat</span>
+            <button class="close-menu-btn" onclick="toggleMenu()">×</button>
+        </div>
+        <div class="sidebar-content">
+            <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
+            <a href="#" class="menu-item">Volunteer Database</a>
+            <a href="#" class="menu-item">Station Management</a>
+        </div>
+    </div>
+
     <header class="site-header">
         <div class="menu-container">
-            <button class="hamburger-btn" onclick="toggleMenu()" title="Menu">
+            <button class="hamburger-btn" onclick="toggleMenu()" title="Open Menu">
                 <span></span>
                 <span></span>
                 <span></span>
             </button>
-            <div id="main-menu" class="dropdown-menu">
-                <a href="#" class="menu-item" onclick="toggleMenu()">Feeding schedule</a>
-                </div>
-
+            
             <h1 class="page-title">
                 <a href="https://www.catsofuta.org/">Campus Cat Coalition</a>
             </h1>
@@ -430,6 +509,14 @@
 
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
+            <div class="controls-legend">
+                <div class="key-combo"><span class="key">Click</span> Select</div>
+                <div class="key-combo"><span class="key">Ctrl</span>+<span class="key">Click</span> Multi-Select</div>
+                <div class="key-combo"><span class="key">Shift</span>+<span class="key">Click</span> Range</div>
+                <div class="key-combo"><span class="key">Enter</span> Assign</div>
+                <div class="key-combo"><span class="key">Del</span> Clear</div>
+            </div>
+
             <table id="schedule-table">
                 <thead>
                     <tr>
@@ -469,17 +556,12 @@ let anchor = null;
 
 // --- INITIALIZATION ---
 async function init() {
-    // 1. Initialize empty grid
     STATIONS.forEach(st => {
         scheduleData[st] = new Array(7).fill("");
     });
 
     renderGrid();
-    
-    // 2. Fetch Data
     await fetchMembers();
-    
-    // 3. Hide loader
     document.getElementById('loading').style.display = 'none';
 }
 
@@ -494,43 +576,45 @@ async function fetchMembers() {
         if (!res.ok) throw new Error("API Failed");
         members = await res.json();
     } catch (e) {
-        console.warn("API unavailable, using mock data.", e);
+        console.warn("API unavailable, using mock data.");
         members = [
             { name: "Austin B", user: "austin" },
             { name: "Kitadan", user: "kitadan" },
             { name: "Seja", user: ".s3j" },
-            { name: "Volunteer 1", user: "v1" }
+            { name: "Volunteer 1", user: "v1" },
+            { name: "Volunteer 2", user: "v2" },
+            { name: "Volunteer 3", user: "v3" }
         ];
     }
 }
 
-// --- COLOR GENERATOR (VIBRANT) ---
+// --- COLOR GENERATOR (GOLDEN ANGLE DISTRIBUTION) ---
+// This ensures that even if names are similar, the colors are vastly different
 function getVolunteerColor(name) {
     if (!name) return 'white';
+    
+    // Hash the name to a large integer
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
         hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
-    // More vibrant: Saturation ~70%, Lightness ~75%
-    // Range covers full 360 spectrum
-    const h = Math.abs(hash % 360);
-    return `hsl(${h}, 70%, 75%)`;
+    
+    // Use Golden Angle (137.5 degrees) to distribute hues uniformly
+    // We multiply hash by the golden angle approximation
+    const goldenAngle = 137.508;
+    const hue = Math.abs((hash * goldenAngle) % 360);
+    
+    // High Saturation for vibrancy, Medium-High Lightness for readability
+    return `hsl(${hue}, 80%, 75%)`; 
 }
 
-// --- MENU TOGGLE ---
+// --- MENU TOGGLE (SIDEBAR) ---
 function toggleMenu() {
     const menu = document.getElementById('main-menu');
+    const overlay = document.getElementById('sidebar-overlay');
     menu.classList.toggle('active');
+    overlay.classList.toggle('active');
 }
-
-// Close menu when clicking outside
-document.addEventListener('click', (e) => {
-    const menu = document.getElementById('main-menu');
-    const btn = document.querySelector('.hamburger-btn');
-    if (!menu.contains(e.target) && !btn.contains(e.target)) {
-        menu.classList.remove('active');
-    }
-});
 
 // --- RENDERING ---
 function renderGrid() {
@@ -540,13 +624,11 @@ function renderGrid() {
     STATIONS.forEach((station, r) => {
         const tr = document.createElement('tr');
         
-        // Station Header
         const th = document.createElement('td');
         th.className = 'station-cell';
         th.textContent = station;
         tr.appendChild(th);
 
-        // Days
         scheduleData[station].forEach((val, c) => {
             const td = document.createElement('td');
             td.className = 'data-cell';
@@ -556,11 +638,9 @@ function renderGrid() {
                 td.classList.add('assigned');
                 td.style.backgroundColor = getVolunteerColor(val);
                 
-                // Find user info for subtitle
                 const member = members.find(m => m.name === val);
                 const userHandle = member ? `@${member.user}` : '';
 
-                // HTML with subtitle
                 td.innerHTML = `
                     <span class="cell-name">${val}</span>
                     ${userHandle ? `<span class="cell-user">${userHandle}</span>` : ''}
@@ -569,12 +649,10 @@ function renderGrid() {
                 td.innerHTML = '';
             }
 
-            // Re-apply selection visual
             if (selectedCells.has(`${r}|${c}`)) {
                 td.classList.add('selected');
             }
 
-            // Interaction
             td.onmousedown = (e) => handleMouseDown(e, r, c);
             td.onmouseover = (e) => handleMouseOver(e, r, c);
 
@@ -590,7 +668,6 @@ function updateVisualsOnly() {
         if (selectedCells.has(coord)) td.classList.add('selected');
         else td.classList.remove('selected');
         
-        // Handle Focus ring
         if (anchor && td.dataset.coord === `${anchor.r}|${anchor.c}`) {
             td.classList.add('focus');
         } else {
@@ -643,7 +720,7 @@ function selectRange(r1, c1, r2, c2) {
 
 document.addEventListener('mouseup', () => isDragging = false);
 
-// --- SEARCH ---
+// --- SEARCH & SELECTION FIX ---
 const searchInput = document.getElementById('member-search');
 const resultsBox = document.getElementById('search-results');
 const selectionBadge = document.getElementById('selection-display');
@@ -665,7 +742,7 @@ searchInput.addEventListener('input', (e) => {
             div.className = 'result-item';
             div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
             div.onmousedown = (ev) => {
-                ev.preventDefault();
+                ev.preventDefault(); // Prevent default focus loss logic
                 setVolunteer(m);
             };
             resultsBox.appendChild(div);
@@ -681,19 +758,32 @@ function setVolunteer(m) {
     selectionBadge.style.backgroundColor = getVolunteerColor(m.name);
     selectionBadge.style.color = '#2b3326';
     selectionBadge.textContent = m.name;
+    
+    // CLEAR UI
     searchInput.value = '';
     resultsBox.style.display = 'none';
+    
+    // CRITICAL FIX: Blur the input so 'Enter' works for the grid immediately
+    searchInput.blur();
 }
 
 // --- KEYBOARD ---
 document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT') return;
+    // If typing in search box, let it behave normally (unless it's Enter handled below)
+    if (e.target.tagName === 'INPUT' && e.key !== 'Enter') return;
 
     if (e.key === 'Backspace' || e.key === 'Delete') {
         applyValue("");
     } else if (e.key === 'Enter') {
-        if (currentVolunteer) applyValue(currentVolunteer.name);
-        else {
+        if (e.target.tagName === 'INPUT') {
+            // If they hit enter in the search box without clicking a result, focus the grid
+             e.target.blur();
+             return;
+        }
+        
+        if (currentVolunteer) {
+            applyValue(currentVolunteer.name);
+        } else {
             searchInput.focus();
         }
     } else if (e.key === 'Escape') {
@@ -733,6 +823,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 function applyValue(val) {
+    if (selectedCells.size === 0) return;
+    
     selectedCells.forEach(coord => {
         const [r, c] = coord.split('|').map(Number);
         scheduleData[STATIONS[r]][c] = val;

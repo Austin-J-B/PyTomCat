@@ -165,6 +165,13 @@ async def _refresh_invites(guild: discord.Guild):
     invites_cache[guild.id] = {inv.code: inv.uses or 0 for inv in invites}
 
 #TomCatUI
+_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+}
+
+
 async def start_web_server(bot):
     """Simple web server to serve the UI and API."""
     app = web.Application()
@@ -173,7 +180,9 @@ async def start_web_server(bot):
         """Serve the index.html file."""
         try:
             with open("index.html", "r", encoding="utf-8") as f:
-                return web.Response(text=f.read(), content_type="text/html")
+                resp = web.Response(text=f.read(), content_type="text/html")
+                resp.headers.update(_CORS_HEADERS)
+                return resp
         except FileNotFoundError:
             return web.Response(text="index.html not found. Please upload it to the bot root.", status=404)
 
@@ -199,12 +208,19 @@ async def start_web_server(bot):
         unique_members = {m['id']: m for m in found_members}.values()
         # Sort alphabetically
         sorted_members = sorted(unique_members, key=lambda x: x['name'].lower())
-        
-        return web.json_response(list(sorted_members))
+
+        resp = web.json_response(list(sorted_members))
+        resp.headers.update(_CORS_HEADERS)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    async def options_members(request):
+        return web.Response(status=204, headers=_CORS_HEADERS)
 
     app.add_routes([
         web.get('/', get_index),
-        web.get('/api/members', get_members)
+        web.get('/api/members', get_members),
+        web.options('/api/members', options_members),
     ])
 
     runner = web.AppRunner(app)

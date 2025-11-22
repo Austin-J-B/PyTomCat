@@ -7,24 +7,20 @@
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Corben:wght@400;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Corben:wght@400;700&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
 
     <style>
         :root {
-            /* --- SITE PALETTE --- */
-            --site-bg: #FFF9F3;       /* Cream Header Background */
-            --site-text: #414B3B;     /* Dark Olive Text */
-            --site-accent: #8CA87C;   /* Sage Accent */
-            --site-green-bg: #E8F3E6; /* New Green Background for workspace */
-            --white: #FFFFFF;
+            /* --- SITE COLORS --- */
+            --site-bg: #FFF9F3;       
+            --site-text: #414B3B;     
+            --site-accent: #8CA87C;   
+            --site-white: #FFFFFF;
             
             /* --- FUNCTIONAL COLORS --- */
-            --grid-line: #d1d9c0;
-            --selection-highlight: rgba(65, 75, 59, 0.2); 
+            --grid-line: #E0E5D0;
+            --selection-highlight: rgba(140, 168, 124, 0.25); 
             --focus-ring: #414B3B;
-            
-            /* --- DIMENSIONS --- */
-            --header-height: 80px;
         }
 
         * { box-sizing: border-box; }
@@ -41,229 +37,121 @@
             overflow: hidden;
         }
 
-        /* --- HEADER --- */
+        /* --- HEADER & TOOLBAR --- */
         header.site-header {
             background-color: var(--site-bg);
-            padding: 15px 30px;
+            padding: 15px 40px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 2px solid rgba(65, 75, 59, 0.1);
-            height: var(--header-height);
+            border-bottom: 1px solid rgba(65, 75, 59, 0.1);
             flex-shrink: 0;
-            z-index: 50;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.03);
-            position: relative;
-        }
-
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-
-        /* --- HAMBURGER MENU --- */
-        .menu-container {
-            position: relative;
-        }
-
-        .hamburger-btn {
-            background: none;
-            border: none;
-            cursor: pointer;
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-            padding: 5px;
-        }
-
-        .hamburger-line {
-            width: 24px;
-            height: 3px;
-            background-color: var(--site-text);
-            border-radius: 2px;
-            transition: 0.2s;
-        }
-
-        .hamburger-btn:hover .hamburger-line {
-            background-color: var(--site-accent);
-        }
-
-        .dropdown-menu {
-            position: absolute;
-            top: 140%;
-            left: 0;
-            background: var(--white);
-            min-width: 220px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(65, 75, 59, 0.2);
-            border: 1px solid var(--grid-line);
-            opacity: 0;
-            visibility: hidden;
-            transform: translateY(-10px);
-            transition: all 0.2s ease;
-            z-index: 1000;
-            overflow: hidden;
-        }
-
-        .dropdown-menu.open {
-            opacity: 1;
-            visibility: visible;
-            transform: translateY(0);
-        }
-
-        .menu-item {
-            display: block;
-            padding: 15px 20px;
-            text-decoration: none;
-            color: var(--site-text);
-            font-weight: 600;
-            font-size: 0.95rem;
-            transition: background 0.1s;
-            border-left: 4px solid transparent;
-        }
-
-        .menu-item:hover {
-            background-color: var(--site-green-bg);
-            border-left-color: var(--site-text);
-        }
-
-        .menu-item.active {
-            background-color: var(--site-bg);
-            color: var(--site-accent);
-            cursor: default;
-        }
-
-        /* --- TITLE --- */
-        a.page-title-link {
-            text-decoration: none;
-            color: inherit;
+            z-index: 20;
         }
 
         h1.page-title {
             font-family: 'Corben', cursive;
             font-weight: 700;
-            font-size: 1.5rem;
+            font-size: 1.6rem;
             color: var(--site-text);
             margin: 0;
-            letter-spacing: -0.01em;
+            letter-spacing: -0.02em;
             display: flex;
             align-items: center;
-            transition: color 0.2s;
-        }
-        
-        a.page-title-link:hover h1.page-title {
-            color: var(--site-accent);
+            gap: 10px;
         }
 
-        /* --- CONTROLS --- */
         .controls-area {
             display: flex;
             gap: 15px;
             align-items: center;
         }
 
-        .zoom-group {
-            display: flex;
-            align-items: center;
-            background: white;
-            border: 1px solid var(--site-text);
-            border-radius: 50px;
-            padding: 4px 8px;
-            gap: 5px;
-        }
-
-        .tool-btn {
-            background: transparent;
-            border: none;
-            color: var(--site-text);
-            width: 28px; 
-            height: 28px;
-            border-radius: 50%;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.1rem;
-            font-weight: 600;
-            transition: all 0.1s;
-        }
-
-        .tool-btn:hover {
-            background: var(--site-green-bg);
-            color: var(--site-accent);
-        }
-
-        .tool-btn.reset-btn {
-            font-size: 1rem;
-        }
-
-        #zoom-display {
-            font-size: 0.8rem;
-            font-weight: 600;
-            min-width: 40px;
-            text-align: center;
-            user-select: none;
-        }
-
-        /* --- SEARCH --- */
+        /* --- SEARCH BAR --- */
         .search-container {
             position: relative;
-            width: 250px;
+            width: 280px;
         }
 
         input#member-search {
             width: 100%;
             padding: 10px 20px;
             border: 1px solid var(--site-text);
-            background: white;
+            background: transparent;
             border-radius: 50px;
             font-family: 'Montserrat', sans-serif;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             color: var(--site-text);
             outline: none;
             transition: all 0.2s ease;
         }
 
         input#member-search:focus {
-            box-shadow: 0 0 0 3px rgba(140, 168, 124, 0.3);
-            border-color: var(--site-accent);
+            background: white;
+            box-shadow: 0 4px 12px rgba(65, 75, 59, 0.1);
         }
 
         input#member-search::placeholder {
-            color: #999;
-            font-weight: 400;
+            color: var(--site-accent);
+            font-weight: 300;
             font-style: italic;
         }
 
         .search-results {
             position: absolute;
-            top: 115%;
+            top: 110%;
             left: 0;
             width: 100%;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(65, 75, 59, 0.15);
+            box-shadow: 0 8px 20px rgba(65, 75, 59, 0.15);
             overflow: hidden;
             display: none;
-            z-index: 200;
+            z-index: 100;
             max-height: 300px;
             overflow-y: auto;
-            border: 1px solid var(--grid-line);
         }
 
         .result-item {
-            padding: 10px 20px;
+            padding: 12px 20px;
             cursor: pointer;
             display: flex;
-            flex-direction: column;
+            justify-content: space-between;
             border-bottom: 1px solid #f0f0f0;
             transition: background 0.1s;
         }
 
-        .result-item:hover { background-color: var(--site-green-bg); }
-        .result-name { font-weight: 700; font-size: 0.9rem; color: var(--site-text); }
-        .result-user { font-size: 0.75rem; color: #888; margin-top: 2px; }
+        .result-item:hover { background-color: #f7f9f5; }
+        .result-name { font-weight: 600; color: var(--site-text); }
+        .result-user { font-size: 0.8rem; color: var(--site-accent); }
+
+        /* --- BUTTONS & TOOLS --- */
+        .tool-btn {
+            background: transparent;
+            border: 1px solid var(--site-text);
+            color: var(--site-text);
+            width: 32px; 
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        .tool-btn:hover {
+            background: var(--site-text);
+            color: var(--site-bg);
+        }
+
+        #zoom-display {
+            font-size: 0.85rem;
+            font-weight: 600;
+            min-width: 45px;
+            text-align: center;
+        }
 
         /* --- SELECTION BADGE --- */
         .current-selection {
@@ -272,13 +160,13 @@
             padding: 8px 20px;
             border-radius: 50px;
             font-weight: 600;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             display: flex;
             align-items: center;
             gap: 8px;
-            min-width: 140px;
+            min-width: 150px;
             justify-content: center;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
         
         .current-selection.empty {
@@ -287,32 +175,24 @@
             box-shadow: none;
         }
 
-        /* --- WORKSPACE (Grid Area) --- */
+        /* --- MAIN WORKSPACE --- */
         .workspace {
             flex: 1;
-            overflow: auto; /* The scrollable area */
+            overflow: auto;
             padding: 40px;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            /* The requested Green Background */
-            background-color: var(--site-green-bg); 
-            background-image: radial-gradient(rgba(65, 75, 59, 0.05) 1px, transparent 1px);
-            background-size: 24px 24px;
-        }
-
-        /* Container that gets scaled */
-        .sheet-scaler {
-            transform-origin: top center;
-            transition: transform 0.1s ease-out;
+            display: grid;
+            place-items: start center;
+            background-image: radial-gradient(rgba(65, 75, 59, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
         }
 
         .sheet-wrapper {
             background: white;
-            padding: 10px; 
-            border-radius: 8px;
-            box-shadow: 0 15px 40px -10px rgba(65, 75, 59, 0.15);
-            border: 1px solid var(--white);
+            padding: 10px;
+            border-radius: 4px;
+            box-shadow: 0 10px 30px -10px rgba(65, 75, 59, 0.2);
+            transform-origin: top center;
+            transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
         }
 
         table {
@@ -327,97 +207,69 @@
             font-family: 'Montserrat', sans-serif;
             text-transform: uppercase;
             font-size: 0.75rem;
-            font-weight: 700;
-            letter-spacing: 0.05em;
-            padding: 18px 10px;
-            background-color: var(--white); /* Solid background to cover scroll */
-            border-bottom: 3px solid var(--site-text);
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            padding: 15px;
+            background-color: white;
+            border-bottom: 2px solid var(--site-text);
             color: var(--site-text);
-            
-            /* Sticky Magic */
             position: sticky;
             top: 0;
-            z-index: 20; /* Higher than rows */
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05); /* Adds the "thickness" depth */
+            z-index: 10;
         }
 
-        /* Corner Cell */
         th:first-child {
+            z-index: 20;
             left: 0;
-            z-index: 30; /* Highest z-index */
-            background-color: var(--white);
+            background: white;
             border-right: 2px solid var(--site-text);
         }
 
         /* --- ROW HEADERS (Stations) --- */
         .station-cell {
-            font-family: 'Corben', cursive; /* Matching site headers */
-            font-weight: 700; /* Bolder as requested */
-            font-size: 0.95rem;
+            font-family: 'Corben', cursive;
+            font-weight: 400;
+            font-size: 0.9rem;
             padding: 0 20px;
             text-align: left;
             background-color: #F9FBF7;
             border-bottom: 1px solid var(--grid-line);
             border-right: 2px solid var(--site-text);
-            
             position: sticky;
             left: 0;
-            z-index: 10;
-            width: 240px;
+            z-index: 5;
+            width: 220px;
         }
 
         /* --- DATA CELLS --- */
         td.data-cell {
-            width: 170px;
-            height: 80px;
+            width: 160px;
+            height: 65px;
             border-bottom: 1px solid var(--grid-line);
             border-right: 1px solid var(--grid-line);
             text-align: center;
             vertical-align: middle;
+            font-weight: 500;
+            font-size: 0.95rem;
             cursor: pointer;
             position: relative;
             transition: background-color 0.05s;
-            line-height: 1.3;
         }
 
-        .cell-content-wrapper {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            width: 100%;
-            height: 100%;
-        }
-
-        .cell-name {
-            font-weight: 700;
-            font-size: 0.95rem;
-            color: #1a2616;
-        }
-        
-        .cell-username {
-            font-weight: 500;
-            font-size: 0.7rem;
-            color: rgba(0,0,0,0.5);
-            margin-top: 2px;
-        }
-
-        /* --- INTERACTION STATES --- */
         td.data-cell.focus {
-            box-shadow: inset 0 0 0 3px var(--focus-ring);
-            z-index: 5;
+            outline: 2px solid var(--focus-ring);
+            outline-offset: -2px;
+            z-index: 6;
         }
 
         td.data-cell.selected {
             background-color: var(--selection-highlight) !important;
         }
-        
-        /* When assigned, we remove default hover to show color */
-        td.data-cell.assigned:hover {
-            filter: brightness(0.95);
-        }
-        td.data-cell:not(.assigned):hover {
-            background-color: #f4f4f4;
+
+        td.data-cell.assigned {
+            font-weight: 600;
+            color: #2b3326;
+            text-shadow: 0 1px 0 rgba(255,255,255,0.5);
         }
 
         /* Loading Overlay */
@@ -428,48 +280,26 @@
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             color: var(--site-text); font-family: 'Corben', cursive;
-            font-size: 1.5rem; gap: 20px;
+            font-size: 1.5rem;
         }
     </style>
 </head>
 <body>
 
     <div id="loading">
-        <div>Fetching Schedule...</div>
+        <div>Loading Schedule...</div>
     </div>
 
     <header class="site-header">
-        <div class="header-left">
-            <div class="menu-container">
-                <button class="hamburger-btn" onclick="toggleMenu()">
-                    <div class="hamburger-line"></div>
-                    <div class="hamburger-line"></div>
-                    <div class="hamburger-line"></div>
-                </button>
-                <div id="main-menu" class="dropdown-menu">
-                    <a href="#" class="menu-item active">Feeding Schedule</a>
-                    </div>
-            </div>
-
-            <a href="https://www.catsofuta.org/" class="page-title-link">
-                <h1 class="page-title">
-                    Campus Cat Coalition
-                </h1>
-            </a>
-        </div>
+        <h1 class="page-title">
+            Campus Cat Coalition
+        </h1>
 
         <div class="controls-area">
-            <div class="zoom-group">
-                <button class="tool-btn" onclick="adjustZoom(-0.1)" title="Zoom Out">−</button>
-                <div id="zoom-display">100%</div>
-                <button class="tool-btn" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
-                <button class="tool-btn reset-btn" onclick="resetZoom()" title="Reset View">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                        <path d="M3 3v5h5"/>
-                    </svg>
-                </button>
-            </div>
+            <button class="tool-btn" onclick="adjustZoom(-0.1)" title="Zoom Out">-</button>
+            <div id="zoom-display">100%</div>
+            <button class="tool-btn" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
+            <button class="tool-btn" onclick="resetZoom()" title="Fit Screen">Fit</button>
 
             <div class="search-container">
                 <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
@@ -483,25 +313,23 @@
     </header>
 
     <div class="workspace" id="workspace">
-        <div class="sheet-scaler" id="sheet-scaler">
-            <div class="sheet-wrapper" id="sheet-container">
-                <table id="schedule-table">
-                    <thead>
-                        <tr>
-                            <th>Station</th>
-                            <th>Sunday</th>
-                            <th>Monday</th>
-                            <th>Tuesday</th>
-                            <th>Wednesday</th>
-                            <th>Thursday</th>
-                            <th>Friday</th>
-                            <th>Saturday</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        </tbody>
-                </table>
-            </div>
+        <div class="sheet-wrapper" id="sheet-container">
+            <table id="schedule-table">
+                <thead>
+                    <tr>
+                        <th>Station</th>
+                        <th>Sunday</th>
+                        <th>Monday</th>
+                        <th>Tuesday</th>
+                        <th>Wednesday</th>
+                        <th>Thursday</th>
+                        <th>Friday</th>
+                        <th>Saturday</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    </tbody>
+            </table>
         </div>
     </div>
 
@@ -515,24 +343,23 @@ const STATIONS = [
 
 // --- STATE ---
 let scheduleData = {};
-// Maps "Station|DayIndex" -> { name: "Name", user: "username" }
 let members = [];
-let currentVolunteer = null; // { name, user }
+let currentVolunteer = null;
 let zoomLevel = 1.0;
 
 // Selection
-let selectedCells = new Set(); // Set of "r|c"
+let selectedCells = new Set(); 
 let anchor = null; 
 
 // --- INITIALIZATION ---
 async function init() {
-    // 1. Initialize empty grid data structure
+    // 1. Initialize empty grid
     STATIONS.forEach(st => {
-        scheduleData[st] = new Array(7).fill(null); // Null indicates empty
+        scheduleData[st] = new Array(7).fill("");
     });
 
     renderGrid();
-    setupGlobalEvents(); // Setup key listeners
+    // (Events are already set up by inline/global listeners below)
     
     // 2. Fetch Data
     await fetchMembers();
@@ -544,9 +371,11 @@ async function init() {
 // --- API CALL ---
 async function fetchMembers() {
     try {
-        // Detect API parameter
+        // Parse ?api= URL parameter or default to local relative path
         const urlParams = new URLSearchParams(window.location.search);
         const apiBase = urlParams.get('api');
+        
+        // If api param exists, append /api/members, otherwise assume relative
         const endpoint = apiBase ? `${apiBase.replace(/\/$/, '')}/api/members` : '/api/members';
         
         const res = await fetch(endpoint);
@@ -554,28 +383,25 @@ async function fetchMembers() {
         members = await res.json();
     } catch (e) {
         console.warn("API unavailable, using mock data.", e);
-        // Fallback mock data
+        // Mock data for testing if bot isn't running yet
         members = [
             { name: "Austin B", user: "austin" },
             { name: "Kitadan", user: "kitadan" },
-            { name: "Seja", user: ".s3j" },
-            { name: "Test User", user: "testing" }
+            { name: "Volunteer 1", user: "v1" }
         ];
     }
 }
 
-// --- VIBRANT COLOR GENERATOR ---
+// --- PASTEL COLOR GENERATOR ---
 function getVolunteerColor(name) {
     if (!name) return 'white';
     let hash = 0;
-    // Add salt to scramble colors more
-    const str = name + "salt123"; 
-    for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
     const h = Math.abs(hash % 360);
-    // High Saturation (75%), Medium-High Lightness (75%) for vibrant but readable
-    return `hsl(${h}, 75%, 75%)`;
+    // Settings adjusted for organic/vintage pastel look
+    return `hsl(${h}, 55%, 85%)`;
 }
 
 // --- RENDERING ---
@@ -593,32 +419,15 @@ function renderGrid() {
         tr.appendChild(th);
 
         // Days
-        scheduleData[station].forEach((entry, c) => {
+        scheduleData[station].forEach((val, c) => {
             const td = document.createElement('td');
             td.className = 'data-cell';
             td.dataset.coord = `${r}|${c}`;
+            td.textContent = val;
 
-            if (entry) {
-                // Render Name and Subtitle
+            if (val) {
                 td.classList.add('assigned');
-                td.style.backgroundColor = getVolunteerColor(entry.name);
-                
-                const wrapper = document.createElement('div');
-                wrapper.className = 'cell-content-wrapper';
-                
-                const nameSpan = document.createElement('div');
-                nameSpan.className = 'cell-name';
-                nameSpan.textContent = entry.name;
-                
-                const userSpan = document.createElement('div');
-                userSpan.className = 'cell-username';
-                userSpan.textContent = '@' + entry.user;
-                
-                wrapper.appendChild(nameSpan);
-                wrapper.appendChild(userSpan);
-                td.appendChild(wrapper);
-            } else {
-                td.textContent = "";
+                td.style.backgroundColor = getVolunteerColor(val);
             }
 
             // Re-apply selection visual
@@ -626,7 +435,7 @@ function renderGrid() {
                 td.classList.add('selected');
             }
 
-            // Interactions
+            // Interaction
             td.onmousedown = (e) => handleMouseDown(e, r, c);
             td.onmouseover = (e) => handleMouseOver(e, r, c);
 
@@ -639,12 +448,10 @@ function renderGrid() {
 function updateVisualsOnly() {
     document.querySelectorAll('.data-cell').forEach(td => {
         const coord = td.dataset.coord;
-        
-        // Selection
         if (selectedCells.has(coord)) td.classList.add('selected');
         else td.classList.remove('selected');
         
-        // Focus ring
+        // Handle Focus ring
         if (anchor && td.dataset.coord === `${anchor.r}|${anchor.c}`) {
             td.classList.add('focus');
         } else {
@@ -653,25 +460,23 @@ function updateVisualsOnly() {
     });
 }
 
-// --- MOUSE INTERACTIONS ---
+// --- INTERACTIONS ---
 let isDragging = false;
 
 function handleMouseDown(e, r, c) {
-    // Only left click
-    if (e.button !== 0) return;
-    
     isDragging = true;
     const coord = `${r}|${c}`;
 
     if (e.shiftKey && anchor) {
+        // Range selection
         selectRange(anchor.r, anchor.c, r, c);
     } else if (e.ctrlKey || e.metaKey) {
-        // Toggle specific cell
+        // Multi-select (disjoint)
         if (selectedCells.has(coord)) selectedCells.delete(coord);
         else selectedCells.add(coord);
-        anchor = {r, c}; 
+        anchor = {r, c}; // Update focus but don't clear
     } else {
-        // New single selection
+        // Single click
         selectedCells.clear();
         selectedCells.add(coord);
         anchor = {r, c};
@@ -681,7 +486,6 @@ function handleMouseDown(e, r, c) {
 
 function handleMouseOver(e, r, c) {
     if (isDragging && anchor) {
-        // Standard Drag Selection (clears disjoints for simplicity)
         selectedCells.clear();
         selectRange(anchor.r, anchor.c, r, c);
         updateVisualsOnly();
@@ -701,23 +505,7 @@ function selectRange(r1, c1, r2, c2) {
     }
 }
 
-function setupGlobalEvents() {
-    document.addEventListener('mouseup', () => isDragging = false);
-    document.addEventListener('keydown', handleKeydown);
-    
-    // Close menu when clicking outside
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.menu-container')) {
-            document.getElementById('main-menu').classList.remove('open');
-        }
-    });
-}
-
-// --- MENU TOGGLE ---
-function toggleMenu() {
-    const menu = document.getElementById('main-menu');
-    menu.classList.toggle('open');
-}
+document.addEventListener('mouseup', () => isDragging = false);
 
 // --- SEARCH ---
 const searchInput = document.getElementById('member-search');
@@ -739,10 +527,7 @@ searchInput.addEventListener('input', (e) => {
         matches.forEach(m => {
             const div = document.createElement('div');
             div.className = 'result-item';
-            div.innerHTML = `
-                <span class="result-name">${m.name}</span> 
-                <span class="result-user">@${m.user}</span>
-            `;
+            div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
             div.onmousedown = (ev) => {
                 ev.preventDefault(); // Keep focus
                 setVolunteer(m);
@@ -758,23 +543,23 @@ function setVolunteer(m) {
     currentVolunteer = m;
     selectionBadge.className = 'current-selection';
     selectionBadge.style.backgroundColor = getVolunteerColor(m.name);
-    // Calculate text color based on brightness could be done here, 
-    // but dark text usually works on these vibrant pastels.
-    selectionBadge.style.color = '#1a2616'; 
-    selectionBadge.innerHTML = `<span>👤</span> ${m.name}`;
+    selectionBadge.style.color = '#2b3326';
+    selectionBadge.textContent = m.name;
     searchInput.value = '';
     resultsBox.style.display = 'none';
 }
 
 // --- KEYBOARD ---
-function handleKeydown(e) {
+document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') return;
 
     if (e.key === 'Backspace' || e.key === 'Delete') {
-        applyValue(null); // Clear
+        applyValue("");
     } else if (e.key === 'Enter') {
-        if (currentVolunteer) applyValue(currentVolunteer);
-        else searchInput.focus();
+        if (currentVolunteer) applyValue(currentVolunteer.name);
+        else {
+            searchInput.focus();
+        }
     } else if (e.key === 'Escape') {
         selectedCells.clear();
         updateVisualsOnly();
@@ -806,17 +591,16 @@ function handleKeydown(e) {
         }
         
         const cell = document.querySelector(`.data-cell[data-coord="${r}|${c}"]`);
-        // "nearest" prevents the sticky header jump issue often
         cell?.scrollIntoView({block: 'nearest', inline: 'nearest'});
         
         updateVisualsOnly();
     }
-}
+});
 
-function applyValue(volunteerObj) {
+function applyValue(val) {
     selectedCells.forEach(coord => {
         const [r, c] = coord.split('|').map(Number);
-        scheduleData[STATIONS[r]][c] = volunteerObj; // Store whole object or null
+        scheduleData[STATIONS[r]][c] = val;
     });
     renderGrid();
 }
@@ -829,18 +613,15 @@ function adjustZoom(delta) {
 function resetZoom() {
     const containerW = document.getElementById('workspace').clientWidth;
     const tableW = document.getElementById('schedule-table').offsetWidth;
-    // Fit logic
-    zoomLevel = Math.min(1.0, (containerW - 80) / tableW);
-    if (zoomLevel < 0.5) zoomLevel = 0.5; 
+    zoomLevel = Math.min(1.0, (containerW - 60) / tableW);
     applyZoom();
 }
 function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
-    // Applying transform to a wrapper DIV instead of the table directly helps sticky headers behave
-    document.getElementById('sheet-scaler').style.transform = `scale(${zoomLevel})`;
+    document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
 }
 
-// Start
+// Run
 init();
 
 </script>

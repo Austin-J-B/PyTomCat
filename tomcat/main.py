@@ -8,6 +8,8 @@ from typing import Any, Dict, Union
 import os
 import aiohttp
 from aiohttp import web
+# Import settings before first use
+from .config import settings
 # Config specific to your Discord App (from Developer Portal)
 CLIENT_ID = getattr(settings, 'ui_activity_app_id', None) or os.getenv("UITEST_ACTIVITY_APP_ID")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")

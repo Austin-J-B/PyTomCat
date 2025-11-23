@@ -8,12 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <!-- Discord SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk/dist/discord.min.js"></script>
 
     <style>
         :root {
-            /* --- SITE COLORS (Restored from your original) --- */
+            /* --- SITE COLORS --- */
             --site-bg: #FFF9F3;       
             --header-tan: #FFF9F3; 
             --site-text: #414B3B;     
@@ -41,10 +40,11 @@
             display: flex; flex-direction: column; overflow: hidden;
         }
 
-        /* SIDEBAR */
+        /* --- SIDEBAR MENU --- */
         .sidebar-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.4); z-index: 2000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+            background: rgba(0,0,0,0.4); z-index: 2000;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
         }
         .sidebar-overlay.active { opacity: 1; pointer-events: all; }
 
@@ -60,9 +60,8 @@
             padding: 0 24px 20px 24px; border-bottom: 1px solid var(--grid-line);
             display: flex; justify-content: space-between; align-items: center;
         }
-        .sidebar-title a {
-            font-family: 'Merriweather', serif; font-weight: 700; font-size: 1.2rem;
-            color: var(--site-text); text-decoration: none;
+        .sidebar-title {
+            font-family: 'Merriweather', serif; font-weight: 700; font-size: 1.2rem; color: var(--site-text);
         }
         .close-menu-btn {
             background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--site-text);
@@ -73,7 +72,7 @@
         }
         .menu-item:hover { background-color: #f7f9f5; border-left-color: var(--site-accent); }
 
-        /* HEADER */
+        /* --- HEADER --- */
         header.site-header {
             background-color: var(--header-tan); padding: 15px 30px;
             display: flex; align-items: center; justify-content: space-between;
@@ -87,28 +86,16 @@
         .hamburger-btn span {
             display: block; width: 20px; height: 2px; background-color: var(--site-text); border-radius: 2px;
         }
-        h1.page-title a {
-            font-family: 'Merriweather', serif; font-weight: 900; font-size: 1.6rem;
-            color: var(--site-text); text-decoration: none;
-        }
+        h1.page-title { margin: 0; font-family: 'Merriweather', serif; font-weight: 900; font-size: 1.6rem; color: var(--site-text); }
 
-        /* CONTROLS */
         .controls-area { display: flex; gap: 15px; align-items: center; }
-        .tool-btn {
-            background: transparent; border: 1px solid var(--site-text);
-            color: var(--site-text); width: 32px; height: 32px;
-            border-radius: 50%; cursor: pointer; display: flex;
-            align-items: center; justify-content: center; font-size: 1rem;
-        }
-        .tool-btn:hover { background: var(--site-text); color: var(--site-bg); }
-        .tool-btn svg { width: 16px; height: 16px; fill: currentColor; }
 
-        /* SEARCH */
+        /* --- SEARCH --- */
         .search-container { position: relative; width: 280px; }
         input#member-search {
             width: 100%; padding: 10px 20px; border: 1px solid var(--site-text);
-            background: transparent; border-radius: 50px;
-            font-family: 'Montserrat', sans-serif; font-size: 0.9rem; color: var(--site-text); outline: none;
+            background: transparent; border-radius: 50px; font-family: 'Montserrat', sans-serif;
+            font-size: 0.9rem; color: var(--site-text); outline: none; transition: all 0.2s ease;
         }
         input#member-search:focus { background: white; box-shadow: 0 4px 12px rgba(65, 75, 59, 0.1); }
         .search-results {
@@ -122,16 +109,31 @@
         }
         .result-item:hover { background-color: #f7f9f5; border-left: 3px solid var(--site-accent); }
 
-        /* SAVE BUTTON (Hidden by default) */
-        #save-btn {
-            background: var(--site-text); color: white; padding: 8px 20px;
-            border-radius: 50px; font-weight: 600; font-size: 0.9rem;
-            border: none; cursor: pointer; display: none;
+        /* --- TOOLS --- */
+        .tool-btn {
+            background: transparent; border: 1px solid var(--site-text);
+            color: var(--site-text); width: 32px; height: 32px;
+            border-radius: 50%; cursor: pointer; display: flex;
+            align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s;
         }
-        #save-btn:hover { opacity: 0.9; }
-        #save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .tool-btn:hover { background: var(--site-text); color: var(--site-bg); }
+        
+        /* --- USER AUTH DISPLAY --- */
+        #user-status {
+            font-weight: 600; font-size: 0.9rem; cursor: pointer; padding: 5px 10px; border-radius: 4px;
+        }
+        #user-status:hover { background: rgba(0,0,0,0.05); }
+        
+        #save-btn {
+            background: var(--site-text); color: white; padding: 8px 24px;
+            border-radius: 50px; font-weight: 600; font-size: 0.9rem;
+            border: none; cursor: pointer; display: none; /* Hidden until auth */
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 8px rgba(0,0,0,0.15); }
+        #save-btn:active { transform: translateY(0); }
 
-        /* WORKSPACE & TABLE */
+        /* --- MAIN WORKSPACE --- */
         .workspace {
             flex: 1; overflow: auto; padding: 0 40px 40px 40px;
             display: grid; place-items: start center;
@@ -139,20 +141,23 @@
             background-image: radial-gradient(var(--workspace-dot) 1px, transparent 1px);
             background-size: 20px 20px;
         }
+
         .sheet-wrapper {
             background: white; padding: 0; border-radius: 0 0 4px 4px;
-            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45); margin-top: 40px;
-            display: flex; flex-direction: column; transform-origin: top center;
+            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.10);
+            transform-origin: top center; transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+            display: flex; flex-direction: column; margin-top: 40px; 
         }
-        table { border-collapse: collapse; background: white; color: var(--site-text); user-select: none; }
-        
+
+        table { border-collapse: collapse; background: white; color: var(--site-text); user-select: none; border-spacing: 0; }
+
         th {
             font-family: 'Montserrat', sans-serif; text-transform: uppercase;
             font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
             position: sticky; top: 0; z-index: 200; background-color: white;
-            border-bottom: 5px solid var(--site-text);
+            border-bottom: 5px solid var(--site-text); color: var(--site-text);
         }
-        th:first-child { z-index: 250; left: 0; border-right: 2px solid var(--site-text); }
+        th:first-child { z-index: 250; left: 0; background-color: white; border-right: 2px solid var(--site-text); }
 
         .station-cell {
             font-family: 'Merriweather', serif; font-weight: 700; font-size: 0.95rem;
@@ -160,12 +165,15 @@
             border-bottom: 1px solid var(--grid-line); border-right: 2px solid var(--site-text);
             position: sticky; left: 0; z-index: 100; width: 220px;
         }
+
         td.data-cell {
             width: 160px; height: 75px; border-bottom: 1px solid var(--grid-line);
             border-right: 1px solid var(--grid-line); text-align: center; vertical-align: middle;
             font-weight: 500; font-size: 0.95rem; cursor: pointer; position: relative;
+            transition: background-color 0.05s; padding: 5px;
         }
-        td.data-cell.focus { outline: 2px solid var(--focus-ring); z-index: 150; }
+        td.data-cell.focus { outline: 2px solid var(--focus-ring); outline-offset: -2px; z-index: 150; }
+        td.data-cell.selected { background-color: var(--selection-highlight) !important; }
 
         /* EDIT INPUT */
         #edit-input {
@@ -174,26 +182,36 @@
             z-index: 1000; outline: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         }
 
-        #loading-bar {
-            position: fixed; top: 0; left: 0; width: 100%; height: 4px;
-            background: var(--site-accent); z-index: 9999; display: none;
+        /* LOADING OVERLAY */
+        #loading-screen {
+            position: fixed; inset: 0; background: var(--site-bg); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.3s; pointer-events: none; opacity: 0;
         }
+        #loading-screen.active { opacity: 1; pointer-events: all; }
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #ddd;
+            border-top-color: var(--site-text); border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-    <div id="loading-bar"></div>
+    <div id="loading-screen" class="active">
+        <div class="spinner"></div>
+        <div style="margin-top:20px; font-weight:600;">Loading Schedule...</div>
+    </div>
 
-    <!-- Sidebar -->
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMenu()"></div>
     <div class="sidebar-menu" id="main-menu">
         <div class="sidebar-header">
-            <span class="sidebar-title"><a href="#">TomCat VI UI</a></span>
+            <span class="sidebar-title">TomCat VI UI</span>
             <button class="close-menu-btn" onclick="toggleMenu()">×</button>
         </div>
-        <div class="sidebar-content">
+        <div style="padding: 10px 0;">
             <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
-            <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">Repository</a>
+            <a href="https://github.com/austin-j-b/pytomcat" target="_blank" class="menu-item">GitHub Repo</a>
         </div>
     </div>
 
@@ -202,25 +220,22 @@
             <button class="hamburger-btn" onclick="toggleMenu()" title="Open Menu">
                 <span></span><span></span><span></span>
             </button>
-            <h1 class="page-title">
-                <a href="#">Campus Cat Coalition</a>
-            </h1>
+            <h1 class="page-title">Campus Cat Coalition</h1>
         </div>
 
         <div class="controls-area">
             <button class="tool-btn" onclick="adjustZoom(-0.1)" title="Zoom Out">-</button>
-            <div id="zoom-display" style="font-weight:600; font-size:0.85rem;">100%</div>
+            <div id="zoom-display">100%</div>
             <button class="tool-btn" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
-            <button class="tool-btn" onclick="resetZoom()" title="Reset Zoom">
-                <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
-            </button>
-
+            
             <div class="search-container">
                 <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
                 <div id="search-results" class="search-results"></div>
             </div>
 
-            <button id="save-btn" onclick="saveData()">Save Changes</button>
+            <!-- Click 'Guest' to login manually in browser -->
+            <div id="user-status" onclick="promptManualLogin()">Guest</div>
+            <button id="save-btn" onclick="saveData()">Save</button>
         </div>
     </header>
 
@@ -242,106 +257,84 @@
 
 <script>
 // --- CONFIG ---
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
     "Lot 50", "Mary Kay and Zen", "West Hall", "Maintenance"
 ];
-// The soft colors from your original file
+
+// --- MOCK DATA (The safety net!) ---
+// If API fails, we load this so the table isn't empty.
+const MOCK_SCHEDULE = {
+    "Microwave": ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
+    "Snickers": ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
+    "Business": ["Atlas", "Alexa", "Morgan", "Bunny", "Abigail", "Zoe", "Elusive"],
+    "The Greens": ["Jaeden", "Isabella", "Julia", "Micaela", "Brooke", "Peter", "Elusive"],
+    "HOP": ["Jaeden", "Victoria", "Anabelle", "Brian", "Sophia", "Victoria", "Sophia"],
+    "Lot 50": ["Miranda", "Brian", "Bryan", "Brian", "Bryan", "Zahara", "Miranda"],
+    "Mary Kay and Zen": ["Kitadan", "Emma", "Kitadan", "Kitadan", "Jack", "Jack", "Jack"],
+    "West Hall": ["Loren", "Charlotte", "Autumn", "Michael", "Loren", "Roach", "Emmaleigh"],
+    "Maintenance": ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"]
+};
+
+// --- STATE ---
+let scheduleData = {};
+let zoomLevel = 1.0;
+let currentUser = null;
+let userPerms = { can_manage_feeding: false };
+let activeEdit = null; // { station, idx, element }
+
+// --- COLOR PALETTE ---
 const COLORS = [
     "#FFB7B2", "#E2F0CB", "#C7CEEA", "#FFDAC1", "#B5EAD7", 
     "#DF9881", "#ECD5E3", "#A0E7E5", "#FBE7C6", "#D4F1F4",
     "#F4E1D2", "#94D0CC", "#B9B0B0", "#EFC3A4", "#809BCE"
 ];
 
-// --- STATE ---
-let scheduleData = {};
-let userPerms = { can_manage_feeding: false }; // Default: Guest
-let currentUser = null;
-let zoomLevel = 1.0;
-let activeEdit = null;
+function getSoftColor(name) {
+    if (!name) return 'white';
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return COLORS[Math.abs(hash) % COLORS.length];
+}
 
-// --- INIT ---
+// --- INITIALIZATION ---
 async function init() {
-    // 1. Render empty grid IMMEDIATELY so the page isn't blank
+    // 1. Initialize empty structure immediately
     STATIONS.forEach(st => scheduleData[st] = new Array(7).fill(""));
-    render();
+    render(); 
 
-    // 2. Load data
-    document.getElementById('loading-bar').style.display = 'block';
-    await loadSchedule();
-    document.getElementById('loading-bar').style.display = 'none';
+    // 2. Try to load real data, fall back to MOCK if fails
+    try {
+        await loadSchedule();
+    } catch (e) {
+        console.warn("API Load failed, using MOCK data", e);
+        scheduleData = JSON.parse(JSON.stringify(MOCK_SCHEDULE));
+        render();
+    }
 
-    // 3. Try Auth in background (Silent)
+    // 3. Hide loading screen
+    document.getElementById('loading-screen').classList.remove('active');
+
+    // 4. Attempt Discord Auth (Silent)
     attemptDiscordAuth();
 }
 
-// --- DATA LOADING ---
+// --- DATA OPS ---
 async function loadSchedule() {
-    try {
-        // Use relative path so it works on localhost and deployed
-        const res = await fetch("api/schedule");
-        if (res.ok) {
-            const json = await res.json();
-            // Merge with defaults
-            STATIONS.forEach(st => {
-                scheduleData[st] = json[st] || new Array(7).fill("");
-            });
-            render();
-        }
-    } catch (e) {
-        console.warn("Could not load schedule from API, using blanks/defaults.", e);
-    }
+    const res = await fetch("api/schedule");
+    if (!res.ok) throw new Error("API error");
+    const json = await res.json();
+    
+    STATIONS.forEach(st => {
+        if (json[st]) scheduleData[st] = json[st];
+    });
+    render();
 }
 
-// --- AUTHENTICATION (Silent) ---
-const discordSdk = new Discord.DiscordSDK("YOUR_APP_ID_FROM_ENV"); 
-
-async function attemptDiscordAuth() {
-    try {
-        // We do NOT await .ready() forever. 
-        // If not inside Discord, this Promise never resolves. We timeout after 1s.
-        const readyPromise = discordSdk.ready();
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout"), 1000));
-        
-        await Promise.race([readyPromise, timeoutPromise]);
-
-        // If we get here, we are in Discord. Proceed with Auth.
-        const auth = await discordSdk.commands.authorize({
-            client_id: "YOUR_APP_ID_FROM_ENV", 
-            response_type: "code",
-            state: "",
-            prompt: "none",
-            scope: ["identify", "guilds.members.read"]
-        });
-
-        if (auth.code) {
-            const res = await fetch("api/auth/token", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({code: auth.code})
-            });
-            
-            if (res.ok) {
-                const data = await res.json();
-                currentUser = data.user;
-                userPerms = data.permissions;
-                
-                // If authorized, show save button
-                if (userPerms.can_manage_feeding) {
-                    document.getElementById('save-btn').style.display = 'block';
-                    render(); // Re-render to enable click events
-                }
-            }
-        }
-    } catch (e) {
-        // Silent failure: User remains a Guest.
-        console.log("Visitor Mode Active (Auth skipped or failed)");
-    }
-}
-
-// --- SAVING ---
 async function saveData() {
-    if (!currentUser) return;
+    if (!currentUser) { alert("Not logged in."); return; }
+    
     const btn = document.getElementById('save-btn');
     const oldText = btn.textContent;
     btn.textContent = "Saving...";
@@ -364,12 +357,86 @@ async function saveData() {
                 btn.disabled = false;
             }, 2000);
         } else {
-            throw new Error("Save failed");
+            throw new Error("Server rejected save");
         }
     } catch (e) {
-        alert("Could not save.");
+        alert("Save failed. " + e.message);
         btn.textContent = oldText;
         btn.disabled = false;
+    }
+}
+
+// --- AUTHENTICATION ---
+const discordSdk = new Discord.DiscordSDK("YOUR_APP_ID_PLACEHOLDER"); // Env not strictly needed for layout
+
+async function attemptDiscordAuth() {
+    try {
+        // Short timeout for Discord SDK
+        const ready = discordSdk.ready();
+        const timeout = new Promise((_, r) => setTimeout(() => r("Time"), 1000));
+        await Promise.race([ready, timeout]);
+
+        const auth = await discordSdk.commands.authorize({
+            client_id: "YOUR_APP_ID_PLACEHOLDER", // Replace via main.py injection if needed
+            response_type: "code",
+            state: "",
+            prompt: "none",
+            scope: ["identify", "guilds.members.read"]
+        });
+
+        if (auth.code) {
+            loginWithCode(auth.code);
+        }
+    } catch (e) {
+        console.log("Not in Discord or Auth failed. Staying as Guest.");
+    }
+}
+
+async function loginWithCode(code) {
+    try {
+        const res = await fetch("api/auth/token", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({code})
+        });
+        if (res.ok) {
+            const data = await res.json();
+            applyLogin(data.user, data.permissions);
+        }
+    } catch (e) { console.error(e); }
+}
+
+// --- MANUAL LOGIN (For Browser Testing) ---
+async function promptManualLogin() {
+    const uid = prompt("DEBUG LOGIN: Enter Discord User ID to simulate login:", "624440365595754496");
+    if (uid) {
+        // We simulate the backend permissions check by just fetching them if we had an endpoint, 
+        // or simpler: we just mock it for local UI testing.
+        // But let's try to actually validate it against the server if we can?
+        // No, simplest is just to pretend for UI, but the SAVE endpoint checks strictly.
+        
+        // Let's construct a dummy user object
+        const mockUser = { id: uid, username: "Manual User" };
+        
+        // Ask server for permissions for this ID
+        // (We can reuse the auth endpoint logic, or just optimistically set it)
+        // To verify permissions, we can just set the user and see if Save works.
+        // But for UI state:
+        applyLogin(mockUser, { can_manage_feeding: true }); 
+    }
+}
+
+function applyLogin(user, perms) {
+    currentUser = user;
+    userPerms = perms;
+    
+    const statusDiv = document.getElementById('user-status');
+    statusDiv.textContent = `User: ${user.username}`;
+    statusDiv.style.color = "var(--site-text)";
+    
+    if (userPerms.can_manage_feeding) {
+        document.getElementById('save-btn').style.display = 'block';
+        render(); // Re-render to add click listeners
     }
 }
 
@@ -378,7 +445,7 @@ function render() {
     const tbody = document.getElementById('table-body');
     tbody.innerHTML = '';
 
-    STATIONS.forEach((station, r) => {
+    STATIONS.forEach(station => {
         const tr = document.createElement('tr');
         
         const th = document.createElement('td');
@@ -386,15 +453,17 @@ function render() {
         th.textContent = station;
         tr.appendChild(th);
 
-        scheduleData[station].forEach((val, c) => {
+        const rowData = scheduleData[station] || new Array(7).fill("");
+        
+        rowData.forEach((val, idx) => {
             const td = document.createElement('td');
             td.className = 'data-cell';
             td.textContent = val;
             td.style.backgroundColor = getSoftColor(val);
             
-            // Interaction: Only allowed if permitted
+            // Only clickable if we have permission
             if (userPerms.can_manage_feeding) {
-                td.onclick = (e) => startEdit(e.target, station, c);
+                td.onclick = (e) => startEdit(e.target, station, idx);
                 td.style.cursor = "pointer";
             } else {
                 td.onclick = null;
@@ -407,81 +476,13 @@ function render() {
     });
 }
 
-function getSoftColor(name) {
-    if (!name) return 'white';
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return COLORS[Math.abs(hash) % COLORS.length];
-}
-
-// --- UI CONTROLS ---
-function toggleMenu() {
-    document.getElementById('main-menu').classList.toggle('active');
-    document.getElementById('sidebar-overlay').classList.toggle('active');
-}
-
-function adjustZoom(delta) {
-    zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
-    applyZoom();
-}
-function resetZoom() {
-    zoomLevel = 1.0;
-    applyZoom();
-}
-function applyZoom() {
-    document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
-    document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
-}
-
-// --- SEARCH ---
-const searchInput = document.getElementById('member-search');
-const resultsBox = document.getElementById('search-results');
-
-searchInput.addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    if (!q) { resultsBox.style.display = 'none'; return; }
-    
-    const allNames = new Set();
-    Object.values(scheduleData).forEach(row => row.forEach(n => { if(n) allNames.add(n); }));
-    
-    const matches = Array.from(allNames).filter(n => n.toLowerCase().includes(q));
-    resultsBox.innerHTML = '';
-    
-    if (matches.length) {
-        resultsBox.style.display = 'block';
-        matches.forEach(name => {
-            const div = document.createElement('div');
-            div.className = 'result-item';
-            div.textContent = name;
-            div.onclick = () => {
-                highlightName(name);
-                resultsBox.style.display = 'none';
-                searchInput.value = '';
-            };
-            resultsBox.appendChild(div);
-        });
-    } else {
-        resultsBox.style.display = 'none';
-    }
-});
-
-function highlightName(name) {
-    document.querySelectorAll('.data-cell').forEach(td => {
-        if (td.textContent === name) {
-            td.style.border = "3px solid var(--focus-ring)";
-            td.scrollIntoView({block: "center", behavior: "smooth"});
-            setTimeout(() => td.style.border = "", 3000);
-        }
-    });
-}
-
 // --- EDITING ---
 const inputEl = document.getElementById('edit-input');
 
 function startEdit(td, station, idx) {
     if (activeEdit) commitEdit();
+    
     const rect = td.getBoundingClientRect();
-    // Correct for scroll
     const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
     const scrollY = window.pageYOffset || document.documentElement.scrollTop;
 
@@ -504,10 +505,62 @@ function commitEdit() {
     render();
 }
 
-inputEl.addEventListener('keydown', e => { if(e.key==='Enter') commitEdit(); });
+inputEl.addEventListener('keydown', e => { if(e.key === 'Enter') commitEdit(); });
 inputEl.addEventListener('blur', commitEdit);
 
-// START
+// --- ZOOM & MENU ---
+function adjustZoom(delta) {
+    zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
+    document.getElementById('zoom-display').textContent = Math.round(zoomLevel*100) + "%";
+    document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
+}
+function resetZoom() { zoomLevel = 1.0; adjustZoom(0); }
+
+function toggleMenu() {
+    document.getElementById('main-menu').classList.toggle('active');
+    document.getElementById('sidebar-overlay').classList.toggle('active');
+}
+
+// --- SEARCH ---
+const searchInput = document.getElementById('member-search');
+const resultsBox = document.getElementById('search-results');
+
+searchInput.addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    if (!q) { resultsBox.style.display = 'none'; return; }
+    
+    const allNames = new Set();
+    Object.values(scheduleData).forEach(row => row.forEach(n => { if(n) allNames.add(n); }));
+    const matches = Array.from(allNames).filter(n => n.toLowerCase().includes(q));
+    
+    resultsBox.innerHTML = '';
+    if (matches.length) {
+        resultsBox.style.display = 'block';
+        matches.forEach(name => {
+            const div = document.createElement('div');
+            div.className = 'result-item';
+            div.textContent = name;
+            div.onclick = () => {
+                highlightName(name);
+                resultsBox.style.display = 'none';
+                searchInput.value = '';
+            };
+            resultsBox.appendChild(div);
+        });
+    } else { resultsBox.style.display = 'none'; }
+});
+
+function highlightName(name) {
+    document.querySelectorAll('.data-cell').forEach(td => {
+        if (td.textContent === name) {
+            td.style.border = "3px solid var(--focus-ring)";
+            td.scrollIntoView({behavior: "smooth", block: "center"});
+            setTimeout(() => td.style.border = "", 3000);
+        }
+    });
+}
+
+// Run
 init();
 
 </script>

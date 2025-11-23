@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1381,7 +1381,12 @@ async function submitSubRequest() {
         const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: subSelectedUser.id, date: selectedDate, stations: picked })
+            body: JSON.stringify({
+                user_id: subSelectedUser.id,
+                user_name: subSelectedUser.name,
+                date: selectedDate,
+                stations: picked
+            })
         });
         if (!res.ok) throw new Error(await res.text());
         status.textContent = "Submitted";
@@ -1526,3 +1531,4 @@ init();
 </script>
 </body>
 </html>
+

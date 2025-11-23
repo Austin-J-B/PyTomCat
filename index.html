@@ -19,15 +19,15 @@
             
             /* --- THEME COLORS --- */
             --workspace-bg: #C5D6BA;   
-            --workspace-dot: rgba(65, 75, 59, 0.15); /* Lighter dots */
+            --workspace-dot: rgba(65, 75, 59, 0.15); 
 
             /* --- FUNCTIONAL COLORS --- */
             --grid-line: #E0E5D0;
             --selection-highlight: rgba(140, 168, 124, 0.4); 
             --focus-ring: #414B3B;
             
-            /* Header Height Calculation for Sticky Positioning */
-            --legend-height: 35px; /* Reduced height */
+            /* Header Height for Sticky Positioning */
+            --legend-height: 40px; 
         }
 
         * { box-sizing: border-box; }
@@ -123,7 +123,7 @@
             border-left-color: var(--site-accent);
         }
 
-        /* --- HEADER (High Z-Index to stay above table) --- */
+        /* --- HEADER --- */
         header.site-header {
             background-color: var(--site-bg);
             padding: 15px 30px;
@@ -132,7 +132,6 @@
             justify-content: space-between;
             border-bottom: 1px solid rgba(65, 75, 59, 0.1);
             flex-shrink: 0;
-            /* CRITICAL: This must be higher than the table's headers */
             z-index: 1000; 
             position: relative;
         }
@@ -207,7 +206,6 @@
             background: white; border-radius: 12px;
             box-shadow: 0 8px 20px rgba(65, 75, 59, 0.25);
             overflow: hidden; display: none; 
-            /* Extremely high z-index to ensure it floats over everything */
             z-index: 2000; 
             max-height: 300px; overflow-y: auto;
         }
@@ -255,12 +253,11 @@
         /* --- MAIN WORKSPACE --- */
         .workspace {
             flex: 1;
-            overflow: auto; /* SCROLL HAPPENS HERE */
+            overflow: auto; 
             padding: 0 40px 40px 40px; 
             display: grid;
             place-items: start center;
             background-color: var(--workspace-bg);
-            /* Lighter dots */
             background-image: radial-gradient(var(--workspace-dot) 1px, transparent 1px);
             background-size: 20px 20px;
             z-index: 10;
@@ -270,7 +267,8 @@
             background: white;
             padding: 0;
             border-radius: 0 0 4px 4px;
-            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.4);
+            /* Slightly increased shadow for more contrast */
+            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.3);
             transform-origin: top center;
             transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
             display: flex;
@@ -285,20 +283,24 @@
             z-index: 300; 
             height: var(--legend-height);
 
-            background: white; 
+            /* Updated to Tan Background */
+            background: var(--site-bg); 
             color: var(--site-text);
             padding: 0 25px; 
-            border-bottom: 1px solid var(--grid-line);
+            /* Removed border here to prevent "swapping" glitch */
+            border-bottom: none; 
             
             display: flex;
             align-items: center;
             justify-content: flex-start; 
             gap: 25px;
             
-            font-family: 'Comic Sans MS', 'Chalkboard SE', 'Comic Neue', sans-serif;
-            font-size: 0.8rem; 
-            font-weight: 400; /* Not bold */
-            letter-spacing: 0.02em;
+            /* Updated Font to match Header */
+            font-family: 'Montserrat', sans-serif;
+            font-size: 0.75rem; 
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .key-combo {
@@ -308,11 +310,11 @@
         }
 
         table {
-            border-collapse: collapse; /* Can cause sticky issues, but needed for look */
+            border-collapse: collapse; 
             background: white;
             color: var(--site-text);
             user-select: none;
-            border-spacing: 0; /* Ensure no gaps */
+            border-spacing: 0;
         }
 
         /* --- TABLE HEADERS (STICKY) --- */
@@ -324,21 +326,18 @@
             letter-spacing: 0.1em;
             padding: 15px;
             
-            /* STICKY POS */
             position: sticky;
             top: var(--legend-height); 
             z-index: 200; 
             
             background-color: white; 
-            /* Removed padding-box to fix the gap */
             
-            /* Solid Unified Border */
-            border-bottom: 4px solid var(--site-text); 
+            /* Moved the dark border HERE so it stays with the header */
+            border-bottom: 5px solid var(--site-text); 
             
             color: var(--site-text);
         }
 
-        /* Corner piece needs to stay on top of side headers too */
         th:first-child {
             z-index: 250;
             left: 0;
@@ -406,7 +405,8 @@
         }
 
         td.data-cell.assigned .cell-name {
-            text-shadow: 0 1px 0 rgba(255,255,255,0.4);
+            /* Subtle white shadow to help text pop on darker colors */
+            text-shadow: 0 1px 0 rgba(255,255,255,0.6);
         }
 
         #loading {
@@ -516,7 +516,7 @@ let scheduleData = {};
 let members = [];
 let currentVolunteer = null;
 let zoomLevel = 1.0;
-let currentSearchIndex = -1; // Track arrow key selection
+let currentSearchIndex = -1; 
 
 // Selection
 let selectedCells = new Set(); 
@@ -549,23 +549,56 @@ async function fetchMembers() {
             { name: "Austin B", user: "austin" },
             { name: "Kitadan", user: "kitadan" },
             { name: "Seja", user: ".s3j" },
+            { name: "Alex", user: "alex" },
+            { name: "Abbym65", user: "abby" },
             { name: "Volunteer 1", user: "v1" },
-            { name: "Volunteer 2", user: "v2" },
-            { name: "Volunteer 3", user: "v3" }
+            { name: "Volunteer 2", user: "v2" }
         ];
     }
 }
 
-// --- COLOR GENERATOR ---
+// --- DISTINCT COLOR PALETTE ---
+// A list of 25 distinct, mostly pastel-but-vibrant colors.
+// Hand-picked to allow black text while being visually distinct.
+const PRESET_COLORS = [
+    "#FFB7B2", // Salmon/Pink
+    "#E2F0CB", // Light Green/Mint
+    "#C7CEEA", // Light Blue/Periwinkle
+    "#FFDAC1", // Peach/Light Orange
+    "#B5EAD7", // Seafoam
+    "#DF9881", // Terracotta (darker)
+    "#ECD5E3", // Pale Lavender
+    "#A0E7E5", // Aqua
+    "#FBE7C6", // Light Gold
+    "#D4F1F4", // Ice Blue
+    "#F4E1D2", // Beige
+    "#94D0CC", // Tealish
+    "#B9B0B0", // Warm Grey
+    "#EFC3A4", // Apricot
+    "#809BCE", // Muted Blue
+    "#95B8D1", // Slate Blue Light
+    "#B8E986", // Lime Green
+    "#FF9AA2", // Bright Pink
+    "#E0BBE4", // Lavender
+    "#D291BC", // Orchid (Darker Pink)
+    "#FEC8D8", // Pale Pink
+    "#FFDFD3", // Cantaloupe
+    "#E6C9A8", // Tan
+    "#9EBC9E", // Sage Green
+    "#B4A7D6"  // Purple (Used sparingly)
+];
+
 function getVolunteerColor(name) {
     if (!name) return 'white';
-    let hash = 0x811c9dc5; 
+    
+    // Robust hash to pick from index
+    let hash = 0;
     for (let i = 0; i < name.length; i++) {
-        hash ^= name.charCodeAt(i);
-        hash = Math.imul(hash, 0x01000193);
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
-    const hue = Math.abs(hash % 360);
-    return `hsl(${hue}, 80%, 75%)`; 
+    
+    const index = Math.abs(hash) % PRESET_COLORS.length;
+    return PRESET_COLORS[index];
 }
 
 // --- MENU TOGGLE ---
@@ -689,7 +722,7 @@ let filteredMembers = [];
 searchInput.addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
     resultsBox.innerHTML = '';
-    currentSearchIndex = -1; // Reset index on new input
+    currentSearchIndex = -1; 
     
     if (!q) { resultsBox.style.display = 'none'; return; }
 
@@ -703,7 +736,7 @@ searchInput.addEventListener('input', (e) => {
         filteredMembers.forEach((m, idx) => {
             const div = document.createElement('div');
             div.className = 'result-item';
-            div.dataset.index = idx; // Store index
+            div.dataset.index = idx; 
             div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
             div.onmousedown = (ev) => {
                 ev.preventDefault();
@@ -716,7 +749,6 @@ searchInput.addEventListener('input', (e) => {
     }
 });
 
-// Search Keyboard Navigation
 searchInput.addEventListener('keydown', (e) => {
     if (!filteredMembers.length) return;
 
@@ -733,7 +765,6 @@ searchInput.addEventListener('keydown', (e) => {
         if (currentSearchIndex >= 0 && currentSearchIndex < filteredMembers.length) {
             setVolunteer(filteredMembers[currentSearchIndex]);
         } else {
-            // Standard Enter behavior: blur to grid if no selection active
             e.target.blur();
         }
     }
@@ -765,7 +796,6 @@ function setVolunteer(m) {
 
 // --- KEYBOARD (Grid Actions) ---
 document.addEventListener('keydown', (e) => {
-    // If focusing input, let input handlers work (except generic Escape)
     if (e.target.tagName === 'INPUT') {
         if (e.key === 'Escape') {
             searchInput.blur();

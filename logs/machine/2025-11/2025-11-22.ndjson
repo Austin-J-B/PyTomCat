@@ -1489,3 +1489,67 @@
 {"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
 {"event": "health", "component": "feeding_tab", "status": "ok"}
 {"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441874918357598218, "emoji": "❤️", "message_preview": "https://tenor.com/view/cynthia-erivo-cyn...", "message_author": "izzyballz"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441874895343587339, "emoji": "❤️", "message_preview": "the concept of a chromebook gaming lapto...", "message_author": "izzyballz"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1KNgyKeFYM2A9IhVBWEO0L1SXm7cInRIg", "output": "sn=0330 attempt=1 size=6261650"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1EoM2PFhA6CJcAL9iimYwUDwjCPvMaCBC", "output": "sn=2807 attempt=1 size=799701"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=15KzSFtrAe6L5xmpZIOrQiM1rWRUubdG3", "output": "sn=1150 attempt=1 size=1173512"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1_T4UgvGMZLFY3c_zA4QGJQUzIVbcXPii", "output": "sn=5016 attempt=1 size=995841"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1fQlIlVdk3Tx-qQPNsh5hdRlP3fb8c1C5", "output": "sn=2360 attempt=1 size=634644"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1dc6FvJYIWygIv74WUOCLPo0JM-7ZdGOZ", "output": "sn=6025 attempt=1 size=607167"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1sYR0UFB7mowU8DIFSXrvS7Pcf9PzCJQF", "output": "sn=5762 attempt=1 size=536084"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1iyuC7l39R1E0T3MfOq5YqRVjE-b_umkb", "output": "sn=5977 attempt=1 size=1510501"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1rEG0n9Ysk2xzOUdWJHv3EptrV1CxDjs2", "output": "sn=5514 attempt=1 size=1054364"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1Bqrnv8A_FhfBL-PBsa6xisn6hNbu6cZh", "output": "sn=5229 attempt=1 size=1476042"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=16ofOgrg6GUYg1j6XJSTzsw-kwAVnbyqb", "output": "sn=5362 attempt=1 size=554401"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1ghXDLK6GsSUHTZiWzlxzNIV1oEpQLW8E", "output": "sn=5524 attempt=1 size=644102"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1cuBg6iOMiaEFf8Eb0Y7-3O1xYSpNzRxe", "output": "sn=5454 attempt=1 size=1310434"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1vdEUaaoZkcZ6Q7PGZFpodQtiekRDjAGB", "output": "sn=5657 attempt=1 size=553868"}
+{"event": "message", "author": "lemonelon_", "channel": "#yapper-committee", "content": "everything is chungus tbh", "attachments": 0}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1lx_eRV7Ig-_vEB9ZFBV1lt6-ya8UaE8O", "output": "sn=5386 attempt=1 size=607664"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1M1pyP1_2SlXGywpYF2ZJ3EK9cWhEY61-", "output": "sn=6014 attempt=1 size=607167"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1Nnh3RgVDKPQ-HntT7uv_xeqmRLRgXqd4", "output": "sn=5368 attempt=1 size=650721"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1P2PaXouGxy3YfhOwgIkoXafaYg87CbLm", "output": "sn=5987 attempt=1 size=735195"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1bPsihljrEdpZO94Q2wUOCoL0ajaYPIUb", "output": "sn=5957 attempt=1 size=375350"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1JcCvZ4Fwmb3G6KhlT6iSlK7dx2GsL5ZJ", "output": "sn=5961 attempt=1 size=764614"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1we5g7v-KFbIKLlPEHJU2u5BRRD94pCME", "output": "sn=5948 attempt=1 size=945242"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1EO2XI65jGmqGKYoNrmiCMWhm_-wcxNEx", "output": "sn=6222 attempt=1 size=2570926"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1-kpRpkrvVVW-_tDUaEdEs411uvccZqx9", "output": "sn=5955 attempt=1 size=245752"}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1Kw3Q3S0mHHG28jIkj8Nfd-pVJzsEvJIp", "output": "sn=6221 attempt=1 size=2677411"}
+{"event": "message", "author": "lemonelon_", "channel": "#yapper-committee", "content": "is anyone in the english dep. and going to that holiday party  bc i am terrified", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "yes!", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "most of the officers will be there", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "bella r u an english major ?", "attachments": 0}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441951934188752929, "emoji": "❤️", "message_preview": "most of the officers will be there", "message_author": "slayc127"}
+{"event": "message", "author": "lemonelon_", "channel": "#yapper-committee", "content": "yas queen", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "YEAHHHHHHHHH", "attachments": 0}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441952040556302367, "emoji": "🎉", "message_preview": "YEAHHHHHHHHH", "message_author": "slayc127"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "first year yes ?", "attachments": 0}
+{"event": "message", "author": "lemonelon_", "channel": "#yapper-committee", "content": "yarm", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "i was gonna harass u into taking one of my classes but unforch i dont think ur able to yet 💔", "attachments": 0}
+{"event": "message", "author": "lemonelon_", "channel": "#yapper-committee", "content": "first semester first year 😔", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1441952140246646855, "emoji": "😭", "message_preview": "first semester first year 😔", "message_author": "lemonelon_"}
+{"event": "message", "author": "lemonelon_", "channel": "#yapper-committee", "content": "WHAT IS IT WAIT", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "its a 4000 level!", "attachments": 0}
+{"event": "message", "author": "lemonelon_", "channel": "#yapper-committee", "content": "I HATE THESE CHUNGUS PRE CLASSES NO I DONT WANT TO TAKE HOW TO GET A JOB 101", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1441952260350283896, "emoji": "😭", "message_preview": "I HATE THESE CHUNGUS PRE CLASSES NO I DO...", "message_author": "lemonelon_"}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441952260837085268, "emoji": "🎉", "message_preview": "j*b", "message_author": "Carl-bot"}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#feeding-team", "content": "greens", "attachments": 1}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441952252305866883, "emoji": "❤️", "message_preview": "its a 4000 level!", "message_author": "slayc127"}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#feeding-team", "content": "coba", "attachments": 1}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "game analysis w kinzinger and game studies w stark! i am p sure atp starks is filled tho since its cross listed 💔 take them if/when ur able tho :3p", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 915790807720661042, "user_id": 356861356051529750, "message_id": 1441952383377870990, "has_image": false, "slots": {"cat": null, "station": "HOP", "dates": ["2025-11-22"]}, "decision": ["slot:stations=HOP", "intent:feed_update"]}
+{"event": "action", "name": "feed_update_ignored", "trigger": "station=HOP", "output": "channel_blocked:915790807720661042"}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#feeding-team", "content": "mike", "attachments": 1}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441952383377870990, "emoji": "❤️", "message_preview": "game analysis w kinzinger and game studi...", "message_author": "slayc127"}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#feeding-team", "content": "snickers", "attachments": 1}
+{"event": "message", "author": "lemonelon_", "channel": "#yapper-committee", "content": "yay i am putting them in my note", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#feeding-team", "content": "gunjan world tour", "attachments": 0}
+{"event": "message", "author": "lemonelon_", "channel": "#yapper-committee", "content": "i am bringing my non english friend as a +1 bc i am very afraid", "attachments": 0}

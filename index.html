@@ -279,6 +279,30 @@
         .cal-cell.day.selected { border: 2px solid var(--site-text); background: var(--selection-highlight); }
         .cal-cell.day.disabled { color: #7a7a7a; background: #e7e7e7; cursor: not-allowed; }
         .cal-cell.day.blocked { color: #7a7a7a; background: #e7e7e7; cursor: not-allowed; }
+
+        .open-list {
+            background: #f5f5f5;
+            border: 1px solid var(--grid-line);
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 340px;
+            overflow-y: auto;
+        }
+        .open-item {
+            background: white;
+            border: 1px solid var(--grid-line);
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .open-item input { accent-color: var(--site-accent); }
+        .open-meta { display: flex; flex-direction: column; gap: 4px; font-size: 0.95rem; }
+        .open-day-sep { height: 1px; background: var(--grid-line); margin: 6px 2px; }
         .cal-weekday { font-weight: 700; color: var(--site-text); }
 
         /* --- SEARCH --- */
@@ -541,6 +565,7 @@
         <div class="sidebar-content">
             <a href="#" class="menu-item" onclick="setView('schedule'); toggleMenu();">Feeding Schedule</a>
             <a href="#" class="menu-item" onclick="setView('sub'); toggleMenu();">Sub Request</a>
+            <a href="#" class="menu-item" onclick="setView('claim'); toggleMenu();">Open Substitutes</a>
             <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat VI Repository</a>
         </div>
     </div>
@@ -650,6 +675,29 @@
                 </div>
             </div>
         </div>
+
+        <div class="sheet-wrapper" id="claim-container" style="display:none; padding: 0 0 20px 0; width: min(960px, 100%); box-sizing: border-box;">
+            <div class="controls-legend" style="margin:0; padding: 0 20px; width: 100%; box-sizing: border-box;">
+                <div class="key-combo">Open substitute requests</div>
+            </div>
+            <div class="sub-form">
+                <div class="form-row">
+                    <label for="claim-user">What is your account?</label>
+                    <div class="search-container">
+                        <input type="text" id="claim-user" placeholder="Find user" autocomplete="off">
+                        <div id="claim-user-results" class="search-results"></div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label>Available requests</label>
+                    <div id="open-requests-list" class="open-list"></div>
+                    <div id="claim-status" class="warn"></div>
+                </div>
+                <div class="form-row actions">
+                    <button class="save-btn" onclick="submitClaim()">Submit</button>
+                </div>
+            </div>
+        </div>
     </div>
 
 <script>
@@ -675,6 +723,9 @@ let selectedDate = null;
 let subStationsForDate = [];
 let allowedSubMembers = [];
 let calendarMonth = new Date();
+let claimUser = null;
+let openRequests = [];
+let openRequestsByDate = {};
 
 function parseISODate(iso) {
     const [y,m,d] = iso.split('-').map(Number);
@@ -718,6 +769,7 @@ async function init() {
     renderGrid();
     renderCalendar();
     updateSubUserOptions();
+    await loadOpenSubs();
     document.getElementById('loading').style.display = 'none';
 }
 
@@ -757,6 +809,19 @@ async function loadSchedule() {
         console.warn("No saved schedule, starting fresh.", e);
         scheduleData = makeEmptySchedule();
         setSaveStatus("No saved data", "warn");
+    }
+}
+
+async function loadOpenSubs() {
+    try {
+        const endpoint = apiBase ? `${apiBase}/api/subs/open` : '/api/subs/open';
+        const res = await fetch(endpoint);
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        openRequests = data.open || [];
+        renderOpenSubs();
+    } catch (e) {
+        console.warn("Failed to load open subs", e);
     }
 }
 
@@ -1093,6 +1158,7 @@ function setView(view) {
     activeView = view;
     document.getElementById('sheet-container').style.display = view === 'schedule' ? 'flex' : 'none';
     document.getElementById('sub-container').style.display = view === 'sub' ? 'flex' : 'none';
+    document.getElementById('claim-container').style.display = view === 'claim' ? 'flex' : 'none';
 }
 
 // --- SUB REQUEST FORM ---
@@ -1149,6 +1215,39 @@ function setSubUser(m) {
     computeAllowedDates();
     renderCalendar();
     renderStationsForSelected();
+}
+
+// Claim user search (due members)
+const claimUserInput = document.getElementById('claim-user');
+const claimUserResults = document.getElementById('claim-user-results');
+let claimFiltered = [];
+let claimSearchIndex = -1;
+
+claimUserInput?.addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    claimUserResults.innerHTML = '';
+    claimSearchIndex = -1;
+    if (!q) { claimUserResults.style.display = 'none'; return; }
+    claimFiltered = members.filter(m => m.name.toLowerCase().includes(q) || m.user.toLowerCase().includes(q));
+    if (claimFiltered.length) {
+        claimUserResults.style.display = 'block';
+        claimFiltered.forEach((m, idx) => {
+            const div = document.createElement('div');
+            div.className = 'result-item';
+            div.dataset.index = idx;
+            div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
+            div.onmousedown = (ev) => { ev.preventDefault(); setClaimUser(m); };
+            claimUserResults.appendChild(div);
+        });
+    } else {
+        claimUserResults.style.display = 'none';
+    }
+});
+
+function setClaimUser(m) {
+    claimUser = m;
+    claimUserInput.value = m.name;
+    claimUserResults.style.display = 'none';
 }
 
 function computeAllowedDates() {
@@ -1288,6 +1387,72 @@ async function submitSubRequest() {
         status.textContent = "Submitted";
     } catch (e) {
         status.textContent = "Submit failed";
+    }
+}
+
+function renderOpenSubs() {
+    const wrap = document.getElementById('open-requests-list');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!openRequests.length) {
+        wrap.textContent = "No open requests.";
+        return;
+    }
+    const grouped = {};
+    openRequests.forEach(item => {
+        const date = item.date || 'Unknown date';
+        grouped[date] = grouped[date] || [];
+        grouped[date].push(item);
+    });
+    Object.keys(grouped).sort().forEach(date => {
+        grouped[date].forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'open-item';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = JSON.stringify(item);
+            const meta = document.createElement('div');
+            meta.className = 'open-meta';
+            const dayStr = new Date(item.date).toLocaleDateString(undefined, { weekday: 'long', month: 'numeric', day: 'numeric', year: 'numeric' });
+            const requesterName = item.requester_name || (memberById[item.requester_id]?.name) || `User ${item.requester_id}`;
+            meta.innerHTML = `<div><strong>${item.station}</strong> on ${dayStr}</div><div>for ${requesterName}</div>`;
+            div.appendChild(checkbox);
+            div.appendChild(meta);
+            wrap.appendChild(div);
+        });
+        const sep = document.createElement('div');
+        sep.className = 'open-day-sep';
+        wrap.appendChild(sep);
+    });
+}
+
+async function submitClaim() {
+    const status = document.getElementById('claim-status');
+    if (!claimUser) { if (status) status.textContent = "Select your account."; return; }
+    const picks = Array.from(document.querySelectorAll('#open-requests-list input:checked')).map(i => JSON.parse(i.value));
+    if (!picks.length) { if (status) status.textContent = "Select at least one request."; return; }
+    status.textContent = "Submitting...";
+    try {
+        const endpoint = apiBase ? `${apiBase}/api/subs/claim` : '/api/subs/claim';
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: claimUser.id,
+                picks: picks.map(p => ({
+                    id: p.id,
+                    station: p.station,
+                    date: p.date,
+                    requester_id: p.requester_id,
+                    requester_name: p.requester_name
+                }))
+            })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        status.textContent = "Submitted";
+        await loadOpenSubs();
+    } catch (e) {
+        if (status) status.textContent = "Submit failed";
     }
 }
 

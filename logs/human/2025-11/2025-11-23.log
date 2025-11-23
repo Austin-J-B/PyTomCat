@@ -27,3 +27,25 @@
 [11/23/2025 12:36:14.601 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat whats the feeding schedule
 [11/23/2025 12:36:14.606 AM] Intent   || feeding_schedule_link     ||                                              
 [11/23/2025 12:36:14.780 AM] Action   || Name: feeding_schedule... || Trigger: user=624440365595754496; channel=... || Output: message_id=1442041041250156564
+[11/23/2025 01:08:21.645 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/23/2025 01:08:23.014 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/23/2025 01:08:23.753 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/23/2025 01:08:24.189 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/23/2025 01:08:24.810 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/23/2025 01:08:25.104 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/23/2025 01:08:25.796 AM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/23/2025 01:18:05.595 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat find me a sub
+[11/23/2025 01:18:05.599 AM] Action   || Name: intent_router_error || Trigger: type=AttributeError                  || Output: 'IntentRouter' object has no attribute '_stations_from_schedule'
+[11/23/2025 01:18:09.538 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat sub request
+[11/23/2025 01:18:09.538 AM] Intent   || sub_request_link          ||                                              
+[11/23/2025 01:18:09.711 AM] Action   || Name: sub_request_link    || Trigger: user=624440365595754496; channel=... || Output: message_id=1442051589681578075
+[11/23/2025 01:18:13.880 AM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: tomcat sub request
+[11/23/2025 01:18:13.880 AM] Intent   || sub_request_link          ||                                              
+[11/23/2025 01:18:14.001 AM] Action   || Name: sub_request_link    || Trigger: user=624440365595754496; channel=... || Output: message_id=1442051607683662006
+[11/23/2025 01:20:35.736 AM] Message  || User: austinbaustinb      || Channel: #executive-board                     || Content: Testing a feeding team scheduler thing. Pretty much just the same th...
+[11/23/2025 01:20:35.800 AM] Intent   || feed_update               ||                                               || station=Lot 50; dates=['2025-11-23']
+[11/23/2025 01:20:35.815 AM] Action   || Name: feed_update_ignored || Trigger: station=Lot 50                       || Output: channel_blocked:629370899753205781
+[11/23/2025 01:21:52.594 AM] Message  || User: austinbaustinb      || Channel: #executive-board                     || Content: I’ll get it ironed out on mobile soon. If we have any requests I can...
+[11/23/2025 01:21:52.623 AM] Intent   || feed_update               ||                                               || station=HOP; dates=['2025-11-23']
+[11/23/2025 01:21:52.631 AM] Action   || Name: feed_update_ignored || Trigger: station=HOP                          || Output: channel_blocked:629370899753205781
+[11/23/2025 01:23:30.905 AM] Message  || User: austinbaustinb      || Channel: #executive-board                     || Content: And the names in the list are based off of people who have the “feed...

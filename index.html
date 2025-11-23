@@ -8,20 +8,27 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Discord SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk/dist/discord.min.js"></script>
 
     <style>
         :root {
-            --site-bg: #FFF9F3;
-            --header-tan: #FFF9F3;
-            --site-text: #414B3B;
-            --site-accent: #8CA87C;
+            /* --- SITE COLORS (Restored from your original) --- */
+            --site-bg: #FFF9F3;       
+            --header-tan: #FFF9F3; 
+            --site-text: #414B3B;     
+            --site-accent: #8CA87C;   
             --site-white: #FFFFFF;
-            --workspace-bg: #C5D6BA;
-            --workspace-dot: rgba(65, 75, 59, 0.15);
+            
+            /* --- THEME COLORS --- */
+            --workspace-bg: #C5D6BA;   
+            --workspace-dot: rgba(65, 75, 59, 0.15); 
+
+            /* --- FUNCTIONAL COLORS --- */
             --grid-line: #E0E5D0;
-            --selection-highlight: rgba(140, 168, 124, 0.4);
+            --selection-highlight: rgba(140, 168, 124, 0.4); 
             --focus-ring: #414B3B;
+            --legend-height: 40px; 
         }
 
         * { box-sizing: border-box; }
@@ -30,108 +37,146 @@
             font-family: 'Montserrat', sans-serif;
             background-color: var(--site-bg);
             color: var(--site-text);
-            margin: 0;
-            height: 100vh;
-            display: flex; flex-direction: column;
-            overflow: hidden;
+            margin: 0; padding: 0; height: 100vh;
+            display: flex; flex-direction: column; overflow: hidden;
         }
 
         /* SIDEBAR */
         .sidebar-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-            z-index: 2000; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.4); z-index: 2000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
         }
         .sidebar-overlay.active { opacity: 1; pointer-events: all; }
+
         .sidebar-menu {
             position: fixed; top: 0; left: 0; bottom: 0; width: 280px;
             background: white; z-index: 2100; transform: translateX(-100%);
-            transition: transform 0.3s ease; padding: 20px 0;
-            box-shadow: 2px 0 12px rgba(0,0,0,0.1);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 2px 0 12px rgba(0,0,0,0.15); display: flex; flex-direction: column; padding: 20px 0;
         }
         .sidebar-menu.active { transform: translateX(0); }
-        .menu-item { display: block; padding: 12px 24px; color: var(--site-text); text-decoration: none; font-weight: 500; }
-        .menu-item:hover { background: #f7f9f5; border-left: 4px solid var(--site-accent); }
+
+        .sidebar-header {
+            padding: 0 24px 20px 24px; border-bottom: 1px solid var(--grid-line);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .sidebar-title a {
+            font-family: 'Merriweather', serif; font-weight: 700; font-size: 1.2rem;
+            color: var(--site-text); text-decoration: none;
+        }
+        .close-menu-btn {
+            background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--site-text);
+        }
+        .menu-item {
+            display: block; padding: 12px 24px; text-decoration: none; color: var(--site-text);
+            font-weight: 500; transition: background 0.1s; border-left: 3px solid transparent;
+        }
+        .menu-item:hover { background-color: #f7f9f5; border-left-color: var(--site-accent); }
 
         /* HEADER */
         header.site-header {
-            background-color: var(--header-tan);
-            padding: 15px 30px; display: flex; align-items: center; justify-content: space-between;
-            border-bottom: 1px solid rgba(65, 75, 59, 0.15); z-index: 1000;
+            background-color: var(--header-tan); padding: 15px 30px;
+            display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 1px solid rgba(65, 75, 59, 0.15); flex-shrink: 0; z-index: 1000;
         }
-        .hamburger-btn { background: none; border: none; cursor: pointer; padding: 5px; }
-        .hamburger-btn span { display: block; width: 20px; height: 2px; background: var(--site-text); margin: 4px 0; }
+        .menu-container { display: flex; align-items: center; gap: 15px; }
+        .hamburger-btn {
+            background: none; border: none; cursor: pointer; padding: 5px;
+            display: flex; flex-direction: column; gap: 5px;
+        }
+        .hamburger-btn span {
+            display: block; width: 20px; height: 2px; background-color: var(--site-text); border-radius: 2px;
+        }
+        h1.page-title a {
+            font-family: 'Merriweather', serif; font-weight: 900; font-size: 1.6rem;
+            color: var(--site-text); text-decoration: none;
+        }
 
-        /* SEARCH & CONTROLS */
+        /* CONTROLS */
         .controls-area { display: flex; gap: 15px; align-items: center; }
-        
-        .search-container { position: relative; width: 220px; }
-        #member-search {
-            width: 100%; padding: 8px 15px; border: 1px solid var(--site-text);
-            background: transparent; border-radius: 20px; outline: none; font-family: 'Montserrat';
+        .tool-btn {
+            background: transparent; border: 1px solid var(--site-text);
+            color: var(--site-text); width: 32px; height: 32px;
+            border-radius: 50%; cursor: pointer; display: flex;
+            align-items: center; justify-content: center; font-size: 1rem;
         }
-        .search-results {
-            position: absolute; top: 115%; left: 0; width: 100%;
-            background: white; border-radius: 8px; display: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 2000; max-height: 200px; overflow-y: auto;
-        }
-        .result-item { padding: 10px 15px; cursor: pointer; font-size: 0.9rem; border-bottom: 1px solid #eee; }
-        .result-item:hover { background: #f7f9f5; }
+        .tool-btn:hover { background: var(--site-text); color: var(--site-bg); }
+        .tool-btn svg { width: 16px; height: 16px; fill: currentColor; }
 
-        /* SAVE BUTTON */
+        /* SEARCH */
+        .search-container { position: relative; width: 280px; }
+        input#member-search {
+            width: 100%; padding: 10px 20px; border: 1px solid var(--site-text);
+            background: transparent; border-radius: 50px;
+            font-family: 'Montserrat', sans-serif; font-size: 0.9rem; color: var(--site-text); outline: none;
+        }
+        input#member-search:focus { background: white; box-shadow: 0 4px 12px rgba(65, 75, 59, 0.1); }
+        .search-results {
+            position: absolute; top: 110%; left: 0; width: 100%;
+            background: white; border-radius: 12px; box-shadow: 0 8px 20px rgba(65, 75, 59, 0.25);
+            overflow: hidden; display: none; z-index: 2000; max-height: 300px; overflow-y: auto;
+        }
+        .result-item {
+            padding: 12px 20px; cursor: pointer; display: flex; justify-content: space-between;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .result-item:hover { background-color: #f7f9f5; border-left: 3px solid var(--site-accent); }
+
+        /* SAVE BUTTON (Hidden by default) */
         #save-btn {
-            background: var(--site-text); color: white; border: none;
-            padding: 8px 24px; border-radius: 20px; font-weight: 600; font-family: 'Montserrat';
-            cursor: pointer; display: none; transition: opacity 0.2s;
+            background: var(--site-text); color: white; padding: 8px 20px;
+            border-radius: 50px; font-weight: 600; font-size: 0.9rem;
+            border: none; cursor: pointer; display: none;
         }
         #save-btn:hover { opacity: 0.9; }
+        #save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        /* TABLE */
+        /* WORKSPACE & TABLE */
         .workspace {
-            flex: 1; overflow: auto; padding: 0 40px 40px;
+            flex: 1; overflow: auto; padding: 0 40px 40px 40px;
             display: grid; place-items: start center;
             background-color: var(--workspace-bg);
             background-image: radial-gradient(var(--workspace-dot) 1px, transparent 1px);
             background-size: 20px 20px;
         }
         .sheet-wrapper {
-            background: white; border-radius: 0 0 4px 4px;
-            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.25); margin-top: 40px;
-            transform-origin: top center; transition: transform 0.2s;
+            background: white; padding: 0; border-radius: 0 0 4px 4px;
+            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45); margin-top: 40px;
+            display: flex; flex-direction: column; transform-origin: top center;
         }
-        table { border-collapse: collapse; background: white; user-select: none; color: var(--site-text); }
-        th {
-            font-family: 'Montserrat', sans-serif; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
-            padding: 15px; position: sticky; top: 0; z-index: 200; background: white; letter-spacing: 0.05em;
-            border-bottom: 4px solid var(--site-text);
-        }
-        th:first-child { left: 0; z-index: 250; border-right: 2px solid var(--site-text); }
+        table { border-collapse: collapse; background: white; color: var(--site-text); user-select: none; }
         
+        th {
+            font-family: 'Montserrat', sans-serif; text-transform: uppercase;
+            font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
+            position: sticky; top: 0; z-index: 200; background-color: white;
+            border-bottom: 5px solid var(--site-text);
+        }
+        th:first-child { z-index: 250; left: 0; border-right: 2px solid var(--site-text); }
+
         .station-cell {
-            font-family: 'Merriweather', serif; font-weight: 700; padding: 0 20px; font-size: 0.9rem;
-            background: #F9FBF7; position: sticky; left: 0; z-index: 100;
-            border-right: 2px solid var(--site-text); border-bottom: 1px solid var(--grid-line);
+            font-family: 'Merriweather', serif; font-weight: 700; font-size: 0.95rem;
+            padding: 0 20px; text-align: left; background-color: #F9FBF7;
+            border-bottom: 1px solid var(--grid-line); border-right: 2px solid var(--site-text);
+            position: sticky; left: 0; z-index: 100; width: 220px;
         }
         td.data-cell {
-            width: 150px; height: 65px; text-align: center; cursor: pointer;
-            border-bottom: 1px solid var(--grid-line); border-right: 1px solid var(--grid-line);
-            font-weight: 500; font-size: 0.9rem; transition: box-shadow 0.1s;
+            width: 160px; height: 75px; border-bottom: 1px solid var(--grid-line);
+            border-right: 1px solid var(--grid-line); text-align: center; vertical-align: middle;
+            font-weight: 500; font-size: 0.95rem; cursor: pointer; position: relative;
         }
-        td.data-cell:hover { box-shadow: inset 0 0 0 2px rgba(65, 75, 59, 0.1); }
+        td.data-cell.focus { outline: 2px solid var(--focus-ring); z-index: 150; }
 
-        /* LOADING BAR (Top of screen) */
-        #loading-bar {
-            position: fixed; top: 0; left: 0; width: 100%; height: 3px;
-            background: linear-gradient(to right, var(--site-accent), var(--site-text));
-            z-index: 9999; animation: load 1.5s infinite; display: none;
-        }
-        @keyframes load { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-        
         /* EDIT INPUT */
         #edit-input {
-            position: absolute; display: none; text-align: center;
-            border: 2px solid var(--focus-ring); z-index: 1000; outline: none;
-            font-family: 'Montserrat'; font-weight: 600; font-size: 0.9rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            position: absolute; display: none; font-family: 'Montserrat', sans-serif;
+            font-size: 0.95rem; text-align: center; border: 2px solid var(--focus-ring);
+            z-index: 1000; outline: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        #loading-bar {
+            position: fixed; top: 0; left: 0; width: 100%; height: 4px;
+            background: var(--site-accent); z-index: 9999; display: none;
         }
     </style>
 </head>
@@ -140,36 +185,46 @@
     <div id="loading-bar"></div>
 
     <!-- Sidebar -->
-    <div class="sidebar-overlay" onclick="toggleMenu()"></div>
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMenu()"></div>
     <div class="sidebar-menu" id="main-menu">
-        <div style="padding: 20px 24px; font-family: 'Merriweather'; font-weight: 900; font-size: 1.2rem; border-bottom: 1px solid #eee;">TomCat VI</div>
-        <div style="padding: 10px 0;">
+        <div class="sidebar-header">
+            <span class="sidebar-title"><a href="#">TomCat VI UI</a></span>
+            <button class="close-menu-btn" onclick="toggleMenu()">×</button>
+        </div>
+        <div class="sidebar-content">
             <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
-            <a href="https://github.com/austin-j-b/pytomcat" target="_blank" class="menu-item">Repository</a>
+            <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">Repository</a>
         </div>
     </div>
 
     <header class="site-header">
-        <div style="display:flex; align-items:center; gap:15px;">
-            <button class="hamburger-btn" onclick="toggleMenu()"><span></span><span></span><span></span></button>
-            <h1 style="margin:0; font-family:'Merriweather'; font-size:1.4rem; font-weight:900;">Campus Cat Coalition</h1>
+        <div class="menu-container">
+            <button class="hamburger-btn" onclick="toggleMenu()" title="Open Menu">
+                <span></span><span></span><span></span>
+            </button>
+            <h1 class="page-title">
+                <a href="#">Campus Cat Coalition</a>
+            </h1>
         </div>
 
         <div class="controls-area">
-            <button style="background:none; border:1px solid var(--site-text); border-radius:50%; width:32px; height:32px; cursor:pointer; display:grid; place-items:center;" onclick="adjustZoom(-0.1)" title="Zoom Out">-</button>
-            <button style="background:none; border:1px solid var(--site-text); border-radius:50%; width:32px; height:32px; cursor:pointer; display:grid; place-items:center;" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
-            
+            <button class="tool-btn" onclick="adjustZoom(-0.1)" title="Zoom Out">-</button>
+            <div id="zoom-display" style="font-weight:600; font-size:0.85rem;">100%</div>
+            <button class="tool-btn" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
+            <button class="tool-btn" onclick="resetZoom()" title="Reset Zoom">
+                <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+            </button>
+
             <div class="search-container">
                 <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
                 <div id="search-results" class="search-results"></div>
             </div>
 
-            <div id="user-display" style="font-weight:600; font-size:0.85rem; color: var(--site-accent);">Guest (View Only)</div>
             <button id="save-btn" onclick="saveData()">Save Changes</button>
         </div>
     </header>
 
-    <div class="workspace">
+    <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
             <table id="schedule-table">
                 <thead>
@@ -186,46 +241,73 @@
     <input type="text" id="edit-input">
 
 <script>
-// --- CONSTANTS ---
+// --- CONFIG ---
 const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
     "Lot 50", "Mary Kay and Zen", "West Hall", "Maintenance"
 ];
+// The soft colors from your original file
 const COLORS = [
-    "#E2F0CB", "#C7CEEA", "#FFDAC1", "#FFB7B2", "#B5EAD7", 
-    "#E0BBE4", "#DF9881", "#ECD5E3", "#A0E7E5", "#FBE7C6"
+    "#FFB7B2", "#E2F0CB", "#C7CEEA", "#FFDAC1", "#B5EAD7", 
+    "#DF9881", "#ECD5E3", "#A0E7E5", "#FBE7C6", "#D4F1F4",
+    "#F4E1D2", "#94D0CC", "#B9B0B0", "#EFC3A4", "#809BCE"
 ];
 
 // --- STATE ---
 let scheduleData = {};
-let userPerms = {};
+let userPerms = { can_manage_feeding: false }; // Default: Guest
 let currentUser = null;
 let zoomLevel = 1.0;
 let activeEdit = null;
 
-// --- AUTH & INIT ---
-const discordSdk = new Discord.DiscordSDK("YOUR_APP_ID_FROM_CONFIG"); // Optional if embedded
-
+// --- INIT ---
 async function init() {
-    // 1. IMMEDIATE LOAD: Don't wait for auth to show data
+    // 1. Render empty grid IMMEDIATELY so the page isn't blank
+    STATIONS.forEach(st => scheduleData[st] = new Array(7).fill(""));
+    render();
+
+    // 2. Load data
     document.getElementById('loading-bar').style.display = 'block';
     await loadSchedule();
     document.getElementById('loading-bar').style.display = 'none';
 
-    // 2. ATTEMPT AUTH (Background): If it fails, we just stay as Guest
+    // 3. Try Auth in background (Silent)
     attemptDiscordAuth();
 }
 
+// --- DATA LOADING ---
+async function loadSchedule() {
+    try {
+        // Use relative path so it works on localhost and deployed
+        const res = await fetch("api/schedule");
+        if (res.ok) {
+            const json = await res.json();
+            // Merge with defaults
+            STATIONS.forEach(st => {
+                scheduleData[st] = json[st] || new Array(7).fill("");
+            });
+            render();
+        }
+    } catch (e) {
+        console.warn("Could not load schedule from API, using blanks/defaults.", e);
+    }
+}
+
+// --- AUTHENTICATION (Silent) ---
+const discordSdk = new Discord.DiscordSDK("YOUR_APP_ID_FROM_ENV"); 
+
 async function attemptDiscordAuth() {
     try {
-        // Short timeout to prevent hanging forever if not in Discord
+        // We do NOT await .ready() forever. 
+        // If not inside Discord, this Promise never resolves. We timeout after 1s.
         const readyPromise = discordSdk.ready();
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout"), 2000));
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout"), 1000));
         
         await Promise.race([readyPromise, timeoutPromise]);
 
+        // If we get here, we are in Discord. Proceed with Auth.
         const auth = await discordSdk.commands.authorize({
-            client_id: "YOUR_APP_ID_FROM_CONFIG", // This allows the SDK to know which app it is
+            client_id: "YOUR_APP_ID_FROM_ENV", 
             response_type: "code",
             state: "",
             prompt: "none",
@@ -233,8 +315,7 @@ async function attemptDiscordAuth() {
         });
 
         if (auth.code) {
-            // Exchange for Token & Perms
-            const res = await fetch("/api/auth/token", {
+            const res = await fetch("api/auth/token", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({code: auth.code})
@@ -245,51 +326,29 @@ async function attemptDiscordAuth() {
                 currentUser = data.user;
                 userPerms = data.permissions;
                 
-                // Update UI for Logged In User
-                document.getElementById('user-display').textContent = currentUser.username;
-                document.getElementById('user-display').style.color = "var(--site-text)";
-                
+                // If authorized, show save button
                 if (userPerms.can_manage_feeding) {
                     document.getElementById('save-btn').style.display = 'block';
-                    // Re-render to enable click events
-                    render(); 
+                    render(); // Re-render to enable click events
                 }
             }
         }
     } catch (e) {
-        console.log("Visitor Mode: Auth skipped or failed (running in browser?)", e);
-        // No action needed, UI is already in Guest state
+        // Silent failure: User remains a Guest.
+        console.log("Visitor Mode Active (Auth skipped or failed)");
     }
 }
 
-// --- DATA LOGIC ---
-async function loadSchedule() {
-    try {
-        const res = await fetch("/api/schedule");
-        if (!res.ok) throw new Error("API Error");
-        const json = await res.json();
-        
-        STATIONS.forEach(st => {
-            scheduleData[st] = json[st] || new Array(7).fill("");
-        });
-        render();
-    } catch (e) {
-        console.error("Failed to load schedule", e);
-        // Fallback empty grid so UI doesn't look broken
-        STATIONS.forEach(st => scheduleData[st] = new Array(7).fill(""));
-        render();
-    }
-}
-
+// --- SAVING ---
 async function saveData() {
     if (!currentUser) return;
     const btn = document.getElementById('save-btn');
-    const originalText = btn.textContent;
+    const oldText = btn.textContent;
     btn.textContent = "Saving...";
     btn.disabled = true;
 
     try {
-        const res = await fetch("/api/schedule/save", {
+        const res = await fetch("api/schedule/save", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -301,67 +360,77 @@ async function saveData() {
         if (res.ok) {
             btn.textContent = "Saved!";
             setTimeout(() => {
-                btn.textContent = originalText;
+                btn.textContent = oldText;
                 btn.disabled = false;
             }, 2000);
         } else {
             throw new Error("Save failed");
         }
     } catch (e) {
-        alert("Error saving. Ensure you have permission.");
-        btn.textContent = originalText;
+        alert("Could not save.");
+        btn.textContent = oldText;
         btn.disabled = false;
     }
 }
 
-// --- RENDER ---
+// --- RENDERING ---
 function render() {
     const tbody = document.getElementById('table-body');
     tbody.innerHTML = '';
 
-    STATIONS.forEach(st => {
+    STATIONS.forEach((station, r) => {
         const tr = document.createElement('tr');
+        
         const th = document.createElement('td');
         th.className = 'station-cell';
-        th.textContent = st;
+        th.textContent = station;
         tr.appendChild(th);
 
-        scheduleData[st].forEach((val, idx) => {
+        scheduleData[station].forEach((val, c) => {
             const td = document.createElement('td');
             td.className = 'data-cell';
             td.textContent = val;
             td.style.backgroundColor = getSoftColor(val);
             
-            // Only allow edit if we have permission
-            if (userPerms && userPerms.can_manage_feeding) {
-                td.onclick = (e) => startEdit(e.target, st, idx);
-                td.style.cursor = "pointer"; // Explicitly set pointer
+            // Interaction: Only allowed if permitted
+            if (userPerms.can_manage_feeding) {
+                td.onclick = (e) => startEdit(e.target, station, c);
+                td.style.cursor = "pointer";
             } else {
                 td.onclick = null;
                 td.style.cursor = "default";
             }
+            
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
     });
 }
 
-// --- UI HELPERS ---
 function getSoftColor(name) {
     if (!name) return 'white';
     let hash = 0;
-    for (let i=0; i<name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return COLORS[Math.abs(hash) % COLORS.length];
+}
+
+// --- UI CONTROLS ---
+function toggleMenu() {
+    document.getElementById('main-menu').classList.toggle('active');
+    document.getElementById('sidebar-overlay').classList.toggle('active');
 }
 
 function adjustZoom(delta) {
     zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
-    document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
+    applyZoom();
 }
-
-function toggleMenu() {
-    document.querySelector('.sidebar-menu').classList.toggle('active');
-    document.querySelector('.sidebar-overlay').classList.toggle('active');
+function resetZoom() {
+    zoomLevel = 1.0;
+    applyZoom();
+}
+function applyZoom() {
+    document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
+    document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
 }
 
 // --- SEARCH ---
@@ -373,9 +442,7 @@ searchInput.addEventListener('input', (e) => {
     if (!q) { resultsBox.style.display = 'none'; return; }
     
     const allNames = new Set();
-    Object.values(scheduleData).forEach(row => row.forEach(n => {
-        if(n) allNames.add(n);
-    }));
+    Object.values(scheduleData).forEach(row => row.forEach(n => { if(n) allNames.add(n); }));
     
     const matches = Array.from(allNames).filter(n => n.toLowerCase().includes(q));
     resultsBox.innerHTML = '';
@@ -411,23 +478,27 @@ function highlightName(name) {
 // --- EDITING ---
 const inputEl = document.getElementById('edit-input');
 
-function startEdit(td, st, idx) {
+function startEdit(td, station, idx) {
     if (activeEdit) commitEdit();
     const rect = td.getBoundingClientRect();
-    // Account for zoom in positioning if needed, but simple absolute works for 1.0
+    // Correct for scroll
+    const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+    const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
     inputEl.style.display = 'block';
-    inputEl.style.top = (rect.top + window.scrollY) + 'px';
-    inputEl.style.left = (rect.left + window.scrollX) + 'px';
+    inputEl.style.top = (rect.top + scrollY) + 'px';
+    inputEl.style.left = (rect.left + scrollX) + 'px';
     inputEl.style.width = rect.width + 'px';
     inputEl.style.height = rect.height + 'px';
-    inputEl.value = scheduleData[st][idx];
+    
+    inputEl.value = scheduleData[station][idx];
     inputEl.focus();
-    activeEdit = { st, idx };
+    activeEdit = { station, idx };
 }
 
 function commitEdit() {
     if (!activeEdit) return;
-    scheduleData[activeEdit.st][activeEdit.idx] = inputEl.value;
+    scheduleData[activeEdit.station][activeEdit.idx] = inputEl.value;
     inputEl.style.display = 'none';
     activeEdit = null;
     render();
@@ -436,8 +507,9 @@ function commitEdit() {
 inputEl.addEventListener('keydown', e => { if(e.key==='Enter') commitEdit(); });
 inputEl.addEventListener('blur', commitEdit);
 
-// Run Init
+// START
 init();
+
 </script>
 </body>
 </html>

@@ -11,23 +11,19 @@
     <script src="https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk/dist/discord.min.js"></script>
 
     <style>
+        /* --- ORIGINAL CSS RESTORED --- */
         :root {
-            /* --- SITE COLORS --- */
-            --site-bg: #FFF9F3;       
-            --header-tan: #FFF9F3; 
-            --site-text: #414B3B;     
-            --site-accent: #8CA87C;   
+            --site-bg: #FFF9F3;
+            --header-tan: #FFF9F3;
+            --site-text: #414B3B;
+            --site-accent: #8CA87C;
             --site-white: #FFFFFF;
-            
-            /* --- THEME COLORS --- */
-            --workspace-bg: #C5D6BA;   
-            --workspace-dot: rgba(65, 75, 59, 0.15); 
-
-            /* --- FUNCTIONAL COLORS --- */
+            --workspace-bg: #C5D6BA;
+            --workspace-dot: rgba(65, 75, 59, 0.15);
             --grid-line: #E0E5D0;
-            --selection-highlight: rgba(140, 168, 124, 0.4); 
+            --selection-highlight: rgba(140, 168, 124, 0.4);
             --focus-ring: #414B3B;
-            --legend-height: 40px; 
+            --legend-height: 40px;
         }
 
         * { box-sizing: border-box; }
@@ -40,7 +36,7 @@
             display: flex; flex-direction: column; overflow: hidden;
         }
 
-        /* --- SIDEBAR MENU --- */
+        /* SIDEBAR */
         .sidebar-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.4); z-index: 2000;
@@ -60,23 +56,25 @@
             padding: 0 24px 20px 24px; border-bottom: 1px solid var(--grid-line);
             display: flex; justify-content: space-between; align-items: center;
         }
-        .sidebar-title {
-            font-family: 'Merriweather', serif; font-weight: 700; font-size: 1.2rem; color: var(--site-text);
+        .sidebar-title a {
+            font-family: 'Merriweather', serif; font-weight: 700; font-size: 1.2rem;
+            color: var(--site-text); text-decoration: none;
         }
         .close-menu-btn {
             background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--site-text);
         }
+        .sidebar-content { padding: 10px 0; overflow-y: auto; }
         .menu-item {
             display: block; padding: 12px 24px; text-decoration: none; color: var(--site-text);
-            font-weight: 500; transition: background 0.1s; border-left: 3px solid transparent;
+            font-weight: 500; font-size: 0.95rem; transition: background 0.1s; border-left: 3px solid transparent;
         }
         .menu-item:hover { background-color: #f7f9f5; border-left-color: var(--site-accent); }
 
-        /* --- HEADER --- */
+        /* HEADER */
         header.site-header {
             background-color: var(--header-tan); padding: 15px 30px;
             display: flex; align-items: center; justify-content: space-between;
-            border-bottom: 1px solid rgba(65, 75, 59, 0.15); flex-shrink: 0; z-index: 1000;
+            border-bottom: 1px solid rgba(65, 75, 59, 0.15); flex-shrink: 0; z-index: 1000; position: relative;
         }
         .menu-container { display: flex; align-items: center; gap: 15px; }
         .hamburger-btn {
@@ -86,11 +84,15 @@
         .hamburger-btn span {
             display: block; width: 20px; height: 2px; background-color: var(--site-text); border-radius: 2px;
         }
-        h1.page-title { margin: 0; font-family: 'Merriweather', serif; font-weight: 900; font-size: 1.6rem; color: var(--site-text); }
+        h1.page-title { margin: 0; display: flex; align-items: center; }
+        h1.page-title a {
+            font-family: 'Merriweather', serif; font-weight: 900; font-size: 1.6rem;
+            color: var(--site-text); letter-spacing: -0.01em; text-decoration: none;
+        }
 
         .controls-area { display: flex; gap: 15px; align-items: center; }
 
-        /* --- SEARCH --- */
+        /* SEARCH */
         .search-container { position: relative; width: 280px; }
         input#member-search {
             width: 100%; padding: 10px 20px; border: 1px solid var(--site-text);
@@ -98,6 +100,8 @@
             font-size: 0.9rem; color: var(--site-text); outline: none; transition: all 0.2s ease;
         }
         input#member-search:focus { background: white; box-shadow: 0 4px 12px rgba(65, 75, 59, 0.1); }
+        input#member-search::placeholder { color: var(--site-accent); font-weight: 300; font-style: italic; }
+
         .search-results {
             position: absolute; top: 110%; left: 0; width: 100%;
             background: white; border-radius: 12px; box-shadow: 0 8px 20px rgba(65, 75, 59, 0.25);
@@ -105,43 +109,52 @@
         }
         .result-item {
             padding: 12px 20px; cursor: pointer; display: flex; justify-content: space-between;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid #f0f0f0; transition: background 0.1s; border-left: 3px solid transparent;
         }
-        .result-item:hover { background-color: #f7f9f5; border-left: 3px solid var(--site-accent); }
+        .result-item:hover, .result-item.active { background-color: #f7f9f5; border-left-color: var(--site-accent); }
+        .result-name { font-weight: 600; color: var(--site-text); }
+        .result-user { font-size: 0.8rem; color: var(--site-accent); }
 
-        /* --- TOOLS --- */
+        /* TOOLS */
         .tool-btn {
             background: transparent; border: 1px solid var(--site-text);
             color: var(--site-text); width: 32px; height: 32px;
             border-radius: 50%; cursor: pointer; display: flex;
-            align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s;
+            align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s; padding: 0;
         }
+        .tool-btn svg { width: 16px; height: 16px; fill: currentColor; }
         .tool-btn:hover { background: var(--site-text); color: var(--site-bg); }
-        
-        /* --- USER AUTH DISPLAY --- */
-        #user-status {
-            font-weight: 600; font-size: 0.9rem; cursor: pointer; padding: 5px 10px; border-radius: 4px;
+        #zoom-display { font-size: 0.85rem; font-weight: 600; min-width: 45px; text-align: center; }
+
+        /* SELECTION DISPLAY & BUTTONS */
+        .current-selection {
+            background: var(--site-text); color: white; padding: 8px 20px; border-radius: 50px;
+            font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; gap: 8px;
+            min-width: 150px; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        #user-status:hover { background: rgba(0,0,0,0.05); }
-        
+        .current-selection.empty { background: rgba(65, 75, 59, 0.1); color: var(--site-text); box-shadow: none; }
+
         #save-btn {
-            background: var(--site-text); color: white; padding: 8px 24px;
-            border-radius: 50px; font-weight: 600; font-size: 0.9rem;
-            border: none; cursor: pointer; display: none; /* Hidden until auth */
+            background: var(--site-accent); color: white; border: none;
+            padding: 8px 20px; border-radius: 50px; font-weight: 700; cursor: pointer;
+            font-family: 'Montserrat'; margin-left: 10px; display: none; /* Hidden until auth */
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        #save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 8px rgba(0,0,0,0.15); }
-        #save-btn:active { transform: translateY(0); }
+        #save-btn:hover { filter: brightness(1.1); }
+        #save-btn:active { transform: translateY(1px); }
 
-        /* --- MAIN WORKSPACE --- */
+        #guest-login {
+            font-size: 0.8rem; text-decoration: underline; cursor: pointer; color: var(--site-accent); margin-left: 10px;
+        }
+
+        /* WORKSPACE */
         .workspace {
             flex: 1; overflow: auto; padding: 0 40px 40px 40px;
             display: grid; place-items: start center;
             background-color: var(--workspace-bg);
             background-image: radial-gradient(var(--workspace-dot) 1px, transparent 1px);
-            background-size: 20px 20px;
+            background-size: 20px 20px; z-index: 10;
         }
-
         .sheet-wrapper {
             background: white; padding: 0; border-radius: 0 0 4px 4px;
             box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.10);
@@ -149,69 +162,70 @@
             display: flex; flex-direction: column; margin-top: 40px; 
         }
 
+        /* LEGEND */
+        .controls-legend {
+            position: sticky; top: 0; z-index: 300; height: var(--legend-height);
+            background: var(--header-tan); color: var(--site-text); padding: 0 25px; 
+            border-bottom: 2px solid var(--site-text); display: flex; align-items: center;
+            justify-content: flex-start; gap: 25px;
+            font-family: 'Montserrat', sans-serif; font-size: 0.75rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+
         table { border-collapse: collapse; background: white; color: var(--site-text); user-select: none; border-spacing: 0; }
 
+        /* TABLE HEADERS */
         th {
-            font-family: 'Montserrat', sans-serif; text-transform: uppercase;
-            font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
-            position: sticky; top: 0; z-index: 200; background-color: white;
-            border-bottom: 5px solid var(--site-text); color: var(--site-text);
+            font-family: 'Montserrat', sans-serif; text-transform: uppercase; font-size: 0.75rem;
+            font-weight: 600; letter-spacing: 0.1em; padding: 15px;
+            position: sticky; top: var(--legend-height); z-index: 200;
+            background-color: white; border-bottom: 5px solid var(--site-text); color: var(--site-text);
         }
         th:first-child { z-index: 250; left: 0; background-color: white; border-right: 2px solid var(--site-text); }
 
         .station-cell {
-            font-family: 'Merriweather', serif; font-weight: 700; font-size: 0.95rem;
-            padding: 0 20px; text-align: left; background-color: #F9FBF7;
-            border-bottom: 1px solid var(--grid-line); border-right: 2px solid var(--site-text);
-            position: sticky; left: 0; z-index: 100; width: 220px;
+            font-family: 'Merriweather', serif; font-weight: 700; font-size: 0.95rem; padding: 0 20px;
+            text-align: left; background-color: #F9FBF7; border-bottom: 1px solid var(--grid-line);
+            border-right: 2px solid var(--site-text); position: sticky; left: 0; z-index: 100; width: 220px;
         }
 
         td.data-cell {
             width: 160px; height: 75px; border-bottom: 1px solid var(--grid-line);
             border-right: 1px solid var(--grid-line); text-align: center; vertical-align: middle;
             font-weight: 500; font-size: 0.95rem; cursor: pointer; position: relative;
-            transition: background-color 0.05s; padding: 5px;
+            transition: background-color 0.05s; padding: 5px; line-height: 1.2;
         }
+        .cell-name { display: block; font-weight: 600; color: #2b3326; }
+        .cell-user { display: block; font-size: 0.75rem; color: #333333; margin-top: 2px; font-weight: 400; }
         td.data-cell.focus { outline: 2px solid var(--focus-ring); outline-offset: -2px; z-index: 150; }
         td.data-cell.selected { background-color: var(--selection-highlight) !important; }
+        td.data-cell.assigned .cell-name { text-shadow: 0 1px 0 rgba(255,255,255,0.6); }
 
-        /* EDIT INPUT */
-        #edit-input {
-            position: absolute; display: none; font-family: 'Montserrat', sans-serif;
-            font-size: 0.95rem; text-align: center; border: 2px solid var(--focus-ring);
-            z-index: 1000; outline: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-
-        /* LOADING OVERLAY */
-        #loading-screen {
+        #loading {
             position: fixed; inset: 0; background: var(--site-bg); z-index: 9999;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            transition: opacity 0.3s; pointer-events: none; opacity: 0;
+            color: var(--site-text); font-family: 'Merriweather', serif; font-size: 1.5rem;
+            transition: opacity 0.3s;
         }
-        #loading-screen.active { opacity: 1; pointer-events: all; }
-        .spinner {
-            width: 40px; height: 40px; border: 4px solid #ddd;
-            border-top-color: var(--site-text); border-radius: 50%; animation: spin 1s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-    <div id="loading-screen" class="active">
-        <div class="spinner"></div>
-        <div style="margin-top:20px; font-weight:600;">Loading Schedule...</div>
+    <div id="loading">
+        <div>Loading Schedule...</div>
     </div>
 
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMenu()"></div>
     <div class="sidebar-menu" id="main-menu">
         <div class="sidebar-header">
-            <span class="sidebar-title">TomCat VI UI</span>
+            <span class="sidebar-title">
+                <a href="#" onclick="toggleMenu()">TomCat-VI UI</a>
+            </span>
             <button class="close-menu-btn" onclick="toggleMenu()">×</button>
         </div>
-        <div style="padding: 10px 0;">
+        <div class="sidebar-content">
             <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
-            <a href="https://github.com/austin-j-b/pytomcat" target="_blank" class="menu-item">GitHub Repo</a>
+            <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat VI Repository</a>
         </div>
     </div>
 
@@ -220,51 +234,65 @@
             <button class="hamburger-btn" onclick="toggleMenu()" title="Open Menu">
                 <span></span><span></span><span></span>
             </button>
-            <h1 class="page-title">Campus Cat Coalition</h1>
+            
+            <h1 class="page-title">
+                <a href="#" onclick="window.location.reload()">Campus Cat Coalition</a>
+            </h1>
         </div>
 
         <div class="controls-area">
             <button class="tool-btn" onclick="adjustZoom(-0.1)" title="Zoom Out">-</button>
             <div id="zoom-display">100%</div>
             <button class="tool-btn" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
-            
+            <button class="tool-btn" onclick="resetZoom()" title="Reset Zoom">
+                <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+            </button>
+
             <div class="search-container">
-                <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
+                <input type="text" id="member-search" placeholder="Select Volunteer..." autocomplete="off">
                 <div id="search-results" class="search-results"></div>
             </div>
 
-            <!-- Click 'Guest' to login manually in browser -->
-            <div id="user-status" onclick="promptManualLogin()">Guest</div>
-            <button id="save-btn" onclick="saveData()">Save</button>
+            <div id="selection-display" class="current-selection empty">Select User</div>
+            
+            <!-- AUTH CONTROLS -->
+            <button id="save-btn" onclick="saveSchedule()">Save</button>
+            <span id="guest-login" onclick="manualLoginPrompt()">Guest</span>
         </div>
     </header>
 
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
+            <div class="controls-legend">
+                <div>"Click" to select</div>
+                <div style="margin-left:15px;">"Ctrl" + "Click" multi-select</div>
+                <div style="margin-left:15px;">"Shift" + "Click" range</div>
+                <div style="margin-left:15px;">"Enter" assign</div>
+                <div style="margin-left:15px;">"Del" clear</div>
+            </div>
+
             <table id="schedule-table">
                 <thead>
                     <tr>
                         <th>Station</th>
-                        <th>Sunday</th><th>Monday</th><th>Tuesday</th><th>Wednesday</th><th>Thursday</th><th>Friday</th><th>Saturday</th>
+                        <th>Sunday</th><th>Monday</th><th>Tuesday</th>
+                        <th>Wednesday</th><th>Thursday</th><th>Friday</th><th>Saturday</th>
                     </tr>
                 </thead>
-                <tbody id="table-body"></tbody>
+                <tbody></tbody>
             </table>
         </div>
     </div>
 
-    <input type="text" id="edit-input">
-
 <script>
-// --- CONFIG ---
+// --- CONFIG & MOCK DATA ---
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
     "Lot 50", "Mary Kay and Zen", "West Hall", "Maintenance"
 ];
 
-// --- MOCK DATA (The safety net!) ---
-// If API fails, we load this so the table isn't empty.
+// If API fails, we use this so page isn't blank
 const MOCK_SCHEDULE = {
     "Microwave": ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
     "Snickers": ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
@@ -279,122 +307,67 @@ const MOCK_SCHEDULE = {
 
 // --- STATE ---
 let scheduleData = {};
+let members = [];
+let currentVolunteer = null;
 let zoomLevel = 1.0;
+let currentSearchIndex = -1; 
+let selectedCells = new Set(); 
+let anchor = null; 
+let isDragging = false;
 let currentUser = null;
 let userPerms = { can_manage_feeding: false };
-let activeEdit = null; // { station, idx, element }
 
-// --- COLOR PALETTE ---
-const COLORS = [
-    "#FFB7B2", "#E2F0CB", "#C7CEEA", "#FFDAC1", "#B5EAD7", 
-    "#DF9881", "#ECD5E3", "#A0E7E5", "#FBE7C6", "#D4F1F4",
-    "#F4E1D2", "#94D0CC", "#B9B0B0", "#EFC3A4", "#809BCE"
-];
+// --- AUTH & DISCORD SDK ---
+const discordSdk = new Discord.DiscordSDK("1341667150066225192"); // Replace with your CLIENT ID if distinct
 
-function getSoftColor(name) {
-    if (!name) return 'white';
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return COLORS[Math.abs(hash) % COLORS.length];
-}
-
-// --- INITIALIZATION ---
 async function init() {
-    // 1. Initialize empty structure immediately
+    // 1. Setup initial data structure immediately
     STATIONS.forEach(st => scheduleData[st] = new Array(7).fill(""));
-    render(); 
-
-    // 2. Try to load real data, fall back to MOCK if fails
+    
+    // 2. Load Data & Members concurrently
     try {
-        await loadSchedule();
+        await Promise.all([fetchSchedule(), fetchMembers()]);
     } catch (e) {
-        console.warn("API Load failed, using MOCK data", e);
-        scheduleData = JSON.parse(JSON.stringify(MOCK_SCHEDULE));
-        render();
+        console.warn("API Error, using mocks.", e);
+        // Use mock if API fails
+        STATIONS.forEach(st => {
+            if(MOCK_SCHEDULE[st]) scheduleData[st] = [...MOCK_SCHEDULE[st]];
+        });
+        // Mock members if API fails
+        if(members.length === 0) members = [{name: "Mock User", user: "mock"}];
     }
 
-    // 3. Hide loading screen
-    document.getElementById('loading-screen').classList.remove('active');
+    renderGrid();
+    document.getElementById('loading').style.display = 'none';
 
-    // 4. Attempt Discord Auth (Silent)
+    // 3. Attempt Login (Background)
     attemptDiscordAuth();
 }
 
-// --- DATA OPS ---
-async function loadSchedule() {
-    const res = await fetch("api/schedule");
-    if (!res.ok) throw new Error("API error");
-    const json = await res.json();
-    
-    STATIONS.forEach(st => {
-        if (json[st]) scheduleData[st] = json[st];
-    });
-    render();
-}
-
-async function saveData() {
-    if (!currentUser) { alert("Not logged in."); return; }
-    
-    const btn = document.getElementById('save-btn');
-    const oldText = btn.textContent;
-    btn.textContent = "Saving...";
-    btn.disabled = true;
-
-    try {
-        const res = await fetch("api/schedule/save", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-User-ID": currentUser.id
-            },
-            body: JSON.stringify(scheduleData)
-        });
-        
-        if (res.ok) {
-            btn.textContent = "Saved!";
-            setTimeout(() => {
-                btn.textContent = oldText;
-                btn.disabled = false;
-            }, 2000);
-        } else {
-            throw new Error("Server rejected save");
-        }
-    } catch (e) {
-        alert("Save failed. " + e.message);
-        btn.textContent = oldText;
-        btn.disabled = false;
-    }
-}
-
-// --- AUTHENTICATION ---
-const discordSdk = new Discord.DiscordSDK("YOUR_APP_ID_PLACEHOLDER"); // Env not strictly needed for layout
-
 async function attemptDiscordAuth() {
     try {
-        // Short timeout for Discord SDK
-        const ready = discordSdk.ready();
-        const timeout = new Promise((_, r) => setTimeout(() => r("Time"), 1000));
-        await Promise.race([ready, timeout]);
+        // Short timeout to avoid hanging if not in Discord
+        const readyPromise = discordSdk.ready();
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout"), 1500));
+        await Promise.race([readyPromise, timeoutPromise]);
 
         const auth = await discordSdk.commands.authorize({
-            client_id: "YOUR_APP_ID_PLACEHOLDER", // Replace via main.py injection if needed
+            client_id: "1341667150066225192", // Ensure matches main.py
             response_type: "code",
             state: "",
             prompt: "none",
             scope: ["identify", "guilds.members.read"]
         });
 
-        if (auth.code) {
-            loginWithCode(auth.code);
-        }
+        if (auth.code) loginWithCode(auth.code);
     } catch (e) {
-        console.log("Not in Discord or Auth failed. Staying as Guest.");
+        console.log("Guest Mode active.");
     }
 }
 
 async function loginWithCode(code) {
     try {
-        const res = await fetch("api/auth/token", {
+        const res = await fetch("/api/auth/token", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({code})
@@ -403,49 +376,95 @@ async function loginWithCode(code) {
             const data = await res.json();
             applyLogin(data.user, data.permissions);
         }
-    } catch (e) { console.error(e); }
-}
-
-// --- MANUAL LOGIN (For Browser Testing) ---
-async function promptManualLogin() {
-    const uid = prompt("DEBUG LOGIN: Enter Discord User ID to simulate login:", "624440365595754496");
-    if (uid) {
-        // We simulate the backend permissions check by just fetching them if we had an endpoint, 
-        // or simpler: we just mock it for local UI testing.
-        // But let's try to actually validate it against the server if we can?
-        // No, simplest is just to pretend for UI, but the SAVE endpoint checks strictly.
-        
-        // Let's construct a dummy user object
-        const mockUser = { id: uid, username: "Manual User" };
-        
-        // Ask server for permissions for this ID
-        // (We can reuse the auth endpoint logic, or just optimistically set it)
-        // To verify permissions, we can just set the user and see if Save works.
-        // But for UI state:
-        applyLogin(mockUser, { can_manage_feeding: true }); 
-    }
+    } catch(e) { console.error(e); }
 }
 
 function applyLogin(user, perms) {
     currentUser = user;
     userPerms = perms;
     
-    const statusDiv = document.getElementById('user-status');
-    statusDiv.textContent = `User: ${user.username}`;
-    statusDiv.style.color = "var(--site-text)";
-    
+    const loginBadge = document.getElementById('guest-login');
+    loginBadge.textContent = user.username || "User";
+    loginBadge.style.color = "#414B3B";
+    loginBadge.onclick = null; // Disable manual override if real login worked
+
     if (userPerms.can_manage_feeding) {
         document.getElementById('save-btn').style.display = 'block';
-        render(); // Re-render to add click listeners
     }
 }
 
+function manualLoginPrompt() {
+    const uid = prompt("DEBUG: Enter User ID to emulate:", "624440365595754496");
+    if (uid) applyLogin({username: "DevUser", id: uid}, {can_manage_feeding: true});
+}
+
+// --- DATA FETCHING ---
+async function fetchSchedule() {
+    const res = await fetch("/api/schedule");
+    if (!res.ok) throw new Error("Schedule fetch failed");
+    const json = await res.json();
+    STATIONS.forEach(st => {
+        if (json[st]) scheduleData[st] = json[st];
+    });
+}
+
+async function fetchMembers() {
+    const res = await fetch("/api/members");
+    if (!res.ok) throw new Error("Members fetch failed");
+    members = await res.json();
+}
+
+async function saveSchedule() {
+    if (!currentUser) { alert("You are not logged in."); return; }
+    const btn = document.getElementById('save-btn');
+    const oldText = btn.textContent;
+    btn.textContent = "Saving...";
+    btn.disabled = true;
+
+    try {
+        const res = await fetch("/api/schedule/save", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-User-ID": currentUser.id
+            },
+            body: JSON.stringify(scheduleData)
+        });
+        if (res.ok) {
+            btn.textContent = "Saved!";
+            setTimeout(() => { btn.textContent = oldText; btn.disabled = false; }, 2000);
+        } else {
+            throw new Error("Server rejected");
+        }
+    } catch (e) {
+        alert("Save failed: " + e.message);
+        btn.textContent = oldText;
+        btn.disabled = false;
+    }
+}
+
+// --- COLOR PALETTE ---
+const PRESET_COLORS = [
+    "#FFB7B2", "#E2F0CB", "#C7CEEA", "#FFDAC1", "#B5EAD7",
+    "#DF9881", "#ECD5E3", "#A0E7E5", "#FBE7C6", "#D4F1F4",
+    "#F4E1D2", "#94D0CC", "#B9B0B0", "#EFC3A4", "#809BCE",
+    "#95B8D1", "#B8E986", "#FF9AA2", "#E0BBE4", "#D291BC",
+    "#FEC8D8", "#FFDFD3", "#E6C9A8", "#9EBC9E", "#B4A7D6"
+];
+
+function getVolunteerColor(name) {
+    if (!name) return 'white';
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return PRESET_COLORS[Math.abs(hash) % PRESET_COLORS.length];
+}
+
 // --- RENDERING ---
-function render() {
-    const tbody = document.getElementById('table-body');
+function renderGrid() {
+    const tbody = document.querySelector('#schedule-table tbody');
     tbody.innerHTML = '';
 
-    STATIONS.forEach(station => {
+    STATIONS.forEach((station, r) => {
         const tr = document.createElement('tr');
         
         const th = document.createElement('td');
@@ -453,116 +472,210 @@ function render() {
         th.textContent = station;
         tr.appendChild(th);
 
-        const rowData = scheduleData[station] || new Array(7).fill("");
-        
-        rowData.forEach((val, idx) => {
+        const rowVals = scheduleData[station] || new Array(7).fill("");
+
+        rowVals.forEach((val, c) => {
             const td = document.createElement('td');
             td.className = 'data-cell';
-            td.textContent = val;
-            td.style.backgroundColor = getSoftColor(val);
-            
-            // Only clickable if we have permission
-            if (userPerms.can_manage_feeding) {
-                td.onclick = (e) => startEdit(e.target, station, idx);
-                td.style.cursor = "pointer";
+            td.dataset.coord = `${r}|${c}`;
+
+            if (val) {
+                td.classList.add('assigned');
+                td.style.backgroundColor = getVolunteerColor(val);
+                
+                const member = members.find(m => m.name === val);
+                const userHandle = member ? `@${member.user}` : '';
+
+                td.innerHTML = `
+                    <span class="cell-name">${val}</span>
+                    ${userHandle ? `<span class="cell-user">${userHandle}</span>` : ''}
+                `;
             } else {
-                td.onclick = null;
-                td.style.cursor = "default";
+                td.innerHTML = '';
             }
-            
+
+            if (selectedCells.has(`${r}|${c}`)) td.classList.add('selected');
+
+            td.onmousedown = (e) => handleMouseDown(e, r, c);
+            td.onmouseover = (e) => handleMouseOver(e, r, c);
+
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
     });
 }
 
-// --- EDITING ---
-const inputEl = document.getElementById('edit-input');
-
-function startEdit(td, station, idx) {
-    if (activeEdit) commitEdit();
-    
-    const rect = td.getBoundingClientRect();
-    const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
-    const scrollY = window.pageYOffset || document.documentElement.scrollTop;
-
-    inputEl.style.display = 'block';
-    inputEl.style.top = (rect.top + scrollY) + 'px';
-    inputEl.style.left = (rect.left + scrollX) + 'px';
-    inputEl.style.width = rect.width + 'px';
-    inputEl.style.height = rect.height + 'px';
-    
-    inputEl.value = scheduleData[station][idx];
-    inputEl.focus();
-    activeEdit = { station, idx };
+function updateVisualsOnly() {
+    document.querySelectorAll('.data-cell').forEach(td => {
+        const coord = td.dataset.coord;
+        if (selectedCells.has(coord)) td.classList.add('selected');
+        else td.classList.remove('selected');
+        
+        if (anchor && td.dataset.coord === `${anchor.r}|${anchor.c}`) {
+            td.classList.add('focus');
+        } else {
+            td.classList.remove('focus');
+        }
+    });
 }
 
-function commitEdit() {
-    if (!activeEdit) return;
-    scheduleData[activeEdit.station][activeEdit.idx] = inputEl.value;
-    inputEl.style.display = 'none';
-    activeEdit = null;
-    render();
+// --- INTERACTIONS (Selection) ---
+function handleMouseDown(e, r, c) {
+    isDragging = true;
+    const coord = `${r}|${c}`;
+
+    if (e.shiftKey && anchor) {
+        selectRange(anchor.r, anchor.c, r, c);
+    } else if (e.ctrlKey || e.metaKey) {
+        if (selectedCells.has(coord)) selectedCells.delete(coord);
+        else selectedCells.add(coord);
+        anchor = {r, c}; 
+    } else {
+        selectedCells.clear();
+        selectedCells.add(coord);
+        anchor = {r, c};
+    }
+    updateVisualsOnly();
 }
 
-inputEl.addEventListener('keydown', e => { if(e.key === 'Enter') commitEdit(); });
-inputEl.addEventListener('blur', commitEdit);
-
-// --- ZOOM & MENU ---
-function adjustZoom(delta) {
-    zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
-    document.getElementById('zoom-display').textContent = Math.round(zoomLevel*100) + "%";
-    document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
-}
-function resetZoom() { zoomLevel = 1.0; adjustZoom(0); }
-
-function toggleMenu() {
-    document.getElementById('main-menu').classList.toggle('active');
-    document.getElementById('sidebar-overlay').classList.toggle('active');
+function handleMouseOver(e, r, c) {
+    if (isDragging && anchor) {
+        selectedCells.clear();
+        selectRange(anchor.r, anchor.c, r, c);
+        updateVisualsOnly();
+    }
 }
 
-// --- SEARCH ---
+function selectRange(r1, c1, r2, c2) {
+    const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
+    const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
+    for (let i = rMin; i <= rMax; i++) {
+        for (let j = cMin; j <= cMax; j++) {
+            selectedCells.add(`${i}|${j}`);
+        }
+    }
+}
+
+document.addEventListener('mouseup', () => isDragging = false);
+
+// --- SEARCH & LOGIC ---
 const searchInput = document.getElementById('member-search');
 const resultsBox = document.getElementById('search-results');
+const selectionBadge = document.getElementById('selection-display');
+let filteredMembers = [];
 
 searchInput.addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
-    if (!q) { resultsBox.style.display = 'none'; return; }
-    
-    const allNames = new Set();
-    Object.values(scheduleData).forEach(row => row.forEach(n => { if(n) allNames.add(n); }));
-    const matches = Array.from(allNames).filter(n => n.toLowerCase().includes(q));
-    
     resultsBox.innerHTML = '';
-    if (matches.length) {
+    currentSearchIndex = -1; 
+    if (!q) { resultsBox.style.display = 'none'; return; }
+
+    filteredMembers = members.filter(m => 
+        m.name.toLowerCase().includes(q) || m.user.toLowerCase().includes(q)
+    );
+
+    if (filteredMembers.length > 0) {
         resultsBox.style.display = 'block';
-        matches.forEach(name => {
+        filteredMembers.forEach((m, idx) => {
             const div = document.createElement('div');
             div.className = 'result-item';
-            div.textContent = name;
-            div.onclick = () => {
-                highlightName(name);
-                resultsBox.style.display = 'none';
-                searchInput.value = '';
-            };
+            div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
+            div.onmousedown = (ev) => { ev.preventDefault(); setVolunteer(m); };
             resultsBox.appendChild(div);
         });
     } else { resultsBox.style.display = 'none'; }
 });
 
-function highlightName(name) {
-    document.querySelectorAll('.data-cell').forEach(td => {
-        if (td.textContent === name) {
-            td.style.border = "3px solid var(--focus-ring)";
-            td.scrollIntoView({behavior: "smooth", block: "center"});
-            setTimeout(() => td.style.border = "", 3000);
-        }
-    });
+searchInput.addEventListener('keydown', (e) => {
+    if (!filteredMembers.length) return;
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        currentSearchIndex = Math.min(currentSearchIndex + 1, filteredMembers.length - 1);
+        highlightResult();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        currentSearchIndex = Math.max(currentSearchIndex - 1, 0);
+        highlightResult();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (currentSearchIndex >= 0) setVolunteer(filteredMembers[currentSearchIndex]);
+    }
+});
+
+function highlightResult() {
+    const items = resultsBox.querySelectorAll('.result-item');
+    items.forEach(item => item.classList.remove('active'));
+    if (items[currentSearchIndex]) items[currentSearchIndex].classList.add('active');
 }
 
-// Run
-init();
+function setVolunteer(m) {
+    currentVolunteer = m;
+    selectionBadge.className = 'current-selection';
+    selectionBadge.style.backgroundColor = getVolunteerColor(m.name);
+    selectionBadge.style.color = '#2b3326';
+    selectionBadge.textContent = m.name;
+    
+    searchInput.value = '';
+    resultsBox.style.display = 'none';
+    currentSearchIndex = -1;
+    searchInput.blur();
+}
 
+// --- KEYBOARD SHORTCUTS ---
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') {
+        if (e.key === 'Escape') { searchInput.blur(); resultsBox.style.display = 'none'; }
+        return;
+    }
+
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+        applyValue("");
+    } else if (e.key === 'Enter') {
+        if (currentVolunteer) applyValue(currentVolunteer.name);
+        else searchInput.focus();
+    } else if (e.key === 'Escape') {
+        selectedCells.clear(); updateVisualsOnly();
+    } else if (e.key.startsWith('Arrow')) {
+        e.preventDefault();
+        if (!anchor) anchor = {r:0, c:0};
+        let {r, c} = anchor;
+        if (e.key === 'ArrowUp') r = Math.max(0, r-1);
+        if (e.key === 'ArrowDown') r = Math.min(STATIONS.length-1, r+1);
+        if (e.key === 'ArrowLeft') c = Math.max(0, c-1);
+        if (e.key === 'ArrowRight') c = Math.min(6, c+1);
+        anchor = {r, c};
+        
+        if (e.shiftKey) selectedCells.add(`${r}|${c}`);
+        else { selectedCells.clear(); selectedCells.add(`${r}|${c}`); }
+        
+        const cell = document.querySelector(`.data-cell[data-coord="${r}|${c}"]`);
+        cell?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+        updateVisualsOnly();
+    }
+});
+
+function applyValue(val) {
+    if (selectedCells.size === 0) return;
+    selectedCells.forEach(coord => {
+        const [r, c] = coord.split('|').map(Number);
+        scheduleData[STATIONS[r]][c] = val;
+    });
+    renderGrid();
+}
+
+// --- CONTROLS ---
+function toggleMenu() {
+    document.getElementById('main-menu').classList.toggle('active');
+    document.getElementById('sidebar-overlay').classList.toggle('active');
+}
+function adjustZoom(delta) {
+    zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
+    document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
+    document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
+}
+function resetZoom() { zoomLevel = 1.0; adjustZoom(0); }
+
+init();
 </script>
 </body>
 </html>

@@ -32,4 +32,4 @@ torch==2.8.0
 torchvision==0.18.1+cu121
 
 # HTTP utilities used by third-party clients
-requests==2.32.3
+requests==2.32.4

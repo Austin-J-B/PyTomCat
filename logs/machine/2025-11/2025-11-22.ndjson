@@ -1826,3 +1826,10 @@
 {"event": "message", "author": "mochenoch", "content": "<:weep:800595104711966801>"}
 {"event": "online"}
 {"event": "online"}
+{"event": "action", "name": "handle_misc", "trigger": "trigger=meow", "output": "meeeoowww"}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1441975609239535709, "has_image": false, "slots": {"cat": "Twix", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1_HC61I43gggyHlV6ChTAcwAnPXv81FCh", "output": "sn=6136 attempt=1 size=752769"}
+{"event": "intent", "kind": "show_photo", "confidence": 1.0, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1441975639400775773, "has_image": false, "slots": {"cat": "Twix", "station": null, "dates": null}, "decision": ["wake:prefix", "slot:cat=Twix", "intent:show_photo"]}
+{"event": "action", "name": "show_cache_download_ok", "trigger": "https://drive.google.com/uc?export=view&id=1NDpoW10mHPSu2_eWOcoMXck0RQBws0gx", "output": "sn=5933 attempt=1 size=720494"}
+{"event": "intent", "kind": "ui_launch", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1441975659705532599, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "ui_activity_prompt", "trigger": "user=624440365595754496; channel=1341696618688286720", "output": "message_id=1441975661983043777; app_id=1341667150066225192; invite=APXF5vj"}

@@ -118,14 +118,13 @@
         }
         td.data-cell:hover { box-shadow: inset 0 0 0 2px rgba(65, 75, 59, 0.1); }
 
-        /* AUTH LOADING */
-        #loading-overlay {
-            position: fixed; inset: 0; background: var(--site-bg); z-index: 9999;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            font-family: 'Merriweather'; font-size: 1.2rem; color: var(--site-text);
+        /* LOADING BAR (Top of screen) */
+        #loading-bar {
+            position: fixed; top: 0; left: 0; width: 100%; height: 3px;
+            background: linear-gradient(to right, var(--site-accent), var(--site-text));
+            z-index: 9999; animation: load 1.5s infinite; display: none;
         }
-        .spinner { width: 30px; height: 30px; border: 3px solid #ddd; border-top-color: var(--site-text); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes load { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
         
         /* EDIT INPUT */
         #edit-input {
@@ -138,10 +137,7 @@
 </head>
 <body>
 
-    <div id="loading-overlay">
-        <div class="spinner"></div>
-        <div id="status-text">Connecting to Discord...</div>
-    </div>
+    <div id="loading-bar"></div>
 
     <!-- Sidebar -->
     <div class="sidebar-overlay" onclick="toggleMenu()"></div>
@@ -168,7 +164,7 @@
                 <div id="search-results" class="search-results"></div>
             </div>
 
-            <div id="user-display" style="font-weight:600; font-size:0.9rem;"></div>
+            <div id="user-display" style="font-weight:600; font-size:0.85rem; color: var(--site-accent);">Guest (View Only)</div>
             <button id="save-btn" onclick="saveData()">Save Changes</button>
         </div>
     </header>
@@ -208,46 +204,40 @@ let zoomLevel = 1.0;
 let activeEdit = null;
 
 // --- AUTH & INIT ---
-// IMPORTANT: Make sure this matches the ID in config.py
-const discordSdk = new Discord.DiscordSDK("YOUR_APPLICATION_ID_HERE_IF_NEEDED_BUT_ENV_INJECTION_BETTER"); 
+const discordSdk = new Discord.DiscordSDK("YOUR_APP_ID_FROM_CONFIG"); // Optional if embedded
 
 async function init() {
+    // 1. IMMEDIATE LOAD: Don't wait for auth to show data
+    document.getElementById('loading-bar').style.display = 'block';
+    await loadSchedule();
+    document.getElementById('loading-bar').style.display = 'none';
+
+    // 2. ATTEMPT AUTH (Background): If it fails, we just stay as Guest
+    attemptDiscordAuth();
+}
+
+async function attemptDiscordAuth() {
     try {
-        // Attempt Discord SDK Init
-        // If outside Discord (dev mode), this might hang/fail, so wrap carefully
-        if (window.location.search.includes("code")) {
-             // Handle standard OAuth callback if not using Embedded SDK
-        } else {
-             await discordSdk.ready().catch(e => console.log("SDK not ready (running locally?)"));
-        }
+        // Short timeout to prevent hanging forever if not in Discord
+        const readyPromise = discordSdk.ready();
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout"), 2000));
+        
+        await Promise.race([readyPromise, timeoutPromise]);
 
-        // In a real Embedded App, we use the SDK to get the code
-        let code = null;
-        try {
-            const auth = await discordSdk.commands.authorize({
-                client_id: "YOUR_APP_ID", // Replace or ensure matched
-                response_type: "code",
-                state: "",
-                prompt: "none",
-                scope: ["identify", "guilds.members.read"]
-            });
-            code = auth.code;
-        } catch (e) {
-            console.warn("Discord SDK Auth failed (ignore if local testing):", e);
-        }
+        const auth = await discordSdk.commands.authorize({
+            client_id: "YOUR_APP_ID_FROM_CONFIG", // This allows the SDK to know which app it is
+            response_type: "code",
+            state: "",
+            prompt: "none",
+            scope: ["identify", "guilds.members.read"]
+        });
 
-        // Mock for local testing if code is null
-        if (!code && window.location.hostname === 'localhost') {
-            console.log("Running in Local Dev Mode");
-            // You can mock the fetch here if needed, or just let it fail to 'viewer'
-        }
-
-        if (code) {
-            document.getElementById('status-text').textContent = "Verifying Permissions...";
+        if (auth.code) {
+            // Exchange for Token & Perms
             const res = await fetch("/api/auth/token", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({code})
+                body: JSON.stringify({code: auth.code})
             });
             
             if (res.ok) {
@@ -255,24 +245,20 @@ async function init() {
                 currentUser = data.user;
                 userPerms = data.permissions;
                 
+                // Update UI for Logged In User
                 document.getElementById('user-display').textContent = currentUser.username;
+                document.getElementById('user-display').style.color = "var(--site-text)";
+                
                 if (userPerms.can_manage_feeding) {
                     document.getElementById('save-btn').style.display = 'block';
+                    // Re-render to enable click events
+                    render(); 
                 }
             }
         }
-
-        // Load Data regardless of auth success (Viewer Mode)
-        document.getElementById('status-text').textContent = "Loading Schedule...";
-        await loadSchedule();
-        document.getElementById('loading-overlay').style.display = 'none';
-
     } catch (e) {
-        console.error(e);
-        document.getElementById('status-text').textContent = "Error loading. Please refresh.";
-        // Allow viewing even if auth fails?
-        await loadSchedule();
-        document.getElementById('loading-overlay').style.display = 'none';
+        console.log("Visitor Mode: Auth skipped or failed (running in browser?)", e);
+        // No action needed, UI is already in Guest state
     }
 }
 
@@ -280,6 +266,7 @@ async function init() {
 async function loadSchedule() {
     try {
         const res = await fetch("/api/schedule");
+        if (!res.ok) throw new Error("API Error");
         const json = await res.json();
         
         STATIONS.forEach(st => {
@@ -288,6 +275,9 @@ async function loadSchedule() {
         render();
     } catch (e) {
         console.error("Failed to load schedule", e);
+        // Fallback empty grid so UI doesn't look broken
+        STATIONS.forEach(st => scheduleData[st] = new Array(7).fill(""));
+        render();
     }
 }
 
@@ -345,6 +335,10 @@ function render() {
             // Only allow edit if we have permission
             if (userPerms && userPerms.can_manage_feeding) {
                 td.onclick = (e) => startEdit(e.target, st, idx);
+                td.style.cursor = "pointer"; // Explicitly set pointer
+            } else {
+                td.onclick = null;
+                td.style.cursor = "default";
             }
             tr.appendChild(td);
         });
@@ -442,6 +436,7 @@ function commitEdit() {
 inputEl.addEventListener('keydown', e => { if(e.key==='Enter') commitEdit(); });
 inputEl.addEventListener('blur', commitEdit);
 
+// Run Init
 init();
 </script>
 </body>

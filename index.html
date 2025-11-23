@@ -12,7 +12,8 @@
     <style>
         :root {
             /* --- SITE COLORS --- */
-            --site-bg: #FFF9F3;       
+            --site-bg: #F7E3C6;       /* Slightly darker tan */
+                        --header-tan: #EFCB97; /* Slightly darker tan for header/instructions */
             --site-text: #414B3B;     
             --site-accent: #8CA87C;   
             --site-white: #FFFFFF;
@@ -125,12 +126,12 @@
 
         /* --- HEADER --- */
         header.site-header {
-            background-color: var(--site-bg);
+            background-color: var(--header-tan);
             padding: 15px 30px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 1px solid rgba(65, 75, 59, 0.1);
+            border-bottom: 1px solid rgba(65, 75, 59, 0.15);
             flex-shrink: 0;
             z-index: 1000; 
             position: relative;
@@ -267,8 +268,8 @@
             background: white;
             padding: 0;
             border-radius: 0 0 4px 4px;
-            /* Slightly increased shadow for more contrast */
-            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.3);
+            /* Darker shadow for more contrast */
+            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.10);
             transform-origin: top center;
             transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
             display: flex;
@@ -284,11 +285,10 @@
             height: var(--legend-height);
 
             /* Updated to Tan Background */
-            background: var(--site-bg); 
+            background: var(--header-tan); /* Slightly darker tan */
             color: var(--site-text);
             padding: 0 25px; 
-            /* Removed border here to prevent "swapping" glitch */
-            border-bottom: none; 
+            border-bottom: 5px solid var(--site-text); /* Persistent gray bar */
             
             display: flex;
             align-items: center;

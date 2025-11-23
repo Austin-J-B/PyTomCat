@@ -1607,3 +1607,123 @@
 {"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
 {"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "I need proper food , I ate dary queen earlier , there nothing else in this small town", "attachments": 0}
 {"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441954421776056502, "emoji": "😭", "message_preview": "I need proper food , I ate dary queen ea...", "message_author": "pancakemixteamdj"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "😭😭😭😭😭😭😭😭", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "u make me sad but i am glad u sad hi.....pls just start talking to me i promise jm not scary", "attachments": 0}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441954756581920962, "emoji": "🎉", "message_preview": "u make me sad but i am glad u sad hi.......", "message_author": "slayc127"}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441954756581920962, "emoji": "😭", "message_preview": "u make me sad but i am glad u sad hi.......", "message_author": "slayc127"}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441954756581920962, "emoji": "❤️", "message_preview": "u make me sad but i am glad u sad hi.......", "message_author": "slayc127"}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "Can attest Kaz is very scary", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "Jk", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "Plz don’t smite me", "attachments": 0}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441954849729155273, "emoji": "❤️", "message_preview": "Can attest Kaz is very scary", "message_author": "pancakemixteamdj"}
+{"event": "reaction_add", "user": "lemonelon_", "channel": "#yapper-committee", "message_id": 1441954885888376934, "emoji": "❤️", "message_preview": "Plz don’t smite me", "message_author": "pancakemixteamdj"}
+{"event": "reaction_add", "user": "ludavis", "channel": "#yapper-committee", "message_id": 1441953602171047936, "emoji": "🎉", "message_preview": "Pro tip remember to put on protective ea...", "message_author": "pancakemixteamdj"}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "hop fed (it is hiding from me)", "attachments": 1}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 338109126808829953, "message_id": 1441954989386895472, "has_image": true, "slots": {"cat": null, "station": "HOP", "dates": ["2025-11-22"]}, "decision": ["slot:stations=HOP", "intent:feed_update"]}
+{"event": "action", "name": "feed_update_ignored", "trigger": "station=HOP", "output": "channel_blocked:643586809166561310"}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "what the fucking kind of cat is dis?!", "attachments": 0}
+{"event": "reaction_add", "user": "ludavis", "channel": "#yapper-committee", "message_id": 1441954114396360786, "emoji": "😭", "message_preview": "https://tenor.com/view/point-gif-2450101...", "message_author": "slayc127"}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#feeding-team", "content": "i fear thats a safety cone", "attachments": 0}
+{"event": "message", "author": "ludavis", "channel": "#yapper-committee", "content": "Kaz was scary that one time with the mob", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#feeding-team", "content": "that looks like bagel 😭 or whatever his name is", "attachments": 0}
+{"event": "reaction_add", "user": "simplyshadow171295", "channel": "#feeding-team", "message_id": 1441955257507643485, "emoji": "😭", "message_preview": "i fear thats a safety cone", "message_author": "_costco_wholesale_"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1441953602171047936, "emoji": "🎉", "message_preview": "Pro tip remember to put on protective ea...", "message_author": "pancakemixteamdj"}
+{"event": "reaction_add", "user": "ludavis", "channel": "#feeding-team", "message_id": 1441955257507643485, "emoji": "😭", "message_preview": "i fear thats a safety cone", "message_author": "_costco_wholesale_"}
+{"event": "reaction_add", "user": "emiximez", "channel": "#feeding-team", "message_id": 1441955257507643485, "emoji": "😭", "message_preview": "i fear thats a safety cone", "message_author": "_costco_wholesale_"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1441953790537502831, "emoji": "❤️", "message_preview": "My left ear is a bit funny", "message_author": "pancakemixteamdj"}
+{"event": "message", "author": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "content": "He had nothing to say", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "", "attachments": 1}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "he is so cuteee", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1441955264407277608, "emoji": "😆", "message_preview": "Kaz was scary that one time with the mob", "message_author": "ludavis"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1441954885888376934, "emoji": "❤️", "message_preview": "Plz don’t smite me", "message_author": "pancakemixteamdj"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1441953966736019619, "emoji": "❤️", "message_preview": "idk theres no demand to talk to people b...", "message_author": "slayc127"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "timeout for 2 seconds/j", "attachments": 0}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1441954029843382473, "emoji": "😭", "message_preview": "working up the courage to introduce myse...", "message_author": "lemonelon_"}
+{"event": "message", "author": "simplyshadow171295", "channel": "#feeding-team", "content": "o then that’s charles", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "ok actual photo", "attachments": 1}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1441954114396360786, "emoji": "😭", "message_preview": "https://tenor.com/view/point-gif-2450101...", "message_author": "slayc127"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1441954160290435102, "emoji": "❤️", "message_preview": "IT OK I SAID HI 1 TIME", "message_author": "lemonelon_"}
+{"event": "message", "author": "simplyshadow171295", "channel": "#feeding-team", "content": "pale orange?", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "yes", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#feeding-team", "content": "charles", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "with white chest", "attachments": 0}
+{"event": "message", "author": "simplyshadow171295", "channel": "#feeding-team", "content": "bagel is regular orange", "attachments": 0}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1441954885888376934, "emoji": "❤️", "message_preview": "Plz don’t smite me", "message_author": "pancakemixteamdj"}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "", "attachments": 1}
+{"event": "reaction_add", "user": "kitadan", "channel": "#feeding-team", "message_id": 1441955257507643485, "emoji": "😭", "message_preview": "i fear thats a safety cone", "message_author": "_costco_wholesale_"}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "THATS NOT ALLOWED", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "HE TOOK OFF ONE POINT I NEED TO KNOW WHAT IT WAS", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "content": "im gonna ask him during my exam if my vibes were just so bad he Had to take off a point", "attachments": 0}
+{"event": "message", "author": ".keatn", "channel": "#pictures-of-the-cats", "content": "", "attachments": 1}
+{"event": "action", "name": "image_intake_error", "trigger": "channel=551084964318543904", "output": "no_worksheet tab=TCBPicsInput sheet=15HtHVB4HfOr9e85EgbOGbz9CBwWnXg3pbCytGTA64P4"}
+{"event": "message", "author": "ludavis", "channel": "#yapper-committee", "content": "This gif is killing me", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "itz my fav gif i try to use it sparingly so it doesnt lose its impact", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#purrley-pawsitive-pussy-pals", "content": "Heres the traffic to our website. Idk how many singaporean fans we got but I assume those are bots", "attachments": 1}
+{"event": "reaction_add", "user": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1441956313293652019, "emoji": "😭", "message_preview": "Heres the traffic to our website. Idk ho...", "message_author": "austinbaustinb"}
+{"event": "message", "author": "cici4f3", "channel": "#pet-pictures", "content": "peanut dinking his oiter and being mad at me for interrupting him", "attachments": 4}
+{"event": "reaction_add", "user": "slayc127", "channel": "#pet-pictures", "message_id": 1441956588138135667, "emoji": "😆", "message_preview": "peanut dinking his oiter and being mad a...", "message_author": "cici4f3"}
+{"event": "message", "author": "slayc127", "channel": "#pet-pictures", "content": "baby at work im stealing", "attachments": 5}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "Thank you", "attachments": 0}
+{"event": "message", "author": "le_nuit_sans_fin", "channel": "#feeding-team", "content": "<333333", "attachments": 0}
+{"event": "message", "author": "void_now", "channel": "#pet-pictures", "content": "He looks so strange in the first one", "attachments": 0}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "i just saw this petite kitty almost get ran over i saw them run in a tree so i tried to get a quick photo but it ran away so i started going back to feed west hall and this cat almost gets run over i literally yelped", "attachments": 1}
+{"event": "message", "author": "kukieari", "channel": "#yapper-committee", "content": "me bc", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#yapper-committee", "content": "i am covid negative", "attachments": 0}
+{"event": "message", "author": "kukieari", "channel": "#yapper-committee", "content": "https://tenor.com/view/yippee-gif-1830625430750110743", "attachments": 0}
+{"event": "message", "author": "void_now", "channel": "#pet-pictures", "content": "He looks like he’s glaring at you and pursing his lips", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "YAYYYYYY", "attachments": 0}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1441958650884132924, "emoji": "🎉", "message_preview": "https://tenor.com/view/yippee-gif-183062...", "message_author": "kukieari"}
+{"event": "reaction_add", "user": "kitadan", "channel": "#pet-pictures", "message_id": 1441956588138135667, "emoji": "😆", "message_preview": "peanut dinking his oiter and being mad a...", "message_author": "cici4f3"}
+{"event": "reaction_add", "user": "void_now", "channel": "#pet-pictures", "message_id": 1441956588138135667, "emoji": "😆", "message_preview": "peanut dinking his oiter and being mad a...", "message_author": "cici4f3"}
+{"event": "message", "author": "kukieari", "channel": "#yapper-committee", "content": "YAYYY", "attachments": 0}
+{"event": "reaction_add", "user": "m_digio", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1441956313293652019, "emoji": "😭", "message_preview": "Heres the traffic to our website. Idk ho...", "message_author": "austinbaustinb"}
+{"event": "reaction_add", "user": "a1darek", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1441956313293652019, "emoji": "😭", "message_preview": "Heres the traffic to our website. Idk ho...", "message_author": "austinbaustinb"}
+{"event": "reaction_add", "user": "m_digio", "channel": "#pet-pictures", "message_id": 1441956588138135667, "emoji": "😆", "message_preview": "peanut dinking his oiter and being mad a...", "message_author": "cici4f3"}
+{"event": "reaction_add", "user": "m_digio", "channel": "#pet-pictures", "message_id": 1441956767973249226, "emoji": "❤️", "message_preview": "baby at work im stealing", "message_author": "slayc127"}
+{"event": "message", "author": "a1darek", "channel": "#pictures-of-the-cats", "content": "", "attachments": 1}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=1"}
+{"event": "message", "author": "cici4f3", "channel": "#pet-pictures", "content": "he literally looks angry", "attachments": 0}
+{"event": "reaction_add", "user": "cici4f3", "channel": "#yapper-committee", "message_id": 1441958650884132924, "emoji": "🎉", "message_preview": "https://tenor.com/view/yippee-gif-183062...", "message_author": "kukieari"}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "She was curled up in the grass and I woke her up", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "@Pancake(Chris/topher) I woke her up", "attachments": 3}
+{"event": "action", "name": "image_intake", "trigger": "channel=551084964318543904", "output": "rows=3"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "i get you bro", "attachments": 0}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#yapper-committee", "message_id": 1441953602171047936, "emoji": "🎉", "message_preview": "Pro tip remember to put on protective ea...", "message_author": "pancakemixteamdj"}
+{"event": "message", "author": "emiximez", "channel": "#feeding-team", "content": "sorry bad pic but west hall fed", "attachments": 1}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 338109126808829953, "message_id": 1441961536296976518, "has_image": true, "slots": {"cat": null, "station": "West Hall", "dates": ["2025-11-22"]}, "decision": ["slot:stations=West Hall", "intent:feed_update"]}
+{"event": "action", "name": "feed_update_ignored", "trigger": "station=West Hall", "output": "channel_blocked:643586809166561310"}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#yapper-committee", "message_id": 1441958650884132924, "emoji": "🎉", "message_preview": "https://tenor.com/view/yippee-gif-183062...", "message_author": "kukieari"}
+{"event": "message", "author": "adeyumii", "channel": "#feeding-team", "content": "I fed lot 50 trust me bro", "attachments": 0}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 643586809166561310, "user_id": 474329968936091648, "message_id": 1441961796247228539, "has_image": false, "slots": {"cat": null, "station": "Lot 50", "dates": ["2025-11-22"]}, "decision": ["slot:stations=Lot 50", "intent:feed_update"]}
+{"event": "action", "name": "feed_update_ignored", "trigger": "station=Lot 50", "output": "channel_blocked:643586809166561310"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "i went into the lounge for the first time the other day and i literally walked into carlisle and then walked back out and then walked back in and then went into the elevator then hid in the bathroom for like almost 10 minutes before i could muster up the courage", "attachments": 0}
+{"event": "reaction_add", "user": "izzyballz", "channel": "#yapper-committee", "message_id": 1441961855114412042, "emoji": "🍅", "message_preview": "hehe", "message_author": "Carl-bot"}
+{"event": "reaction_add", "user": "spitonme", "channel": "#itty-bitty-kitty-commitee", "message_id": 1441933551632252959, "emoji": "🐙", "message_preview": "Do you want a recipe? My bf is mexican i...", "message_author": "m_digio"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1441961854355116062, "emoji": "😭", "message_preview": "i went into the lounge for the first tim...", "message_author": "izzyballz"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "LMFAOOOOOOOOOOOOO", "attachments": 0}
+{"event": "reaction_add", "user": "ludavis", "channel": "#yapper-committee", "message_id": 1441961854355116062, "emoji": "😭", "message_preview": "i went into the lounge for the first tim...", "message_author": "izzyballz"}
+{"event": "message", "author": "ludavis", "channel": "#yapper-committee", "content": "Uni is the best time to build that confidence and beat social anxiety <:sad_cat:828777514335600641>", "attachments": 0}
+{"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1441961854355116062, "emoji": "😭", "message_preview": "i went into the lounge for the first tim...", "message_author": "izzyballz"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "no it is not 💔💔💔", "attachments": 0}
+{"event": "reaction_add", "user": "kitadan", "channel": "#pet-pictures", "message_id": 1441956767973249226, "emoji": "❤️", "message_preview": "baby at work im stealing", "message_author": "slayc127"}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "@Megan [Feeding Head & PR]", "attachments": 0}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "trying to send the video of me petting boots", "attachments": 0}
+{"event": "reaction_add", "user": "kitadan", "channel": "#pictures-of-the-cats", "message_id": 1441961040718987294, "emoji": "😭", "message_preview": "@Pancake(Chris/topher) I woke her up", "message_author": "adeyumii"}
+{"event": "message", "author": "adeyumii", "channel": "#pictures-of-the-cats", "content": "it doesn't wanna load grrr", "attachments": 0}
+{"event": "reaction_add", "user": "not_d3fault_1420", "channel": "#pictures-of-the-cats", "message_id": 1441892072733806603, "emoji": "‼️", "message_preview": "Got distracted with twix and the couple ...", "message_author": ".bettercalljack"}
+{"event": "reaction_add", "user": "spitonme", "channel": "#pet-pictures", "message_id": 1441956767973249226, "emoji": "🐙", "message_preview": "baby at work im stealing", "message_author": "slayc127"}
+{"event": "reaction_add", "user": "pancakemixteamdj", "channel": "#pictures-of-the-cats", "message_id": 1441961040718987294, "emoji": "😭", "message_preview": "@Pancake(Chris/topher) I woke her up", "message_author": "adeyumii"}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "yes huh", "attachments": 0}
+{"event": "message", "author": "pancakemixteamdj", "channel": "#yapper-committee", "content": "The CCC is the only reason why I can talk to new people at Uni", "attachments": 0}
+{"event": "reaction_add", "user": "spitonme", "channel": "#yapper-committee", "message_id": 1441963493182935152, "emoji": "🐙", "message_preview": "The CCC is the only reason why I can tal...", "message_author": "pancakemixteamdj"}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "also if u get rejected from someone friendship or romantically what r ur chances if seeing them again,,,", "attachments": 0}
+{"event": "message", "author": "spitonme", "channel": "#yapper-committee", "content": "esp after a sem ends", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "the 6 pm sunset is killing me", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "genuinely murder", "attachments": 0}

@@ -46,10 +46,11 @@
             position: fixed; top: 0; left: 0; bottom: 0; width: 280px;
             background: white; z-index: 2100; transform: translateX(-100%);
             transition: transform 0.3s ease; padding: 20px 0;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.1);
         }
         .sidebar-menu.active { transform: translateX(0); }
-        .menu-item { display: block; padding: 12px 24px; color: var(--site-text); text-decoration: none; }
-        .menu-item:hover { background: #f7f9f5; }
+        .menu-item { display: block; padding: 12px 24px; color: var(--site-text); text-decoration: none; font-weight: 500; }
+        .menu-item:hover { background: #f7f9f5; border-left: 4px solid var(--site-accent); }
 
         /* HEADER */
         header.site-header {
@@ -62,25 +63,27 @@
 
         /* SEARCH & CONTROLS */
         .controls-area { display: flex; gap: 15px; align-items: center; }
-        .search-container { position: relative; width: 200px; }
+        
+        .search-container { position: relative; width: 220px; }
         #member-search {
             width: 100%; padding: 8px 15px; border: 1px solid var(--site-text);
-            background: transparent; border-radius: 20px; outline: none;
+            background: transparent; border-radius: 20px; outline: none; font-family: 'Montserrat';
         }
         .search-results {
-            position: absolute; top: 110%; left: 0; width: 100%;
+            position: absolute; top: 115%; left: 0; width: 100%;
             background: white; border-radius: 8px; display: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 2000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 2000; max-height: 200px; overflow-y: auto;
         }
-        .result-item { padding: 10px; cursor: pointer; font-size: 0.9rem; }
-        .result-item:hover { background: #eee; }
+        .result-item { padding: 10px 15px; cursor: pointer; font-size: 0.9rem; border-bottom: 1px solid #eee; }
+        .result-item:hover { background: #f7f9f5; }
 
         /* SAVE BUTTON */
         #save-btn {
             background: var(--site-text); color: white; border: none;
-            padding: 8px 20px; border-radius: 20px; font-weight: 600;
-            cursor: pointer; display: none;
+            padding: 8px 24px; border-radius: 20px; font-weight: 600; font-family: 'Montserrat';
+            cursor: pointer; display: none; transition: opacity 0.2s;
         }
+        #save-btn:hover { opacity: 0.9; }
 
         /* TABLE */
         .workspace {
@@ -92,70 +95,81 @@
         }
         .sheet-wrapper {
             background: white; border-radius: 0 0 4px 4px;
-            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.2); margin-top: 40px;
+            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.25); margin-top: 40px;
             transform-origin: top center; transition: transform 0.2s;
         }
-        table { border-collapse: collapse; background: white; user-select: none; }
+        table { border-collapse: collapse; background: white; user-select: none; color: var(--site-text); }
         th {
             font-family: 'Montserrat', sans-serif; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
-            padding: 15px; position: sticky; top: 0; z-index: 200; background: white;
-            border-bottom: 5px solid var(--site-text);
+            padding: 15px; position: sticky; top: 0; z-index: 200; background: white; letter-spacing: 0.05em;
+            border-bottom: 4px solid var(--site-text);
         }
         th:first-child { left: 0; z-index: 250; border-right: 2px solid var(--site-text); }
+        
         .station-cell {
-            font-family: 'Merriweather', serif; font-weight: 700; padding: 0 20px;
+            font-family: 'Merriweather', serif; font-weight: 700; padding: 0 20px; font-size: 0.9rem;
             background: #F9FBF7; position: sticky; left: 0; z-index: 100;
             border-right: 2px solid var(--site-text); border-bottom: 1px solid var(--grid-line);
         }
         td.data-cell {
-            width: 140px; height: 60px; text-align: center; cursor: pointer;
+            width: 150px; height: 65px; text-align: center; cursor: pointer;
             border-bottom: 1px solid var(--grid-line); border-right: 1px solid var(--grid-line);
-            font-weight: 500;
+            font-weight: 500; font-size: 0.9rem; transition: box-shadow 0.1s;
         }
-        td.data-cell.focus { outline: 2px solid var(--focus-ring); z-index: 150; }
+        td.data-cell:hover { box-shadow: inset 0 0 0 2px rgba(65, 75, 59, 0.1); }
 
         /* AUTH LOADING */
         #loading-overlay {
             position: fixed; inset: 0; background: var(--site-bg); z-index: 9999;
-            display: flex; align-items: center; justify-content: center;
-            font-family: 'Merriweather'; font-size: 1.5rem;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-family: 'Merriweather'; font-size: 1.2rem; color: var(--site-text);
         }
+        .spinner { width: 30px; height: 30px; border: 3px solid #ddd; border-top-color: var(--site-text); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
         
         /* EDIT INPUT */
         #edit-input {
             position: absolute; display: none; text-align: center;
             border: 2px solid var(--focus-ring); z-index: 1000; outline: none;
+            font-family: 'Montserrat'; font-weight: 600; font-size: 0.9rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         }
     </style>
 </head>
 <body>
 
-    <div id="loading-overlay">Loading...</div>
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div id="status-text">Connecting to Discord...</div>
+    </div>
 
     <!-- Sidebar -->
     <div class="sidebar-overlay" onclick="toggleMenu()"></div>
     <div class="sidebar-menu" id="main-menu">
-        <div style="padding: 20px; font-weight: bold; border-bottom: 1px solid #eee;">TomCat VI</div>
-        <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
+        <div style="padding: 20px 24px; font-family: 'Merriweather'; font-weight: 900; font-size: 1.2rem; border-bottom: 1px solid #eee;">TomCat VI</div>
+        <div style="padding: 10px 0;">
+            <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
+            <a href="https://github.com/austin-j-b/pytomcat" target="_blank" class="menu-item">Repository</a>
+        </div>
     </div>
 
     <header class="site-header">
         <div style="display:flex; align-items:center; gap:15px;">
             <button class="hamburger-btn" onclick="toggleMenu()"><span></span><span></span><span></span></button>
-            <h1 style="margin:0; font-family:'Merriweather'; font-size:1.3rem;">Campus Cat Coalition</h1>
+            <h1 style="margin:0; font-family:'Merriweather'; font-size:1.4rem; font-weight:900;">Campus Cat Coalition</h1>
         </div>
 
         <div class="controls-area">
-            <button style="background:none; border:1px solid #333; border-radius:50%; width:30px; height:30px; cursor:pointer;" onclick="adjustZoom(-0.1)">-</button>
-            <button style="background:none; border:1px solid #333; border-radius:50%; width:30px; height:30px; cursor:pointer;" onclick="adjustZoom(0.1)">+</button>
+            <button style="background:none; border:1px solid var(--site-text); border-radius:50%; width:32px; height:32px; cursor:pointer; display:grid; place-items:center;" onclick="adjustZoom(-0.1)" title="Zoom Out">-</button>
+            <button style="background:none; border:1px solid var(--site-text); border-radius:50%; width:32px; height:32px; cursor:pointer; display:grid; place-items:center;" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
             
             <div class="search-container">
-                <input type="text" id="member-search" placeholder="Search..." autocomplete="off">
+                <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
                 <div id="search-results" class="search-results"></div>
             </div>
 
             <div id="user-display" style="font-weight:600; font-size:0.9rem;"></div>
-            <button id="save-btn" onclick="saveData()">Save</button>
+            <button id="save-btn" onclick="saveData()">Save Changes</button>
         </div>
     </header>
 
@@ -165,7 +179,7 @@
                 <thead>
                     <tr>
                         <th>Station</th>
-                        <th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th>
+                        <th>Sunday</th><th>Monday</th><th>Tuesday</th><th>Wednesday</th><th>Thursday</th><th>Friday</th><th>Saturday</th>
                     </tr>
                 </thead>
                 <tbody id="table-body"></tbody>
@@ -176,14 +190,17 @@
     <input type="text" id="edit-input">
 
 <script>
-// Constants
+// --- CONSTANTS ---
 const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
     "Lot 50", "Mary Kay and Zen", "West Hall", "Maintenance"
 ];
-const COLORS = ["#FFB7B2", "#E2F0CB", "#C7CEEA", "#FFDAC1", "#B5EAD7", "#DF9881", "#ECD5E3", "#A0E7E5"];
+const COLORS = [
+    "#E2F0CB", "#C7CEEA", "#FFDAC1", "#FFB7B2", "#B5EAD7", 
+    "#E0BBE4", "#DF9881", "#ECD5E3", "#A0E7E5", "#FBE7C6"
+];
 
-// State
+// --- STATE ---
 let scheduleData = {};
 let userPerms = {};
 let currentUser = null;
@@ -191,63 +208,98 @@ let zoomLevel = 1.0;
 let activeEdit = null;
 
 // --- AUTH & INIT ---
-const discordSdk = new Discord.DiscordSDK("YOUR_APP_ID"); // Will pull from env in logic
+// IMPORTANT: Make sure this matches the ID in config.py
+const discordSdk = new Discord.DiscordSDK("YOUR_APPLICATION_ID_HERE_IF_NEEDED_BUT_ENV_INJECTION_BETTER"); 
 
 async function init() {
     try {
-        await discordSdk.ready();
-        const { code } = await discordSdk.commands.authorize({
-            client_id: "YOUR_APP_ID", // Ensure this matches env
-            response_type: "code",
-            state: "",
-            prompt: "none",
-            scope: ["identify", "guilds.members.read"]
-        });
-
-        // Get Token & Perms
-        const res = await fetch("/api/auth/token", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({code})
-        });
-        
-        if (!res.ok) throw new Error("Auth failed");
-        const data = await res.json();
-        currentUser = data.user;
-        userPerms = data.permissions;
-
-        // Update UI
-        document.getElementById('user-display').textContent = currentUser.username;
-        if (userPerms.can_manage_feeding) {
-            document.getElementById('save-btn').style.display = 'block';
+        // Attempt Discord SDK Init
+        // If outside Discord (dev mode), this might hang/fail, so wrap carefully
+        if (window.location.search.includes("code")) {
+             // Handle standard OAuth callback if not using Embedded SDK
+        } else {
+             await discordSdk.ready().catch(e => console.log("SDK not ready (running locally?)"));
         }
 
-        // Load Data
+        // In a real Embedded App, we use the SDK to get the code
+        let code = null;
+        try {
+            const auth = await discordSdk.commands.authorize({
+                client_id: "YOUR_APP_ID", // Replace or ensure matched
+                response_type: "code",
+                state: "",
+                prompt: "none",
+                scope: ["identify", "guilds.members.read"]
+            });
+            code = auth.code;
+        } catch (e) {
+            console.warn("Discord SDK Auth failed (ignore if local testing):", e);
+        }
+
+        // Mock for local testing if code is null
+        if (!code && window.location.hostname === 'localhost') {
+            console.log("Running in Local Dev Mode");
+            // You can mock the fetch here if needed, or just let it fail to 'viewer'
+        }
+
+        if (code) {
+            document.getElementById('status-text').textContent = "Verifying Permissions...";
+            const res = await fetch("/api/auth/token", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({code})
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                currentUser = data.user;
+                userPerms = data.permissions;
+                
+                document.getElementById('user-display').textContent = currentUser.username;
+                if (userPerms.can_manage_feeding) {
+                    document.getElementById('save-btn').style.display = 'block';
+                }
+            }
+        }
+
+        // Load Data regardless of auth success (Viewer Mode)
+        document.getElementById('status-text').textContent = "Loading Schedule...";
         await loadSchedule();
         document.getElementById('loading-overlay').style.display = 'none';
 
     } catch (e) {
         console.error(e);
-        document.getElementById('loading-overlay').textContent = "Auth Error. Refresh.";
+        document.getElementById('status-text').textContent = "Error loading. Please refresh.";
+        // Allow viewing even if auth fails?
+        await loadSchedule();
+        document.getElementById('loading-overlay').style.display = 'none';
     }
 }
 
 // --- DATA LOGIC ---
 async function loadSchedule() {
-    const res = await fetch("/api/schedule");
-    const json = await res.json();
-    
-    STATIONS.forEach(st => {
-        scheduleData[st] = json[st] || new Array(7).fill("");
-    });
-    render();
+    try {
+        const res = await fetch("/api/schedule");
+        const json = await res.json();
+        
+        STATIONS.forEach(st => {
+            scheduleData[st] = json[st] || new Array(7).fill("");
+        });
+        render();
+    } catch (e) {
+        console.error("Failed to load schedule", e);
+    }
 }
 
 async function saveData() {
+    if (!currentUser) return;
     const btn = document.getElementById('save-btn');
+    const originalText = btn.textContent;
     btn.textContent = "Saving...";
+    btn.disabled = true;
+
     try {
-        await fetch("/api/schedule/save", {
+        const res = await fetch("/api/schedule/save", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -255,11 +307,20 @@ async function saveData() {
             },
             body: JSON.stringify(scheduleData)
         });
-        btn.textContent = "Saved!";
-        setTimeout(() => btn.textContent = "Save", 2000);
+        
+        if (res.ok) {
+            btn.textContent = "Saved!";
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }, 2000);
+        } else {
+            throw new Error("Save failed");
+        }
     } catch (e) {
-        alert("Error saving.");
-        btn.textContent = "Save";
+        alert("Error saving. Ensure you have permission.");
+        btn.textContent = originalText;
+        btn.disabled = false;
     }
 }
 
@@ -281,7 +342,8 @@ function render() {
             td.textContent = val;
             td.style.backgroundColor = getSoftColor(val);
             
-            if (userPerms.can_manage_feeding) {
+            // Only allow edit if we have permission
+            if (userPerms && userPerms.can_manage_feeding) {
                 td.onclick = (e) => startEdit(e.target, st, idx);
             }
             tr.appendChild(td);
@@ -316,7 +378,6 @@ searchInput.addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
     if (!q) { resultsBox.style.display = 'none'; return; }
     
-    // Flatten current schedule to find names
     const allNames = new Set();
     Object.values(scheduleData).forEach(row => row.forEach(n => {
         if(n) allNames.add(n);
@@ -334,6 +395,7 @@ searchInput.addEventListener('input', (e) => {
             div.onclick = () => {
                 highlightName(name);
                 resultsBox.style.display = 'none';
+                searchInput.value = '';
             };
             resultsBox.appendChild(div);
         });
@@ -346,7 +408,8 @@ function highlightName(name) {
     document.querySelectorAll('.data-cell').forEach(td => {
         if (td.textContent === name) {
             td.style.border = "3px solid var(--focus-ring)";
-            setTimeout(() => td.style.border = "", 2000);
+            td.scrollIntoView({block: "center", behavior: "smooth"});
+            setTimeout(() => td.style.border = "", 3000);
         }
     });
 }
@@ -357,9 +420,10 @@ const inputEl = document.getElementById('edit-input');
 function startEdit(td, st, idx) {
     if (activeEdit) commitEdit();
     const rect = td.getBoundingClientRect();
+    // Account for zoom in positioning if needed, but simple absolute works for 1.0
     inputEl.style.display = 'block';
-    inputEl.style.top = rect.top + 'px';
-    inputEl.style.left = rect.left + 'px';
+    inputEl.style.top = (rect.top + window.scrollY) + 'px';
+    inputEl.style.left = (rect.left + window.scrollX) + 'px';
     inputEl.style.width = rect.width + 'px';
     inputEl.style.height = rect.height + 'px';
     inputEl.value = scheduleData[st][idx];

@@ -11,6 +11,10 @@ def _get_env_bool(key: str, default: bool = False) -> bool:
     if v is None: return default
     return v.strip().lower() in {"1", "true", "yes", "on"}
 
+def _get_env_list(key: str, sep: str = ",") -> list[str]:
+    raw = os.getenv(key, "")
+    return [s.strip() for s in raw.split(sep) if s.strip()]
+
 def _build_channel_sheet_map() -> dict[int, str]:
     raw = os.getenv("CHANNEL_SHEET_MAP", "").strip()
     out: dict[int, str] = {}
@@ -36,19 +40,29 @@ class Settings:
     schedule_file: str = os.getenv("SCHEDULE_FILE", "data/feeding_schedule.json")
     log_dir: str = os.getenv("LOG_DIR", "./logs")
     google_service_account_json: str = "credentials/service_account.json"
+    # Backwards compatibility for sheets_client.py
+    google_sa_json: str = "credentials/service_account.json" 
 
     # --- SHEET IDS ---
     sheet_catabase_id: str | None = os.getenv("SHEET_CATABASE_ID") or os.getenv("CAT_SPREADSHEET_ID")
     sheet_vision_id: str | None = os.getenv("SHEET_VISION_ID") or os.getenv("AUX_SPREADSHEET_ID")
+    sheet_megasheet_id: str | None = os.getenv("SHEET_MEGASHEET_ID")
+    
+    # Compat aliases
+    cat_spreadsheet_id: str | None = sheet_catabase_id
+    aux_spreadsheet_id: str | None = sheet_vision_id
     
     channel_sheet_map: dict[int, str] = field(default_factory=_build_channel_sheet_map)
+    finance_sheet_throttle_sec: float = 0.5
 
     # --- CHANNELS ---
     ch_feeding_team: int | None = int(os.getenv("CH_FEEDING_TEAM", "0") or "0") or None
     ch_sandbox: int | None = int(os.getenv("CH_TOMCAT_SANDBOX", "0") or "0") or None
     ch_logging: int | None = int(os.getenv("CH_LOGGING", "0") or "0") or None
+    # Used by misc handler
+    misc_channels: set[int] = field(default_factory=set) 
     
-    # --- ROLES & PERMISSIONS (HARDCODED AS REQUESTED) ---
+    # --- ROLES & PERMISSIONS ---
     role_officer_id: int = 845035667661783061
     
     access_feeding_manager: list[int] = field(default_factory=lambda: [
@@ -84,19 +98,72 @@ class Settings:
     tomcat_wake: str = "tomcat"
     silent_mode: bool = False
     
-    # CV / ML Settings
+    # --- CACHE & CV (Restored to fix AttributeError) ---
+    show_cache_dir: str = "./cache/show_photos"
+    show_cache_per_cat: int = 5
+    show_cache_prefill_on_boot: bool = True  # This was the missing one
+    show_cache_warm_concurrency: int = 2
+    show_cache_warm_limit: int = 0
+    show_cache_resize_max_dim: int = 0
+    show_cache_jpeg_quality: int = 88
+    show_sheet_recentpics_ttl_sec: int = 300
+    show_cache_crop_on_fill: bool = True
+    
     cv_detect_weights: str = os.path.join("weights", "NanoModel.pt")
     cv_classify_weights: str = os.path.join("weights", "NanoClassifier.pt")
     cv_conf: float = 0.552
+    cv_iou: float = 0.45
+    cv_detect_imgsz: int = 640
+    cv_clf_imgsz: int = 640
+    cv_pad_pct: float = 0.03
+    cv_max_image_dim: int = 10000
+    cv_max_download_mb: int = 16
+    cv_half: bool = True
+    cv_temp_dir: str = "./temp_images"
+    cv_log_crop: bool = True
+    auto_crop_show_photo: bool = True
+    cv_timeout_ms: int = 6000
+    cv_lookback_seconds_before: int = 30
+    cv_pending_minutes_after: int = 5
+    
     cv_class_names: list[str] = field(default_factory=lambda: [
         "Microwave", "Faye", "Bobbie", "Twix", "Citlali", "Angel", "Winston", "Radar", "Eggs", "Dumpster",
         "Gregory", "Rubber", "Bruno", "Boots", "Princess", "Nefarious", "Eraser", "Eden", "Cassie", "Coronavirus"
     ])
     
-    # Spam / Mail
+    profile_messages: dict[str, int] = field(default_factory=lambda: {
+        "1": 1361917184254935093, "2": 1361917363993182368, "4": 1361917392208531518,
+        "5": 1361917398168371280, "6": 1361917404208304309, "7": 1361917410331856976,
+        "9": 1361917519883010269, "17": 1361917533564702791, "67": 1361917567291363348,
+    })
+
+    # --- SPAM / MAIL / DUES ---
     gmail_enabled: bool = False
     dues_enabled: bool = True
     
-    misc_channels: set[int] = field(default_factory=set)
+    trusted_role_names: list[str] = field(default_factory=lambda: ["due paying members", "server booster", "officers", "active feeders"])
+    spam_ban_role_names: list[str] = field(default_factory=lambda: ["officers"])
+    spam_min_account_days: int = 30
+    spam_nlp_conf: float = 0.9
+    spam_alert_user_id: int | None = None
+    
+    dues_email_window_days: int = 3
+    dues_scan_skip_oldest: int = 3
+    dues_scan_limit: int = 0
+    dues_fast_map: bool = True
+    dues_membership_ttl_sec: int = 300
+    dues_allowed_amounts: list[int] = field(default_factory=lambda: [15, 20, 25])
+    membership_ws_title: str = "Membership Application List"
+    dues_nlp_enabled: bool = False
+    dues_nlp_max_calls: int = 50
+    cat_aliases_ttl_sec: int = 7200
+    cat_profile_ttl_sec: int = 3600
+    dues_member_max_candidates: int = 300
+    
+    # NLP
+    nlp_model_path: str | None = os.getenv("NLP_MODEL_PATH")
+    nlp_tokenizer_path: str | None = os.getenv("NLP_TOKENIZER_PATH")
+    nlp_conf_high: float = 0.88
+    nlp_conf_mid: float = 0.75
 
 settings = Settings()

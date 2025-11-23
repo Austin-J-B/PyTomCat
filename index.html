@@ -200,6 +200,46 @@
             text-align: right;
         }
 
+        /* Sub request form */
+        .sub-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding: 10px 5px 20px 5px;
+        }
+        .form-row { display: flex; flex-direction: column; gap: 8px; }
+        .form-row label { font-weight: 700; font-size: 0.95rem; color: var(--site-text); }
+        .warn { color: #b36b00; font-size: 0.9rem; min-height: 18px; }
+        .checklist { display: flex; flex-wrap: wrap; gap: 10px; }
+        .checklist label {
+            background: #f4f6f1;
+            border: 1px solid var(--grid-line);
+            border-radius: 12px;
+            padding: 8px 12px;
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            cursor: pointer;
+        }
+        .checklist input { accent-color: var(--site-accent); }
+        #calendar {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(90px, 1fr));
+            gap: 8px;
+        }
+        .cal-day {
+            padding: 10px;
+            border-radius: 10px;
+            border: 1px solid var(--grid-line);
+            text-align: center;
+            background: white;
+            cursor: pointer;
+            transition: transform 0.05s ease, box-shadow 0.1s ease;
+        }
+        .cal-day.allowed:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,0.1); }
+        .cal-day.selected { border: 2px solid var(--site-text); box-shadow: 0 6px 14px rgba(0,0,0,0.15); }
+        .cal-day.disabled { color: #a0a0a0; background: #f1f1f1; cursor: not-allowed; }
+
         /* --- SEARCH --- */
         .search-container { position: relative; width: 280px; }
 
@@ -458,7 +498,8 @@
             <button class="close-menu-btn" onclick="toggleMenu()">×</button>
         </div>
         <div class="sidebar-content">
-            <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
+            <a href="#" class="menu-item" onclick="setView('schedule'); toggleMenu();">Feeding Schedule</a>
+            <a href="#" class="menu-item" onclick="setView('sub'); toggleMenu();">Sub Request</a>
             <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat VI Repository</a>
         </div>
     </div>
@@ -527,6 +568,37 @@
                     </tbody>
             </table>
         </div>
+
+        <div class="sheet-wrapper" id="sub-container" style="display:none; padding: 20px; width: min(960px, 100%); box-sizing: border-box;">
+            <div class="controls-legend">
+                <div class="key-combo">Sub Request</div>
+            </div>
+            <div class="sub-form">
+                <div class="form-row">
+                    <label for="sub-user">What is your account?</label>
+                    <div class="search-container">
+                        <input type="text" id="sub-user" placeholder="Find user" autocomplete="off">
+                        <div id="sub-user-results" class="search-results"></div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <label>Select your date</label>
+                    <div id="calendar"></div>
+                    <div id="date-warning" class="warn"></div>
+                </div>
+
+                <div class="form-row">
+                    <label>Which stations need coverage?</label>
+                    <div id="station-checklist" class="checklist"></div>
+                </div>
+
+                <div class="form-row actions">
+                    <button class="save-btn" onclick="submitSubRequest()">Submit</button>
+                    <div id="sub-status" class="save-status"></div>
+                </div>
+            </div>
+        </div>
     </div>
 
 <script>
@@ -545,6 +617,11 @@ let currentVolunteer = null;
 let zoomLevel = 1.0;
 let currentSearchIndex = -1; 
 let apiBase = '';
+let activeView = 'schedule';
+let subSelectedUser = null;
+let allowedDates = [];
+let selectedDate = null;
+let subStationsForDate = [];
 
 // Selection
 let selectedCells = new Set(); 
@@ -575,6 +652,8 @@ async function init() {
     await fetchMembers();
     await loadSchedule();
     renderGrid();
+    renderCalendar();
+    updateSubUserOptions();
     document.getElementById('loading').style.display = 'none';
 }
 
@@ -942,6 +1021,149 @@ async function saveSchedule() {
         console.error(e);
         setSaveStatus("Save failed", "error");
         if (statusEl) statusEl.title = e?.message || '';
+    }
+}
+
+// --- VIEW SWITCHING ---
+function setView(view) {
+    activeView = view;
+    document.getElementById('sheet-container').style.display = view === 'schedule' ? 'flex' : 'none';
+    document.getElementById('sub-container').style.display = view === 'sub' ? 'flex' : 'none';
+}
+
+// --- SUB REQUEST FORM ---
+function updateSubUserOptions() {
+    const scheduledIds = new Set();
+    STATIONS.forEach(st => {
+        (scheduleData[st] || []).forEach(uid => { if (uid) scheduledIds.add(uid); });
+    });
+    allowedSubMembers = members.filter(m => m.id && scheduledIds.has(m.id));
+}
+
+const subUserInput = document.getElementById('sub-user');
+const subUserResults = document.getElementById('sub-user-results');
+let subFilteredMembers = [];
+let subSearchIndex = -1;
+
+subUserInput?.addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    subUserResults.innerHTML = '';
+    subSearchIndex = -1;
+    if (!q) { subUserResults.style.display = 'none'; return; }
+    subFilteredMembers = (allowedSubMembers || []).filter(m =>
+        m.name.toLowerCase().includes(q) || m.user.toLowerCase().includes(q)
+    );
+    if (subFilteredMembers.length) {
+        subUserResults.style.display = 'block';
+        subFilteredMembers.forEach((m, idx) => {
+            const div = document.createElement('div');
+            div.className = 'result-item';
+            div.dataset.index = idx;
+            div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
+            div.onmousedown = (ev) => { ev.preventDefault(); setSubUser(m); };
+            subUserResults.appendChild(div);
+        });
+    } else {
+        subUserResults.style.display = 'none';
+    }
+});
+
+function setSubUser(m) {
+    subSelectedUser = m;
+    subUserInput.value = m.name;
+    subUserResults.style.display = 'none';
+    computeAllowedDates();
+    renderCalendar();
+    renderStationsForSelected();
+}
+
+function computeAllowedDates() {
+    allowedDates = [];
+    if (!subSelectedUser) return;
+    const today = new Date();
+    for (let i = 0; i < 30; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() + i);
+        const dow = d.getDay(); // 0=Sun
+        const hasSlot = STATIONS.some(st => (scheduleData[st] || [])[dow] === subSelectedUser.id);
+        if (hasSlot) allowedDates.push(d.toISOString().slice(0,10));
+    }
+    if (selectedDate && !allowedDates.includes(selectedDate)) {
+        selectedDate = null;
+    }
+}
+
+function renderCalendar() {
+    const cal = document.getElementById('calendar');
+    if (!cal) return;
+    cal.innerHTML = '';
+    const today = new Date();
+    const days = [];
+    for (let i = 0; i < 30; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() + i);
+        days.push(d);
+    }
+    days.forEach(d => {
+        const iso = d.toISOString().slice(0,10);
+        const allowed = allowedDates.includes(iso);
+        const div = document.createElement('div');
+        div.className = 'cal-day ' + (allowed ? 'allowed' : 'disabled');
+        if (selectedDate === iso) div.classList.add('selected');
+        div.textContent = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', weekday: 'short' });
+        if (allowed) {
+            div.onclick = () => { selectedDate = iso; renderCalendar(); renderStationsForSelected(); setDateWarning(''); };
+        }
+        cal.appendChild(div);
+    });
+}
+
+function setDateWarning(msg) {
+    const el = document.getElementById('date-warning');
+    if (el) el.textContent = msg || '';
+}
+
+function renderStationsForSelected() {
+    const wrap = document.getElementById('station-checklist');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    subStationsForDate = [];
+    if (!subSelectedUser || !selectedDate) {
+        setDateWarning(subSelectedUser ? "Pick a highlighted date you're scheduled for." : "Select your account first.");
+        return;
+    }
+    const dow = new Date(selectedDate).getDay();
+    const stations = STATIONS.filter(st => (scheduleData[st] || [])[dow] === subSelectedUser.id);
+    if (!stations.length) {
+        setDateWarning("No stations scheduled for that day.");
+        return;
+    }
+    stations.forEach(st => {
+        const id = `station-${st.replace(/\\s+/g,'-')}`;
+        const label = document.createElement('label');
+        label.innerHTML = `<input type="checkbox" value="${st}" id="${id}"> ${st}`;
+        wrap.appendChild(label);
+    });
+}
+
+async function submitSubRequest() {
+    const status = document.getElementById('sub-status');
+    const picked = Array.from(document.querySelectorAll('#station-checklist input:checked')).map(i => i.value);
+    if (!subSelectedUser) { if (status) status.textContent = "Select your account."; return; }
+    if (!selectedDate) { if (status) status.textContent = "Select a date."; return; }
+    if (!picked.length) { if (status) status.textContent = "Select at least one station."; return; }
+    status.textContent = "Submitting...";
+    try {
+        const endpoint = apiBase ? `${apiBase}/api/subrequest` : '/api/subrequest';
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: subSelectedUser.id, date: selectedDate, stations: picked })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        status.textContent = "Submitted";
+    } catch (e) {
+        status.textContent = "Submit failed";
     }
 }
 

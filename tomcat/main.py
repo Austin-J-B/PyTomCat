@@ -355,6 +355,77 @@ async def start_web_server(bot):
     async def options_schedule_save(request):
         return web.Response(status=204, headers=_CORS_HEADERS)
 
+    async def options_subrequest(request):
+        return web.Response(status=204, headers=_CORS_HEADERS)
+
+    async def submit_subrequest(request):
+        """Record a manual sub request and notify the feeding team channel."""
+        try:
+            data = await request.json()
+        except Exception:
+            return web.Response(status=400, text="Invalid JSON", headers=_CORS_HEADERS)
+
+        user_id = data.get("user_id")
+        date_iso = data.get("date")
+        stations = data.get("stations") or []
+        if not user_id or not date_iso or not stations:
+            return web.Response(status=400, text="Missing user_id, date, or stations", headers=_CORS_HEADERS)
+
+        # Append to logs/subs/YYYY/YYYY-MM.jsonl
+        try:
+            from datetime import datetime
+            from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
+            month_key = _sub_month_key_from_date(date_iso)
+            if not month_key:
+                month_key = datetime.now().strftime("%Y-%m")
+            path = _sub_log_path_from_key(month_key)
+            import os, json
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            record = {
+                "kind": "sub_request",
+                "id": f"sub-{int(datetime.now().timestamp()*1000)}",
+                "station": ", ".join(stations),
+                "stations": stations,
+                "dates": [date_iso],
+                "requester": int(user_id),
+                "assignee": None,
+                "status": "requested",
+                "channel_id": 0,
+                "message_id": 0,
+                "created_at": datetime.now().isoformat(),
+                "log_month": month_key,
+                "message_preview": "",
+                "trigger_phrase": "ui_sub_request",
+            }
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record) + "\n")
+        except Exception as e:
+            return web.Response(status=500, text=f"Failed to log sub request: {e}", headers=_CORS_HEADERS)
+
+        # Notify feeding team channel
+        try:
+            channel_id = getattr(settings, "ch_feeding_team", None)
+            if channel_id:
+                ch = bot.get_channel(int(channel_id))
+                from discord.abc import Messageable
+                if isinstance(ch, Messageable):
+                    # Build station list text
+                    if len(stations) >= 3:
+                        station_text = ", ".join(stations[:-1]) + f", and {stations[-1]}"
+                    elif len(stations) == 2:
+                        station_text = f"{stations[0]} and {stations[1]}"
+                    else:
+                        station_text = stations[0]
+                    msg = f"<@{user_id}> is looking for a substitute feeder for {station_text} on {date_iso}"
+                    try:
+                        await ch.send(msg)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        return web.json_response({"status": "ok"}, headers=_CORS_HEADERS)
+
     app.add_routes([
         web.get('/', get_index),
         web.get('/api/members', get_members),
@@ -364,6 +435,8 @@ async def start_web_server(bot):
         web.get('/api/schedule', get_schedule),
         web.options('/api/schedule', options_schedule),
         web.options('/api/schedule/save', options_schedule_save),
+        web.post('/api/subrequest', submit_subrequest),
+        web.options('/api/subrequest', options_subrequest),
     ])
 
     runner = web.AppRunner(app)

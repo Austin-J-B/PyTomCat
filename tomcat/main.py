@@ -373,6 +373,7 @@ async def start_web_server(bot):
             return web.Response(status=400, text="Invalid JSON", headers=_CORS_HEADERS)
 
         user_id = data.get("user_id")
+        user_name = data.get("user_name") or ""
         date_iso = data.get("date")
         stations = data.get("stations") or []
         if not user_id or not date_iso or not stations:
@@ -395,6 +396,7 @@ async def start_web_server(bot):
                 "stations": stations,
                 "dates": [date_iso],
                 "requester": int(user_id),
+                "requester_name": user_name,
                 "assignee": None,
                 "status": "requested",
                 "channel_id": 0,
@@ -434,10 +436,14 @@ async def start_web_server(bot):
         return web.json_response({"status": "ok"}, headers=_CORS_HEADERS)
 
     async def list_open_subs(request):
-        """List open sub requests (per station) that are still unassigned."""
+        """List sub requests separated into available, upcoming filled, and past (expired/fulfilled)."""
         import glob, json
-        open_items = []
-        accepted_pairs = set()
+        from datetime import datetime
+        today = datetime.now().date()
+
+        accepted_map = {}  # (parent_id, station, date_iso) -> assignee_id
+        requested_items = []
+
         for path in glob.glob(os.path.join("logs", "subs", "*", "*.jsonl")):
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -455,45 +461,50 @@ async def start_web_server(bot):
                         date_iso = dates[0] if dates else None
                         parent_id = rec.get("id")
                         if status == "accepted":
+                            assignee = rec.get("assignee")
                             for st in stations:
-                                accepted_pairs.add((parent_id, st, date_iso))
+                                accepted_map[(parent_id, st, date_iso)] = assignee
+                        elif status == "requested":
+                            requester = rec.get("requester")
+                            requester_name = rec.get("requester_name") or ""
+                            for st in stations:
+                                requested_items.append({
+                                    "id": parent_id,
+                                    "station": st,
+                                    "date": date_iso,
+                                    "requester_id": requester,
+                                    "requester_name": requester_name,
+                                })
             except Exception:
                 continue
 
-        for path in glob.glob(os.path.join("logs", "subs", "*", "*.jsonl")):
+        available = []
+        upcoming_filled = []
+        past = []
+
+        for item in requested_items:
+            date_iso = item.get("date")
             try:
-                with open(path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            rec = json.loads(line)
-                        except Exception:
-                            continue
-                        status = rec.get("status")
-                        if status != "requested":
-                            continue
-                        stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
-                        dates = rec.get("dates") or []
-                        date_iso = dates[0] if dates else None
-                        parent_id = rec.get("id")
-                        requester = rec.get("requester")
-                        requester_name = rec.get("requester_name") or ""
-                        for st in stations:
-                            if (parent_id, st, date_iso) in accepted_pairs:
-                                continue
-                            open_items.append({
-                                "id": parent_id,
-                                "station": st,
-                                "date": date_iso,
-                                "requester_id": requester,
-                                "requester_name": requester_name,
-                            })
+                d = datetime.fromisoformat(date_iso).date() if date_iso else None
             except Exception:
-                continue
+                d = None
+            assignee = accepted_map.get((item["id"], item["station"], date_iso))
+            target_list = None
+            if d and d < today:
+                target_list = past
+            else:
+                target_list = upcoming_filled if assignee else available
 
-        resp = web.json_response({"open": open_items})
+            out = dict(item)
+            if assignee:
+                out["assignee_id"] = assignee
+            target_list.append(out)
+
+        resp = web.json_response({
+            "available": available,
+            "upcoming_filled": upcoming_filled,
+            "past": past,
+        })
         resp.headers.update(_CORS_HEADERS)
         return resp
 

@@ -618,47 +618,41 @@ async function loadSchedule() {
 }
 
 // --- DISTINCT COLOR PALETTE ---
-// A list of 25 distinct, mostly pastel-but-vibrant colors.
-// Hand-picked to allow black text while being visually distinct.
-const PRESET_COLORS = [
-    "#FFB7B2", // Salmon/Pink
-    "#E2F0CB", // Light Green/Mint
-    "#C7CEEA", // Light Blue/Periwinkle
-    "#FFDAC1", // Peach/Light Orange
-    "#B5EAD7", // Seafoam
-    "#DF9881", // Terracotta (darker)
-    "#ECD5E3", // Pale Lavender
-    "#A0E7E5", // Aqua
-    "#FBE7C6", // Light Gold
-    "#D4F1F4", // Ice Blue
-    "#F4E1D2", // Beige
-    "#94D0CC", // Tealish
-    "#B9B0B0", // Warm Grey
-    "#EFC3A4", // Apricot
-    "#809BCE", // Muted Blue
-    "#95B8D1", // Slate Blue Light
-    "#B8E986", // Lime Green
-    "#FF9AA2", // Bright Pink
-    "#E0BBE4", // Lavender
-    "#D291BC", // Orchid (Darker Pink)
-    "#FEC8D8", // Pale Pink
-    "#FFDFD3", // Cantaloupe
-    "#E6C9A8", // Tan
-    "#9EBC9E", // Sage Green
-    "#B4A7D6"  // Purple (Used sparingly)
-];
+// Evenly spaced hues via golden-angle to maximize separation and stay legible with black text.
+const colorAssignments = new Map();
+const usedHues = new Set();
+const GOLDEN_ANGLE = 137.508; // degrees
+const COLOR_SAT = 70;
+const COLOR_LIGHT = 72; // keep light enough for black text contrast
 
-function getVolunteerColor(name) {
-    if (!name) return 'white';
-    
-    // Robust hash to pick from index
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+function hashId(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) {
+        h = (h << 5) - h + str.charCodeAt(i);
+        h |= 0;
     }
-    
-    const index = Math.abs(hash) % PRESET_COLORS.length;
-    return PRESET_COLORS[index];
+    return Math.abs(h);
+}
+
+function pickHue(seed) {
+    let hue = (seed * GOLDEN_ANGLE) % 360;
+    let guard = 0;
+    while (usedHues.has(Math.round(hue)) && guard < 360) {
+        hue = (hue + GOLDEN_ANGLE) % 360;
+        guard++;
+    }
+    usedHues.add(Math.round(hue));
+    return hue;
+}
+
+function getVolunteerColor(id) {
+    if (!id) return 'white';
+    if (colorAssignments.has(id)) return colorAssignments.get(id);
+
+    const hue = pickHue(hashId(String(id)));
+    const color = `hsl(${hue}, ${COLOR_SAT}%, ${COLOR_LIGHT}%)`;
+    colorAssignments.set(id, color);
+    return color;
 }
 
 // --- MENU TOGGLE ---
@@ -691,8 +685,9 @@ function renderGrid() {
                 td.classList.add('assigned');
                 const member = memberById[userId];
                 const displayName = member ? member.name : userId;
-                td.style.backgroundColor = getVolunteerColor(displayName);
-                
+                const colorKey = member ? member.id : userId;
+                td.style.backgroundColor = getVolunteerColor(colorKey);
+
                 const userHandle = member ? `@${member.user}` : '';
 
                 td.innerHTML = `
@@ -854,7 +849,7 @@ function highlightResult() {
 function setVolunteer(m) {
     currentVolunteer = m;
     selectionBadge.className = 'current-selection';
-    selectionBadge.style.backgroundColor = getVolunteerColor(m.name);
+    selectionBadge.style.backgroundColor = getVolunteerColor(m.id || m.name);
     selectionBadge.style.color = '#2b3326';
     selectionBadge.textContent = m.name;
     
@@ -945,6 +940,7 @@ async function saveSchedule() {
     } catch (e) {
         console.error(e);
         setSaveStatus("Save failed", "error");
+        if (statusEl) statusEl.title = e?.message || '';
     }
 }
 

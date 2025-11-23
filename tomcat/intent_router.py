@@ -216,7 +216,7 @@ RECACHE_ONE_RE = re.compile(r"\brecache\s+(.+?)(?:\s+photos?)?\b", re.I)
 RECACHE_CATABASE_RE = re.compile(r"\brecache\s+(?:catabase|cat\s*database|names)\b", re.I)
 REMOVE_ROLE_RE = re.compile(r"\b(?:remove|clear|strip)\s+(?:the\s+)?role\s+(\d{5,20})(?:\s+from\s+(?:everyone|all))?\b", re.I)
 FEEDING_SCHEDULE_LINK_RE = re.compile(
-    r"(feeding\\s+schedule|feed\\s+schedule|what'?s?\\s+the\\s+feeding\\s+schedule|whats\\s+the\\s+feeding\\s+schedule)",
+    r"(feeding\s*schedule|feed\s*schedule|what[’'`]?\s*(?:is|s)?\s*(?:the\s+)?feeding\s*schedule|whats\s+the\s+feeding\s*schedule)",
     re.I,
 )
 

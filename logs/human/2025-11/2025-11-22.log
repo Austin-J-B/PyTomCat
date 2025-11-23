@@ -1486,3 +1486,67 @@ There is ess..." by austinbaustinb
 [11/22/2025 06:31:51.894 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
 [11/22/2025 06:31:53.476 PM] Health   || Component: feeding_tab    || Status: ok                                   
 [11/22/2025 06:31:53.756 PM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/22/2025 06:40:52.412 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/22/2025 06:40:53.311 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/22/2025 06:40:53.944 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/22/2025 06:40:55.986 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/22/2025 06:40:56.543 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/22/2025 06:40:56.965 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/22/2025 06:40:57.127 PM] React+   || User: lemonelon_          || Channel: #yapper-committee                    || emoji=❤️; msg="https://tenor.com/view/cynthia-erivo-cyn..." by izzyballz
+[11/22/2025 06:40:57.821 PM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/22/2025 06:40:57.821 PM] React+   || User: lemonelon_          || Channel: #yapper-committee                    || emoji=❤️; msg="the concept of a chromebook gaming lapto..." by izzyballz
+[11/22/2025 06:41:09.173 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0330 attempt=1 size=6261650
+[11/22/2025 06:41:17.063 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2807 attempt=1 size=799701
+[11/22/2025 06:41:19.029 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1150 attempt=1 size=1173512
+[11/22/2025 06:41:19.818 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5016 attempt=1 size=995841
+[11/22/2025 06:41:23.871 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2360 attempt=1 size=634644
+[11/22/2025 06:41:24.077 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6025 attempt=1 size=607167
+[11/22/2025 06:41:26.537 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5762 attempt=1 size=536084
+[11/22/2025 06:41:27.879 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5977 attempt=1 size=1510501
+[11/22/2025 06:41:29.477 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5514 attempt=1 size=1054364
+[11/22/2025 06:41:29.867 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5229 attempt=1 size=1476042
+[11/22/2025 06:41:32.489 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5362 attempt=1 size=554401
+[11/22/2025 06:41:32.759 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5524 attempt=1 size=644102
+[11/22/2025 06:41:34.332 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5454 attempt=1 size=1310434
+[11/22/2025 06:41:34.788 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5657 attempt=1 size=553868
+[11/22/2025 06:41:35.368 PM] Message  || User: lemonelon_          || Channel: #yapper-committee                    || Content: everything is chungus tbh
+[11/22/2025 06:41:35.782 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5386 attempt=1 size=607664
+[11/22/2025 06:41:36.162 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6014 attempt=1 size=607167
+[11/22/2025 06:41:37.178 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5368 attempt=1 size=650721
+[11/22/2025 06:41:37.932 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5987 attempt=1 size=735195
+[11/22/2025 06:41:38.644 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5957 attempt=1 size=375350
+[11/22/2025 06:41:39.171 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5961 attempt=1 size=764614
+[11/22/2025 06:41:40.228 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5948 attempt=1 size=945242
+[11/22/2025 06:41:41.652 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6222 attempt=1 size=2570926
+[11/22/2025 06:41:42.001 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5955 attempt=1 size=245752
+[11/22/2025 06:41:44.263 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6221 attempt=1 size=2677411
+[11/22/2025 06:41:53.788 PM] Message  || User: lemonelon_          || Channel: #yapper-committee                    || Content: is anyone in the english dep. and going to that holiday party  bc i ...
+[11/22/2025 06:42:06.037 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: yes!
+[11/22/2025 06:42:10.211 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: most of the officers will be there
+[11/22/2025 06:42:14.624 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: bella r u an english major ?
+[11/22/2025 06:42:14.928 PM] React+   || User: lemonelon_          || Channel: #yapper-committee                    || emoji=❤️; msg="most of the officers will be there" by slayc127
+[11/22/2025 06:42:20.004 PM] Message  || User: lemonelon_          || Channel: #yapper-committee                    || Content: yas queen
+[11/22/2025 06:42:35.468 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: YEAHHHHHHHHH
+[11/22/2025 06:42:38.709 PM] React+   || User: lemonelon_          || Channel: #yapper-committee                    || emoji=🎉; msg="YEAHHHHHHHHH" by slayc127
+[11/22/2025 06:42:43.202 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: first year yes ?
+[11/22/2025 06:42:48.668 PM] Message  || User: lemonelon_          || Channel: #yapper-committee                    || Content: yarm
+[11/22/2025 06:42:58.940 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: i was gonna harass u into taking one of my classes but unforch i don...
+[11/22/2025 06:42:59.218 PM] Message  || User: lemonelon_          || Channel: #yapper-committee                    || Content: first semester first year 😔
+[11/22/2025 06:43:04.086 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="first semester first year 😔" by lemonelon_
+[11/22/2025 06:43:08.558 PM] Message  || User: lemonelon_          || Channel: #yapper-committee                    || Content: WHAT IS IT WAIT
+[11/22/2025 06:43:25.935 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: its a 4000 level!
+[11/22/2025 06:43:27.865 PM] Message  || User: lemonelon_          || Channel: #yapper-committee                    || Content: I HATE THESE CHUNGUS PRE CLASSES NO I DONT WANT TO TAKE HOW TO GET A...
+[11/22/2025 06:43:31.136 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="I HATE THESE CHUNGUS PRE CLASSES NO I DO..." by lemonelon_
+[11/22/2025 06:43:35.371 PM] React+   || User: lemonelon_          || Channel: #yapper-committee                    || emoji=🎉; msg="j*b" by Carl-bot
+[11/22/2025 06:43:44.111 PM] Message  || User: _costco_wholesale_  || Channel: #feeding-team                        || Content: greens
+[11/22/2025 06:43:45.547 PM] React+   || User: lemonelon_          || Channel: #yapper-committee                    || emoji=❤️; msg="its a 4000 level!" by slayc127
+[11/22/2025 06:43:52.502 PM] Message  || User: _costco_wholesale_  || Channel: #feeding-team                        || Content: coba
+[11/22/2025 06:43:57.191 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: game analysis w kinzinger and game studies w stark! i am p sure atp ...
+[11/22/2025 06:43:57.219 PM] Intent   || feed_update               ||                                               || station=HOP; dates=['2025-11-22']
+[11/22/2025 06:43:57.222 PM] Action   || Name: feed_update_ignored || Trigger: station=HOP                          || Output: channel_blocked:915790807720661042
+[11/22/2025 06:43:59.438 PM] Message  || User: _costco_wholesale_  || Channel: #feeding-team                        || Content: mike
+[11/22/2025 06:44:02.578 PM] React+   || User: lemonelon_          || Channel: #yapper-committee                    || emoji=❤️; msg="game analysis w kinzinger and game studi..." by slayc127
+[11/22/2025 06:44:09.189 PM] Message  || User: _costco_wholesale_  || Channel: #feeding-team                        || Content: snickers
+[11/22/2025 06:44:14.497 PM] Message  || User: lemonelon_          || Channel: #yapper-committee                    || Content: yay i am putting them in my note
+[11/22/2025 06:44:29.645 PM] Message  || User: simplyshadow171295  || Channel: #feeding-team                        || Content: gunjan world tour
+[11/22/2025 06:44:49.970 PM] Message  || User: lemonelon_          || Channel: #yapper-committee                    || Content: i am bringing my non english friend as a +1 bc i am very afraid

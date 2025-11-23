@@ -18,6 +18,11 @@ CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 
 # Local persistence for the UI schedule
 SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
+# Fallback station list for empty schedules (mirrors UI)
+DEFAULT_STATIONS = [
+    "Microwave", "Snickers", "Business", "The Greens", "HOP",
+    "Lot 50", "Mary Kay & Zen", "West Hall", "Maintenance"
+]
 
 # Define your Role IDs for permissions
 ROLES = {
@@ -104,7 +109,9 @@ async def save_schedule(request):
         }
         SCHEDULE_PATH.write_text(json.dumps(payload), encoding="utf-8")
     except Exception as e:
-        return web.Response(status=500, text=f"Failed to save schedule: {e}")
+        resp = web.Response(status=500, text=f"Failed to save schedule: {e}")
+        resp.headers.update(_CORS_HEADERS)
+        return resp
 
     resp = web.json_response({"status": "ok"})
     resp.headers.update(_CORS_HEADERS)
@@ -114,18 +121,22 @@ async def save_schedule(request):
 async def get_schedule(request):
     """Load the last saved schedule if it exists; otherwise return empty slots."""
     if not SCHEDULE_PATH.exists():
-        empty = {station: [""] * 7 for station in settings.feeding_schedule.keys()}
+        empty = {station: [""] * 7 for station in (getattr(settings, "feeding_schedule", {}) or {}).keys()}
+        if not empty:
+            empty = {station: [""] * 7 for station in DEFAULT_STATIONS}
         resp = web.json_response({"schedule": empty, "meta": {"saved_at": None}})
         resp.headers.update(_CORS_HEADERS)
         return resp
 
     try:
-        content = SCHEDULE_PATH.read_text(encoding="utf-8")
-        resp = web.Response(text=content, content_type="application/json")
+        payload = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
+        resp = web.json_response(payload)
         resp.headers.update(_CORS_HEADERS)
         return resp
     except Exception as e:
-        return web.Response(status=500, text=f"Failed to load schedule: {e}")
+        resp = web.Response(status=500, text=f"Failed to load schedule: {e}")
+        resp.headers.update(_CORS_HEADERS)
+        return resp
 
 import discord
 from discord.ext import commands
@@ -289,7 +300,7 @@ async def _refresh_invites(guild: discord.Guild):
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
 }
 
 
@@ -341,6 +352,9 @@ async def start_web_server(bot):
     async def options_schedule(request):
         return web.Response(status=204, headers=_CORS_HEADERS)
 
+    async def options_schedule_save(request):
+        return web.Response(status=204, headers=_CORS_HEADERS)
+
     app.add_routes([
         web.get('/', get_index),
         web.get('/api/members', get_members),
@@ -349,6 +363,7 @@ async def start_web_server(bot):
         web.post('/api/schedule/save', save_schedule),
         web.get('/api/schedule', get_schedule),
         web.options('/api/schedule', options_schedule),
+        web.options('/api/schedule/save', options_schedule_save),
     ])
 
     runner = web.AppRunner(app)

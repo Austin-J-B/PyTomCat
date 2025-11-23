@@ -27,6 +27,8 @@ __pycache__/
 
 ## Ephemeral cache data regenerated on boot
 cache/
+!cache/feeding_schedule.json
+!cache/.gitkeep
 
 ## Python virtual environments (machine-local)
 .venv/

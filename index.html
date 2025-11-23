@@ -22,7 +22,6 @@
             --grid-line: #E0E5D0;
             --selection-highlight: rgba(140, 168, 124, 0.4);
             --focus-ring: #414B3B;
-            --legend-height: 40px;
         }
 
         * { box-sizing: border-box; }
@@ -32,296 +31,235 @@
             background-color: var(--site-bg);
             color: var(--site-text);
             margin: 0;
-            padding: 0;
             height: 100vh;
-            display: flex;
-            flex-direction: column;
+            display: flex; flex-direction: column;
             overflow: hidden;
         }
 
-        /* LOADING & AUTH SCREENS */
-        #loading-screen, #auth-error {
-            position: fixed; inset: 0;
-            background: var(--site-bg);
-            z-index: 9999;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            font-family: 'Merriweather', serif;
-            font-size: 1.2rem;
+        /* SIDEBAR */
+        .sidebar-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+            z-index: 2000; opacity: 0; pointer-events: none; transition: opacity 0.3s;
         }
-        #auth-error { display: none; color: #b34040; }
-        .spinner {
-            width: 40px; height: 40px;
-            border: 4px solid #ddd;
-            border-top-color: var(--site-text);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
+        .sidebar-overlay.active { opacity: 1; pointer-events: all; }
+        .sidebar-menu {
+            position: fixed; top: 0; left: 0; bottom: 0; width: 280px;
+            background: white; z-index: 2100; transform: translateX(-100%);
+            transition: transform 0.3s ease; padding: 20px 0;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .sidebar-menu.active { transform: translateX(0); }
+        .menu-item { display: block; padding: 12px 24px; color: var(--site-text); text-decoration: none; }
+        .menu-item:hover { background: #f7f9f5; }
 
         /* HEADER */
         header.site-header {
             background-color: var(--header-tan);
-            padding: 15px 30px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 1px solid rgba(65, 75, 59, 0.15);
-            flex-shrink: 0;
-            z-index: 1000;
+            padding: 15px 30px; display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 1px solid rgba(65, 75, 59, 0.15); z-index: 1000;
         }
+        .hamburger-btn { background: none; border: none; cursor: pointer; padding: 5px; }
+        .hamburger-btn span { display: block; width: 20px; height: 2px; background: var(--site-text); margin: 4px 0; }
 
-        .user-info {
-            font-size: 0.9rem;
-            font-weight: 600;
-            display: flex; align-items: center; gap: 10px;
+        /* SEARCH & CONTROLS */
+        .controls-area { display: flex; gap: 15px; align-items: center; }
+        .search-container { position: relative; width: 200px; }
+        #member-search {
+            width: 100%; padding: 8px 15px; border: 1px solid var(--site-text);
+            background: transparent; border-radius: 20px; outline: none;
         }
+        .search-results {
+            position: absolute; top: 110%; left: 0; width: 100%;
+            background: white; border-radius: 8px; display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 2000;
+        }
+        .result-item { padding: 10px; cursor: pointer; font-size: 0.9rem; }
+        .result-item:hover { background: #eee; }
 
         /* SAVE BUTTON */
         #save-btn {
-            background: var(--site-text);
-            color: white;
-            border: none;
-            padding: 10px 24px;
-            border-radius: 4px;
-            font-family: 'Montserrat', sans-serif;
-            font-weight: 600;
-            cursor: pointer;
-            transition: opacity 0.2s;
-            display: none; /* Hidden until authorized */
+            background: var(--site-text); color: white; border: none;
+            padding: 8px 20px; border-radius: 20px; font-weight: 600;
+            cursor: pointer; display: none;
         }
-        #save-btn:hover { opacity: 0.9; }
-        #save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        /* WORKSPACE */
+        /* TABLE */
         .workspace {
-            flex: 1;
-            overflow: auto;
-            padding: 0 40px 40px 40px;
-            display: grid;
-            place-items: start center;
+            flex: 1; overflow: auto; padding: 0 40px 40px;
+            display: grid; place-items: start center;
             background-color: var(--workspace-bg);
             background-image: radial-gradient(var(--workspace-dot) 1px, transparent 1px);
             background-size: 20px 20px;
         }
-
         .sheet-wrapper {
-            background: white;
-            padding: 0;
-            border-radius: 0 0 4px 4px;
-            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45);
-            margin-top: 40px;
-            display: flex; flex-direction: column;
+            background: white; border-radius: 0 0 4px 4px;
+            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.2); margin-top: 40px;
+            transform-origin: top center; transition: transform 0.2s;
         }
-
-        /* TABLE */
-        table {
-            border-collapse: collapse;
-            background: white;
-            color: var(--site-text);
-            user-select: none;
-        }
+        table { border-collapse: collapse; background: white; user-select: none; }
         th {
-            font-family: 'Montserrat', sans-serif;
-            text-transform: uppercase;
-            font-size: 0.75rem;
-            font-weight: 600;
-            letter-spacing: 0.1em;
-            padding: 15px;
-            position: sticky; top: 0; z-index: 200;
-            background: white;
+            font-family: 'Montserrat', sans-serif; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+            padding: 15px; position: sticky; top: 0; z-index: 200; background: white;
             border-bottom: 5px solid var(--site-text);
         }
-        th:first-child {
-            z-index: 250; left: 0;
-            border-right: 2px solid var(--site-text);
-        }
+        th:first-child { left: 0; z-index: 250; border-right: 2px solid var(--site-text); }
         .station-cell {
-            font-family: 'Merriweather', serif;
-            font-weight: 700;
-            font-size: 0.95rem;
-            padding: 0 20px;
-            text-align: left;
-            background-color: #F9FBF7;
-            border-bottom: 1px solid var(--grid-line);
-            border-right: 2px solid var(--site-text);
-            position: sticky; left: 0; z-index: 100;
-            width: 220px;
+            font-family: 'Merriweather', serif; font-weight: 700; padding: 0 20px;
+            background: #F9FBF7; position: sticky; left: 0; z-index: 100;
+            border-right: 2px solid var(--site-text); border-bottom: 1px solid var(--grid-line);
         }
         td.data-cell {
-            width: 160px; height: 75px;
-            border-bottom: 1px solid var(--grid-line);
-            border-right: 1px solid var(--grid-line);
-            text-align: center; vertical-align: middle;
-            font-weight: 500; font-size: 0.95rem;
-            cursor: pointer;
+            width: 140px; height: 60px; text-align: center; cursor: pointer;
+            border-bottom: 1px solid var(--grid-line); border-right: 1px solid var(--grid-line);
+            font-weight: 500;
         }
         td.data-cell.focus { outline: 2px solid var(--focus-ring); z-index: 150; }
-        td.data-cell.selected { background-color: var(--selection-highlight) !important; }
 
-        /* INPUT OVERLAY */
+        /* AUTH LOADING */
+        #loading-overlay {
+            position: fixed; inset: 0; background: var(--site-bg); z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'Merriweather'; font-size: 1.5rem;
+        }
+        
+        /* EDIT INPUT */
         #edit-input {
-            position: absolute;
-            display: none;
-            font-family: 'Montserrat', sans-serif;
-            font-size: 0.95rem;
-            text-align: center;
-            border: 2px solid var(--focus-ring);
-            z-index: 1000;
-            outline: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            position: absolute; display: none; text-align: center;
+            border: 2px solid var(--focus-ring); z-index: 1000; outline: none;
         }
     </style>
 </head>
 <body>
 
-    <!-- Loaders -->
-    <div id="loading-screen">
-        <div class="spinner"></div>
-        <div id="loading-text">Connecting to Discord...</div>
-    </div>
-    <div id="auth-error">
-        <div>Authentication Failed</div>
-        <div style="font-size: 0.8rem; margin-top: 10px;">Please refresh or ask an admin.</div>
+    <div id="loading-overlay">Loading...</div>
+
+    <!-- Sidebar -->
+    <div class="sidebar-overlay" onclick="toggleMenu()"></div>
+    <div class="sidebar-menu" id="main-menu">
+        <div style="padding: 20px; font-weight: bold; border-bottom: 1px solid #eee;">TomCat VI</div>
+        <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
     </div>
 
-    <!-- Header -->
     <header class="site-header">
-        <h1 style="font-family: 'Merriweather'; font-size: 1.4rem; font-weight: 900; margin: 0;">
-            Campus Cat Coalition
-        </h1>
-        
-        <div style="display: flex; gap: 20px; align-items: center;">
-            <div class="user-info" id="user-display"></div>
-            <button id="save-btn" onclick="saveData()">Save Changes</button>
+        <div style="display:flex; align-items:center; gap:15px;">
+            <button class="hamburger-btn" onclick="toggleMenu()"><span></span><span></span><span></span></button>
+            <h1 style="margin:0; font-family:'Merriweather'; font-size:1.3rem;">Campus Cat Coalition</h1>
+        </div>
+
+        <div class="controls-area">
+            <button style="background:none; border:1px solid #333; border-radius:50%; width:30px; height:30px; cursor:pointer;" onclick="adjustZoom(-0.1)">-</button>
+            <button style="background:none; border:1px solid #333; border-radius:50%; width:30px; height:30px; cursor:pointer;" onclick="adjustZoom(0.1)">+</button>
+            
+            <div class="search-container">
+                <input type="text" id="member-search" placeholder="Search..." autocomplete="off">
+                <div id="search-results" class="search-results"></div>
+            </div>
+
+            <div id="user-display" style="font-weight:600; font-size:0.9rem;"></div>
+            <button id="save-btn" onclick="saveData()">Save</button>
         </div>
     </header>
 
-    <!-- Main -->
     <div class="workspace">
-        <div class="sheet-wrapper">
+        <div class="sheet-wrapper" id="sheet-container">
             <table id="schedule-table">
                 <thead>
                     <tr>
                         <th>Station</th>
-                        <th>Sunday</th><th>Monday</th><th>Tuesday</th>
-                        <th>Wednesday</th><th>Thursday</th><th>Friday</th><th>Saturday</th>
+                        <th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th>
                     </tr>
                 </thead>
                 <tbody id="table-body"></tbody>
             </table>
         </div>
     </div>
-    
+
     <input type="text" id="edit-input">
 
 <script>
+// Constants
 const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
     "Lot 50", "Mary Kay and Zen", "West Hall", "Maintenance"
 ];
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const COLORS = ["#FFB7B2", "#E2F0CB", "#C7CEEA", "#FFDAC1", "#B5EAD7", "#DF9881", "#ECD5E3", "#A0E7E5"];
 
 // State
 let scheduleData = {};
+let userPerms = {};
 let currentUser = null;
-let userPermissions = {};
-let selectedCell = null;
+let zoomLevel = 1.0;
+let activeEdit = null;
 
-// --- DISCORD AUTH ---
-const discordSdk = new Discord.DiscordSDK(
-    "YOUR_APPLICATION_ID" // IMPORTANT: Update this if not using the env injection
-);
+// --- AUTH & INIT ---
+const discordSdk = new Discord.DiscordSDK("YOUR_APP_ID"); // Will pull from env in logic
 
 async function init() {
     try {
         await discordSdk.ready();
-        
-        // 1. Authorize
         const { code } = await discordSdk.commands.authorize({
-            client_id: "YOUR_APPLICATION_ID", // MUST MATCH
+            client_id: "YOUR_APP_ID", // Ensure this matches env
             response_type: "code",
             state: "",
             prompt: "none",
             scope: ["identify", "guilds.members.read"]
         });
 
-        // 2. Exchange for Token & Permissions (Backend)
-        document.getElementById('loading-text').textContent = "Verifying Permissions...";
-        const authRes = await fetch("/api/auth/token", {
+        // Get Token & Perms
+        const res = await fetch("/api/auth/token", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code })
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({code})
         });
-
-        if (!authRes.ok) throw new Error("Backend auth failed");
-        const authData = await authRes.json();
         
-        currentUser = authData.user;
-        userPermissions = authData.permissions;
+        if (!res.ok) throw new Error("Auth failed");
+        const data = await res.json();
+        currentUser = data.user;
+        userPerms = data.permissions;
 
-        // Update UI based on Auth
-        document.getElementById('user-display').textContent = `Hello, ${currentUser.username}`;
-        
-        if (userPermissions.can_manage_feeding) {
+        // Update UI
+        document.getElementById('user-display').textContent = currentUser.username;
+        if (userPerms.can_manage_feeding) {
             document.getElementById('save-btn').style.display = 'block';
-        } else {
-            // If strictly "Viewer", we can disable editing interactions if desired
-            // For now, we let them edit locally but "Save" is hidden.
         }
 
-        // 3. Load Data
+        // Load Data
         await loadSchedule();
-        document.getElementById('loading-screen').style.display = 'none';
+        document.getElementById('loading-overlay').style.display = 'none';
 
     } catch (e) {
         console.error(e);
-        document.getElementById('loading-screen').style.display = 'none';
-        document.getElementById('auth-error').style.display = 'flex';
+        document.getElementById('loading-overlay').textContent = "Auth Error. Refresh.";
     }
 }
 
+// --- DATA LOGIC ---
 async function loadSchedule() {
     const res = await fetch("/api/schedule");
-    if (res.ok) {
-        const data = await res.json();
-        // Normalize data format to align with STATIONS
-        STATIONS.forEach(st => {
-            scheduleData[st] = data[st] || new Array(7).fill("");
-        });
-        render();
-    }
+    const json = await res.json();
+    
+    STATIONS.forEach(st => {
+        scheduleData[st] = json[st] || new Array(7).fill("");
+    });
+    render();
 }
 
 async function saveData() {
     const btn = document.getElementById('save-btn');
-    btn.disabled = true;
     btn.textContent = "Saving...";
-
     try {
-        const res = await fetch("/api/schedule/save", {
+        await fetch("/api/schedule/save", {
             method: "POST",
-            headers: { 
+            headers: {
                 "Content-Type": "application/json",
-                "X-User-ID": currentUser.id // Simple ID pass for backend verification
+                "X-User-ID": currentUser.id
             },
             body: JSON.stringify(scheduleData)
         });
-        
-        if (res.ok) {
-            btn.textContent = "Saved!";
-            setTimeout(() => {
-                btn.textContent = "Save Changes";
-                btn.disabled = false;
-            }, 2000);
-        } else {
-            throw new Error("Save failed");
-        }
+        btn.textContent = "Saved!";
+        setTimeout(() => btn.textContent = "Save", 2000);
     } catch (e) {
-        alert("Could not save. Do you have permission?");
-        btn.textContent = "Save Changes";
-        btn.disabled = false;
+        alert("Error saving.");
+        btn.textContent = "Save";
     }
 }
 
@@ -330,84 +268,117 @@ function render() {
     const tbody = document.getElementById('table-body');
     tbody.innerHTML = '';
 
-    STATIONS.forEach(station => {
+    STATIONS.forEach(st => {
         const tr = document.createElement('tr');
-        
-        // Header
         const th = document.createElement('td');
         th.className = 'station-cell';
-        th.textContent = station;
+        th.textContent = st;
         tr.appendChild(th);
 
-        // Data
-        const rowData = scheduleData[station];
-        rowData.forEach((val, dayIdx) => {
+        scheduleData[st].forEach((val, idx) => {
             const td = document.createElement('td');
             td.className = 'data-cell';
             td.textContent = val;
             td.style.backgroundColor = getSoftColor(val);
             
-            // Editing interaction
-            if (userPermissions.can_manage_feeding) {
-                td.onclick = (e) => startEdit(e.target, station, dayIdx);
+            if (userPerms.can_manage_feeding) {
+                td.onclick = (e) => startEdit(e.target, st, idx);
             }
-            
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
     });
 }
 
+// --- UI HELPERS ---
+function getSoftColor(name) {
+    if (!name) return 'white';
+    let hash = 0;
+    for (let i=0; i<name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return COLORS[Math.abs(hash) % COLORS.length];
+}
+
+function adjustZoom(delta) {
+    zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
+    document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
+}
+
+function toggleMenu() {
+    document.querySelector('.sidebar-menu').classList.toggle('active');
+    document.querySelector('.sidebar-overlay').classList.toggle('active');
+}
+
+// --- SEARCH ---
+const searchInput = document.getElementById('member-search');
+const resultsBox = document.getElementById('search-results');
+
+searchInput.addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    if (!q) { resultsBox.style.display = 'none'; return; }
+    
+    // Flatten current schedule to find names
+    const allNames = new Set();
+    Object.values(scheduleData).forEach(row => row.forEach(n => {
+        if(n) allNames.add(n);
+    }));
+    
+    const matches = Array.from(allNames).filter(n => n.toLowerCase().includes(q));
+    resultsBox.innerHTML = '';
+    
+    if (matches.length) {
+        resultsBox.style.display = 'block';
+        matches.forEach(name => {
+            const div = document.createElement('div');
+            div.className = 'result-item';
+            div.textContent = name;
+            div.onclick = () => {
+                highlightName(name);
+                resultsBox.style.display = 'none';
+            };
+            resultsBox.appendChild(div);
+        });
+    } else {
+        resultsBox.style.display = 'none';
+    }
+});
+
+function highlightName(name) {
+    document.querySelectorAll('.data-cell').forEach(td => {
+        if (td.textContent === name) {
+            td.style.border = "3px solid var(--focus-ring)";
+            setTimeout(() => td.style.border = "", 2000);
+        }
+    });
+}
+
 // --- EDITING ---
 const inputEl = document.getElementById('edit-input');
-let activeEdit = null; // { station, dayIdx, element }
 
-function startEdit(td, station, dayIdx) {
+function startEdit(td, st, idx) {
     if (activeEdit) commitEdit();
-
     const rect = td.getBoundingClientRect();
     inputEl.style.display = 'block';
     inputEl.style.top = rect.top + 'px';
     inputEl.style.left = rect.left + 'px';
     inputEl.style.width = rect.width + 'px';
     inputEl.style.height = rect.height + 'px';
-    inputEl.value = scheduleData[station][dayIdx];
+    inputEl.value = scheduleData[st][idx];
     inputEl.focus();
-
-    activeEdit = { station, dayIdx, td };
+    activeEdit = { st, idx };
 }
 
 function commitEdit() {
     if (!activeEdit) return;
-    const { station, dayIdx } = activeEdit;
-    scheduleData[station][dayIdx] = inputEl.value;
-    
+    scheduleData[activeEdit.st][activeEdit.idx] = inputEl.value;
     inputEl.style.display = 'none';
     activeEdit = null;
     render();
 }
 
-inputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        commitEdit();
-    }
-});
-
+inputEl.addEventListener('keydown', e => { if(e.key==='Enter') commitEdit(); });
 inputEl.addEventListener('blur', commitEdit);
 
-// --- UTILS ---
-const COLORS = ["#E2F0CB", "#C7CEEA", "#FFDAC1", "#FFB7B2", "#B5EAD7", "#E0BBE4"];
-function getSoftColor(name) {
-    if (!name) return 'white';
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return COLORS[Math.abs(hash) % COLORS.length];
-}
-
-// Start
 init();
-
 </script>
 </body>
 </html>

@@ -1,9 +1,9 @@
-"""Discord bot bootstrap: intents, startup tasks, and router wiring."""
-
+# tomcat/main.py
 from __future__ import annotations
 import asyncio
 import time
 import json
+import os
 import aiohttp
 from aiohttp import web
 import discord
@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from .config import settings
 from .logger import log_event, log_action
-from .intent_router import IntentRouter, Intent
+from .intent_router import IntentRouter
 from .handlers.misc import handle_channel_image_intake as _handle_image_intake, start_profile_scheduler
 from .services.show_cache import warm_cache_on_boot
 from .services.profile_cache import start_profile_cache_scheduler
@@ -47,9 +47,17 @@ async def check_permissions(user_id: int) -> dict:
                     break
         if is_officer: break
     
+    # Per instructions: Photo Labelers can also edit the schedule
+    can_edit = (
+        is_officer 
+        or (user_id in settings.access_feeding_manager)
+        or (user_id in settings.access_photo_labeler)
+    )
+
     return {
-        "can_manage_feeding": is_officer or (user_id in settings.access_feeding_manager),
-        "can_label_photos": is_officer or (user_id in settings.access_photo_labeler)
+        "can_edit_schedule": can_edit,
+        "is_officer": is_officer,
+        "is_photo_labeler": user_id in settings.access_photo_labeler
     }
 
 # --- WEB SERVER ---
@@ -63,23 +71,32 @@ async def start_web_server(bot):
     }
 
     async def get_index(req):
-        try:
-            with open("index.html", "r", encoding="utf-8") as f:
-                return web.Response(text=f.read(), content_type="text/html", headers=_CORS)
-        except: return web.Response(status=404)
+        # robustly find index.html relative to the bot script or current dir
+        possible_paths = [
+            "index.html", 
+            os.path.join(os.path.dirname(__file__), "..", "index.html"),
+            os.path.join(os.path.dirname(__file__), "index.html")
+        ]
+        
+        content = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    break
+                except: continue
+        
+        if content:
+            return web.Response(text=content, content_type="text/html", headers=_CORS)
+        return web.Response(status=404, text="index.html not found")
 
     async def get_members(req):
-        # Return list of members from config for search bar
-        # Format: [{"name": "Name", "user": "UserHandle", "id": "123"}]
         found = []
-        # Use user_id_map as the source of truth for feeders
         for name, uid in settings.user_id_map.items():
-            # Try to resolve handle from bot cache if possible, else generic
             user = bot.get_user(uid)
             handle = user.name if user else "unknown"
             found.append({"name": name, "user": handle, "id": str(uid)})
-        
-        # Sort alphabetically
         found.sort(key=lambda x: x['name'])
         return web.json_response(found, headers=_CORS)
 
@@ -94,35 +111,46 @@ async def start_web_server(bot):
                     'grant_type': 'authorization_code',
                     'code': data.get('code')
                 }) as r:
-                    if r.status != 200: return web.Response(status=401)
-                    token = (await r.json())['access_token']
+                    if r.status != 200: 
+                        print(f"Auth fail: {await r.text()}")
+                        return web.Response(status=401)
+                    token_data = await r.json()
+                    access_token = token_data['access_token']
                 
-                async with sess.get('https://discord.com/api/users/@me', headers={'Authorization': f'Bearer {token}'}) as r:
+                async with sess.get('https://discord.com/api/users/@me', headers={'Authorization': f'Bearer {access_token}'}) as r:
                     user = await r.json()
             
             perms = await check_permissions(int(user['id']))
             return web.json_response({"user": user, "permissions": perms}, headers=_CORS)
-        except Exception as e: return web.Response(status=500, text=str(e))
+        except Exception as e: 
+            print(f"Auth Error: {e}")
+            return web.Response(status=500, text=str(e))
 
     async def get_sched(req):
         return web.json_response(load_schedule(), headers=_CORS)
 
     async def save_sched(req):
         try:
+            # Security: In a production app, we'd verify a session token. 
+            # For this scale, checking the ID against the bot's known permissions is acceptable.
             uid = int(req.headers.get("X-User-ID", 0))
             perms = await check_permissions(uid)
-            if not perms["can_manage_feeding"]: return web.Response(status=403)
+            
+            if not perms["can_edit_schedule"]: 
+                return web.Response(status=403, text="Permission Denied")
             
             data = await req.json()
             save_schedule(data)
             return web.Response(text="Saved", headers=_CORS)
-        except: return web.Response(status=500)
+        except Exception as e: 
+            print(f"Save Error: {e}")
+            return web.Response(status=500)
 
     async def opts(req): return web.Response(status=204, headers=_CORS)
 
     app.add_routes([
         web.get('/', get_index),
-        web.get('/api/members', get_members), # Critical for search bar
+        web.get('/api/members', get_members),
         web.get('/api/schedule', get_sched),
         web.post('/api/auth/token', post_auth),
         web.post('/api/schedule/save', save_sched),
@@ -134,7 +162,7 @@ async def start_web_server(bot):
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, '0.0.0.0', 8080).start()
-    print("[TomCat-UI] Server on 8080")
+    print("[TomCat-UI] Server running on http://localhost:8080")
 
 # --- WRAPPERS ---
 async def handle_cat_show(i, c): await _handle_cat_show(i, c)

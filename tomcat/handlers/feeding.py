@@ -8,6 +8,7 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import discord
@@ -32,6 +33,9 @@ SUBS_ROOT = os.path.join("logs", "subs")
 os.makedirs(SUBS_ROOT, exist_ok=True)
 SUBS_LEGACY_FILE = os.path.join(SUBS_ROOT, "subs.jsonl")
 _SUBS_LOCK = asyncio.Lock()
+
+# UI-provided schedule cache
+UI_SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
 
 # ------------- simple data types ----------------
 @dataclass
@@ -293,7 +297,11 @@ def _resolve_user_ids(names: List[str]) -> List[int]:
     """Resolve a list of display names to Discord user IDs via settings.user_id_map.
     Accepts either names or numeric strings.
     """
-    cfg_map = getattr(settings, "user_id_map", {}) or {}
+    cfg_map = {}
+    try:
+        cfg_map = getattr(settings, "user_id_map", {}) or {}
+    except Exception:
+        cfg_map = {}
     # normalize keys to simple form
     norm_map: Dict[str, int] = {}
     for k, v in cfg_map.items():
@@ -345,7 +353,11 @@ def _format_user(bot: Optional[discord.Client], uid: int, mention: bool) -> str:
         if user:
             name = getattr(user, "global_name", None) or getattr(user, "display_name", None) or getattr(user, "name", None)
     if not name:
-        lookup = getattr(settings, "user_id_map", {}) or {}
+        lookup = {}
+        try:
+            lookup = getattr(settings, "user_id_map", {}) or {}
+        except Exception:
+            lookup = {}
         for disp, mapped in lookup.items():
             try:
                 if int(mapped) == int(uid):
@@ -357,16 +369,34 @@ def _format_user(bot: Optional[discord.Client], uid: int, mention: bool) -> str:
         name = str(uid)
     return str(name)
 
+
+def _coerce_uid(val) -> Optional[int]:
+    if val is None:
+        return None
+    s = str(val).strip()
+    if not s:
+        return None
+    try:
+        return int(s)
+    except Exception:
+        return s  # allow non-numeric IDs
+
+
+def _load_ui_schedule() -> Dict[str, List[str]]:
+    """Load the UI-authored schedule from cache/feeding_schedule.json."""
+    try:
+        data = json.loads(UI_SCHEDULE_PATH.read_text(encoding="utf-8"))
+        sched = data.get("schedule", {}) or {}
+        if isinstance(sched, dict):
+            return {k: v if isinstance(v, list) else [] for k, v in sched.items()}
+    except Exception:
+        pass
+    return {}
+
+
 def _read_schedule_for_weekday(weekday_name: str) -> Dict[str, List[int]]:
-    """Read schedule from settings.feeding_schedule in station→7-day format.
-    Expected format in config:
-      feeding_schedule = {
-         "Business": ["Chris","Chris","Chris","Megan","Megan","Megan","Ben"],  # Sun..Sat
-         "HOP": [...],
-      }
-    Returns mapping {station_display: [user_id]} for the specific weekday.
-    """
-    cfg: Dict[str, List[str]] = getattr(settings, "feeding_schedule", {}) or {}
+    """Read schedule from cache/feeding_schedule.json in station->7-day format."""
+    cfg: Dict[str, List[str]] = _load_ui_schedule()
     wk_names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
     idx = 0
     low = (weekday_name or "").lower()
@@ -384,10 +414,11 @@ def _read_schedule_for_weekday(weekday_name: str) -> Dict[str, List[int]]:
             continue
         if len(seq) != 7:
             log_action("schedule_warn", f"station={station}", f"len={len(seq)} != 7; cycling")
-        name = seq[idx % len(seq)]
+        raw_val = seq[idx % len(seq)]
         ids = []
-        if name not in (None, "", "None"):
-            ids = _resolve_user_ids([name])
+        uid = _coerce_uid(raw_val)
+        if uid is not None:
+            ids = [uid]
         existing = out.get(station_disp, [])
         merged = list(dict.fromkeys(existing + ids)) if ids else existing
         out[station_disp] = merged
@@ -997,7 +1028,7 @@ async def build_8pm_lines(
         if assignees:
             roster = " ".join(_format_user(bot, uid, mention) for uid in assignees)
         else:
-            roster = "Unassigned."
+            roster = "unassigned"
         return f"• **{station}** → {roster}"
 
     if not include_fed:
@@ -1093,7 +1124,7 @@ async def build_schedule_for_date(
             if base_names:
                 roster_text = " ".join(base_names)
             else:
-                roster_text = "Unassigned."
+                roster_text = "unassigned"
         lines.append(f"• **{station}** → {roster_text}")
 
     return "\n".join(lines)

@@ -9,6 +9,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
 
+    <!-- Discord Embedded App SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk/dist/discord.min.js"></script>
+
     <style>
         :root {
             /* --- SITE COLORS --- */
@@ -877,6 +880,54 @@ function applyZoom() {
 // Run
 init();
 
+</script>
+
+<!-- Discord Auth Integration -->
+<script>
+    const discordSdk = new Discord.DiscordSDK(
+        "1341667150066225192" // The same ID from ui_launcher.py and .env BOT_USER_ID
+    );
+
+    let authHelper = {
+        token: null,
+        user: null,
+        status: "unauthenticated"
+    };
+
+    async function setupDiscordAuth() {
+        await discordSdk.ready();
+
+        // 1. Authorize with Discord Client
+        const { code } = await discordSdk.commands.authorize({
+            client_id: "1341667150066225192",
+            response_type: "code",
+            state: "",
+            prompt: "none", 
+            scope: ["identify", "guilds.members.read"] 
+        });
+
+        // 2. Exchange code for token (Must happen on YOUR server to keep secret safe)
+        const response = await fetch("/api/auth/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            authHelper.token = data.access_token; // Store this for future requests
+            authHelper.user = data.user; // Basic info like ID and username
+      
+            // Update UI to show logged in state
+            console.log(`Logged in as ${authHelper.user.username}`);
+      
+            // NOW fetch the sensitive data
+            // fetchMembers(); 
+        }
+    }
+
+    // Call this on load
+    setupDiscordAuth();
 </script>
 </body>
 </html>

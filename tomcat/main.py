@@ -320,11 +320,12 @@ async def start_web_server(bot):
 
     async def get_members(request):
         """Return JSON list of members with the Feeding Team role."""
-        FEEDING_TEAM_ROLE_ID = 643587274797481988
+        FEEDING_TEAM_ROLE_ID = None
+        DUE_PAYING_ROLE_ID = 774442956375064606
         found_members = []
         
         for guild in bot.guilds:
-            role = guild.get_role(FEEDING_TEAM_ROLE_ID)
+            role = guild.get_role(DUE_PAYING_ROLE_ID) if DUE_PAYING_ROLE_ID else None
             if role:
                 for member in role.members:
                     # Use display_name (nickname) if available, fallback to username
@@ -356,6 +357,12 @@ async def start_web_server(bot):
         return web.Response(status=204, headers=_CORS_HEADERS)
 
     async def options_subrequest(request):
+        return web.Response(status=204, headers=_CORS_HEADERS)
+
+    async def options_sub_open(request):
+        return web.Response(status=204, headers=_CORS_HEADERS)
+
+    async def options_sub_claim(request):
         return web.Response(status=204, headers=_CORS_HEADERS)
 
     async def submit_subrequest(request):
@@ -426,6 +433,151 @@ async def start_web_server(bot):
 
         return web.json_response({"status": "ok"}, headers=_CORS_HEADERS)
 
+    async def list_open_subs(request):
+        """List open sub requests (per station) that are still unassigned."""
+        import glob, json
+        open_items = []
+        accepted_pairs = set()
+        for path in glob.glob(os.path.join("logs", "subs", "*", "*.jsonl")):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            rec = json.loads(line)
+                        except Exception:
+                            continue
+                        status = rec.get("status")
+                        stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
+                        dates = rec.get("dates") or []
+                        date_iso = dates[0] if dates else None
+                        parent_id = rec.get("id")
+                        if status == "accepted":
+                            for st in stations:
+                                accepted_pairs.add((parent_id, st, date_iso))
+            except Exception:
+                continue
+
+        for path in glob.glob(os.path.join("logs", "subs", "*", "*.jsonl")):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            rec = json.loads(line)
+                        except Exception:
+                            continue
+                        status = rec.get("status")
+                        if status != "requested":
+                            continue
+                        stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
+                        dates = rec.get("dates") or []
+                        date_iso = dates[0] if dates else None
+                        parent_id = rec.get("id")
+                        requester = rec.get("requester")
+                        requester_name = rec.get("requester_name") or ""
+                        for st in stations:
+                            if (parent_id, st, date_iso) in accepted_pairs:
+                                continue
+                            open_items.append({
+                                "id": parent_id,
+                                "station": st,
+                                "date": date_iso,
+                                "requester_id": requester,
+                                "requester_name": requester_name,
+                            })
+            except Exception:
+                continue
+
+        resp = web.json_response({"open": open_items})
+        resp.headers.update(_CORS_HEADERS)
+        return resp
+
+    async def claim_subs(request):
+        """Mark sub requests as accepted by a user."""
+        try:
+            data = await request.json()
+        except Exception:
+            return web.Response(status=400, text="Invalid JSON", headers=_CORS_HEADERS)
+        user_id = data.get("user_id")
+        picks = data.get("picks") or []
+        if not user_id or not picks:
+            return web.Response(status=400, text="Missing user_id or picks", headers=_CORS_HEADERS)
+
+        from datetime import datetime
+        now_iso = datetime.now().isoformat()
+        messages_by_date = {}
+
+        for pick in picks:
+            parent_id = pick.get("id")
+            station = pick.get("station")
+            date_iso = pick.get("date")
+            requester = pick.get("requester_id")
+            requester_name = pick.get("requester_name") or ""
+            if not parent_id or not station or not date_iso:
+                continue
+            try:
+                # Locate log file by month
+                from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
+                key = _sub_month_key_from_date(date_iso) or datetime.now().strftime("%Y-%m")
+                path = _sub_log_path_from_key(key)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                rec = {
+                    "kind": "sub_accept",
+                    "id": f"sub-accept-{int(datetime.now().timestamp()*1000)}",
+                    "parent_id": parent_id,
+                    "station": station,
+                    "stations": [station],
+                    "dates": [date_iso],
+                    "requester": requester,
+                    "assignee": int(user_id),
+                    "status": "accepted",
+                    "channel_id": 0,
+                    "message_id": 0,
+                    "created_at": now_iso,
+                    "log_month": key,
+                    "message_preview": "",
+                    "trigger_phrase": "ui_sub_claim",
+                    "requester_name": requester_name,
+                }
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(rec) + "\n")
+                messages_by_date.setdefault(date_iso, []).append((station, requester))
+            except Exception:
+                continue
+
+        # Notify feeding team channel
+        try:
+            channel_id = getattr(settings, "ch_feeding_team", None)
+            if channel_id and messages_by_date:
+                ch = bot.get_channel(int(channel_id))
+                from discord.abc import Messageable
+                if isinstance(ch, Messageable):
+                    for date_iso, items in messages_by_date.items():
+                        stations = [st for st, _ in items]
+                        reqs = [req for _, req in items if req]
+                        stations_text = ""
+                        if len(stations) >= 3:
+                            stations_text = ", ".join(stations[:-1]) + f", and {stations[-1]}"
+                        elif len(stations) == 2:
+                            stations_text = f"{stations[0]} and {stations[1]}"
+                        elif stations:
+                            stations_text = stations[0]
+                        req_mentions = " and ".join(f"<@{r}>" for r in reqs) if reqs else "someone"
+                        msg = f"<@{user_id}> picked up {req_mentions}'s substitute request for {stations_text} on {date_iso}"
+                        try:
+                            await ch.send(msg)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        return web.json_response({"status": "ok"}, headers=_CORS_HEADERS)
+
     app.add_routes([
         web.get('/', get_index),
         web.get('/api/members', get_members),
@@ -437,6 +589,10 @@ async def start_web_server(bot):
         web.options('/api/schedule/save', options_schedule_save),
         web.post('/api/subrequest', submit_subrequest),
         web.options('/api/subrequest', options_subrequest),
+        web.get('/api/subs/open', list_open_subs),
+        web.options('/api/subs/open', options_sub_open),
+        web.post('/api/subs/claim', claim_subs),
+        web.options('/api/subs/claim', options_sub_claim),
     ])
 
     runner = web.AppRunner(app)

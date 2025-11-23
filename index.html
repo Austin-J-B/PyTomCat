@@ -24,7 +24,7 @@
             --focus-ring: #414B3B;
             --legend-height: 40px;
 
-            /* Zoom Variables - Replacing Transform */
+            /* Zoom Variables */
             --zoom-scale: 1;
             --base-cell-width: 160px;
             --base-cell-height: 75px;
@@ -87,14 +87,18 @@
             display: flex; align-items: center; justify-content: space-between;
             border-bottom: 1px solid rgba(65, 75, 59, 0.15); flex-shrink: 0; z-index: 1000;
         }
-        .menu-container { display: flex; align-items: center; gap: 15px; }
+        .menu-container { display: flex; align-items: center; gap: 20px; }
+        
+        /* Fixed Hamburger Button */
         .hamburger-btn {
             background: none; border: none; cursor: pointer; padding: 5px;
             display: flex; flex-direction: column; gap: 5px;
+            z-index: 1001; /* Ensure clickable */
         }
         .hamburger-btn span {
             display: block; width: 20px; height: 2px; background-color: var(--site-text); border-radius: 2px;
         }
+        
         h1.page-title a {
             font-family: 'Merriweather', serif; font-weight: 900; font-size: 1.4rem;
             color: var(--site-text); text-decoration: none; cursor: pointer;
@@ -170,27 +174,39 @@
         .sheet-wrapper {
             background: white; padding: 0; border-radius: 0 0 4px 4px;
             box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.10);
-            /* REMOVED: transform-origin & transition for sticky fix */
             display: flex; flex-direction: column; margin-top: 40px; 
         }
 
-        /* STICKY HEADER FIX: Avoid transform on parents */
+        /* CONTROLS LEGEND (STICKY) */
         .controls-legend {
-            position: sticky; top: 0; z-index: 300; height: var(--legend-height);
-            background: var(--header-tan); color: var(--site-text); padding: 0 25px; 
-            border-bottom: 2px solid var(--site-text); display: flex; align-items: center;
-            justify-content: flex-start; gap: 25px;
+            position: sticky; 
+            top: 0; 
+            z-index: 300; 
+            height: var(--legend-height);
+            background: var(--header-tan); 
+            color: var(--site-text); 
+            padding: 0 25px; 
+            border-bottom: 2px solid var(--site-text); 
+            display: flex; align-items: center;
+            justify-content: flex-start; 
+            gap: 25px;
             font-family: 'Montserrat', sans-serif; font-size: 0.75rem; font-weight: 600;
             text-transform: uppercase; letter-spacing: 0.05em;
         }
 
         table { border-collapse: collapse; background: white; color: var(--site-text); user-select: none; border-spacing: 0; }
 
+        /* TABLE HEADER (STICKY) */
         th {
             font-family: 'Montserrat', sans-serif; text-transform: uppercase;
             font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
-            position: sticky; top: var(--legend-height); z-index: 200;
-            background-color: white; border-bottom: 5px solid var(--site-text); color: var(--site-text);
+            
+            position: sticky; 
+            top: var(--legend-height); /* STICKY BELOW LEGEND */
+            z-index: 200;
+            
+            background-color: white; 
+            border-bottom: 5px solid var(--site-text); color: var(--site-text);
         }
         th:first-child { z-index: 250; left: 0; background-color: white; border-right: 2px solid var(--site-text); }
 
@@ -198,11 +214,11 @@
             font-family: 'Merriweather', serif; font-weight: 700; font-size: 0.95rem;
             padding: 0 20px; text-align: left; background-color: #F9FBF7;
             border-bottom: 1px solid var(--grid-line); border-right: 2px solid var(--site-text);
+            
             position: sticky; left: 0; z-index: 100; width: 220px;
         }
 
         td.data-cell {
-            /* Use Zoom Variables */
             width: calc(var(--base-cell-width) * var(--zoom-scale)); 
             height: calc(var(--base-cell-height) * var(--zoom-scale)); 
             border-bottom: 1px solid var(--grid-line);
@@ -235,7 +251,7 @@
         </div>
         <div class="sidebar-content">
             <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
-            <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">Repository</a>
+            <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat-VI Repository</a>
         </div>
     </div>
 
@@ -275,11 +291,11 @@
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
             <div class="controls-legend">
-                <div>Click</div>
-                <div style="margin-left:15px;">Ctrl+Click</div>
-                <div style="margin-left:15px;">Shift+Click</div>
-                <div style="margin-left:15px;">Enter</div>
-                <div style="margin-left:15px;">Del</div>
+                <div>"Click" Select</div>
+                <div style="margin-left:15px;">"Ctrl" + "Click" Multi</div>
+                <div style="margin-left:15px;">"Shift" + "Click" Range</div>
+                <div style="margin-left:15px;">"Enter" Assign</div>
+                <div style="margin-left:15px;">"Del" Erase</div>
             </div>
 
             <table id="schedule-table">
@@ -331,9 +347,7 @@ async function init() {
         await Promise.all([fetchSchedule(), fetchMembers()]);
         console.log("Live data loaded.");
     } catch (e) {
-        console.warn("API Error or Offline mode.");
-        // Fallback members only for UI testing if offline
-        if (members.length === 0) members = [{name: "OfflineTest", user: "test"}];
+        console.warn("API Error:", e);
     } finally {
         renderGrid();
         document.getElementById('loading').style.opacity = '0';
@@ -350,8 +364,11 @@ async function fetchSchedule() {
         const res = await fetch("api/schedule");
         if (!res.ok) throw new Error("Sched 404");
         const json = await res.json();
+        // Only load if station exists, otherwise keep empty
         STATIONS.forEach(st => { if(json[st]) scheduleData[st] = json[st]; });
-    } catch(e) { console.log("No schedule found, starting empty."); }
+    } catch(e) { 
+        console.log("No schedule found or load error. Starting blank."); 
+    }
 }
 
 async function fetchMembers() {
@@ -617,7 +634,6 @@ function applyValue(val) {
 function adjustZoom(delta) {
     zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
-    // We update the CSS variable, NOT a transform
     document.documentElement.style.setProperty('--zoom-scale', zoomLevel);
 }
 function resetZoom() { zoomLevel = 1.0; adjustZoom(0); }

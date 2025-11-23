@@ -3,17 +3,18 @@ import os
 from typing import Dict, List
 from ..config import settings
 
-# Default if file is missing
+# Default to EMPTY structure so it doesn't autopopulate names.
+# This matches your request to "Create" the schedule, not have one forced on you.
 DEFAULT_SCHEDULE = {
-    "Microwave":         ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
-    "Snickers":          ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
-    "Business":          ["Atlas", "Alexa", "Morgan", "Bunny", "Abigail", "Zoe", "Elusive"],
-    "The Greens":        ["Jaeden", "Isabella", "Julia", "Micaela", "Brooke", "Peter", "Elusive"],
-    "HOP":               ["Jaeden", "Victoria", "Anabelle", "Brian", "Sophia", "Victoria", "Sophia"],
-    "Lot 50":            ["Miranda", "Brian", "Bryan", "Brian", "Bryan", "Zahara", "Miranda"],
-    "Mary Kay and Zen":  ["Kitadan", "Emma", "Kitadan", "Kitadan", "Jack", "Jack", "Jack"],
-    "West Hall":         ["Loren", "Charlotte", "Autumn", "Michael", "Loren", "Roach", "Emmaleigh"],
-    "Maintenance":       ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"],
+    "Microwave":         ["", "", "", "", "", "", ""],
+    "Snickers":          ["", "", "", "", "", "", ""],
+    "Business":          ["", "", "", "", "", "", ""],
+    "The Greens":        ["", "", "", "", "", "", ""],
+    "HOP":               ["", "", "", "", "", "", ""],
+    "Lot 50":            ["", "", "", "", "", "", ""],
+    "Mary Kay and Zen":  ["", "", "", "", "", "", ""],
+    "West Hall":         ["", "", "", "", "", "", ""],
+    "Maintenance":       ["", "", "", "", "", "", ""],
 }
 
 def _ensure_file_exists():

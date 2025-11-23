@@ -1,4 +1,3 @@
-# tomcat/main.py
 from __future__ import annotations
 import asyncio
 import time
@@ -47,7 +46,6 @@ async def check_permissions(user_id: int) -> dict:
                     break
         if is_officer: break
     
-    # Photo Labelers and Feeding Managers can edit
     can_edit = (
         is_officer 
         or (user_id in settings.access_feeding_manager)
@@ -70,13 +68,11 @@ async def start_web_server(bot):
     }
 
     async def get_index(req):
-        # Robustly find index.html
         possible_paths = [
             "index.html", 
             os.path.join(os.path.dirname(__file__), "..", "index.html"),
             os.path.join(os.path.dirname(__file__), "index.html")
         ]
-        
         content = None
         for path in possible_paths:
             if os.path.exists(path):
@@ -91,36 +87,32 @@ async def start_web_server(bot):
         return web.Response(status=404, text="index.html not found")
 
     async def get_members(req):
-        # Search for members with the "Feeding Team" role
+        # 1. Start with the Hardcoded Map from Config (The "Reliable List")
+        # This ensures names populate even if Discord fetching fails/is slow
+        found_map = {}
+        for name, uid in settings.user_id_map.items():
+            found_map[str(uid)] = {"name": name, "user": name, "id": str(uid)}
+
+        # 2. Try to enrich/add with Discord "Feeding Team" role
         feeding_role_name = "Feeding Team"
-        found_members = []
-        
-        # Search all guilds the bot is connected to
-        for guild in bot.guilds:
-            # Try to find the role by name
-            role = discord.utils.get(guild.roles, name=feeding_role_name)
-            
-            # If found, get all members
-            if role:
-                for member in role.members:
-                    # Check for dupes (if bot is in multiple guilds with same user)
-                    if not any(m['id'] == str(member.id) for m in found_members):
-                        found_members.append({
-                            "name": member.display_name, # Use nickname if set
+        try:
+            for guild in bot.guilds:
+                role = discord.utils.get(guild.roles, name=feeding_role_name)
+                if role:
+                    for member in role.members:
+                        uid_str = str(member.id)
+                        found_map[uid_str] = {
+                            "name": member.display_name, 
                             "user": member.name,
-                            "id": str(member.id)
-                        })
+                            "id": uid_str
+                        }
+        except Exception as e:
+            print(f"Error fetching role members: {e}")
+
+        final_list = list(found_map.values())
+        final_list.sort(key=lambda x: x['name'].lower())
         
-        # Fallback to config map if role not found or list empty
-        if not found_members:
-            for name, uid in settings.user_id_map.items():
-                user = bot.get_user(uid)
-                handle = user.name if user else "unknown"
-                found_members.append({"name": name, "user": handle, "id": str(uid)})
-        
-        # Sort alphabetically
-        found_members.sort(key=lambda x: x['name'].lower())
-        return web.json_response(found_members, headers=_CORS)
+        return web.json_response(final_list, headers=_CORS)
 
     async def post_auth(req):
         try:
@@ -144,6 +136,7 @@ async def start_web_server(bot):
         except Exception as e: return web.Response(status=500, text=str(e))
 
     async def get_sched(req):
+        # Returns whatever is in the JSON file (which defaults to empty strings now)
         return web.json_response(load_schedule(), headers=_CORS)
 
     async def save_sched(req):

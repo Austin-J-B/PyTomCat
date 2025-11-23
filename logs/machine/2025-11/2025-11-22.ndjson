@@ -1852,3 +1852,6 @@
 {"event": "intent", "kind": "ui_launch", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1441989331639210156, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
 {"event": "action", "name": "ui_activity_prompt", "trigger": "user=624440365595754496; channel=1341696618688286720", "output": "message_id=1441989334096941087; app_id=1341667150066225192; invite=cu6ZCWa"}
 {"event": "online"}
+{"event": "intent", "kind": "ui_launch", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1441993973450149889, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "ui_activity_prompt", "trigger": "user=624440365595754496; channel=1341696618688286720", "output": "message_id=1441993976038162443; app_id=1341667150066225192; invite=stfGJAS"}
+{"event": "online"}

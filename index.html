@@ -8,22 +8,23 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Discord SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk/dist/discord.min.js"></script>
 
     <style>
-        /* --- ORIGINAL CSS RESTORED --- */
+        /* --- ORIGINAL STYLING RESTORED --- */
         :root {
-            --site-bg: #FFF9F3;
-            --header-tan: #FFF9F3;
-            --site-text: #414B3B;
-            --site-accent: #8CA87C;
+            --site-bg: #FFF9F3;       
+            --header-tan: #FFF9F3; 
+            --site-text: #414B3B;     
+            --site-accent: #8CA87C;   
             --site-white: #FFFFFF;
-            --workspace-bg: #C5D6BA;
-            --workspace-dot: rgba(65, 75, 59, 0.15);
+            --workspace-bg: #C5D6BA;   
+            --workspace-dot: rgba(65, 75, 59, 0.15); 
             --grid-line: #E0E5D0;
-            --selection-highlight: rgba(140, 168, 124, 0.4);
+            --selection-highlight: rgba(140, 168, 124, 0.4); 
             --focus-ring: #414B3B;
-            --legend-height: 40px;
+            --legend-height: 40px; 
         }
 
         * { box-sizing: border-box; }
@@ -39,8 +40,7 @@
         /* SIDEBAR */
         .sidebar-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.4); z-index: 2000;
-            opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+            background: rgba(0,0,0,0.4); z-index: 2000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
         }
         .sidebar-overlay.active { opacity: 1; pointer-events: all; }
 
@@ -58,15 +58,14 @@
         }
         .sidebar-title a {
             font-family: 'Merriweather', serif; font-weight: 700; font-size: 1.2rem;
-            color: var(--site-text); text-decoration: none;
+            color: var(--site-text); text-decoration: none; cursor: pointer;
         }
         .close-menu-btn {
             background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--site-text);
         }
-        .sidebar-content { padding: 10px 0; overflow-y: auto; }
         .menu-item {
             display: block; padding: 12px 24px; text-decoration: none; color: var(--site-text);
-            font-weight: 500; font-size: 0.95rem; transition: background 0.1s; border-left: 3px solid transparent;
+            font-weight: 500; transition: background 0.1s; border-left: 3px solid transparent; cursor: pointer;
         }
         .menu-item:hover { background-color: #f7f9f5; border-left-color: var(--site-accent); }
 
@@ -74,7 +73,7 @@
         header.site-header {
             background-color: var(--header-tan); padding: 15px 30px;
             display: flex; align-items: center; justify-content: space-between;
-            border-bottom: 1px solid rgba(65, 75, 59, 0.15); flex-shrink: 0; z-index: 1000; position: relative;
+            border-bottom: 1px solid rgba(65, 75, 59, 0.15); flex-shrink: 0; z-index: 1000;
         }
         .menu-container { display: flex; align-items: center; gap: 15px; }
         .hamburger-btn {
@@ -84,10 +83,9 @@
         .hamburger-btn span {
             display: block; width: 20px; height: 2px; background-color: var(--site-text); border-radius: 2px;
         }
-        h1.page-title { margin: 0; display: flex; align-items: center; }
         h1.page-title a {
             font-family: 'Merriweather', serif; font-weight: 900; font-size: 1.6rem;
-            color: var(--site-text); letter-spacing: -0.01em; text-decoration: none;
+            color: var(--site-text); text-decoration: none; cursor: pointer;
         }
 
         .controls-area { display: flex; gap: 15px; align-items: center; }
@@ -96,12 +94,10 @@
         .search-container { position: relative; width: 280px; }
         input#member-search {
             width: 100%; padding: 10px 20px; border: 1px solid var(--site-text);
-            background: transparent; border-radius: 50px; font-family: 'Montserrat', sans-serif;
-            font-size: 0.9rem; color: var(--site-text); outline: none; transition: all 0.2s ease;
+            background: transparent; border-radius: 50px;
+            font-family: 'Montserrat', sans-serif; font-size: 0.9rem; color: var(--site-text); outline: none;
         }
         input#member-search:focus { background: white; box-shadow: 0 4px 12px rgba(65, 75, 59, 0.1); }
-        input#member-search::placeholder { color: var(--site-accent); font-weight: 300; font-style: italic; }
-
         .search-results {
             position: absolute; top: 110%; left: 0; width: 100%;
             background: white; border-radius: 12px; box-shadow: 0 8px 20px rgba(65, 75, 59, 0.25);
@@ -109,24 +105,22 @@
         }
         .result-item {
             padding: 12px 20px; cursor: pointer; display: flex; justify-content: space-between;
-            border-bottom: 1px solid #f0f0f0; transition: background 0.1s; border-left: 3px solid transparent;
+            border-bottom: 1px solid #f0f0f0;
         }
-        .result-item:hover, .result-item.active { background-color: #f7f9f5; border-left-color: var(--site-accent); }
-        .result-name { font-weight: 600; color: var(--site-text); }
-        .result-user { font-size: 0.8rem; color: var(--site-accent); }
+        .result-item:hover, .result-item.active { background-color: #f7f9f5; border-left: 3px solid var(--site-accent); }
 
         /* TOOLS */
         .tool-btn {
             background: transparent; border: 1px solid var(--site-text);
             color: var(--site-text); width: 32px; height: 32px;
             border-radius: 50%; cursor: pointer; display: flex;
-            align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s; padding: 0;
+            align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s;
         }
-        .tool-btn svg { width: 16px; height: 16px; fill: currentColor; }
         .tool-btn:hover { background: var(--site-text); color: var(--site-bg); }
+        .tool-btn svg { width: 16px; height: 16px; fill: currentColor; }
         #zoom-display { font-size: 0.85rem; font-weight: 600; min-width: 45px; text-align: center; }
 
-        /* SELECTION DISPLAY & BUTTONS */
+        /* AUTH UI */
         .current-selection {
             background: var(--site-text); color: white; padding: 8px 20px; border-radius: 50px;
             font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; gap: 8px;
@@ -136,15 +130,15 @@
 
         #save-btn {
             background: var(--site-accent); color: white; border: none;
-            padding: 8px 20px; border-radius: 50px; font-weight: 700; cursor: pointer;
-            font-family: 'Montserrat'; margin-left: 10px; display: none; /* Hidden until auth */
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 8px 24px; border-radius: 50px; font-weight: 700; font-family: 'Montserrat';
+            cursor: pointer; display: none; /* Hidden unless authorized */
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
         }
         #save-btn:hover { filter: brightness(1.1); }
-        #save-btn:active { transform: translateY(1px); }
-
-        #guest-login {
-            font-size: 0.8rem; text-decoration: underline; cursor: pointer; color: var(--site-accent); margin-left: 10px;
+        
+        #auth-badge {
+            font-size: 0.8rem; color: var(--site-accent); font-weight: 600;
+            cursor: pointer; margin-left: 10px; text-decoration: underline;
         }
 
         /* WORKSPACE */
@@ -153,7 +147,7 @@
             display: grid; place-items: start center;
             background-color: var(--workspace-bg);
             background-image: radial-gradient(var(--workspace-dot) 1px, transparent 1px);
-            background-size: 20px 20px; z-index: 10;
+            background-size: 20px 20px;
         }
         .sheet-wrapper {
             background: white; padding: 0; border-radius: 0 0 4px 4px;
@@ -162,7 +156,6 @@
             display: flex; flex-direction: column; margin-top: 40px; 
         }
 
-        /* LEGEND */
         .controls-legend {
             position: sticky; top: 0; z-index: 300; height: var(--legend-height);
             background: var(--header-tan); color: var(--site-text); padding: 0 25px; 
@@ -174,19 +167,19 @@
 
         table { border-collapse: collapse; background: white; color: var(--site-text); user-select: none; border-spacing: 0; }
 
-        /* TABLE HEADERS */
         th {
-            font-family: 'Montserrat', sans-serif; text-transform: uppercase; font-size: 0.75rem;
-            font-weight: 600; letter-spacing: 0.1em; padding: 15px;
+            font-family: 'Montserrat', sans-serif; text-transform: uppercase;
+            font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
             position: sticky; top: var(--legend-height); z-index: 200;
             background-color: white; border-bottom: 5px solid var(--site-text); color: var(--site-text);
         }
         th:first-child { z-index: 250; left: 0; background-color: white; border-right: 2px solid var(--site-text); }
 
         .station-cell {
-            font-family: 'Merriweather', serif; font-weight: 700; font-size: 0.95rem; padding: 0 20px;
-            text-align: left; background-color: #F9FBF7; border-bottom: 1px solid var(--grid-line);
-            border-right: 2px solid var(--site-text); position: sticky; left: 0; z-index: 100; width: 220px;
+            font-family: 'Merriweather', serif; font-weight: 700; font-size: 0.95rem;
+            padding: 0 20px; text-align: left; background-color: #F9FBF7;
+            border-bottom: 1px solid var(--grid-line); border-right: 2px solid var(--site-text);
+            position: sticky; left: 0; z-index: 100; width: 220px;
         }
 
         td.data-cell {
@@ -199,13 +192,11 @@
         .cell-user { display: block; font-size: 0.75rem; color: #333333; margin-top: 2px; font-weight: 400; }
         td.data-cell.focus { outline: 2px solid var(--focus-ring); outline-offset: -2px; z-index: 150; }
         td.data-cell.selected { background-color: var(--selection-highlight) !important; }
-        td.data-cell.assigned .cell-name { text-shadow: 0 1px 0 rgba(255,255,255,0.6); }
 
         #loading {
             position: fixed; inset: 0; background: var(--site-bg); z-index: 9999;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             color: var(--site-text); font-family: 'Merriweather', serif; font-size: 1.5rem;
-            transition: opacity 0.3s;
         }
     </style>
 </head>
@@ -218,14 +209,12 @@
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMenu()"></div>
     <div class="sidebar-menu" id="main-menu">
         <div class="sidebar-header">
-            <span class="sidebar-title">
-                <a href="#" onclick="toggleMenu()">TomCat-VI UI</a>
-            </span>
+            <span class="sidebar-title"><a href="#" onclick="toggleMenu()">TomCat-VI</a></span>
             <button class="close-menu-btn" onclick="toggleMenu()">×</button>
         </div>
         <div class="sidebar-content">
             <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
-            <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat VI Repository</a>
+            <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">Repository</a>
         </div>
     </div>
 
@@ -234,7 +223,6 @@
             <button class="hamburger-btn" onclick="toggleMenu()" title="Open Menu">
                 <span></span><span></span><span></span>
             </button>
-            
             <h1 class="page-title">
                 <a href="#" onclick="window.location.reload()">Campus Cat Coalition</a>
             </h1>
@@ -255,20 +243,20 @@
 
             <div id="selection-display" class="current-selection empty">Select User</div>
             
-            <!-- AUTH CONTROLS -->
+            <!-- NEW: Auth Controls -->
             <button id="save-btn" onclick="saveSchedule()">Save</button>
-            <span id="guest-login" onclick="manualLoginPrompt()">Guest</span>
+            <div id="auth-badge" onclick="manualLoginPrompt()">Guest</div>
         </div>
     </header>
 
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
             <div class="controls-legend">
-                <div>"Click" to select</div>
-                <div style="margin-left:15px;">"Ctrl" + "Click" multi-select</div>
-                <div style="margin-left:15px;">"Shift" + "Click" range</div>
-                <div style="margin-left:15px;">"Enter" assign</div>
-                <div style="margin-left:15px;">"Del" clear</div>
+                <div>"Click" Select</div>
+                <div style="margin-left:20px;">"Ctrl+Click" Multi</div>
+                <div style="margin-left:20px;">"Shift+Click" Range</div>
+                <div style="margin-left:20px;">"Enter" Assign</div>
+                <div style="margin-left:20px;">"Del" Clear</div>
             </div>
 
             <table id="schedule-table">
@@ -285,14 +273,13 @@
     </div>
 
 <script>
-// --- CONFIG & MOCK DATA ---
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+// --- CONFIG ---
 const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
     "Lot 50", "Mary Kay and Zen", "West Hall", "Maintenance"
 ];
 
-// If API fails, we use this so page isn't blank
+// Fallback data to ensure UI never breaks
 const MOCK_SCHEDULE = {
     "Microwave": ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
     "Snickers": ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
@@ -312,81 +299,95 @@ let currentVolunteer = null;
 let zoomLevel = 1.0;
 let currentSearchIndex = -1; 
 let selectedCells = new Set(); 
-let anchor = null; 
+let anchor = null;
 let isDragging = false;
 let currentUser = null;
 let userPerms = { can_manage_feeding: false };
 
-// --- AUTH & DISCORD SDK ---
-const discordSdk = new Discord.DiscordSDK("1341667150066225192"); // Replace with your CLIENT ID if distinct
+// --- INIT ---
+const discordSdk = new Discord.DiscordSDK("1341667150066225192"); // Hardcoded for reliability
 
 async function init() {
-    // 1. Setup initial data structure immediately
+    // 1. Init empty grid immediately (Zero delay)
     STATIONS.forEach(st => scheduleData[st] = new Array(7).fill(""));
-    
-    // 2. Load Data & Members concurrently
+    renderGrid();
+
+    // 2. Load Data (Fail gracefully to mock)
     try {
         await Promise.all([fetchSchedule(), fetchMembers()]);
+        console.log("Live data loaded.");
     } catch (e) {
-        console.warn("API Error, using mocks.", e);
-        // Use mock if API fails
+        console.warn("Using mock data due to API error:", e);
         STATIONS.forEach(st => {
-            if(MOCK_SCHEDULE[st]) scheduleData[st] = [...MOCK_SCHEDULE[st]];
+            if (MOCK_SCHEDULE[st]) scheduleData[st] = [...MOCK_SCHEDULE[st]];
         });
-        // Mock members if API fails
-        if(members.length === 0) members = [{name: "Mock User", user: "mock"}];
+        members = [{name: "DevUser", user: "dev"}, {name: "Volunteer", user: "vol"}];
     }
-
+    
+    // 3. Refresh Grid with data
     renderGrid();
     document.getElementById('loading').style.display = 'none';
 
-    // 3. Attempt Login (Background)
+    // 4. Auth (Silent Background)
     attemptDiscordAuth();
 }
 
+// --- API ---
+async function fetchSchedule() {
+    const res = await fetch("api/schedule");
+    if (!res.ok) throw new Error("Sched 404");
+    const json = await res.json();
+    STATIONS.forEach(st => { if(json[st]) scheduleData[st] = json[st]; });
+}
+
+async function fetchMembers() {
+    const res = await fetch("api/members");
+    if (!res.ok) throw new Error("Mem 404");
+    members = await res.json();
+}
+
+// --- AUTHENTICATION ---
 async function attemptDiscordAuth() {
     try {
-        // Short timeout to avoid hanging if not in Discord
-        const readyPromise = discordSdk.ready();
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout"), 1500));
-        await Promise.race([readyPromise, timeoutPromise]);
+        // Timeout race to prevent hanging
+        const ready = discordSdk.ready();
+        const timeout = new Promise((_, r) => setTimeout(() => r("Timeout"), 1500));
+        await Promise.race([ready, timeout]);
 
         const auth = await discordSdk.commands.authorize({
-            client_id: "1341667150066225192", // Ensure matches main.py
+            client_id: "1341667150066225192",
             response_type: "code",
             state: "",
             prompt: "none",
             scope: ["identify", "guilds.members.read"]
         });
 
-        if (auth.code) loginWithCode(auth.code);
-    } catch (e) {
-        console.log("Guest Mode active.");
-    }
-}
-
-async function loginWithCode(code) {
-    try {
-        const res = await fetch("/api/auth/token", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({code})
-        });
-        if (res.ok) {
-            const data = await res.json();
-            applyLogin(data.user, data.permissions);
+        if (auth.code) {
+            const res = await fetch("api/auth/token", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({code: auth.code})
+            });
+            if (res.ok) {
+                const data = await res.json();
+                applyLogin(data.user, data.permissions);
+            }
         }
-    } catch(e) { console.error(e); }
+    } catch (e) {
+        console.log("Staying in Guest Mode (Auth skipped)");
+    }
 }
 
 function applyLogin(user, perms) {
     currentUser = user;
     userPerms = perms;
     
-    const loginBadge = document.getElementById('guest-login');
-    loginBadge.textContent = user.username || "User";
-    loginBadge.style.color = "#414B3B";
-    loginBadge.onclick = null; // Disable manual override if real login worked
+    const badge = document.getElementById('auth-badge');
+    badge.textContent = user.username || "User";
+    badge.style.color = "var(--site-text)";
+    badge.style.textDecoration = "none";
+    badge.style.cursor = "default";
+    badge.onclick = null;
 
     if (userPerms.can_manage_feeding) {
         document.getElementById('save-btn').style.display = 'block';
@@ -394,35 +395,22 @@ function applyLogin(user, perms) {
 }
 
 function manualLoginPrompt() {
-    const uid = prompt("DEBUG: Enter User ID to emulate:", "624440365595754496");
-    if (uid) applyLogin({username: "DevUser", id: uid}, {can_manage_feeding: true});
-}
-
-// --- DATA FETCHING ---
-async function fetchSchedule() {
-    const res = await fetch("/api/schedule");
-    if (!res.ok) throw new Error("Schedule fetch failed");
-    const json = await res.json();
-    STATIONS.forEach(st => {
-        if (json[st]) scheduleData[st] = json[st];
-    });
-}
-
-async function fetchMembers() {
-    const res = await fetch("/api/members");
-    if (!res.ok) throw new Error("Members fetch failed");
-    members = await res.json();
+    const uid = prompt("Enter Discord User ID to simulate login:", "624440365595754496");
+    if (uid) {
+        // Optimistic login for UI testing
+        applyLogin({username: "DevOverride", id: uid}, {can_manage_feeding: true});
+        alert("Simulated login. Actual saves will still be verified by server.");
+    }
 }
 
 async function saveSchedule() {
-    if (!currentUser) { alert("You are not logged in."); return; }
+    if (!currentUser) return;
     const btn = document.getElementById('save-btn');
-    const oldText = btn.textContent;
     btn.textContent = "Saving...";
     btn.disabled = true;
 
     try {
-        const res = await fetch("/api/schedule/save", {
+        const res = await fetch("api/schedule/save", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -430,51 +418,45 @@ async function saveSchedule() {
             },
             body: JSON.stringify(scheduleData)
         });
+        
         if (res.ok) {
             btn.textContent = "Saved!";
-            setTimeout(() => { btn.textContent = oldText; btn.disabled = false; }, 2000);
-        } else {
-            throw new Error("Server rejected");
-        }
+            setTimeout(() => { btn.textContent = "Save"; btn.disabled = false; }, 2000);
+        } else { throw new Error("Server Error"); }
     } catch (e) {
-        alert("Save failed: " + e.message);
-        btn.textContent = oldText;
+        alert("Save failed.");
+        btn.textContent = "Save";
         btn.disabled = false;
     }
 }
 
-// --- COLOR PALETTE ---
+// --- UI COLORS ---
 const PRESET_COLORS = [
-    "#FFB7B2", "#E2F0CB", "#C7CEEA", "#FFDAC1", "#B5EAD7",
-    "#DF9881", "#ECD5E3", "#A0E7E5", "#FBE7C6", "#D4F1F4",
-    "#F4E1D2", "#94D0CC", "#B9B0B0", "#EFC3A4", "#809BCE",
-    "#95B8D1", "#B8E986", "#FF9AA2", "#E0BBE4", "#D291BC",
-    "#FEC8D8", "#FFDFD3", "#E6C9A8", "#9EBC9E", "#B4A7D6"
+    "#FFB7B2", "#E2F0CB", "#C7CEEA", "#FFDAC1", "#B5EAD7", "#DF9881", "#ECD5E3", "#A0E7E5", 
+    "#FBE7C6", "#D4F1F4", "#F4E1D2", "#94D0CC", "#B9B0B0", "#EFC3A4", "#809BCE", "#95B8D1"
 ];
-
 function getVolunteerColor(name) {
     if (!name) return 'white';
     let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    for (let i=0; i<name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return PRESET_COLORS[Math.abs(hash) % PRESET_COLORS.length];
 }
 
-// --- RENDERING ---
+// --- RENDER ---
 function renderGrid() {
     const tbody = document.querySelector('#schedule-table tbody');
     tbody.innerHTML = '';
 
     STATIONS.forEach((station, r) => {
         const tr = document.createElement('tr');
-        
         const th = document.createElement('td');
         th.className = 'station-cell';
         th.textContent = station;
         tr.appendChild(th);
 
-        const rowVals = scheduleData[station] || new Array(7).fill("");
+        const rowData = scheduleData[station] || new Array(7).fill("");
 
-        rowVals.forEach((val, c) => {
+        rowData.forEach((val, c) => {
             const td = document.createElement('td');
             td.className = 'data-cell';
             td.dataset.coord = `${r}|${c}`;
@@ -482,23 +464,14 @@ function renderGrid() {
             if (val) {
                 td.classList.add('assigned');
                 td.style.backgroundColor = getVolunteerColor(val);
-                
                 const member = members.find(m => m.name === val);
                 const userHandle = member ? `@${member.user}` : '';
-
-                td.innerHTML = `
-                    <span class="cell-name">${val}</span>
-                    ${userHandle ? `<span class="cell-user">${userHandle}</span>` : ''}
-                `;
-            } else {
-                td.innerHTML = '';
-            }
+                td.innerHTML = `<span class="cell-name">${val}</span>${userHandle ? `<span class="cell-user">${userHandle}</span>` : ''}`;
+            } else { td.innerHTML = ''; }
 
             if (selectedCells.has(`${r}|${c}`)) td.classList.add('selected');
-
             td.onmousedown = (e) => handleMouseDown(e, r, c);
             td.onmouseover = (e) => handleMouseOver(e, r, c);
-
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -510,23 +483,17 @@ function updateVisualsOnly() {
         const coord = td.dataset.coord;
         if (selectedCells.has(coord)) td.classList.add('selected');
         else td.classList.remove('selected');
-        
-        if (anchor && td.dataset.coord === `${anchor.r}|${anchor.c}`) {
-            td.classList.add('focus');
-        } else {
-            td.classList.remove('focus');
-        }
+        if (anchor && td.dataset.coord === `${anchor.r}|${anchor.c}`) td.classList.add('focus');
+        else td.classList.remove('focus');
     });
 }
 
-// --- INTERACTIONS (Selection) ---
+// --- INTERACTION (Selection) ---
 function handleMouseDown(e, r, c) {
     isDragging = true;
     const coord = `${r}|${c}`;
-
-    if (e.shiftKey && anchor) {
-        selectRange(anchor.r, anchor.c, r, c);
-    } else if (e.ctrlKey || e.metaKey) {
+    if (e.shiftKey && anchor) selectRange(anchor.r, anchor.c, r, c);
+    else if (e.ctrlKey || e.metaKey) {
         if (selectedCells.has(coord)) selectedCells.delete(coord);
         else selectedCells.add(coord);
         anchor = {r, c}; 
@@ -555,10 +522,9 @@ function selectRange(r1, c1, r2, c2) {
         }
     }
 }
-
 document.addEventListener('mouseup', () => isDragging = false);
 
-// --- SEARCH & LOGIC ---
+// --- SEARCH & ASSIGN ---
 const searchInput = document.getElementById('member-search');
 const resultsBox = document.getElementById('search-results');
 const selectionBadge = document.getElementById('selection-display');
@@ -570,10 +536,7 @@ searchInput.addEventListener('input', (e) => {
     currentSearchIndex = -1; 
     if (!q) { resultsBox.style.display = 'none'; return; }
 
-    filteredMembers = members.filter(m => 
-        m.name.toLowerCase().includes(q) || m.user.toLowerCase().includes(q)
-    );
-
+    filteredMembers = members.filter(m => m.name.toLowerCase().includes(q));
     if (filteredMembers.length > 0) {
         resultsBox.style.display = 'block';
         filteredMembers.forEach((m, idx) => {
@@ -586,39 +549,14 @@ searchInput.addEventListener('input', (e) => {
     } else { resultsBox.style.display = 'none'; }
 });
 
-searchInput.addEventListener('keydown', (e) => {
-    if (!filteredMembers.length) return;
-    if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        currentSearchIndex = Math.min(currentSearchIndex + 1, filteredMembers.length - 1);
-        highlightResult();
-    } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        currentSearchIndex = Math.max(currentSearchIndex - 1, 0);
-        highlightResult();
-    } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (currentSearchIndex >= 0) setVolunteer(filteredMembers[currentSearchIndex]);
-    }
-});
-
-function highlightResult() {
-    const items = resultsBox.querySelectorAll('.result-item');
-    items.forEach(item => item.classList.remove('active'));
-    if (items[currentSearchIndex]) items[currentSearchIndex].classList.add('active');
-}
-
 function setVolunteer(m) {
     currentVolunteer = m;
     selectionBadge.className = 'current-selection';
     selectionBadge.style.backgroundColor = getVolunteerColor(m.name);
     selectionBadge.style.color = '#2b3326';
     selectionBadge.textContent = m.name;
-    
     searchInput.value = '';
     resultsBox.style.display = 'none';
-    currentSearchIndex = -1;
-    searchInput.blur();
 }
 
 // --- KEYBOARD SHORTCUTS ---
@@ -627,15 +565,12 @@ document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { searchInput.blur(); resultsBox.style.display = 'none'; }
         return;
     }
-
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-        applyValue("");
-    } else if (e.key === 'Enter') {
+    if (e.key === 'Backspace' || e.key === 'Delete') applyValue("");
+    else if (e.key === 'Enter') {
         if (currentVolunteer) applyValue(currentVolunteer.name);
         else searchInput.focus();
-    } else if (e.key === 'Escape') {
-        selectedCells.clear(); updateVisualsOnly();
-    } else if (e.key.startsWith('Arrow')) {
+    } else if (e.key === 'Escape') { selectedCells.clear(); updateVisualsOnly(); }
+    else if (e.key.startsWith('Arrow')) {
         e.preventDefault();
         if (!anchor) anchor = {r:0, c:0};
         let {r, c} = anchor;
@@ -644,10 +579,8 @@ document.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowLeft') c = Math.max(0, c-1);
         if (e.key === 'ArrowRight') c = Math.min(6, c+1);
         anchor = {r, c};
-        
         if (e.shiftKey) selectedCells.add(`${r}|${c}`);
         else { selectedCells.clear(); selectedCells.add(`${r}|${c}`); }
-        
         const cell = document.querySelector(`.data-cell[data-coord="${r}|${c}"]`);
         cell?.scrollIntoView({block: 'nearest', inline: 'nearest'});
         updateVisualsOnly();

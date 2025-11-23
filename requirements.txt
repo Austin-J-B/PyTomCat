@@ -28,7 +28,7 @@ opencv-python-headless==4.10.0.84
 ultralytics==8.2.97
 
 # PyTorch (CUDA 12.1 wheels)
-torch==2.3.1+cu121
+torch==2.8.0
 torchvision==0.18.1+cu121
 
 # HTTP utilities used by third-party clients

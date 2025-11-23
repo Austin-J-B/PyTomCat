@@ -17,15 +17,18 @@
             --site-accent: #8CA87C;   
             --site-white: #FFFFFF;
             
-            /* --- NEW DARKER GREEN THEME --- */
-            /* Scaled darker to match the "dark green" grid request */
-            --workspace-bg: #9CAF88;   /* Sage/Darker Green Background */
-            --workspace-grid: #414B3B; /* Matches site text color (Darkest Green) */
+            /* --- NEW MEDIUM GREEN THEME --- */
+            /* Roughly halfway between the original light and the previous dark */
+            --workspace-bg: #C5D6BA;   
+            --workspace-grid: #414B3B; 
 
             /* --- FUNCTIONAL COLORS --- */
             --grid-line: #E0E5D0;
             --selection-highlight: rgba(140, 168, 124, 0.4); 
             --focus-ring: #414B3B;
+            
+            /* Header Height Calculation for Sticky Positioning */
+            --legend-height: 45px; 
         }
 
         * { box-sizing: border-box; }
@@ -42,7 +45,7 @@
             overflow: hidden;
         }
 
-        /* --- SIDEBAR MENU (GITHUB STYLE) --- */
+        /* --- SIDEBAR MENU --- */
         .sidebar-overlay {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -83,7 +86,6 @@
             align-items: center;
         }
 
-        /* Sidebar Title Link */
         .sidebar-title a {
             font-family: 'Merriweather', serif;
             font-weight: 700;
@@ -91,9 +93,7 @@
             color: var(--site-text);
             text-decoration: none;
         }
-        .sidebar-title a:hover {
-            text-decoration: underline;
-        }
+        .sidebar-title a:hover { text-decoration: underline; }
 
         .close-menu-btn {
             background: none;
@@ -124,7 +124,7 @@
             border-left-color: var(--site-accent);
         }
 
-        /* --- HEADER & TOOLBAR --- */
+        /* --- HEADER --- */
         header.site-header {
             background-color: var(--site-bg);
             padding: 15px 30px;
@@ -161,13 +161,7 @@
             border-radius: 2px;
         }
 
-        /* --- TITLE --- */
-        h1.page-title {
-            margin: 0;
-            display: flex;
-            align-items: center;
-        }
-
+        h1.page-title { margin: 0; display: flex; align-items: center; }
         h1.page-title a {
             font-family: 'Merriweather', serif;
             font-weight: 900;
@@ -177,22 +171,12 @@
             text-decoration: none;
             transition: opacity 0.2s;
         }
+        h1.page-title a:hover { opacity: 0.7; }
 
-        h1.page-title a:hover {
-            opacity: 0.7;
-        }
+        .controls-area { display: flex; gap: 15px; align-items: center; }
 
-        .controls-area {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }
-
-        /* --- SEARCH BAR --- */
-        .search-container {
-            position: relative;
-            width: 280px;
-        }
+        /* --- SEARCH --- */
+        .search-container { position: relative; width: 280px; }
 
         input#member-search {
             width: 100%;
@@ -219,98 +203,56 @@
         }
 
         .search-results {
-            position: absolute;
-            top: 110%;
-            left: 0;
-            width: 100%;
-            background: white;
-            border-radius: 12px;
+            position: absolute; top: 110%; left: 0; width: 100%;
+            background: white; border-radius: 12px;
             box-shadow: 0 8px 20px rgba(65, 75, 59, 0.15);
-            overflow: hidden;
-            display: none;
-            z-index: 300;
-            max-height: 300px;
-            overflow-y: auto;
+            overflow: hidden; display: none; z-index: 300;
+            max-height: 300px; overflow-y: auto;
         }
 
         .result-item {
-            padding: 12px 20px;
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            border-bottom: 1px solid #f0f0f0;
-            transition: background 0.1s;
+            padding: 12px 20px; cursor: pointer;
+            display: flex; justify-content: space-between;
+            border-bottom: 1px solid #f0f0f0; transition: background 0.1s;
         }
-
         .result-item:hover { background-color: #f7f9f5; }
         .result-name { font-weight: 600; color: var(--site-text); }
         .result-user { font-size: 0.8rem; color: var(--site-accent); }
 
-        /* --- BUTTONS & TOOLS --- */
+        /* --- TOOLS --- */
         .tool-btn {
-            background: transparent;
-            border: 1px solid var(--site-text);
-            color: var(--site-text);
-            width: 32px; 
-            height: 32px;
-            border-radius: 50%;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1rem;
-            transition: all 0.2s;
-            padding: 0;
+            background: transparent; border: 1px solid var(--site-text);
+            color: var(--site-text); width: 32px; height: 32px;
+            border-radius: 50%; cursor: pointer; display: flex;
+            align-items: center; justify-content: center;
+            font-size: 1rem; transition: all 0.2s; padding: 0;
         }
-
-        .tool-btn svg {
-            width: 16px;
-            height: 16px;
-            fill: currentColor;
-        }
-
-        .tool-btn:hover {
-            background: var(--site-text);
-            color: var(--site-bg);
-        }
+        .tool-btn svg { width: 16px; height: 16px; fill: currentColor; }
+        .tool-btn:hover { background: var(--site-text); color: var(--site-bg); }
 
         #zoom-display {
-            font-size: 0.85rem;
-            font-weight: 600;
-            min-width: 45px;
-            text-align: center;
+            font-size: 0.85rem; font-weight: 600; min-width: 45px; text-align: center;
         }
 
-        /* --- SELECTION BADGE --- */
         .current-selection {
-            background: var(--site-text);
-            color: white;
-            padding: 8px 20px;
-            border-radius: 50px;
-            font-weight: 600;
-            font-size: 0.9rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            min-width: 150px;
-            justify-content: center;
+            background: var(--site-text); color: white;
+            padding: 8px 20px; border-radius: 50px;
+            font-weight: 600; font-size: 0.9rem;
+            display: flex; align-items: center; gap: 8px;
+            min-width: 150px; justify-content: center;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        
         .current-selection.empty {
-            background: rgba(65, 75, 59, 0.1);
-            color: var(--site-text);
-            box-shadow: none;
+            background: rgba(65, 75, 59, 0.1); color: var(--site-text); box-shadow: none;
         }
 
         /* --- MAIN WORKSPACE --- */
         .workspace {
             flex: 1;
-            overflow: auto;
-            padding: 40px;
+            overflow: auto; /* SCROLL HAPPENS HERE */
+            padding: 0 40px 40px 40px; /* Remove Top Padding so Sticky items hit edge */
             display: grid;
             place-items: start center;
-            /* Updated to Darker Green Scheme */
             background-color: var(--workspace-bg);
             background-image: radial-gradient(var(--workspace-grid) 1px, transparent 1px);
             background-size: 20px 20px;
@@ -319,28 +261,36 @@
         .sheet-wrapper {
             background: white;
             padding: 0;
-            border-radius: 4px;
-            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.4); /* Stronger shadow for contrast */
+            border-radius: 0 0 4px 4px;
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.4);
             transform-origin: top center;
             transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
             display: flex;
             flex-direction: column;
+            /* Margin top to push it down into view, but allows sticky to work relative to container */
+            margin-top: 40px; 
         }
 
-        /* --- CONTROLS LEGEND (EARLY 2000s STYLE) --- */
+        /* --- CONTROLS LEGEND (STICKY) --- */
         .controls-legend {
-            /* Background matches the sheet slightly to look like a tab */
+            /* Sticky Positioning */
+            position: sticky;
+            top: 0;
+            z-index: 300; /* Highest priority */
+            height: var(--legend-height);
+
             background: white; 
             color: var(--site-text);
-            padding: 10px 20px;
-            border-bottom: 2px solid var(--site-text);
-            display: flex;
-            gap: 25px;
-            justify-content: center;
+            padding: 0 25px; /* Justified left padding */
+            border-bottom: 1px solid var(--grid-line);
             
-            /* The 'Comic Sans' request for the retro vibe */
+            display: flex;
+            align-items: center;
+            justify-content: flex-start; /* Left Aligned */
+            gap: 25px;
+            
             font-family: 'Comic Sans MS', 'Chalkboard SE', 'Comic Neue', sans-serif;
-            font-size: 0.9rem;
+            font-size: 0.8rem; /* Smaller font */
             font-weight: 700;
             letter-spacing: 0.02em;
         }
@@ -348,9 +298,8 @@
         .key-combo {
             display: inline-flex;
             align-items: center;
-            gap: 5px;
+            white-space: nowrap;
         }
-        /* Removed key boxes, just text */
 
         table {
             border-collapse: collapse;
@@ -359,7 +308,7 @@
             user-select: none;
         }
 
-        /* --- TABLE HEADERS --- */
+        /* --- TABLE HEADERS (STICKY) --- */
         th {
             font-family: 'Montserrat', sans-serif;
             text-transform: uppercase;
@@ -368,23 +317,22 @@
             letter-spacing: 0.1em;
             padding: 15px;
             
-            /* STICKY FIX: Solid background to prevent transparency peeking */
+            /* STICKY POS */
+            position: sticky;
+            top: var(--legend-height); /* Sticks exactly below the legend */
+            z-index: 200; 
+            
             background-color: white; 
-            background-clip: padding-box; /* Ensures background stops at padding */
+            background-clip: padding-box; 
             
             border-bottom: 4px solid var(--site-text); 
-            
-            /* Box shadow to cover sub-pixel gaps */
             box-shadow: 0 1px 0 var(--site-text);
-            
             color: var(--site-text);
-            position: sticky;
-            top: 0;
-            z-index: 100; 
         }
 
+        /* Corner piece needs to stay on top of side headers too */
         th:first-child {
-            z-index: 110;
+            z-index: 250;
             left: 0;
             background-color: white;
             border-right: 2px solid var(--site-text);
@@ -398,14 +346,13 @@
             padding: 0 20px;
             text-align: left;
             
-            /* Solid BG for stickiness */
             background-color: #F9FBF7; 
-            
             border-bottom: 1px solid var(--grid-line);
             border-right: 2px solid var(--site-text);
+            
             position: sticky;
             left: 0;
-            z-index: 50; 
+            z-index: 100; 
             width: 220px;
         }
 
@@ -434,17 +381,17 @@
         
         .cell-user {
             display: block;
-            font-size: 0.7rem;
-            color: #555;
+            font-size: 0.75rem;
+            /* Darker Text per request */
+            color: #333333; 
             margin-top: 2px;
             font-weight: 400;
-            opacity: 0.8;
         }
 
         td.data-cell.focus {
             outline: 2px solid var(--focus-ring);
             outline-offset: -2px;
-            z-index: 60;
+            z-index: 150;
         }
 
         td.data-cell.selected {
@@ -455,7 +402,6 @@
             text-shadow: 0 1px 0 rgba(255,255,255,0.4);
         }
 
-        /* Loading Overlay */
         #loading {
             position: fixed; inset: 0;
             background: var(--site-bg);
@@ -524,11 +470,11 @@
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
             <div class="controls-legend">
-                <div class="key-combo">Click to select</div>
-                <div class="key-combo">Ctrl + Click to multi-select</div>
-                <div class="key-combo">Shift + Click for range</div>
-                <div class="key-combo">Enter to assign</div>
-                <div class="key-combo">Del to erase</div>
+                <div class="key-combo">"Click" to select</div>
+                <div class="key-combo">"Ctrl" + "Click" to multi-select</div>
+                <div class="key-combo">"Shift" + "Click" for range</div>
+                <div class="key-combo">"Enter" to assign</div>
+                <div class="key-combo">"Del" to erase</div>
             </div>
 
             <table id="schedule-table">
@@ -602,19 +548,22 @@ async function fetchMembers() {
     }
 }
 
-// --- COLOR GENERATOR (GOLDEN ANGLE) ---
+// --- IMPROVED COLOR GENERATOR ---
 function getVolunteerColor(name) {
     if (!name) return 'white';
     
-    let hash = 0;
+    // FNV-1a Hash Algorithm variant for better uniqueness
+    // Ensures "Seja" and "Kitadan" do NOT collide
+    let hash = 0x811c9dc5; 
     for (let i = 0; i < name.length; i++) {
-        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        hash ^= name.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
     }
     
-    const goldenAngle = 137.508;
-    const hue = Math.abs((hash * goldenAngle) % 360);
+    // Convert to positive integer and map to 360 hue
+    const hue = Math.abs(hash % 360);
     
-    // High Saturation for vibrancy, Medium-High Lightness for readability
+    // Vibrant Settings: 80% Saturation, 75% Lightness
     return `hsl(${hue}, 80%, 75%)`; 
 }
 

@@ -12,12 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from typing import Any, Deque, Dict, List, Optional, Tuple
 #easter egg. hi
-'''to-do:
-    cache "show me" pics. Instead of it taking like >5 seconds per pic, we just grab a random pic
-    from the previous 50 pics as usual, and also run our CV detection on it. 
-    Then, we just save it in temp_images or something. So when someone asks for a pic, we very
-    quickly bring up that one and then queue another. Maybe 2 at a time. idk. 
-'''
+
 import discord
 
 # ---- config / logging --------------------------------------------------------

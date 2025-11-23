@@ -1,3 +1,5 @@
+"""Discord bot bootstrap: intents, startup tasks, and router wiring."""
+
 from __future__ import annotations
 import asyncio
 import time
@@ -32,9 +34,10 @@ intents.guilds = True
 intents.reactions = True
 bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 
-# --- PERMISSIONS LOGIC ---
+# --- AUTH LOGIC ---
 async def check_permissions(user_id: int) -> dict:
     is_officer = False
+    # Check guilds to find user roles
     for guild in bot.guilds:
         member = guild.get_member(user_id)
         if member:
@@ -49,7 +52,7 @@ async def check_permissions(user_id: int) -> dict:
         "can_label_photos": is_officer or (user_id in settings.access_photo_labeler)
     }
 
-# --- API & WEB SERVER ---
+# --- WEB SERVER ---
 async def start_web_server(bot):
     app = web.Application()
     
@@ -65,10 +68,25 @@ async def start_web_server(bot):
                 return web.Response(text=f.read(), content_type="text/html", headers=_CORS)
         except: return web.Response(status=404)
 
+    async def get_members(req):
+        # Return list of members from config for search bar
+        # Format: [{"name": "Name", "user": "UserHandle", "id": "123"}]
+        found = []
+        # Use user_id_map as the source of truth for feeders
+        for name, uid in settings.user_id_map.items():
+            # Try to resolve handle from bot cache if possible, else generic
+            user = bot.get_user(uid)
+            handle = user.name if user else "unknown"
+            found.append({"name": name, "user": handle, "id": str(uid)})
+        
+        # Sort alphabetically
+        found.sort(key=lambda x: x['name'])
+        return web.json_response(found, headers=_CORS)
+
     async def post_auth(req):
         try:
             data = await req.json()
-            # Exchange Code with Discord
+            # Code Exchange
             async with aiohttp.ClientSession() as sess:
                 async with sess.post('https://discord.com/api/oauth2/token', data={
                     'client_id': settings.ui_activity_app_id,
@@ -104,9 +122,11 @@ async def start_web_server(bot):
 
     app.add_routes([
         web.get('/', get_index),
-        web.post('/api/auth/token', post_auth),
+        web.get('/api/members', get_members), # Critical for search bar
         web.get('/api/schedule', get_sched),
+        web.post('/api/auth/token', post_auth),
         web.post('/api/schedule/save', save_sched),
+        web.options('/api/members', opts),
         web.options('/api/auth/token', opts),
         web.options('/api/schedule/save', opts)
     ])
@@ -127,6 +147,24 @@ async def handle_dues_notice(i, c): pass
 async def handle_cat_profile(i, c): await _handle_cat_show(i, c)
 
 # --- BOT EVENTS ---
+class _MuteChannel:
+    def __init__(self, real, label_fn): self._real = real; self._label_fn = label_fn
+    async def send(self, content=None, **kwargs): log_action("muted_send", f"channel={self._label_fn(self._real)}", "suppressed")
+    def __getattr__(self, name): return getattr(self._real, name)
+
+class _MuteMessage:
+    def __init__(self, real_msg, muted_channel):
+        self._real = real_msg
+        self.channel = muted_channel
+        self.author = real_msg.author
+        self.content = real_msg.content
+        self.guild = getattr(real_msg, "guild", None)
+        self.attachments = real_msg.attachments
+    def __getattr__(self, name): return getattr(self._real, name)
+
+def _user_label(u) -> str: return getattr(u, "name", "unknown")
+def _channel_label(ch) -> str: return getattr(ch, "name", "unknown")
+
 @bot.event
 async def on_ready():
     print(f"[TomCat] Ready as {bot.user}")
@@ -143,25 +181,19 @@ async def on_ready():
 async def on_message(message):
     if message.author.bot: return
     
-    # 1. Always try misc handlers first (MEOW check)
-    # We protect this call so errors don't block the rest
-    try:
-        await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
-    except Exception as e:
-        print(f"Misc error: {e}")
+    try: await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
+    except Exception as e: print(f"Misc error: {e}")
 
-    # 2. Image Intake
     if message.attachments:
         in_map = settings.channel_sheet_map and message.channel.id in settings.channel_sheet_map
         if in_map or not message.guild:
             try: await _handle_image_intake(message)
             except: pass
 
-    # 3. Intent Router
     ctx = {"bot": bot, "message": message, "channel": message.channel, "author": message.author}
     if settings.silent_mode:
-        # Simple mute wrapper logic would go here
-        pass 
+        ctx["channel"] = _MuteChannel(message.channel, _channel_label)
+        ctx["message"] = _MuteMessage(message, ctx["channel"])
     
     await intent_router.handle_message(message, ctx)
 

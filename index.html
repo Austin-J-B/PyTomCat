@@ -22,7 +22,13 @@
             --grid-line: #E0E5D0;
             --selection-highlight: rgba(140, 168, 124, 0.4); 
             --focus-ring: #414B3B;
-            --legend-height: 40px; 
+            --legend-height: 40px;
+
+            /* Zoom Variables - Replacing Transform */
+            --zoom-scale: 1;
+            --base-cell-width: 160px;
+            --base-cell-height: 75px;
+            --base-font-size: 0.95rem;
         }
 
         * { box-sizing: border-box; }
@@ -77,7 +83,7 @@
 
         /* HEADER */
         header.site-header {
-            background-color: var(--header-tan); padding: 15px 30px;
+            background-color: var(--header-tan); padding: 15px 20px;
             display: flex; align-items: center; justify-content: space-between;
             border-bottom: 1px solid rgba(65, 75, 59, 0.15); flex-shrink: 0; z-index: 1000;
         }
@@ -90,22 +96,23 @@
             display: block; width: 20px; height: 2px; background-color: var(--site-text); border-radius: 2px;
         }
         h1.page-title a {
-            font-family: 'Merriweather', serif; font-weight: 900; font-size: 1.6rem;
+            font-family: 'Merriweather', serif; font-weight: 900; font-size: 1.4rem;
             color: var(--site-text); text-decoration: none; cursor: pointer;
+            white-space: nowrap;
         }
 
-        .controls-area { display: flex; gap: 15px; align-items: center; }
+        .controls-area { display: flex; gap: 12px; align-items: center; }
 
-        /* SEARCH */
-        .search-container { position: relative; width: 280px; }
+        /* SEARCH (COMPACT) */
+        .search-container { position: relative; width: 180px; }
         input#member-search {
-            width: 100%; padding: 10px 20px; border: 1px solid var(--site-text);
+            width: 100%; padding: 8px 15px; border: 1px solid var(--site-text);
             background: transparent; border-radius: 50px;
-            font-family: 'Montserrat', sans-serif; font-size: 0.9rem; color: var(--site-text); outline: none;
+            font-family: 'Montserrat', sans-serif; font-size: 0.85rem; color: var(--site-text); outline: none;
         }
         input#member-search:focus { background: white; box-shadow: 0 4px 12px rgba(65, 75, 59, 0.1); }
         .search-results {
-            position: absolute; top: 110%; left: 0; width: 100%;
+            position: absolute; top: 110%; left: 0; width: 240px;
             background: white; border-radius: 12px; box-shadow: 0 8px 20px rgba(65, 75, 59, 0.25);
             overflow: hidden; display: none; z-index: 2000; max-height: 300px; overflow-y: auto;
         }
@@ -118,35 +125,39 @@
         /* TOOLS */
         .tool-btn {
             background: transparent; border: 1px solid var(--site-text);
-            color: var(--site-text); width: 32px; height: 32px;
+            color: var(--site-text); width: 28px; height: 28px;
             border-radius: 50%; cursor: pointer; display: flex;
             align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s;
         }
         .tool-btn:hover { background: var(--site-text); color: var(--site-bg); }
-        .tool-btn svg { width: 16px; height: 16px; fill: currentColor; }
-        #zoom-display { font-size: 0.85rem; font-weight: 600; min-width: 45px; text-align: center; }
+        .tool-btn svg { width: 14px; height: 14px; fill: currentColor; }
+        #zoom-display { font-size: 0.8rem; font-weight: 600; min-width: 40px; text-align: center; }
 
-        /* AUTH UI */
+        /* AUTH UI (COMPACT) */
         .current-selection {
-            background: var(--site-text); color: white; padding: 8px 20px; border-radius: 50px;
-            font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; gap: 8px;
-            min-width: 150px; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            background: var(--site-text); color: white; padding: 6px 16px; border-radius: 50px;
+            font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;
+            min-width: 100px; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: none; /* Hidden by default to save space */
         }
-        .current-selection.empty { background: rgba(65, 75, 59, 0.1); color: var(--site-text); box-shadow: none; }
+        .current-selection.active { display: flex; }
 
         #save-btn {
             background: var(--site-accent); color: white; border: none;
-            padding: 8px 24px; border-radius: 50px; font-weight: 700; font-family: 'Montserrat';
-            cursor: pointer; display: none; /* Hidden unless authorized */
+            padding: 6px 18px; border-radius: 50px; font-weight: 700; font-family: 'Montserrat';
+            cursor: pointer; display: none; font-size: 0.85rem;
             box-shadow: 0 4px 6px rgba(0,0,0,0.15);
         }
         #save-btn:hover { filter: brightness(1.1); }
         
-        #auth-badge {
-            font-size: 0.8rem; color: var(--site-accent); font-weight: 600;
-            cursor: pointer; margin-left: 10px; text-decoration: underline;
-            white-space: nowrap;
+        #auth-icon {
+            width: 32px; height: 32px; border-radius: 50%; background: var(--site-accent);
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            color: white; font-weight: 700; font-size: 0.9rem; border: 2px solid var(--site-text);
+            overflow: hidden;
         }
+        #auth-icon img { width: 100%; height: 100%; object-fit: cover; }
+        #auth-icon svg { width: 18px; height: 18px; fill: white; }
 
         /* WORKSPACE */
         .workspace {
@@ -159,10 +170,11 @@
         .sheet-wrapper {
             background: white; padding: 0; border-radius: 0 0 4px 4px;
             box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.10);
-            transform-origin: top center; transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+            /* REMOVED: transform-origin & transition for sticky fix */
             display: flex; flex-direction: column; margin-top: 40px; 
         }
 
+        /* STICKY HEADER FIX: Avoid transform on parents */
         .controls-legend {
             position: sticky; top: 0; z-index: 300; height: var(--legend-height);
             background: var(--header-tan); color: var(--site-text); padding: 0 25px; 
@@ -190,9 +202,14 @@
         }
 
         td.data-cell {
-            width: 160px; height: 75px; border-bottom: 1px solid var(--grid-line);
+            /* Use Zoom Variables */
+            width: calc(var(--base-cell-width) * var(--zoom-scale)); 
+            height: calc(var(--base-cell-height) * var(--zoom-scale)); 
+            border-bottom: 1px solid var(--grid-line);
             border-right: 1px solid var(--grid-line); text-align: center; vertical-align: middle;
-            font-weight: 500; font-size: 0.95rem; cursor: pointer; position: relative;
+            font-weight: 500; 
+            font-size: calc(var(--base-font-size) * var(--zoom-scale));
+            cursor: pointer; position: relative;
             transition: background-color 0.05s; padding: 5px; line-height: 1.2;
         }
         .cell-name { display: block; font-weight: 600; color: #2b3326; }
@@ -211,7 +228,9 @@
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMenu()"></div>
     <div class="sidebar-menu" id="main-menu">
         <div class="sidebar-header">
-            <span class="sidebar-title"><a href="#" onclick="toggleMenu()">TomCat-VI</a></span>
+            <span class="sidebar-title">
+                <a href="https://github.com/austin-j-b/pytomcat" target="_blank">TomCat-VI UI</a>
+            </span>
             <button class="close-menu-btn" onclick="toggleMenu()">×</button>
         </div>
         <div class="sidebar-content">
@@ -226,7 +245,7 @@
                 <span></span><span></span><span></span>
             </button>
             <h1 class="page-title">
-                <a href="#" onclick="window.location.reload()">Campus Cat Coalition</a>
+                <a href="https://www.catsofuta.org/" target="_blank">Campus Cat Coalition</a>
             </h1>
         </div>
 
@@ -239,25 +258,28 @@
             </button>
 
             <div class="search-container">
-                <input type="text" id="member-search" placeholder="Select Volunteer..." autocomplete="off">
+                <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
                 <div id="search-results" class="search-results"></div>
             </div>
 
-            <div id="selection-display" class="current-selection empty">Select User</div>
+            <div id="selection-display" class="current-selection">Select User</div>
             
             <button id="save-btn" onclick="saveSchedule()">Save</button>
-            <div id="auth-badge" onclick="manualLoginPrompt()">Guest Mode (Login)</div>
+            
+            <div id="auth-icon" onclick="manualLoginPrompt()" title="Login / Guest Mode">
+                <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+            </div>
         </div>
     </header>
 
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
             <div class="controls-legend">
-                <div>"Click" Select</div>
-                <div style="margin-left:20px;">"Ctrl+Click" Multi</div>
-                <div style="margin-left:20px;">"Shift+Click" Range</div>
-                <div style="margin-left:20px;">"Enter" Assign</div>
-                <div style="margin-left:20px;">"Del" Clear</div>
+                <div>Click</div>
+                <div style="margin-left:15px;">Ctrl+Click</div>
+                <div style="margin-left:15px;">Shift+Click</div>
+                <div style="margin-left:15px;">Enter</div>
+                <div style="margin-left:15px;">Del</div>
             </div>
 
             <table id="schedule-table">
@@ -280,19 +302,6 @@ const STATIONS = [
     "Lot 50", "Mary Kay and Zen", "West Hall", "Maintenance"
 ];
 
-// Fallback data
-const MOCK_SCHEDULE = {
-    "Microwave": ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
-    "Snickers": ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
-    "Business": ["Atlas", "Alexa", "Morgan", "Bunny", "Abigail", "Zoe", "Elusive"],
-    "The Greens": ["Jaeden", "Isabella", "Julia", "Micaela", "Brooke", "Peter", "Elusive"],
-    "HOP": ["Jaeden", "Victoria", "Anabelle", "Brian", "Sophia", "Victoria", "Sophia"],
-    "Lot 50": ["Miranda", "Brian", "Bryan", "Brian", "Bryan", "Zahara", "Miranda"],
-    "Mary Kay and Zen": ["Kitadan", "Emma", "Kitadan", "Kitadan", "Jack", "Jack", "Jack"],
-    "West Hall": ["Loren", "Charlotte", "Autumn", "Michael", "Loren", "Roach", "Emmaleigh"],
-    "Maintenance": ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"]
-};
-
 let scheduleData = {};
 let members = [];
 let currentVolunteer = null;
@@ -305,12 +314,11 @@ let currentUser = null;
 let userPerms = { can_edit_schedule: false };
 
 // --- INIT ---
-// Safe SDK Init
 let discordSdk = null;
 try {
     discordSdk = new Discord.DiscordSDK("1341667150066225192");
 } catch (e) {
-    console.warn("Discord SDK failed to init (Running in browser?):", e);
+    console.warn("Discord SDK failed to init:", e);
 }
 
 async function init() {
@@ -320,34 +328,30 @@ async function init() {
 
     // 2. Load Data
     try {
-        // Attempt to fetch from backend
         await Promise.all([fetchSchedule(), fetchMembers()]);
         console.log("Live data loaded.");
     } catch (e) {
-        console.warn("Using mock data due to API error:", e);
-        STATIONS.forEach(st => {
-            if (MOCK_SCHEDULE[st]) scheduleData[st] = [...MOCK_SCHEDULE[st]];
-        });
-        members = [{name: "DevUser", user: "dev"}, {name: "Volunteer", user: "vol"}];
+        console.warn("API Error or Offline mode.");
+        // Fallback members only for UI testing if offline
+        if (members.length === 0) members = [{name: "OfflineTest", user: "test"}];
     } finally {
         renderGrid();
-        // CRITICAL FIX: Always remove loading screen
         document.getElementById('loading').style.opacity = '0';
         setTimeout(() => document.getElementById('loading').style.display = 'none', 300);
     }
     
-    // 3. Auth (Silent Background)
-    if (discordSdk) {
-        attemptDiscordAuth();
-    }
+    // 3. Auth
+    if (discordSdk) attemptDiscordAuth();
 }
 
 // --- API ---
 async function fetchSchedule() {
-    const res = await fetch("api/schedule");
-    if (!res.ok) throw new Error("Sched 404");
-    const json = await res.json();
-    STATIONS.forEach(st => { if(json[st]) scheduleData[st] = json[st]; });
+    try {
+        const res = await fetch("api/schedule");
+        if (!res.ok) throw new Error("Sched 404");
+        const json = await res.json();
+        STATIONS.forEach(st => { if(json[st]) scheduleData[st] = json[st]; });
+    } catch(e) { console.log("No schedule found, starting empty."); }
 }
 
 async function fetchMembers() {
@@ -359,10 +363,7 @@ async function fetchMembers() {
 // --- AUTHENTICATION ---
 async function attemptDiscordAuth() {
     try {
-        // 1. Wait for ready
         await discordSdk.ready();
-
-        // 2. Authorize
         const auth = await discordSdk.commands.authorize({
             client_id: "1341667150066225192",
             response_type: "code",
@@ -382,38 +383,35 @@ async function attemptDiscordAuth() {
                 applyLogin(data.user, data.permissions);
             }
         }
-    } catch (e) {
-        console.log("Staying in Guest Mode:", e);
-    }
+    } catch (e) { console.log("Guest Mode"); }
 }
 
 function applyLogin(user, perms) {
     currentUser = user;
     userPerms = perms;
     
-    const badge = document.getElementById('auth-badge');
-    badge.textContent = `Logged in: ${user.username || "User"}`;
-    badge.style.color = "var(--site-text)";
-    badge.style.textDecoration = "none";
-    badge.style.cursor = "default";
-    badge.onclick = null;
+    const icon = document.getElementById('auth-icon');
+    icon.title = `Logged in as ${user.username}`;
+    
+    if (user.avatar) {
+        const avUrl = `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`;
+        icon.innerHTML = `<img src="${avUrl}" alt="${user.username}">`;
+    } else {
+        // Initials
+        const init = user.username ? user.username.substring(0,2).toUpperCase() : "US";
+        icon.innerHTML = init;
+    }
 
-    // Show Save button if they have editing permissions
     if (userPerms.can_edit_schedule) {
         document.getElementById('save-btn').style.display = 'block';
     }
 }
 
 function manualLoginPrompt() {
-    // Simple debug prompt to test permissions if SDK fails
-    const uid = prompt("Debug: Enter User ID to simulate login:", "624440365595754496"); // Default to Austin's ID
+    const uid = prompt("Debug: Enter User ID for permission test:", "624440365595754496");
     if (uid) {
-        // Simulate the structure the backend returns
-        const fakeUser = {username: "DebugUser", id: uid};
-        // We can't easily mock the server permission check here without a real token,
-        // so this just sets the UI state. Real saves will still fail on backend if ID is wrong.
-        applyLogin(fakeUser, {can_edit_schedule: true}); 
-        alert("Simulated UI login. (Note: Real saves still require server-side permission)");
+        applyLogin({username: "DebugUser", id: uid}, {can_edit_schedule: true}); 
+        alert("Simulated UI login.");
     }
 }
 
@@ -421,7 +419,7 @@ async function saveSchedule() {
     if (!currentUser) return;
     const btn = document.getElementById('save-btn');
     const oldText = btn.textContent;
-    btn.textContent = "Saving...";
+    btn.textContent = "...";
     btn.disabled = true;
 
     try {
@@ -435,13 +433,11 @@ async function saveSchedule() {
         });
         
         if (res.ok) {
-            btn.textContent = "Saved!";
-            setTimeout(() => { btn.textContent = oldText; btn.disabled = false; }, 2000);
-        } else { 
-            throw new Error("Server Error"); 
-        }
+            btn.textContent = "Done";
+            setTimeout(() => { btn.textContent = oldText; btn.disabled = false; }, 1500);
+        } else { throw new Error(); }
     } catch (e) {
-        alert("Save failed. Check permissions or connection.");
+        alert("Save failed.");
         btn.textContent = oldText;
         btn.disabled = false;
     }
@@ -505,13 +501,8 @@ function updateVisualsOnly() {
     });
 }
 
-// --- INTERACTION (Selection) ---
+// --- INTERACTION ---
 function handleMouseDown(e, r, c) {
-    if (!userPerms.can_edit_schedule && currentUser) {
-        // Optional: Visual feedback that they can't edit?
-        // For now, we just allow selection but not changing data.
-    }
-    
     isDragging = true;
     const coord = `${r}|${c}`;
     if (e.shiftKey && anchor) selectRange(anchor.r, anchor.c, r, c);
@@ -546,7 +537,7 @@ function selectRange(r1, c1, r2, c2) {
 }
 document.addEventListener('mouseup', () => isDragging = false);
 
-// --- SEARCH & ASSIGN ---
+// --- SEARCH ---
 const searchInput = document.getElementById('member-search');
 const resultsBox = document.getElementById('search-results');
 const selectionBadge = document.getElementById('selection-display');
@@ -573,7 +564,7 @@ searchInput.addEventListener('input', (e) => {
 
 function setVolunteer(m) {
     currentVolunteer = m;
-    selectionBadge.className = 'current-selection';
+    selectionBadge.classList.add('active');
     selectionBadge.style.backgroundColor = getVolunteerColor(m.name);
     selectionBadge.style.color = '#2b3326';
     selectionBadge.textContent = m.name;
@@ -581,20 +572,14 @@ function setVolunteer(m) {
     resultsBox.style.display = 'none';
 }
 
-// --- KEYBOARD SHORTCUTS ---
+// --- KEYBOARD ---
 document.addEventListener('keydown', (e) => {
-    // Block edits if no perms (except navigation)
     const isNav = e.key.startsWith('Arrow') || e.key === 'Escape';
-    
     if (e.target.tagName === 'INPUT') {
         if (e.key === 'Escape') { searchInput.blur(); resultsBox.style.display = 'none'; }
         return;
     }
-    
-    if (!userPerms.can_edit_schedule && !isNav && currentUser) {
-        // Don't allow modifying data
-        return; 
-    }
+    if (!userPerms.can_edit_schedule && !isNav && currentUser) return; 
 
     if (e.key === 'Backspace' || e.key === 'Delete') applyValue("");
     else if (e.key === 'Enter') {
@@ -621,7 +606,6 @@ document.addEventListener('keydown', (e) => {
 function applyValue(val) {
     if (selectedCells.size === 0) return;
     if (!userPerms.can_edit_schedule && currentUser) return;
-
     selectedCells.forEach(coord => {
         const [r, c] = coord.split('|').map(Number);
         scheduleData[STATIONS[r]][c] = val;
@@ -629,15 +613,12 @@ function applyValue(val) {
     renderGrid();
 }
 
-// --- CONTROLS ---
-function toggleMenu() {
-    document.getElementById('main-menu').classList.toggle('active');
-    document.getElementById('sidebar-overlay').classList.toggle('active');
-}
+// --- ZOOM (CSS VARS) ---
 function adjustZoom(delta) {
     zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
-    document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
+    // We update the CSS variable, NOT a transform
+    document.documentElement.style.setProperty('--zoom-scale', zoomLevel);
 }
 function resetZoom() { zoomLevel = 1.0; adjustZoom(0); }
 

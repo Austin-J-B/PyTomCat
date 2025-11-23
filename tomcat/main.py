@@ -47,7 +47,7 @@ async def check_permissions(user_id: int) -> dict:
                     break
         if is_officer: break
     
-    # Per instructions: Photo Labelers can also edit the schedule
+    # Photo Labelers and Feeding Managers can edit
     can_edit = (
         is_officer 
         or (user_id in settings.access_feeding_manager)
@@ -56,8 +56,7 @@ async def check_permissions(user_id: int) -> dict:
 
     return {
         "can_edit_schedule": can_edit,
-        "is_officer": is_officer,
-        "is_photo_labeler": user_id in settings.access_photo_labeler
+        "is_officer": is_officer
     }
 
 # --- WEB SERVER ---
@@ -71,7 +70,7 @@ async def start_web_server(bot):
     }
 
     async def get_index(req):
-        # robustly find index.html relative to the bot script or current dir
+        # Robustly find index.html
         possible_paths = [
             "index.html", 
             os.path.join(os.path.dirname(__file__), "..", "index.html"),
@@ -92,18 +91,40 @@ async def start_web_server(bot):
         return web.Response(status=404, text="index.html not found")
 
     async def get_members(req):
-        found = []
-        for name, uid in settings.user_id_map.items():
-            user = bot.get_user(uid)
-            handle = user.name if user else "unknown"
-            found.append({"name": name, "user": handle, "id": str(uid)})
-        found.sort(key=lambda x: x['name'])
-        return web.json_response(found, headers=_CORS)
+        # Search for members with the "Feeding Team" role
+        feeding_role_name = "Feeding Team"
+        found_members = []
+        
+        # Search all guilds the bot is connected to
+        for guild in bot.guilds:
+            # Try to find the role by name
+            role = discord.utils.get(guild.roles, name=feeding_role_name)
+            
+            # If found, get all members
+            if role:
+                for member in role.members:
+                    # Check for dupes (if bot is in multiple guilds with same user)
+                    if not any(m['id'] == str(member.id) for m in found_members):
+                        found_members.append({
+                            "name": member.display_name, # Use nickname if set
+                            "user": member.name,
+                            "id": str(member.id)
+                        })
+        
+        # Fallback to config map if role not found or list empty
+        if not found_members:
+            for name, uid in settings.user_id_map.items():
+                user = bot.get_user(uid)
+                handle = user.name if user else "unknown"
+                found_members.append({"name": name, "user": handle, "id": str(uid)})
+        
+        # Sort alphabetically
+        found_members.sort(key=lambda x: x['name'].lower())
+        return web.json_response(found_members, headers=_CORS)
 
     async def post_auth(req):
         try:
             data = await req.json()
-            # Code Exchange
             async with aiohttp.ClientSession() as sess:
                 async with sess.post('https://discord.com/api/oauth2/token', data={
                     'client_id': settings.ui_activity_app_id,
@@ -111,9 +132,7 @@ async def start_web_server(bot):
                     'grant_type': 'authorization_code',
                     'code': data.get('code')
                 }) as r:
-                    if r.status != 200: 
-                        print(f"Auth fail: {await r.text()}")
-                        return web.Response(status=401)
+                    if r.status != 200: return web.Response(status=401)
                     token_data = await r.json()
                     access_token = token_data['access_token']
                 
@@ -122,29 +141,21 @@ async def start_web_server(bot):
             
             perms = await check_permissions(int(user['id']))
             return web.json_response({"user": user, "permissions": perms}, headers=_CORS)
-        except Exception as e: 
-            print(f"Auth Error: {e}")
-            return web.Response(status=500, text=str(e))
+        except Exception as e: return web.Response(status=500, text=str(e))
 
     async def get_sched(req):
         return web.json_response(load_schedule(), headers=_CORS)
 
     async def save_sched(req):
         try:
-            # Security: In a production app, we'd verify a session token. 
-            # For this scale, checking the ID against the bot's known permissions is acceptable.
             uid = int(req.headers.get("X-User-ID", 0))
             perms = await check_permissions(uid)
-            
-            if not perms["can_edit_schedule"]: 
-                return web.Response(status=403, text="Permission Denied")
+            if not perms["can_edit_schedule"]: return web.Response(status=403)
             
             data = await req.json()
             save_schedule(data)
             return web.Response(text="Saved", headers=_CORS)
-        except Exception as e: 
-            print(f"Save Error: {e}")
-            return web.Response(status=500)
+        except: return web.Response(status=500)
 
     async def opts(req): return web.Response(status=204, headers=_CORS)
 

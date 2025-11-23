@@ -27,3 +27,25 @@
 {"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat whats the feeding schedule", "attachments": 0}
 {"event": "intent", "kind": "feeding_schedule_link", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1442041039174111253, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
 {"event": "action", "name": "feeding_schedule_link", "trigger": "user=624440365595754496; channel=1341696618688286720", "output": "message_id=1442041041250156564"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat find me a sub", "attachments": 0}
+{"event": "action", "name": "intent_router_error", "trigger": "type=AttributeError", "output": "'IntentRouter' object has no attribute '_stations_from_schedule'"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat sub request", "attachments": 0}
+{"event": "intent", "kind": "sub_request_link", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1442051589128065054, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "sub_request_link", "trigger": "user=624440365595754496; channel=1341696618688286720", "output": "message_id=1442051589681578075"}
+{"event": "message", "author": "austinbaustinb", "channel": "#thomas-cat-sandbox", "content": "tomcat sub request", "attachments": 0}
+{"event": "intent", "kind": "sub_request_link", "confidence": 0.99, "channel_id": 1341696618688286720, "user_id": 624440365595754496, "message_id": 1442051607243264010, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "sub_request_link", "trigger": "user=624440365595754496; channel=1341696618688286720", "output": "message_id=1442051607683662006"}
+{"event": "message", "author": "austinbaustinb", "channel": "#executive-board", "content": "Testing a feeding team scheduler thing. Pretty much just the same thing megan has set up, but it allows for easier sub requests. There will be 'hey someone still needs this spot filled' reminders maybe a week out, then three days, then the morning of. That typa stuff.\nI gotta figure out a way to have a good sign-in restriction so that only officers can edit the schedule and then anyone can do a sub request, but here's the bare bones of it. Automatically adjusts the dates and stations you can request a sub for to be only the ones you're assigned to.\n\nEither way, makes it a lot simpler. Lots less false positives. It will ping people according to this and the sub list, and its easier to access.", "attachments": 3}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 629370899753205781, "user_id": 624440365595754496, "message_id": 1442052200145621074, "has_image": true, "slots": {"cat": null, "station": "Lot 50", "dates": ["2025-11-23"]}, "decision": ["slot:stations=Lot 50", "intent:feed_update"]}
+{"event": "action", "name": "feed_update_ignored", "trigger": "station=Lot 50", "output": "channel_blocked:629370899753205781"}
+{"event": "message", "author": "austinbaustinb", "channel": "#executive-board", "content": "I’ll get it ironed out on mobile soon. If we have any requests I can add those. I can also document each day of which messages say each station was fed so we get better logging but either way just wanted to share", "attachments": 2}
+{"event": "intent", "kind": "feed_update", "confidence": 0.95, "channel_id": 629370899753205781, "user_id": 624440365595754496, "message_id": 1442052523967119422, "has_image": true, "slots": {"cat": null, "station": "HOP", "dates": ["2025-11-23"]}, "decision": ["slot:stations=HOP", "intent:feed_update"]}
+{"event": "action", "name": "feed_update_ignored", "trigger": "station=HOP", "output": "channel_blocked:629370899753205781"}
+{"event": "message", "author": "austinbaustinb", "channel": "#executive-board", "content": "And the names in the list are based off of people who have the “feeding-team” role, and I can also have it require the “due paying member” role so we don’t have to check everyone", "attachments": 0}

@@ -8,11 +8,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <!-- Discord SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk/dist/discord.min.js"></script>
 
     <style>
-        /* --- ORIGINAL STYLING RESTORED --- */
         :root {
             --site-bg: #FFF9F3;       
             --header-tan: #FFF9F3; 
@@ -35,6 +33,14 @@
             color: var(--site-text);
             margin: 0; padding: 0; height: 100vh;
             display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        /* LOADING OVERLAY */
+        #loading {
+            position: fixed; inset: 0; background: var(--site-bg); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: var(--site-text); font-family: 'Merriweather', serif; font-size: 1.5rem;
+            transition: opacity 0.3s;
         }
 
         /* SIDEBAR */
@@ -139,6 +145,7 @@
         #auth-badge {
             font-size: 0.8rem; color: var(--site-accent); font-weight: 600;
             cursor: pointer; margin-left: 10px; text-decoration: underline;
+            white-space: nowrap;
         }
 
         /* WORKSPACE */
@@ -193,11 +200,6 @@
         td.data-cell.focus { outline: 2px solid var(--focus-ring); outline-offset: -2px; z-index: 150; }
         td.data-cell.selected { background-color: var(--selection-highlight) !important; }
 
-        #loading {
-            position: fixed; inset: 0; background: var(--site-bg); z-index: 9999;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            color: var(--site-text); font-family: 'Merriweather', serif; font-size: 1.5rem;
-        }
     </style>
 </head>
 <body>
@@ -243,9 +245,8 @@
 
             <div id="selection-display" class="current-selection empty">Select User</div>
             
-            <!-- NEW: Auth Controls -->
             <button id="save-btn" onclick="saveSchedule()">Save</button>
-            <div id="auth-badge" onclick="manualLoginPrompt()">Guest</div>
+            <div id="auth-badge" onclick="manualLoginPrompt()">Guest Mode (Login)</div>
         </div>
     </header>
 
@@ -279,7 +280,7 @@ const STATIONS = [
     "Lot 50", "Mary Kay and Zen", "West Hall", "Maintenance"
 ];
 
-// Fallback data to ensure UI never breaks
+// Fallback data
 const MOCK_SCHEDULE = {
     "Microwave": ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
     "Snickers": ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
@@ -292,7 +293,6 @@ const MOCK_SCHEDULE = {
     "Maintenance": ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"]
 };
 
-// --- STATE ---
 let scheduleData = {};
 let members = [];
 let currentVolunteer = null;
@@ -302,18 +302,25 @@ let selectedCells = new Set();
 let anchor = null;
 let isDragging = false;
 let currentUser = null;
-let userPerms = { can_manage_feeding: false };
+let userPerms = { can_edit_schedule: false };
 
 // --- INIT ---
-const discordSdk = new Discord.DiscordSDK("1341667150066225192"); // Hardcoded for reliability
+// Safe SDK Init
+let discordSdk = null;
+try {
+    discordSdk = new Discord.DiscordSDK("1341667150066225192");
+} catch (e) {
+    console.warn("Discord SDK failed to init (Running in browser?):", e);
+}
 
 async function init() {
-    // 1. Init empty grid immediately (Zero delay)
+    // 1. Init empty grid
     STATIONS.forEach(st => scheduleData[st] = new Array(7).fill(""));
     renderGrid();
 
-    // 2. Load Data (Fail gracefully to mock)
+    // 2. Load Data
     try {
+        // Attempt to fetch from backend
         await Promise.all([fetchSchedule(), fetchMembers()]);
         console.log("Live data loaded.");
     } catch (e) {
@@ -322,14 +329,17 @@ async function init() {
             if (MOCK_SCHEDULE[st]) scheduleData[st] = [...MOCK_SCHEDULE[st]];
         });
         members = [{name: "DevUser", user: "dev"}, {name: "Volunteer", user: "vol"}];
+    } finally {
+        renderGrid();
+        // CRITICAL FIX: Always remove loading screen
+        document.getElementById('loading').style.opacity = '0';
+        setTimeout(() => document.getElementById('loading').style.display = 'none', 300);
     }
     
-    // 3. Refresh Grid with data
-    renderGrid();
-    document.getElementById('loading').style.display = 'none';
-
-    // 4. Auth (Silent Background)
-    attemptDiscordAuth();
+    // 3. Auth (Silent Background)
+    if (discordSdk) {
+        attemptDiscordAuth();
+    }
 }
 
 // --- API ---
@@ -349,11 +359,10 @@ async function fetchMembers() {
 // --- AUTHENTICATION ---
 async function attemptDiscordAuth() {
     try {
-        // Timeout race to prevent hanging
-        const ready = discordSdk.ready();
-        const timeout = new Promise((_, r) => setTimeout(() => r("Timeout"), 1500));
-        await Promise.race([ready, timeout]);
+        // 1. Wait for ready
+        await discordSdk.ready();
 
+        // 2. Authorize
         const auth = await discordSdk.commands.authorize({
             client_id: "1341667150066225192",
             response_type: "code",
@@ -374,7 +383,7 @@ async function attemptDiscordAuth() {
             }
         }
     } catch (e) {
-        console.log("Staying in Guest Mode (Auth skipped)");
+        console.log("Staying in Guest Mode:", e);
     }
 }
 
@@ -383,29 +392,35 @@ function applyLogin(user, perms) {
     userPerms = perms;
     
     const badge = document.getElementById('auth-badge');
-    badge.textContent = user.username || "User";
+    badge.textContent = `Logged in: ${user.username || "User"}`;
     badge.style.color = "var(--site-text)";
     badge.style.textDecoration = "none";
     badge.style.cursor = "default";
     badge.onclick = null;
 
-    if (userPerms.can_manage_feeding) {
+    // Show Save button if they have editing permissions
+    if (userPerms.can_edit_schedule) {
         document.getElementById('save-btn').style.display = 'block';
     }
 }
 
 function manualLoginPrompt() {
-    const uid = prompt("Enter Discord User ID to simulate login:", "624440365595754496");
+    // Simple debug prompt to test permissions if SDK fails
+    const uid = prompt("Debug: Enter User ID to simulate login:", "624440365595754496"); // Default to Austin's ID
     if (uid) {
-        // Optimistic login for UI testing
-        applyLogin({username: "DevOverride", id: uid}, {can_manage_feeding: true});
-        alert("Simulated login. Actual saves will still be verified by server.");
+        // Simulate the structure the backend returns
+        const fakeUser = {username: "DebugUser", id: uid};
+        // We can't easily mock the server permission check here without a real token,
+        // so this just sets the UI state. Real saves will still fail on backend if ID is wrong.
+        applyLogin(fakeUser, {can_edit_schedule: true}); 
+        alert("Simulated UI login. (Note: Real saves still require server-side permission)");
     }
 }
 
 async function saveSchedule() {
     if (!currentUser) return;
     const btn = document.getElementById('save-btn');
+    const oldText = btn.textContent;
     btn.textContent = "Saving...";
     btn.disabled = true;
 
@@ -421,11 +436,13 @@ async function saveSchedule() {
         
         if (res.ok) {
             btn.textContent = "Saved!";
-            setTimeout(() => { btn.textContent = "Save"; btn.disabled = false; }, 2000);
-        } else { throw new Error("Server Error"); }
+            setTimeout(() => { btn.textContent = oldText; btn.disabled = false; }, 2000);
+        } else { 
+            throw new Error("Server Error"); 
+        }
     } catch (e) {
-        alert("Save failed.");
-        btn.textContent = "Save";
+        alert("Save failed. Check permissions or connection.");
+        btn.textContent = oldText;
         btn.disabled = false;
     }
 }
@@ -490,6 +507,11 @@ function updateVisualsOnly() {
 
 // --- INTERACTION (Selection) ---
 function handleMouseDown(e, r, c) {
+    if (!userPerms.can_edit_schedule && currentUser) {
+        // Optional: Visual feedback that they can't edit?
+        // For now, we just allow selection but not changing data.
+    }
+    
     isDragging = true;
     const coord = `${r}|${c}`;
     if (e.shiftKey && anchor) selectRange(anchor.r, anchor.c, r, c);
@@ -561,10 +583,19 @@ function setVolunteer(m) {
 
 // --- KEYBOARD SHORTCUTS ---
 document.addEventListener('keydown', (e) => {
+    // Block edits if no perms (except navigation)
+    const isNav = e.key.startsWith('Arrow') || e.key === 'Escape';
+    
     if (e.target.tagName === 'INPUT') {
         if (e.key === 'Escape') { searchInput.blur(); resultsBox.style.display = 'none'; }
         return;
     }
+    
+    if (!userPerms.can_edit_schedule && !isNav && currentUser) {
+        // Don't allow modifying data
+        return; 
+    }
+
     if (e.key === 'Backspace' || e.key === 'Delete') applyValue("");
     else if (e.key === 'Enter') {
         if (currentVolunteer) applyValue(currentVolunteer.name);
@@ -589,6 +620,8 @@ document.addEventListener('keydown', (e) => {
 
 function applyValue(val) {
     if (selectedCells.size === 0) return;
+    if (!userPerms.can_edit_schedule && currentUser) return;
+
     selectedCells.forEach(coord => {
         const [r, c] = coord.split('|').map(Number);
         scheduleData[STATIONS[r]][c] = val;

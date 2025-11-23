@@ -285,64 +285,9 @@ class Settings:
     # Provide simple name→user_id mapping and per-station weekly assignments.
     # Station assignments are lists of 7 names ordered Sun..Sat.
 
-    user_id_map: Dict[str, int] = field(default_factory=lambda: {
-        # existing
-        "Nicole": 1308894473228648536,
-        "Lynn": 699720057764446221,
-        "Atlas": 528421517592363008,
-        "CiCi": 342386549532524544,
-        "Roach": 674640043289083944,
-        "Elusive": 751926923583553656,
-        "Miranda": 474329968936091648,
-        "Ben": 972653971728633896,
-        "Brooke": 1014214516764053614,
-        "Alex": 564615306027335681,
-        "Morgan": 856586084943396879,
-        "Anabelle": 808757369478840371,
-        "Zahara": 1004778582855389244,
-        "Bryan": 204682859217158144,  # hatshura
-        "Jaeden": 417059337257877505,
-        "Kitadan": 427867525225906176,
-        "Felix": 694664394495361195,
-        "Izzy": 891876061313380425,
-        "Kaz": 356861356051529750,
-        "Thorin": 980567857849045032, #not_d3fault_1429
-        "Acacia": 543969877619245068, #spitonme
-        "Rinne": 63085459886055424,  #petrichor
-        "Emmaleigh": 338109126808829953, #emiximez
-        "Alexa": 518999622916505633,  #marieealexa
-        "Bunny": 609945813128445974,  #bubblebee5866
-        "Abigail": 568451921828904962,#abstractly_
-        "Zoe": 749751349679358064,    #zoe.cronin
-        "Isabella": 963624067078971402,#lemonelon_
-        "Julia": 760947102280319008,  #iliekwatchingnarutoowo
-        "Micaela": 741877766030491678,#mica.aaa
-        "Peter": 750387156920303798,  #bluedragon5864
-        "Victoria": 732664872172519464, #ratcorn.
-        "Brian": 642133560685494282,  #frostfire312
-        "Sophia": 690727460924424212, #Le_nuit_sans_fin
-        "Charlotte": 748739000914935828, #phat_cat_207
-        "Autumn": 1410304461707940022, #autumn065829
-        "Michael": 426919280378904588, #orphean_
-        "Loren": 413721884107210753,  #baseketballin
-        "Lucas": 802391113050226708,  #lifeye
-        "Emma": 722682931704889345,   #emlenisgremlin
-        "Jack": 1037772447509917717,   #.bettercalljack
-        "Megan": 788886705276846140,  #vasyline
-    })
+    user_id_map: Dict[str, int] = field(default_factory=dict)
 
-    feeding_schedule: Dict[str, list[str]] = field(default_factory=lambda: {
-        # In order: Sun, Mon, Tue, Wed, Thu, Fri, Sat
-        "Microwave":         ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
-        "Snickers":          ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
-        "Business":          ["Atlas", "Alexa", "Morgan", "Bunny", "Abigail", "Zoe", "Elusive"],
-        "The Greens":        ["Jaeden", "Isabella", "Julia", "Micaela", "Brooke", "Peter", "Elusive"],
-        "HOP":               ["Jaeden", "Victoria", "Anabelle", "Brian", "Sophia", "Victoria", "Sophia"],
-        "Lot 50":            ["Miranda", "Brian", "Bryan", "Brian", "Bryan", "Zahara", "Miranda"],
-        "Mary Kay and Zen":  ["Kitadan", "Emma", "Kitadan", "Kitadan", "Jack", "Jack", "Jack"],
-        "West Hall":         ["Loren", "Charlotte", "Autumn", "Michael", "Loren", "Roach", "Emmaleigh"],
-        "Maintenance":       ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"],
-    })
+    feeding_schedule: Dict[str, list[str]] = field(default_factory=dict)
 
 
 

@@ -46,6 +46,7 @@ from .handlers.dues import handle_check_last_email
 from .handlers.finance import handle_log_recent_finances
 from .handlers.stations import handle_station_residents as _handle_station_residents
 from UserInterface.feeding_schedule_linker import handle_feeding_schedule_link
+from UserInterface.sub_request_linker import handle_sub_request_link
 
 # ---- Aliases and optional NLP ------------------------------------------------
 from .aliases import resolve_station_or_cat, alias_vocab
@@ -217,6 +218,11 @@ RECACHE_CATABASE_RE = re.compile(r"\brecache\s+(?:catabase|cat\s*database|names)
 REMOVE_ROLE_RE = re.compile(r"\b(?:remove|clear|strip)\s+(?:the\s+)?role\s+(\d{5,20})(?:\s+from\s+(?:everyone|all))?\b", re.I)
 FEEDING_SCHEDULE_LINK_RE = re.compile(
     r"(feeding\s*schedule|feed\s*schedule|what[’'`]?\s*(?:is|s)?\s*(?:the\s+)?feeding\s*schedule|whats\s+the\s+feeding\s*schedule)",
+    re.I,
+)
+
+SUB_REQUEST_LINK_RE = re.compile(
+    r"(sub\s*request|find\s+(?:a\s+)?sub|find\s+subs|sub\s*me|cover\s+my\s+shift)",
     re.I,
 )
 
@@ -617,6 +623,13 @@ class IntentRouter:
             if FEEDING_SCHEDULE_LINK_RE.search(text_wo):
                 return IntentEvent(
                     type="feeding_schedule_link", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            if SUB_REQUEST_LINK_RE.search(text_wo):
+                return IntentEvent(
+                    type="sub_request_link", confidence=0.99,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
@@ -1303,6 +1316,10 @@ class IntentRouter:
 
         if event.type == "feeding_schedule_link":
             await handle_feeding_schedule_link(ctx)
+            return
+
+        if event.type == "sub_request_link":
+            await handle_sub_request_link(ctx)
             return
 
         if event.type == "silent_mode":

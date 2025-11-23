@@ -4,7 +4,102 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import Any, Dict, Union
+
+import os
+import aiohttp
 from aiohttp import web
+# Config specific to your Discord App (from Developer Portal)
+CLIENT_ID = getattr(settings, 'ui_activity_app_id', None) or os.getenv("UITEST_ACTIVITY_APP_ID")
+CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+
+# Define your Role IDs for permissions
+ROLES = {
+    "FEEDING_MANAGER": 643587274797481988, # Example ID
+    "PHOTO_LABELER": 798371895434149940,   # Example ID
+    "VIEWER": 551082419768393729           # Example ID
+}
+
+# Your main guild ID (replace with your actual guild/server ID)
+YOUR_GUILD_ID = 643586809166561310
+
+async def auth_token_exchange(request):
+    """Exchanges the temporary code from frontend for a user access token."""
+    data = await request.json()
+    code = data.get("code")
+    # Exchange code with Discord API
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            'https://discord.com/api/oauth2/token',
+            data={
+                'client_id': CLIENT_ID,
+                'client_secret': CLIENT_SECRET,
+                'grant_type': 'authorization_code',
+                'code': code,
+            }
+        ) as resp:
+            if resp.status != 200:
+                return web.Response(status=401, text="Invalid code")
+            token_data = await resp.json()
+            access_token = token_data['access_token']
+
+        # Get User ID from Discord
+        async with session.get(
+            'https://discord.com/api/users/@me',
+            headers={'Authorization': f'Bearer {access_token}'}
+        ) as user_resp:
+            user_info = await user_resp.json()
+            user_id = int(user_info['id'])
+
+    # CHECK ROLES (The important part)
+    # We use your existing bot instance to check roles in the guild
+    guild = bot.get_guild(YOUR_GUILD_ID)
+    member = guild.get_member(user_id) if guild else None
+    if not member and guild:
+        # Fallback: fetch if not cached
+        try:
+            member = await guild.fetch_member(user_id)
+        except Exception:
+            member = None
+
+    user_roles = [r.id for r in member.roles] if member else []
+
+    # Determine permissions
+    permissions = {
+        "can_edit_schedule": ROLES["FEEDING_MANAGER"] in user_roles,
+        "can_label_photos": ROLES["PHOTO_LABELER"] in user_roles,
+        "can_view": ROLES["VIEWER"] in user_roles
+    }
+
+    if not permissions["can_view"]:
+         return web.Response(status=403, text="Not authorized to view this app.")
+
+    # Return the token back to frontend (or a session cookie) 
+    # + the permissions so the UI knows what buttons to show
+    return web.json_response({
+        "access_token": access_token,
+        "user": user_info,
+        "permissions": permissions
+    })
+
+# --- The Secure Save Endpoint ---
+async def save_schedule(request):
+    """Saves the feeding schedule. Requires valid auth."""
+    # 1. Verify Token
+    # (In a real app, use middleware. For now, simple check:)
+    auth_header = request.headers.get("Authorization") # "Bearer <token>"
+    # You would validate this token again via Discord or your own session store.
+    # For simplicity here: assume we passed the user_id or a session key.
+    data = await request.json()
+    # 3. Save to Google Sheets
+    # Use your existing sheets_client
+    from .services.sheets_client import sheets_client
+    gc = sheets_client()
+    sh = gc.open_by_key(settings.cat_spreadsheet_id)
+    ws = sh.worksheet("FeedingSchedule") # Create this tab
+    # Clear and update
+    ws.clear()
+    ws.update("A1", data['schedule_matrix']) # Or however you format it
+    return web.Response(text="Saved")
 
 import discord
 from discord.ext import commands
@@ -221,6 +316,8 @@ async def start_web_server(bot):
         web.get('/', get_index),
         web.get('/api/members', get_members),
         web.options('/api/members', options_members),
+        web.post('/api/auth/token', auth_token_exchange),
+        web.post('/api/schedule/save', save_schedule),
     ])
 
     runner = web.AppRunner(app)

@@ -1,169 +1,362 @@
+# tomcat/config.py
+"""
+Configuration and tuning knobs for TomCat.
+
+Future idea: Intent policy map
+--------------------------------
+If you later want to tune behavior without code changes, consider adding an
+`intent_policy` structure here which the router can read, e.g.:
+
+    intent_policy = {
+        "cv_identify": {"require_wake": True},
+        "show_photo":  {"require_wake": True},
+        "who_is":      {"require_wake": True},
+        "feeding_status": {"require_wake": True},
+        "feed_update": {"allowed_channels": [CH_FEEDING_TEAM]},
+        "sub_request": {"allowed_channels": [CH_FEEDING_TEAM]},
+        "sub_accept":  {"allowed_channels": [CH_FEEDING_TEAM]},
+    }
+
+By expressing wake requirements and allowed channels here, you can flip
+policies via environment variables without code edits. For now, the router
+implements the equivalent logic inline.
+"""
 from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 from typing import Dict
 
-load_dotenv()
 
-def _get_env_bool(key: str, default: bool = False) -> bool:
-    v = os.getenv(key)
-    if v is None: return default
-    return v.strip().lower() in {"1", "true", "yes", "on"}
+load_dotenv()
 
 def _get_env_list(key: str, sep: str = ",") -> list[str]:
     raw = os.getenv(key, "")
     return [s.strip() for s in raw.split(sep) if s.strip()]
 
+def _get_env_bool(key: str, default: bool = False) -> bool:
+    v = os.getenv(key)
+    if v is None:
+        return default
+    return v.strip().lower() in {"1", "true", "yes", "on"}
+
+def _parse_channel_list_env(key: str) -> list[int]:
+    """Parse a list env like "[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]" or "123,456" into ints.
+    Each token may be an env var name whose value is a numeric ID, or a numeric string.
+    """
+    raw = (os.getenv(key, "") or "").strip()
+    if not raw:
+        return []
+    # strip brackets if present
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    toks = [t.strip() for t in raw.split(",") if t.strip()]
+    out: list[int] = []
+    for t in toks:
+        val = os.getenv(t, t)  # if token is an env var name, use its value; else the token itself
+        try:
+            cid = int(str(val).strip())
+            if cid:
+                out.append(cid)
+        except Exception:
+            continue
+    return out
+
 def _build_channel_sheet_map() -> dict[int, str]:
+    """
+    Build channel->sheetTab map from env.
+    Supports either:
+      - CHANNEL_SHEET_MAP="CH_PICTURES_OF_CATS:TCBPicsInput,CH_REPORT_NEW_CATS:TCBPicsInput,1344745306620694558:TCBVetBillInput"
+        (left side can be an env var name or a raw numeric ID)
+      - Or, if unset, a sane default using named channels.
+    """
     raw = os.getenv("CHANNEL_SHEET_MAP", "").strip()
     out: dict[int, str] = {}
     if raw:
+        out: Dict[int, str] = {}
         for pair in (p.strip() for p in raw.split(",") if p.strip()):
-            if ":" not in pair: continue
+            if ":" not in pair:
+                continue
             k, tab = (s.strip() for s in pair.split(":", 1))
-            try: out[int(os.getenv(k) or k)] = tab
-            except: continue
+            chan = os.getenv(k) if not k.isdigit() else k
+            if not chan:
+                continue
+            try:
+                cid = int(chan)
+            except Exception:
+                continue
+            if cid and tab:
+                out[cid] = tab
+        if out:
+            return out
+    # fallback defaults from the configured channel names
+    def _id(name: str) -> int | None:
+        try:
+            v = int(os.getenv(name, "0"))
+            return v or None
+        except Exception:
+            return None
+    pics = _id("CH_PICTURES_OF_CATS")
+    rpt  = _id("CH_REPORT_NEW_CATS")
+    if pics: out[pics] = "TCBPicsInput"
+    if rpt:  out[rpt]  = "TCBPicsInput"
+    # add more named channels later if you introduce them (e.g., CH_VET_BILLS -> "TCBVetBillInput")
     return out
+
 
 @dataclass
 class Settings:
-    # --- DISCORD & AUTH ---
+    # Discord
     discord_token: str = os.getenv("DISCORD_TOKEN", "")
-    discord_client_secret: str = os.getenv("DISCORD_CLIENT_SECRET", "")
-    ui_activity_app_id: str = os.getenv("UITEST_ACTIVITY_APP_ID", "")
-    bot_user_id: int = int(os.getenv("BOT_USER_ID", "0") or "0")
     command_prefix: str = os.getenv("COMMAND_PREFIX", "!")
+    bot_name: str = os.getenv("BOT_NAME", "tomcat")
+    tomcat_wake: str = os.getenv("TOMCAT_WAKE", os.getenv("BOT_NAME", "tomcat"))
+    # Bot IDs (fallbacks provided per user notes; override via env in prod)
+    bot_user_id: int | None = int(os.getenv("BOT_USER_ID", "1341667150066225192") or "0") or None
+    bot_dm_id: int | None = int(os.getenv("BOT_DM_ID", "1352882061651873863") or "0") or None
     timezone: str = os.getenv("TIMEZONE", "America/Chicago")
-    
-    # --- PATHS & FILES ---
-    schedule_file: str = os.getenv("SCHEDULE_FILE", "data/feeding_schedule.json")
-    log_dir: str = os.getenv("LOG_DIR", "./logs")
-    google_service_account_json: str = "credentials/service_account.json"
-    # Backwards compatibility for sheets_client.py
-    google_sa_json: str = "credentials/service_account.json" 
+    channel_sheet_map: dict[int, str] = field(default_factory=_build_channel_sheet_map)
+    dm_image_tab: str = os.getenv("DM_IMAGE_TAB", "TCBPicsInput")
+    dm_image_sheet_id: str | None = os.getenv("DM_IMAGE_SHEET_ID") or None
+    # Admins
+    admin_ids: list[int] = field(default_factory=lambda: [
+        int(x) for x in _get_env_list("ADMIN_IDS") if x.strip().lstrip("-").isdigit()
+    ])
+    silent_mode: bool = field(default_factory=lambda: _get_env_bool("SILENT_MODE", False))
 
-    # --- SHEET IDS ---
+    # Channels
+    ch_due_portal: int | None = int(os.getenv("CH_DUE_PORTAL", "0")) or None
+    ch_feeding_team: int | None = int(os.getenv("CH_FEEDING_TEAM", "0")) or None
+    ch_pictures_of_cats: int | None = int(os.getenv("CH_PICTURES_OF_CATS", "0")) or None
+    ch_report_new_cats: int | None = int(os.getenv("CH_REPORT_NEW_CATS", "0")) or None
+    ch_member_names: int | None = int(os.getenv("CH_MEMBER_NAMES", "0")) or None
+    ch_logging: int | None = int(os.getenv("CH_LOGGING", "0")) or None
+    ch_sandbox: int | None = int(os.getenv("CH_TOMCAT_SANDBOX", "0")) or None
+    # Channels allowed to mark feed updates (default empty → no restriction). You set this in .env as
+    # allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
+    allowed_feeding_channel_ids: list[int] = field(default_factory=lambda: _parse_channel_list_env("allowed_feeding_channel_ids"))
+
+    # Google service account
+    google_service_account_json: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "credentials/service_account.json")
+    # Retain the legacy name as well
+    google_sa_json: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "credentials/service_account.json")
+
+    # Sheets (support both old and new env names)
+    # Legacy names in .env: SHEET_CATABASE_ID, SHEET_VISION_ID, SHEET_MEGASHEET_ID
     sheet_catabase_id: str | None = os.getenv("SHEET_CATABASE_ID") or os.getenv("CAT_SPREADSHEET_ID")
     sheet_vision_id: str | None = os.getenv("SHEET_VISION_ID") or os.getenv("AUX_SPREADSHEET_ID")
     sheet_megasheet_id: str | None = os.getenv("SHEET_MEGASHEET_ID")
-    
-    # Compat aliases
-    cat_spreadsheet_id: str | None = sheet_catabase_id
-    aux_spreadsheet_id: str | None = sheet_vision_id
-    
-    channel_sheet_map: dict[int, str] = field(default_factory=_build_channel_sheet_map)
-    finance_sheet_throttle_sec: float = 0.5
 
-    # --- CHANNELS ---
-    ch_feeding_team: int | None = int(os.getenv("CH_FEEDING_TEAM", "0") or "0") or None
-    ch_sandbox: int | None = int(os.getenv("CH_TOMCAT_SANDBOX", "0") or "0") or None
-    ch_logging: int | None = int(os.getenv("CH_LOGGING", "0") or "0") or None
-    # Used by misc handler
-    misc_channels: set[int] = field(default_factory=set) 
-    
-    # --- ROLES & PERMISSIONS ---
-    role_officer_id: int = 845035667661783061
-    
-    access_feeding_manager: list[int] = field(default_factory=lambda: [
-        499034835562790912, # Megan
-    ])
-    
-    access_photo_labeler: list[int] = field(default_factory=lambda: [
-        528421517592363008, # Atlas
-        624440365595754496, # Austin
-        474329968936091648, # Miranda
-    ])
+    # Also keep the new-style names some modules were using
+    cat_spreadsheet_id: str | None = os.getenv("CAT_SPREADSHEET_ID") or os.getenv("SHEET_CATABASE_ID")
+    aux_spreadsheet_id: str | None = os.getenv("AUX_SPREADSHEET_ID") or os.getenv("SHEET_VISION_ID")
 
-    # --- PING MAP (Name -> Discord ID) ---
-    user_id_map: Dict[str, int] = field(default_factory=lambda: {
-        "Nicole": 1308894473228648536, "Lynn": 699720057764446221, "Atlas": 528421517592363008,
-        "CiCi": 342386549532524544, "Roach": 674640043289083944, "Elusive": 751926923583553656,
-        "Miranda": 474329968936091648, "Ben": 972653971728633896, "Brooke": 1014214516764053614,
-        "Alex": 564615306027335681, "Morgan": 856586084943396879, "Anabelle": 808757369478840371,
-        "Zahara": 1004778582855389244, "Bryan": 204682859217158144, "Jaeden": 417059337257877505,
-        "Kitadan": 427867525225906176, "Felix": 694664394495361195, "Izzy": 891876061313380425,
-        "Kaz": 356861356051529750, "Thorin": 980567857849045032, "Acacia": 543969877619245068,
-        "Rinne": 63085459886055424, "Emmaleigh": 338109126808829953, "Alexa": 518999622916505633,
-        "Bunny": 609945813128445974, "Abigail": 568451921828904962, "Zoe": 749751349679358064,
-        "Isabella": 963624067078971402, "Julia": 760947102280319008, "Micaela": 741877766030491678,
-        "Peter": 750387156920303798, "Victoria": 732664872172519464, "Brian": 642133560685494282,
-        "Sophia": 690727460924424212, "Charlotte": 748739000914935828, "Autumn": 1410304461707940022,
-        "Michael": 426919280378904588, "Loren": 413721884107210753, "Lucas": 802391113050226708,
-        "Emma": 722682931704889345, "Jack": 1037772447509917717, "Megan": 788886705276846140,
-    })
+    finance_sheet_throttle_sec: float = float(os.getenv("FINANCE_SHEET_THROTTLE_SEC", "0.5") or "0.5")
 
-    # --- OTHER SETTINGS ---
-    bot_name: str = "tomcat"
-    tomcat_wake: str = "tomcat"
-    silent_mode: bool = False
-    
-    # --- CACHE & CV (Restored to fix AttributeError) ---
-    show_cache_dir: str = "./cache/show_photos"
-    show_cache_per_cat: int = 5
-    show_cache_prefill_on_boot: bool = True  # This was the missing one
-    show_cache_warm_concurrency: int = 2
-    show_cache_warm_limit: int = 0
-    show_cache_resize_max_dim: int = 0
-    show_cache_jpeg_quality: int = 88
-    show_sheet_recentpics_ttl_sec: int = 300
-    show_cache_crop_on_fill: bool = True
-    
-    cv_detect_weights: str = os.path.join("weights", "NanoModel.pt")
-    cv_classify_weights: str = os.path.join("weights", "NanoClassifier.pt")
-    cv_conf: float = 0.552
-    cv_iou: float = 0.45
-    cv_detect_imgsz: int = 640
-    cv_clf_imgsz: int = 640
-    cv_pad_pct: float = 0.03
-    cv_max_image_dim: int = 10000
-    cv_max_download_mb: int = 16
-    cv_half: bool = True
-    cv_temp_dir: str = "./temp_images"
-    cv_log_crop: bool = True
-    auto_crop_show_photo: bool = True
-    cv_timeout_ms: int = 6000
-    cv_lookback_seconds_before: int = 30
-    cv_pending_minutes_after: int = 5
-    
+    # Logging
+    log_dir: str = os.getenv("LOG_DIR", "./logs")
+
+    # Channels where misc handlers like "meow" are allowed (empty set means everywhere)
+    misc_channels: set[int] = field(default_factory=set)
+
+        # ======== CV CONFIG (v5.6 parity; easy to tweak) ========
+    # Paths (drop-and-play). Change these when you retrain/move weights.
+    cv_detect_weights: str = os.getenv(
+        "CV_DETECT_WEIGHTS",
+        os.path.join("weights", "NanoModel.pt"),
+    )
+    cv_classify_weights: str = os.getenv(
+        "CV_CLASSIFY_WEIGHTS",
+        os.path.join("weights", "NanoClassifier.pt"),
+    )
+
+    # Optional human-readable class names for the classifier. Leave empty to use Cat{idx}.
     cv_class_names: list[str] = field(default_factory=lambda: [
         "Microwave", "Faye", "Bobbie", "Twix", "Citlali", "Angel", "Winston", "Radar", "Eggs", "Dumpster",
         "Gregory", "Rubber", "Bruno", "Boots", "Princess", "Nefarious", "Eraser", "Eden", "Cassie", "Coronavirus"
     ])
-    
+
+    # Core knobs (defaults mirror v5.6 values)
+    cv_conf: float = float(os.getenv("CV_CONF", "0.552"))           # detector confidence
+    cv_iou: float = float(os.getenv("CV_IOU", "0.45"))              # NMS IoU
+    cv_detect_imgsz: int = int(os.getenv("CV_DETECT_IMGSZ", "640")) # YOLO inference size
+    cv_clf_imgsz: int = int(os.getenv("CV_CLF_IMGSZ", "640"))       # classifier input size
+    cv_pad_pct: float = float(os.getenv("CV_PAD_PCT", "0.03"))      # crop expansion
+
+    # Safety/limits
+    cv_max_image_dim: int = int(os.getenv("CV_MAX_IMAGE_DIM", "10000"))   # 10K cap on longest side
+    cv_max_download_mb: int = int(os.getenv("CV_MAX_DOWNLOAD_MB", "16")) # attachment size cap
+
+    # Device/precision
+    cv_half: bool = os.getenv("CV_FP16", "1").strip().lower() in {"1","true","yes","on"}
+
+    # Temp folder for downloads (repo-local, not hidden OS temp)
+    cv_temp_dir: str = os.getenv("CV_TEMP_DIR", "./temp_images")
+    # Verbose crop logging (disable during bulk cache fills)
+    cv_log_crop: bool = _get_env_bool("CV_LOG_CROP", True)
+    # Auto-crop for "show me" / "who is"
+    auto_crop_show_photo: bool = os.getenv("AUTO_CROP_SHOW_PHOTO", "1").strip().lower() in {"1","true","yes","on"}
+    # Hard budget for auto-crop work in handlers (ms). If exceeded, show original image.
+    cv_timeout_ms: int = int(os.getenv("CV_TIMEOUT_MS", "6000"))
+
+    # Show-photo cache (for fast "show me" responses)
+    show_cache_dir: str = os.getenv("SHOW_CACHE_DIR", "./cache/show_photos")
+    show_cache_per_cat: int = int(os.getenv("SHOW_CACHE_PER_CAT", "5") or "5")
+    show_cache_prefill_on_boot: bool = _get_env_bool("SHOW_CACHE_PREFILL_ON_BOOT", True)
+    show_cache_warm_concurrency: int = int(os.getenv("SHOW_CACHE_WARM_CONCURRENCY", "2") or "2")
+    show_cache_warm_limit: int = int(os.getenv("SHOW_CACHE_WARM_LIMIT", "0") or "0")  # 0 = all
+    # Optional: downscale/compress cached JPEGs to speed sending (0 disables)
+    show_cache_resize_max_dim: int = int(os.getenv("SHOW_CACHE_RESIZE_MAX_DIM", "0") or "0")
+    show_cache_jpeg_quality: int = int(os.getenv("SHOW_CACHE_JPEG_QUALITY", "88") or "88")
+    # Use a small TTL to reuse RecentPics sheet rows in-process and avoid repeated network calls
+    show_sheet_recentpics_ttl_sec: int = int(os.getenv("SHOW_SHEET_RECENTPICS_TTL_SEC", "300") or "300")
+    # Optionally skip auto-crop during cache fill to speed up
+    show_cache_crop_on_fill: bool = _get_env_bool("SHOW_CACHE_CROP_ON_FILL", True)
+
+    # CV pairing windows (tunable without code)
+    cv_lookback_seconds_before: int = int(os.getenv("CV_LOOKBACK_SECONDS_BEFORE", "30"))
+    cv_pending_minutes_after: int = int(os.getenv("CV_PENDING_MINUTES_AFTER", "5"))
+
+    # Stored profile message IDs from v5.6 (cat ID -> Discord message ID)
     profile_messages: dict[str, int] = field(default_factory=lambda: {
-        "1": 1361917184254935093, "2": 1361917363993182368, "4": 1361917392208531518,
-        "5": 1361917398168371280, "6": 1361917404208304309, "7": 1361917410331856976,
-        "9": 1361917519883010269, "17": 1361917533564702791, "67": 1361917567291363348,
+        "1": 1361917184254935093,
+        "2": 1361917363993182368,
+        "4": 1361917392208531518,
+        "5": 1361917398168371280,
+        "6": 1361917404208304309,
+        "7": 1361917410331856976,
+        "9": 1361917519883010269,
+        "17": 1361917533564702791,
+        "67": 1361917567291363348,
     })
 
-    # --- SPAM / MAIL / DUES ---
-    gmail_enabled: bool = False
-    dues_enabled: bool = True
-    
-    trusted_role_names: list[str] = field(default_factory=lambda: ["due paying members", "server booster", "officers", "active feeders"])
-    spam_ban_role_names: list[str] = field(default_factory=lambda: ["officers"])
-    spam_min_account_days: int = 30
-    spam_nlp_conf: float = 0.9
-    spam_alert_user_id: int | None = None
-    
-    dues_email_window_days: int = 3
-    dues_scan_skip_oldest: int = 3
-    dues_scan_limit: int = 0
-    dues_fast_map: bool = True
-    dues_membership_ttl_sec: int = 300
-    dues_allowed_amounts: list[int] = field(default_factory=lambda: [15, 20, 25])
-    membership_ws_title: str = "Membership Application List"
-    dues_nlp_enabled: bool = False
-    dues_nlp_max_calls: int = 50
-    cat_aliases_ttl_sec: int = 7200
-    cat_profile_ttl_sec: int = 3600
-    dues_member_max_candidates: int = 300
-    
-    # NLP
-    nlp_model_path: str | None = os.getenv("NLP_MODEL_PATH")
-    nlp_tokenizer_path: str | None = os.getenv("NLP_TOKENIZER_PATH")
-    nlp_conf_high: float = 0.88
-    nlp_conf_mid: float = 0.75
+    # ======== NLP CONFIG (optional DeBERTa ONNX) ========
+    # If provided, we enable zero-shot intent + entity scoring via ONNXRuntime.
+    nlp_model_path: str | None = os.getenv("NLP_MODEL_PATH") or os.getenv("DEBERTA_ONNX_PATH")
+    nlp_tokenizer_path: str | None = os.getenv("NLP_TOKENIZER_PATH") or os.getenv("DEBERTA_TOKENIZER_JSON")
+    nlp_conf_high: float = float(os.getenv("NLP_CONF_HIGH", "0.88"))
+    nlp_conf_mid: float = float(os.getenv("NLP_CONF_MID", "0.75"))
+
+    # ======== Feeding windows ========
+    feed_lookback_minutes_before: int = int(os.getenv("FEED_LOOKBACK_MINUTES_BEFORE", "5"))
+    feed_pending_minutes_after: int = int(os.getenv("FEED_PENDING_MINUTES_AFTER", "5"))
+
+    # ======== Spam detection config ========
+    # Role names that should never be flagged as spam (case-insensitive contains match)
+    trusted_role_names: list[str] = field(default_factory=lambda: [
+        "due paying members", "server booster", "officers", "active feeders"
+    ])
+    spam_ban_role_names: list[str] = field(default_factory=lambda: [
+        "officers"
+    ])
+    # Minimum account age in days to skip spam checks
+    spam_min_account_days: int = int(os.getenv("SPAM_MIN_ACCOUNT_DAYS", "30"))
+    # NLP spam threshold if ONNX model is configured
+    spam_nlp_conf: float = float(os.getenv("SPAM_NLP_CONF", "0.9"))
+    # Optional: user to ping on spam alerts (falls back to first admin)
+    spam_alert_user_id: int | None = int(os.getenv("SPAM_ALERT_USER_ID", "0")) or None
+
+    # ======== Gmail / Email logging ========
+    gmail_enabled: bool = _get_env_bool("GMAIL_ENABLED", False)
+    gmail_log_manual_delay_sec: float = float(os.getenv("GMAIL_LOG_MANUAL_DELAY_SEC", "0.25"))
+    gmail_log_scheduler_delay_sec: float = float(os.getenv("GMAIL_LOG_SCHEDULER_DELAY_SEC", "10.0"))
+
+    # ======== Dues matching / portal ========
+    dues_enabled: bool = _get_env_bool("DUES_ENABLED", True)
+    dues_email_window_days: int = int(os.getenv("DUES_EMAIL_WINDOW_DAYS", "3"))
+    dues_scan_skip_oldest: int = int(os.getenv("DUES_SCAN_SKIP_OLDEST", "3"))
+    dues_scan_limit: int = int(os.getenv("DUES_SCAN_LIMIT", "0"))  # 0 = no limit (all)
+    # Use a lighter, heuristic mapping in dues_check to avoid heavy fuzzy across all members
+    dues_fast_map: bool = _get_env_bool("DUES_FAST_MAP", True)
+    # Cache membership sheet reads briefly to avoid 429s on repeated runs
+    dues_membership_ttl_sec: int = int(os.getenv("DUES_MEMBERSHIP_TTL_SEC", "300") or "300")
+    dues_allowed_amounts: list[int] = field(default_factory=lambda: [
+        int(x) for x in _get_env_list("DUES_ALLOWED_AMOUNTS") if x.strip().lstrip("-").isdigit()
+    ] or [15, 20, 25])
+    membership_ws_title: str = os.getenv("MEMBERSHIP_WS_TITLE", "Membership Application List")
+    dues_nlp_enabled: bool = _get_env_bool("DUES_NLP_ENABLED", False)
+    dues_nlp_max_calls: int = int(os.getenv("DUES_NLP_MAX_CALLS", "50"))
+    # Cat aliases/profile TTLs
+    cat_aliases_ttl_sec: int = int(os.getenv("CAT_ALIASES_TTL_SEC", "7200") or "7200")
+    cat_profile_ttl_sec: int = int(os.getenv("CAT_PROFILE_TTL_SEC", "3600") or "3600")
+    dues_member_max_candidates: int = int(os.getenv("DUES_MEMBER_MAX_CANDIDATES", "300"))
+
+    # ======== Feeding scheduler maps (authoritative) ========
+    # Provide simple name→user_id mapping and per-station weekly assignments.
+    # Station assignments are lists of 7 names ordered Sun..Sat.
+
+    user_id_map: Dict[str, int] = field(default_factory=lambda: {
+        # existing
+        "Nicole": 1308894473228648536,
+        "Lynn": 699720057764446221,
+        "Atlas": 528421517592363008,
+        "CiCi": 342386549532524544,
+        "Roach": 674640043289083944,
+        "Elusive": 751926923583553656,
+        "Miranda": 474329968936091648,
+        "Ben": 972653971728633896,
+        "Brooke": 1014214516764053614,
+        "Alex": 564615306027335681,
+        "Morgan": 856586084943396879,
+        "Anabelle": 808757369478840371,
+        "Zahara": 1004778582855389244,
+        "Bryan": 204682859217158144,  # hatshura
+        "Jaeden": 417059337257877505,
+        "Kitadan": 427867525225906176,
+        "Felix": 694664394495361195,
+        "Izzy": 891876061313380425,
+        "Kaz": 356861356051529750,
+        "Thorin": 980567857849045032, #not_d3fault_1429
+        "Acacia": 543969877619245068, #spitonme
+        "Rinne": 63085459886055424,  #petrichor
+        "Emmaleigh": 338109126808829953, #emiximez
+        "Alexa": 518999622916505633,  #marieealexa
+        "Bunny": 609945813128445974,  #bubblebee5866
+        "Abigail": 568451921828904962,#abstractly_
+        "Zoe": 749751349679358064,    #zoe.cronin
+        "Isabella": 963624067078971402,#lemonelon_
+        "Julia": 760947102280319008,  #iliekwatchingnarutoowo
+        "Micaela": 741877766030491678,#mica.aaa
+        "Peter": 750387156920303798,  #bluedragon5864
+        "Victoria": 732664872172519464, #ratcorn.
+        "Brian": 642133560685494282,  #frostfire312
+        "Sophia": 690727460924424212, #Le_nuit_sans_fin
+        "Charlotte": 748739000914935828, #phat_cat_207
+        "Autumn": 1410304461707940022, #autumn065829
+        "Michael": 426919280378904588, #orphean_
+        "Loren": 413721884107210753,  #baseketballin
+        "Lucas": 802391113050226708,  #lifeye
+        "Emma": 722682931704889345,   #emlenisgremlin
+        "Jack": 1037772447509917717,   #.bettercalljack
+        "Megan": 788886705276846140,  #vasyline
+    })
+
+    feeding_schedule: Dict[str, list[str]] = field(default_factory=lambda: {
+        # In order: Sun, Mon, Tue, Wed, Thu, Fri, Sat
+        "Microwave":         ["CiCi", "Atlas", "Anabelle", "Roach", "Izzy", "Thorin", "Lynn"],
+        "Snickers":          ["Megan", "Felix", "Brooke", "Acacia", "Rinne", "Emmaleigh", "Elusive"],
+        "Business":          ["Atlas", "Alexa", "Morgan", "Bunny", "Abigail", "Zoe", "Elusive"],
+        "The Greens":        ["Jaeden", "Isabella", "Julia", "Micaela", "Brooke", "Peter", "Elusive"],
+        "HOP":               ["Jaeden", "Victoria", "Anabelle", "Brian", "Sophia", "Victoria", "Sophia"],
+        "Lot 50":            ["Miranda", "Brian", "Bryan", "Brian", "Bryan", "Zahara", "Miranda"],
+        "Mary Kay and Zen":  ["Kitadan", "Emma", "Kitadan", "Kitadan", "Jack", "Jack", "Jack"],
+        "West Hall":         ["Loren", "Charlotte", "Autumn", "Michael", "Loren", "Roach", "Emmaleigh"],
+        "Maintenance":       ["Emma", "Lucas", "Izzy", "Izzy", "Morgan", "Izzy", "Lucas"],
+    })
+
+
+
+
 
 settings = Settings()
+
+
+
+# Back-compat touches
+if not settings.tomcat_wake:
+    settings.tomcat_wake = settings.bot_name
+# Ensure both sheet_* and *_spreadsheet_id are aligned
+if not settings.sheet_catabase_id and settings.cat_spreadsheet_id:
+    settings.sheet_catabase_id = settings.cat_spreadsheet_id
+if not settings.sheet_vision_id and settings.aux_spreadsheet_id:
+    settings.sheet_vision_id = settings.aux_spreadsheet_id

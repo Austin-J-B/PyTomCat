@@ -123,13 +123,6 @@ class Settings:
         int(x) for x in _get_env_list("ADMIN_IDS") if x.strip().lstrip("-").isdigit()
     ])
     silent_mode: bool = field(default_factory=lambda: _get_env_bool("SILENT_MODE", False))
-    # Optional embedded Activity for admin UI experiments
-    uitest_activity_app_id: int | None = int(os.getenv("UITEST_ACTIVITY_APP_ID", "0") or "0") or None
-
-    @property
-    def ui_activity_app_id(self) -> int | None:
-        """Preferred attr name; kept backward-compatible with uitest_activity_app_id."""
-        return self.uitest_activity_app_id
 
     # Channels
     ch_due_portal: int | None = int(os.getenv("CH_DUE_PORTAL", "0")) or None
@@ -209,8 +202,7 @@ class Settings:
     # Show-photo cache (for fast "show me" responses)
     show_cache_dir: str = os.getenv("SHOW_CACHE_DIR", "./cache/show_photos")
     show_cache_per_cat: int = int(os.getenv("SHOW_CACHE_PER_CAT", "5") or "5")
-    # Disable warm-on-boot by default so caches only fill on demand or on admin recache
-    show_cache_prefill_on_boot: bool = _get_env_bool("SHOW_CACHE_PREFILL_ON_BOOT", False)
+    show_cache_prefill_on_boot: bool = _get_env_bool("SHOW_CACHE_PREFILL_ON_BOOT", True)
     show_cache_warm_concurrency: int = int(os.getenv("SHOW_CACHE_WARM_CONCURRENCY", "2") or "2")
     show_cache_warm_limit: int = int(os.getenv("SHOW_CACHE_WARM_LIMIT", "0") or "0")  # 0 = all
     # Optional: downscale/compress cached JPEGs to speed sending (0 disables)

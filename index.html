@@ -8,27 +8,30 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Discord Embedded App SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk/dist/discord.min.js"></script>
 
     <style>
         :root {
-            --site-bg: #FFF9F3;       
-            --header-tan: #FFF9F3; 
+            /* --- SITE COLORS --- */
+            --site-bg: #FFF9F3;       /* Slightly darker tan */
+                        --header-tan: #FFF9F3; /* 25% between old #FFF9F3 and new #EFCB97 */
             --site-text: #414B3B;     
             --site-accent: #8CA87C;   
             --site-white: #FFFFFF;
+            
+            /* --- THEME COLORS --- */
             --workspace-bg: #C5D6BA;   
             --workspace-dot: rgba(65, 75, 59, 0.15); 
+
+            /* --- FUNCTIONAL COLORS --- */
             --grid-line: #E0E5D0;
             --selection-highlight: rgba(140, 168, 124, 0.4); 
             --focus-ring: #414B3B;
-            --legend-height: 40px;
-
-            /* Zoom Variables */
-            --zoom-scale: 1;
-            --base-cell-width: 160px;
-            --base-cell-height: 75px;
-            --base-font-size: 0.95rem;
+            
+            /* Header Height for Sticky Positioning */
+            --legend-height: 40px; 
         }
 
         * { box-sizing: border-box; }
@@ -37,202 +40,387 @@
             font-family: 'Montserrat', sans-serif;
             background-color: var(--site-bg);
             color: var(--site-text);
-            margin: 0; padding: 0; height: 100vh;
-            display: flex; flex-direction: column; overflow: hidden;
-        }
-
-        /* LOADING OVERLAY */
-        #loading {
-            position: fixed; inset: 0; background: var(--site-bg); z-index: 9999;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            color: var(--site-text); font-family: 'Merriweather', serif; font-size: 1.5rem;
-            transition: opacity 0.3s;
-        }
-
-        /* SIDEBAR */
-        .sidebar-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.4); z-index: 2000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
-        }
-        .sidebar-overlay.active { opacity: 1; pointer-events: all; }
-
-        .sidebar-menu {
-            position: fixed; top: 0; left: 0; bottom: 0; width: 280px;
-            background: white; z-index: 2100; transform: translateX(-100%);
-            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            box-shadow: 2px 0 12px rgba(0,0,0,0.15); display: flex; flex-direction: column; padding: 20px 0;
-        }
-        .sidebar-menu.active { transform: translateX(0); }
-
-        .sidebar-header {
-            padding: 0 24px 20px 24px; border-bottom: 1px solid var(--grid-line);
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        .sidebar-title a {
-            font-family: 'Merriweather', serif; font-weight: 700; font-size: 1.2rem;
-            color: var(--site-text); text-decoration: none; cursor: pointer;
-        }
-        .close-menu-btn {
-            background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--site-text);
-        }
-        .menu-item {
-            display: block; padding: 12px 24px; text-decoration: none; color: var(--site-text);
-            font-weight: 500; transition: background 0.1s; border-left: 3px solid transparent; cursor: pointer;
-        }
-        .menu-item:hover { background-color: #f7f9f5; border-left-color: var(--site-accent); }
-
-        /* HEADER */
-        header.site-header {
-            background-color: var(--header-tan); padding: 15px 20px;
-            display: flex; align-items: center; justify-content: space-between;
-            border-bottom: 1px solid rgba(65, 75, 59, 0.15); flex-shrink: 0; z-index: 1000;
-        }
-        .menu-container { display: flex; align-items: center; gap: 20px; }
-        
-        /* Fixed Hamburger Button */
-        .hamburger-btn {
-            background: none; border: none; cursor: pointer; padding: 5px;
-            display: flex; flex-direction: column; gap: 5px;
-            z-index: 1001; /* Ensure clickable */
-        }
-        .hamburger-btn span {
-            display: block; width: 20px; height: 2px; background-color: var(--site-text); border-radius: 2px;
-        }
-        
-        h1.page-title a {
-            font-family: 'Merriweather', serif; font-weight: 900; font-size: 1.4rem;
-            color: var(--site-text); text-decoration: none; cursor: pointer;
-            white-space: nowrap;
-        }
-
-        .controls-area { display: flex; gap: 12px; align-items: center; }
-
-        /* SEARCH (COMPACT) */
-        .search-container { position: relative; width: 180px; }
-        input#member-search {
-            width: 100%; padding: 8px 15px; border: 1px solid var(--site-text);
-            background: transparent; border-radius: 50px;
-            font-family: 'Montserrat', sans-serif; font-size: 0.85rem; color: var(--site-text); outline: none;
-        }
-        input#member-search:focus { background: white; box-shadow: 0 4px 12px rgba(65, 75, 59, 0.1); }
-        .search-results {
-            position: absolute; top: 110%; left: 0; width: 240px;
-            background: white; border-radius: 12px; box-shadow: 0 8px 20px rgba(65, 75, 59, 0.25);
-            overflow: hidden; display: none; z-index: 2000; max-height: 300px; overflow-y: auto;
-        }
-        .result-item {
-            padding: 12px 20px; cursor: pointer; display: flex; justify-content: space-between;
-            border-bottom: 1px solid #f0f0f0;
-        }
-        .result-item:hover, .result-item.active { background-color: #f7f9f5; border-left: 3px solid var(--site-accent); }
-
-        /* TOOLS */
-        .tool-btn {
-            background: transparent; border: 1px solid var(--site-text);
-            color: var(--site-text); width: 28px; height: 28px;
-            border-radius: 50%; cursor: pointer; display: flex;
-            align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s;
-        }
-        .tool-btn:hover { background: var(--site-text); color: var(--site-bg); }
-        .tool-btn svg { width: 14px; height: 14px; fill: currentColor; }
-        #zoom-display { font-size: 0.8rem; font-weight: 600; min-width: 40px; text-align: center; }
-
-        /* AUTH UI (COMPACT) */
-        .current-selection {
-            background: var(--site-text); color: white; padding: 6px 16px; border-radius: 50px;
-            font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;
-            min-width: 100px; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            display: none; /* Hidden by default to save space */
-        }
-        .current-selection.active { display: flex; }
-
-        #save-btn {
-            background: var(--site-accent); color: white; border: none;
-            padding: 6px 18px; border-radius: 50px; font-weight: 700; font-family: 'Montserrat';
-            cursor: pointer; display: none; font-size: 0.85rem;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-        }
-        #save-btn:hover { filter: brightness(1.1); }
-        
-        #auth-icon {
-            width: 32px; height: 32px; border-radius: 50%; background: var(--site-accent);
-            display: flex; align-items: center; justify-content: center; cursor: pointer;
-            color: white; font-weight: 700; font-size: 0.9rem; border: 2px solid var(--site-text);
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
         }
-        #auth-icon img { width: 100%; height: 100%; object-fit: cover; }
-        #auth-icon svg { width: 18px; height: 18px; fill: white; }
 
-        /* WORKSPACE */
+        /* --- SIDEBAR MENU --- */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.4);
+            z-index: 2000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .sidebar-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .sidebar-menu {
+            position: fixed;
+            top: 0; left: 0; bottom: 0;
+            width: 280px;
+            background: white;
+            z-index: 2100;
+            transform: translateX(-100%);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 0;
+        }
+
+        .sidebar-menu.active {
+            transform: translateX(0);
+        }
+
+        .sidebar-header {
+            padding: 0 24px 20px 24px;
+            border-bottom: 1px solid var(--grid-line);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-title a {
+            font-family: 'Merriweather', serif;
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: var(--site-text);
+            text-decoration: none;
+        }
+        .sidebar-title a:hover { text-decoration: underline; }
+
+        .close-menu-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--site-text);
+        }
+
+        .sidebar-content {
+            padding: 10px 0;
+            overflow-y: auto;
+        }
+
+        .menu-item {
+            display: block;
+            padding: 12px 24px;
+            text-decoration: none;
+            color: var(--site-text);
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: background 0.1s;
+            border-left: 3px solid transparent;
+        }
+
+        .menu-item:hover {
+            background-color: #f7f9f5;
+            border-left-color: var(--site-accent);
+        }
+
+        /* --- HEADER --- */
+        header.site-header {
+            background-color: var(--header-tan);
+            padding: 15px 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(65, 75, 59, 0.15);
+            flex-shrink: 0;
+            z-index: 1000; 
+            position: relative;
+        }
+
+        .menu-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .hamburger-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .hamburger-btn span {
+            display: block;
+            width: 20px;
+            height: 2px;
+            background-color: var(--site-text);
+            border-radius: 2px;
+        }
+
+        h1.page-title { margin: 0; display: flex; align-items: center; }
+        h1.page-title a {
+            font-family: 'Merriweather', serif;
+            font-weight: 900;
+            font-size: 1.6rem;
+            color: var(--site-text);
+            letter-spacing: -0.01em;
+            text-decoration: none;
+            transition: opacity 0.2s;
+        }
+        h1.page-title a:hover { opacity: 0.7; }
+
+        .controls-area { display: flex; gap: 15px; align-items: center; }
+
+        /* --- SEARCH --- */
+        .search-container { position: relative; width: 280px; }
+
+        input#member-search {
+            width: 100%;
+            padding: 10px 20px;
+            border: 1px solid var(--site-text);
+            background: transparent;
+            border-radius: 50px;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 0.9rem;
+            color: var(--site-text);
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        input#member-search:focus {
+            background: white;
+            box-shadow: 0 4px 12px rgba(65, 75, 59, 0.1);
+        }
+
+        input#member-search::placeholder {
+            color: var(--site-accent);
+            font-weight: 300;
+            font-style: italic;
+        }
+
+        .search-results {
+            position: absolute; top: 110%; left: 0; width: 100%;
+            background: white; border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(65, 75, 59, 0.25);
+            overflow: hidden; display: none; 
+            z-index: 2000; 
+            max-height: 300px; overflow-y: auto;
+        }
+
+        .result-item {
+            padding: 12px 20px; cursor: pointer;
+            display: flex; justify-content: space-between;
+            border-bottom: 1px solid #f0f0f0; transition: background 0.1s;
+            border-left: 3px solid transparent;
+        }
+        .result-item:hover, .result-item.active { 
+            background-color: #f7f9f5; 
+            border-left-color: var(--site-accent);
+        }
+        .result-name { font-weight: 600; color: var(--site-text); }
+        .result-user { font-size: 0.8rem; color: var(--site-accent); }
+
+        /* --- TOOLS --- */
+        .tool-btn {
+            background: transparent; border: 1px solid var(--site-text);
+            color: var(--site-text); width: 32px; height: 32px;
+            border-radius: 50%; cursor: pointer; display: flex;
+            align-items: center; justify-content: center;
+            font-size: 1rem; transition: all 0.2s; padding: 0;
+        }
+        .tool-btn svg { width: 16px; height: 16px; fill: currentColor; }
+        .tool-btn:hover { background: var(--site-text); color: var(--site-bg); }
+
+        #zoom-display {
+            font-size: 0.85rem; font-weight: 600; min-width: 45px; text-align: center;
+        }
+
+        .current-selection {
+            background: var(--site-text); color: white;
+            padding: 8px 20px; border-radius: 50px;
+            font-weight: 600; font-size: 0.9rem;
+            display: flex; align-items: center; gap: 8px;
+            min-width: 150px; justify-content: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .current-selection.empty {
+            background: rgba(65, 75, 59, 0.1); color: var(--site-text); box-shadow: none;
+        }
+
+        /* --- MAIN WORKSPACE --- */
         .workspace {
-            flex: 1; overflow: auto; padding: 0 40px 40px 40px;
-            display: grid; place-items: start center;
+            flex: 1;
+            overflow: auto; 
+            padding: 0 40px 40px 40px; 
+            display: grid;
+            place-items: start center;
             background-color: var(--workspace-bg);
             background-image: radial-gradient(var(--workspace-dot) 1px, transparent 1px);
             background-size: 20px 20px;
-        }
-        .sheet-wrapper {
-            background: white; padding: 0; border-radius: 0 0 4px 4px;
-            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.10);
-            display: flex; flex-direction: column; margin-top: 40px; 
+            z-index: 10;
         }
 
-        /* CONTROLS LEGEND (STICKY) */
+        .sheet-wrapper {
+            background: white;
+            padding: 0;
+            border-radius: 0 0 4px 4px;
+            /* Darker shadow for more contrast */
+            box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.10);
+            transform-origin: top center;
+            transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+            display: flex;
+            flex-direction: column;
+            margin-top: 40px; 
+        }
+
+        /* --- CONTROLS LEGEND (STICKY) --- */
         .controls-legend {
-            position: sticky; 
-            top: 0; 
+            position: sticky;
+            top: 0;
             z-index: 300; 
             height: var(--legend-height);
-            background: var(--header-tan); 
-            color: var(--site-text); 
+
+            /* Updated to Tan Background */
+            background: var(--header-tan); /* Slightly darker tan */
+            color: var(--site-text);
             padding: 0 25px; 
-            border-bottom: 2px solid var(--site-text); 
-            display: flex; align-items: center;
+            border-bottom: 2px solid var(--site-text); /* Thinner persistent gray bar */
+            
+            display: flex;
+            align-items: center;
             justify-content: flex-start; 
             gap: 25px;
-            font-family: 'Montserrat', sans-serif; font-size: 0.75rem; font-weight: 600;
-            text-transform: uppercase; letter-spacing: 0.05em;
+            
+            /* Updated Font to match Header */
+            font-family: 'Montserrat', sans-serif;
+            font-size: 0.75rem; 
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
-        table { border-collapse: collapse; background: white; color: var(--site-text); user-select: none; border-spacing: 0; }
+        .key-combo {
+            display: inline-flex;
+            align-items: center;
+            white-space: nowrap;
+        }
 
-        /* TABLE HEADER (STICKY) */
+        table {
+            border-collapse: collapse; 
+            background: white;
+            color: var(--site-text);
+            user-select: none;
+            border-spacing: 0;
+        }
+
+        /* --- TABLE HEADERS (STICKY) --- */
         th {
-            font-family: 'Montserrat', sans-serif; text-transform: uppercase;
-            font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
+            font-family: 'Montserrat', sans-serif;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            padding: 15px;
             
-            position: sticky; 
-            top: var(--legend-height); /* STICKY BELOW LEGEND */
-            z-index: 200;
+            position: sticky;
+            top: var(--legend-height); 
+            z-index: 200; 
             
             background-color: white; 
-            border-bottom: 5px solid var(--site-text); color: var(--site-text);
-        }
-        th:first-child { z-index: 250; left: 0; background-color: white; border-right: 2px solid var(--site-text); }
-
-        .station-cell {
-            font-family: 'Merriweather', serif; font-weight: 700; font-size: 0.95rem;
-            padding: 0 20px; text-align: left; background-color: #F9FBF7;
-            border-bottom: 1px solid var(--grid-line); border-right: 2px solid var(--site-text);
             
-            position: sticky; left: 0; z-index: 100; width: 220px;
+            /* Moved the dark border HERE so it stays with the header */
+            border-bottom: 5px solid var(--site-text); 
+            
+            color: var(--site-text);
         }
 
-        td.data-cell {
-            width: calc(var(--base-cell-width) * var(--zoom-scale)); 
-            height: calc(var(--base-cell-height) * var(--zoom-scale)); 
+        th:first-child {
+            z-index: 250;
+            left: 0;
+            background-color: white;
+            border-right: 2px solid var(--site-text);
+        }
+
+        /* --- ROW HEADERS (Stations) --- */
+        .station-cell {
+            font-family: 'Merriweather', serif;
+            font-weight: 700;
+            font-size: 0.95rem;
+            padding: 0 20px;
+            text-align: left;
+            
+            background-color: #F9FBF7; 
             border-bottom: 1px solid var(--grid-line);
-            border-right: 1px solid var(--grid-line); text-align: center; vertical-align: middle;
-            font-weight: 500; 
-            font-size: calc(var(--base-font-size) * var(--zoom-scale));
-            cursor: pointer; position: relative;
-            transition: background-color 0.05s; padding: 5px; line-height: 1.2;
+            border-right: 2px solid var(--site-text);
+            
+            position: sticky;
+            left: 0;
+            z-index: 100; 
+            width: 220px;
         }
-        .cell-name { display: block; font-weight: 600; color: #2b3326; }
-        .cell-user { display: block; font-size: 0.75rem; color: #333333; margin-top: 2px; font-weight: 400; }
-        td.data-cell.focus { outline: 2px solid var(--focus-ring); outline-offset: -2px; z-index: 150; }
-        td.data-cell.selected { background-color: var(--selection-highlight) !important; }
 
+        /* --- DATA CELLS --- */
+        td.data-cell {
+            width: 160px;
+            height: 75px; 
+            border-bottom: 1px solid var(--grid-line);
+            border-right: 1px solid var(--grid-line);
+            text-align: center;
+            vertical-align: middle;
+            font-weight: 500;
+            font-size: 0.95rem;
+            cursor: pointer;
+            position: relative;
+            transition: background-color 0.05s;
+            padding: 5px;
+            line-height: 1.2;
+        }
+
+        .cell-name {
+            display: block;
+            font-weight: 600;
+            color: #2b3326;
+        }
+        
+        .cell-user {
+            display: block;
+            font-size: 0.75rem;
+            color: #333333; 
+            margin-top: 2px;
+            font-weight: 400;
+        }
+
+        td.data-cell.focus {
+            outline: 2px solid var(--focus-ring);
+            outline-offset: -2px;
+            z-index: 150;
+        }
+
+        td.data-cell.selected {
+            background-color: var(--selection-highlight) !important;
+        }
+
+        td.data-cell.assigned .cell-name {
+            /* Subtle white shadow to help text pop on darker colors */
+            text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+        }
+
+        #loading {
+            position: fixed; inset: 0;
+            background: var(--site-bg);
+            z-index: 9999;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: var(--site-text); font-family: 'Merriweather', serif;
+            font-size: 1.5rem;
+        }
     </style>
 </head>
 <body>
@@ -251,15 +439,18 @@
         </div>
         <div class="sidebar-content">
             <a href="#" class="menu-item" onclick="toggleMenu()">Feeding Schedule</a>
-            <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat-VI Repository</a>
+            <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat VI Repository</a>
         </div>
     </div>
 
     <header class="site-header">
         <div class="menu-container">
             <button class="hamburger-btn" onclick="toggleMenu()" title="Open Menu">
-                <span></span><span></span><span></span>
+                <span></span>
+                <span></span>
+                <span></span>
             </button>
+            
             <h1 class="page-title">
                 <a href="https://www.catsofuta.org/" target="_blank">Campus Cat Coalition</a>
             </h1>
@@ -270,7 +461,9 @@
             <div id="zoom-display">100%</div>
             <button class="tool-btn" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
             <button class="tool-btn" onclick="resetZoom()" title="Reset Zoom">
-                <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                <svg viewBox="0 0 24 24">
+                    <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                </svg>
             </button>
 
             <div class="search-container">
@@ -278,12 +471,8 @@
                 <div id="search-results" class="search-results"></div>
             </div>
 
-            <div id="selection-display" class="current-selection">Select User</div>
-            
-            <button id="save-btn" onclick="saveSchedule()">Save</button>
-            
-            <div id="auth-icon" onclick="manualLoginPrompt()" title="Login / Guest Mode">
-                <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+            <div id="selection-display" class="current-selection empty">
+                Select User
             </div>
         </div>
     </header>
@@ -291,202 +480,152 @@
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
             <div class="controls-legend">
-                <div>"Click" Select</div>
-                <div style="margin-left:15px;">"Ctrl" + "Click" Multi</div>
-                <div style="margin-left:15px;">"Shift" + "Click" Range</div>
-                <div style="margin-left:15px;">"Enter" Assign</div>
-                <div style="margin-left:15px;">"Del" Erase</div>
+                <div class="key-combo">"Click" to select</div>
+                <div class="key-combo">"Ctrl" + "Click" to multi-select</div>
+                <div class="key-combo">"Shift" + "Click" for range</div>
+                <div class="key-combo">"Enter" to assign</div>
+                <div class="key-combo">"Del" to erase</div>
             </div>
 
             <table id="schedule-table">
                 <thead>
                     <tr>
                         <th>Station</th>
-                        <th>Sunday</th><th>Monday</th><th>Tuesday</th>
-                        <th>Wednesday</th><th>Thursday</th><th>Friday</th><th>Saturday</th>
+                        <th>Sunday</th>
+                        <th>Monday</th>
+                        <th>Tuesday</th>
+                        <th>Wednesday</th>
+                        <th>Thursday</th>
+                        <th>Friday</th>
+                        <th>Saturday</th>
                     </tr>
                 </thead>
-                <tbody></tbody>
+                <tbody>
+                    </tbody>
             </table>
         </div>
     </div>
 
 <script>
 // --- CONFIG ---
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
-    "Lot 50", "Mary Kay and Zen", "West Hall", "Maintenance"
+    "Lot 50", "Mary Kay & Zen", "West Hall", "Maintenance"
 ];
 
+// --- STATE ---
 let scheduleData = {};
 let members = [];
 let currentVolunteer = null;
 let zoomLevel = 1.0;
 let currentSearchIndex = -1; 
+
+// Selection
 let selectedCells = new Set(); 
-let anchor = null;
-let isDragging = false;
-let currentUser = null;
-let userPerms = { can_edit_schedule: false };
+let anchor = null; 
 
-// --- INIT ---
-let discordSdk = null;
-try {
-    discordSdk = new Discord.DiscordSDK("1341667150066225192");
-} catch (e) {
-    console.warn("Discord SDK failed to init:", e);
-}
-
+// --- INITIALIZATION ---
 async function init() {
-    // 1. Init empty grid
-    STATIONS.forEach(st => scheduleData[st] = new Array(7).fill(""));
+    STATIONS.forEach(st => {
+        scheduleData[st] = new Array(7).fill("");
+    });
+
     renderGrid();
-
-    // 2. Load Data
-    try {
-        await Promise.all([fetchSchedule(), fetchMembers()]);
-        console.log("Live data loaded.");
-    } catch (e) {
-        console.warn("API Error:", e);
-    } finally {
-        renderGrid();
-        document.getElementById('loading').style.opacity = '0';
-        setTimeout(() => document.getElementById('loading').style.display = 'none', 300);
-    }
-    
-    // 3. Auth
-    if (discordSdk) attemptDiscordAuth();
+    await fetchMembers();
+    document.getElementById('loading').style.display = 'none';
 }
 
-// --- API ---
-async function fetchSchedule() {
-    try {
-        const res = await fetch("api/schedule");
-        if (!res.ok) throw new Error("Sched 404");
-        const json = await res.json();
-        // Only load if station exists, otherwise keep empty
-        STATIONS.forEach(st => { if(json[st]) scheduleData[st] = json[st]; });
-    } catch(e) { 
-        console.log("No schedule found or load error. Starting blank."); 
-    }
-}
-
+// --- API CALL ---
 async function fetchMembers() {
-    const res = await fetch("api/members");
-    if (!res.ok) throw new Error("Mem 404");
-    members = await res.json();
-}
-
-// --- AUTHENTICATION ---
-async function attemptDiscordAuth() {
     try {
-        await discordSdk.ready();
-        const auth = await discordSdk.commands.authorize({
-            client_id: "1341667150066225192",
-            response_type: "code",
-            state: "",
-            prompt: "none",
-            scope: ["identify", "guilds.members.read"]
-        });
-
-        if (auth.code) {
-            const res = await fetch("api/auth/token", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({code: auth.code})
-            });
-            if (res.ok) {
-                const data = await res.json();
-                applyLogin(data.user, data.permissions);
-            }
-        }
-    } catch (e) { console.log("Guest Mode"); }
-}
-
-function applyLogin(user, perms) {
-    currentUser = user;
-    userPerms = perms;
-    
-    const icon = document.getElementById('auth-icon');
-    icon.title = `Logged in as ${user.username}`;
-    
-    if (user.avatar) {
-        const avUrl = `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`;
-        icon.innerHTML = `<img src="${avUrl}" alt="${user.username}">`;
-    } else {
-        // Initials
-        const init = user.username ? user.username.substring(0,2).toUpperCase() : "US";
-        icon.innerHTML = init;
-    }
-
-    if (userPerms.can_edit_schedule) {
-        document.getElementById('save-btn').style.display = 'block';
-    }
-}
-
-function manualLoginPrompt() {
-    const uid = prompt("Debug: Enter User ID for permission test:", "624440365595754496");
-    if (uid) {
-        applyLogin({username: "DebugUser", id: uid}, {can_edit_schedule: true}); 
-        alert("Simulated UI login.");
-    }
-}
-
-async function saveSchedule() {
-    if (!currentUser) return;
-    const btn = document.getElementById('save-btn');
-    const oldText = btn.textContent;
-    btn.textContent = "...";
-    btn.disabled = true;
-
-    try {
-        const res = await fetch("api/schedule/save", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-User-ID": currentUser.id
-            },
-            body: JSON.stringify(scheduleData)
-        });
+        const urlParams = new URLSearchParams(window.location.search);
+        const apiBase = urlParams.get('api');
+        const endpoint = apiBase ? `${apiBase.replace(/\/$/, '')}/api/members` : '/api/members';
         
-        if (res.ok) {
-            btn.textContent = "Done";
-            setTimeout(() => { btn.textContent = oldText; btn.disabled = false; }, 1500);
-        } else { throw new Error(); }
+        const res = await fetch(endpoint);
+        if (!res.ok) throw new Error("API Failed");
+        members = await res.json();
     } catch (e) {
-        alert("Save failed.");
-        btn.textContent = oldText;
-        btn.disabled = false;
+        console.warn("API unavailable, using mock data.");
+        members = [
+            { name: "Austin B", user: "austin" },
+            { name: "Kitadan", user: "kitadan" },
+            { name: "Seja", user: ".s3j" },
+            { name: "Alex", user: "alex" },
+            { name: "Abbym65", user: "abby" },
+            { name: "Volunteer 1", user: "v1" },
+            { name: "Volunteer 2", user: "v2" }
+        ];
     }
 }
 
-// --- UI COLORS ---
+// --- DISTINCT COLOR PALETTE ---
+// A list of 25 distinct, mostly pastel-but-vibrant colors.
+// Hand-picked to allow black text while being visually distinct.
 const PRESET_COLORS = [
-    "#FFB7B2", "#E2F0CB", "#C7CEEA", "#FFDAC1", "#B5EAD7", "#DF9881", "#ECD5E3", "#A0E7E5", 
-    "#FBE7C6", "#D4F1F4", "#F4E1D2", "#94D0CC", "#B9B0B0", "#EFC3A4", "#809BCE", "#95B8D1"
+    "#FFB7B2", // Salmon/Pink
+    "#E2F0CB", // Light Green/Mint
+    "#C7CEEA", // Light Blue/Periwinkle
+    "#FFDAC1", // Peach/Light Orange
+    "#B5EAD7", // Seafoam
+    "#DF9881", // Terracotta (darker)
+    "#ECD5E3", // Pale Lavender
+    "#A0E7E5", // Aqua
+    "#FBE7C6", // Light Gold
+    "#D4F1F4", // Ice Blue
+    "#F4E1D2", // Beige
+    "#94D0CC", // Tealish
+    "#B9B0B0", // Warm Grey
+    "#EFC3A4", // Apricot
+    "#809BCE", // Muted Blue
+    "#95B8D1", // Slate Blue Light
+    "#B8E986", // Lime Green
+    "#FF9AA2", // Bright Pink
+    "#E0BBE4", // Lavender
+    "#D291BC", // Orchid (Darker Pink)
+    "#FEC8D8", // Pale Pink
+    "#FFDFD3", // Cantaloupe
+    "#E6C9A8", // Tan
+    "#9EBC9E", // Sage Green
+    "#B4A7D6"  // Purple (Used sparingly)
 ];
+
 function getVolunteerColor(name) {
     if (!name) return 'white';
+    
+    // Robust hash to pick from index
     let hash = 0;
-    for (let i=0; i<name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return PRESET_COLORS[Math.abs(hash) % PRESET_COLORS.length];
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
+    const index = Math.abs(hash) % PRESET_COLORS.length;
+    return PRESET_COLORS[index];
 }
 
-// --- RENDER ---
+// --- MENU TOGGLE ---
+function toggleMenu() {
+    const menu = document.getElementById('main-menu');
+    const overlay = document.getElementById('sidebar-overlay');
+    menu.classList.toggle('active');
+    overlay.classList.toggle('active');
+}
+
+// --- RENDERING ---
 function renderGrid() {
     const tbody = document.querySelector('#schedule-table tbody');
     tbody.innerHTML = '';
 
     STATIONS.forEach((station, r) => {
         const tr = document.createElement('tr');
+        
         const th = document.createElement('td');
         th.className = 'station-cell';
         th.textContent = station;
         tr.appendChild(th);
 
-        const rowData = scheduleData[station] || new Array(7).fill("");
-
-        rowData.forEach((val, c) => {
+        scheduleData[station].forEach((val, c) => {
             const td = document.createElement('td');
             td.className = 'data-cell';
             td.dataset.coord = `${r}|${c}`;
@@ -494,14 +633,25 @@ function renderGrid() {
             if (val) {
                 td.classList.add('assigned');
                 td.style.backgroundColor = getVolunteerColor(val);
+                
                 const member = members.find(m => m.name === val);
                 const userHandle = member ? `@${member.user}` : '';
-                td.innerHTML = `<span class="cell-name">${val}</span>${userHandle ? `<span class="cell-user">${userHandle}</span>` : ''}`;
-            } else { td.innerHTML = ''; }
 
-            if (selectedCells.has(`${r}|${c}`)) td.classList.add('selected');
+                td.innerHTML = `
+                    <span class="cell-name">${val}</span>
+                    ${userHandle ? `<span class="cell-user">${userHandle}</span>` : ''}
+                `;
+            } else {
+                td.innerHTML = '';
+            }
+
+            if (selectedCells.has(`${r}|${c}`)) {
+                td.classList.add('selected');
+            }
+
             td.onmousedown = (e) => handleMouseDown(e, r, c);
             td.onmouseover = (e) => handleMouseOver(e, r, c);
+
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -513,17 +663,25 @@ function updateVisualsOnly() {
         const coord = td.dataset.coord;
         if (selectedCells.has(coord)) td.classList.add('selected');
         else td.classList.remove('selected');
-        if (anchor && td.dataset.coord === `${anchor.r}|${anchor.c}`) td.classList.add('focus');
-        else td.classList.remove('focus');
+        
+        if (anchor && td.dataset.coord === `${anchor.r}|${anchor.c}`) {
+            td.classList.add('focus');
+        } else {
+            td.classList.remove('focus');
+        }
     });
 }
 
-// --- INTERACTION ---
+// --- INTERACTIONS ---
+let isDragging = false;
+
 function handleMouseDown(e, r, c) {
     isDragging = true;
     const coord = `${r}|${c}`;
-    if (e.shiftKey && anchor) selectRange(anchor.r, anchor.c, r, c);
-    else if (e.ctrlKey || e.metaKey) {
+
+    if (e.shiftKey && anchor) {
+        selectRange(anchor.r, anchor.c, r, c);
+    } else if (e.ctrlKey || e.metaKey) {
         if (selectedCells.has(coord)) selectedCells.delete(coord);
         else selectedCells.add(coord);
         anchor = {r, c}; 
@@ -544,17 +702,21 @@ function handleMouseOver(e, r, c) {
 }
 
 function selectRange(r1, c1, r2, c2) {
-    const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
-    const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
+    const rMin = Math.min(r1, r2);
+    const rMax = Math.max(r1, r2);
+    const cMin = Math.min(c1, c2);
+    const cMax = Math.max(c1, c2);
+
     for (let i = rMin; i <= rMax; i++) {
         for (let j = cMin; j <= cMax; j++) {
             selectedCells.add(`${i}|${j}`);
         }
     }
 }
+
 document.addEventListener('mouseup', () => isDragging = false);
 
-// --- SEARCH ---
+// --- SEARCH LOGIC & KEYBOARD NAV ---
 const searchInput = document.getElementById('member-search');
 const resultsBox = document.getElementById('search-results');
 const selectionBadge = document.getElementById('selection-display');
@@ -564,65 +726,134 @@ searchInput.addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
     resultsBox.innerHTML = '';
     currentSearchIndex = -1; 
+    
     if (!q) { resultsBox.style.display = 'none'; return; }
 
-    filteredMembers = members.filter(m => m.name.toLowerCase().includes(q));
+    filteredMembers = members.filter(m => 
+        m.name.toLowerCase().includes(q) || 
+        m.user.toLowerCase().includes(q)
+    );
+
     if (filteredMembers.length > 0) {
         resultsBox.style.display = 'block';
         filteredMembers.forEach((m, idx) => {
             const div = document.createElement('div');
             div.className = 'result-item';
+            div.dataset.index = idx; 
             div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
-            div.onmousedown = (ev) => { ev.preventDefault(); setVolunteer(m); };
+            div.onmousedown = (ev) => {
+                ev.preventDefault();
+                setVolunteer(m);
+            };
             resultsBox.appendChild(div);
         });
-    } else { resultsBox.style.display = 'none'; }
+    } else {
+        resultsBox.style.display = 'none';
+    }
 });
+
+searchInput.addEventListener('keydown', (e) => {
+    if (!filteredMembers.length) return;
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        currentSearchIndex = Math.min(currentSearchIndex + 1, filteredMembers.length - 1);
+        highlightResult();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        currentSearchIndex = Math.max(currentSearchIndex - 1, 0);
+        highlightResult();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (currentSearchIndex >= 0 && currentSearchIndex < filteredMembers.length) {
+            setVolunteer(filteredMembers[currentSearchIndex]);
+        } else {
+            e.target.blur();
+        }
+    }
+});
+
+function highlightResult() {
+    const items = resultsBox.querySelectorAll('.result-item');
+    items.forEach(item => item.classList.remove('active'));
+    if (currentSearchIndex >= 0 && items[currentSearchIndex]) {
+        const activeItem = items[currentSearchIndex];
+        activeItem.classList.add('active');
+        activeItem.scrollIntoView({ block: 'nearest' });
+    }
+}
 
 function setVolunteer(m) {
     currentVolunteer = m;
-    selectionBadge.classList.add('active');
+    selectionBadge.className = 'current-selection';
     selectionBadge.style.backgroundColor = getVolunteerColor(m.name);
     selectionBadge.style.color = '#2b3326';
     selectionBadge.textContent = m.name;
+    
     searchInput.value = '';
     resultsBox.style.display = 'none';
+    currentSearchIndex = -1;
+    filteredMembers = [];
+    searchInput.blur();
 }
 
-// --- KEYBOARD ---
+// --- KEYBOARD (Grid Actions) ---
 document.addEventListener('keydown', (e) => {
-    const isNav = e.key.startsWith('Arrow') || e.key === 'Escape';
     if (e.target.tagName === 'INPUT') {
-        if (e.key === 'Escape') { searchInput.blur(); resultsBox.style.display = 'none'; }
+        if (e.key === 'Escape') {
+            searchInput.blur();
+            resultsBox.style.display = 'none';
+        }
         return;
     }
-    if (!userPerms.can_edit_schedule && !isNav && currentUser) return; 
 
-    if (e.key === 'Backspace' || e.key === 'Delete') applyValue("");
-    else if (e.key === 'Enter') {
-        if (currentVolunteer) applyValue(currentVolunteer.name);
-        else searchInput.focus();
-    } else if (e.key === 'Escape') { selectedCells.clear(); updateVisualsOnly(); }
-    else if (e.key.startsWith('Arrow')) {
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+        applyValue("");
+    } else if (e.key === 'Enter') {
+        if (currentVolunteer) {
+            applyValue(currentVolunteer.name);
+        } else {
+            searchInput.focus();
+        }
+    } else if (e.key === 'Escape') {
+        selectedCells.clear();
+        updateVisualsOnly();
+    } else if (e.key.startsWith('Arrow')) {
         e.preventDefault();
         if (!anchor) anchor = {r:0, c:0};
+        
         let {r, c} = anchor;
         if (e.key === 'ArrowUp') r = Math.max(0, r-1);
         if (e.key === 'ArrowDown') r = Math.min(STATIONS.length-1, r+1);
         if (e.key === 'ArrowLeft') c = Math.max(0, c-1);
         if (e.key === 'ArrowRight') c = Math.min(6, c+1);
+
+        if (e.ctrlKey || e.metaKey) {
+            if (e.key === 'ArrowUp') r = 0;
+            if (e.key === 'ArrowDown') r = STATIONS.length-1;
+            if (e.key === 'ArrowLeft') c = 0;
+            if (e.key === 'ArrowRight') c = 6;
+        }
+
         anchor = {r, c};
-        if (e.shiftKey) selectedCells.add(`${r}|${c}`);
-        else { selectedCells.clear(); selectedCells.add(`${r}|${c}`); }
+
+        if (e.shiftKey) {
+             selectedCells.add(`${r}|${c}`); 
+        } else {
+            selectedCells.clear();
+            selectedCells.add(`${r}|${c}`);
+        }
+        
         const cell = document.querySelector(`.data-cell[data-coord="${r}|${c}"]`);
         cell?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+        
         updateVisualsOnly();
     }
 });
 
 function applyValue(val) {
     if (selectedCells.size === 0) return;
-    if (!userPerms.can_edit_schedule && currentUser) return;
+    
     selectedCells.forEach(coord => {
         const [r, c] = coord.split('|').map(Number);
         scheduleData[STATIONS[r]][c] = val;
@@ -630,15 +861,73 @@ function applyValue(val) {
     renderGrid();
 }
 
-// --- ZOOM (CSS VARS) ---
+// --- ZOOM ---
 function adjustZoom(delta) {
     zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
-    document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
-    document.documentElement.style.setProperty('--zoom-scale', zoomLevel);
+    applyZoom();
 }
-function resetZoom() { zoomLevel = 1.0; adjustZoom(0); }
+function resetZoom() {
+    const containerW = document.getElementById('workspace').clientWidth;
+    const tableW = document.getElementById('schedule-table').offsetWidth;
+    zoomLevel = Math.min(1.0, (containerW - 60) / tableW);
+    applyZoom();
+}
+function applyZoom() {
+    document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
+    document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
+}
 
+// Run
 init();
+
+</script>
+
+<!-- Discord Auth Integration -->
+<script>
+    const discordSdk = new Discord.DiscordSDK(
+        "1341667150066225192" // The same ID from ui_launcher.py and .env BOT_USER_ID
+    );
+
+    let authHelper = {
+        token: null,
+        user: null,
+        status: "unauthenticated"
+    };
+
+    async function setupDiscordAuth() {
+        await discordSdk.ready();
+
+        // 1. Authorize with Discord Client
+        const { code } = await discordSdk.commands.authorize({
+            client_id: "1341667150066225192",
+            response_type: "code",
+            state: "",
+            prompt: "none", 
+            scope: ["identify", "guilds.members.read"] 
+        });
+
+        // 2. Exchange code for token (Must happen on YOUR server to keep secret safe)
+        const response = await fetch("/api/auth/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            authHelper.token = data.access_token; // Store this for future requests
+            authHelper.user = data.user; // Basic info like ID and username
+      
+            // Update UI to show logged in state
+            console.log(`Logged in as ${authHelper.user.username}`);
+      
+            // NOW fetch the sensitive data
+            // fetchMembers(); 
+        }
+    }
+
+    // Call this on load
+    setupDiscordAuth();
 </script>
 </body>
 </html>

@@ -178,6 +178,28 @@
 
         .controls-area { display: flex; gap: 15px; align-items: center; }
 
+        .save-btn {
+            background: var(--site-text);
+            color: var(--site-bg);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+        }
+        .save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
+        .save-btn:active { transform: translateY(0); box-shadow: 0 3px 8px rgba(0,0,0,0.12); }
+
+        .save-status {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--site-text);
+            min-width: 120px;
+            text-align: right;
+        }
+
         /* --- SEARCH --- */
         .search-container { position: relative; width: 280px; }
 
@@ -474,6 +496,9 @@
             <div id="selection-display" class="current-selection empty">
                 Select User
             </div>
+
+            <button class="save-btn" onclick="saveSchedule()" title="Save schedule">Save</button>
+            <div id="save-status" class="save-status"></div>
         </div>
     </header>
 
@@ -517,6 +542,7 @@ const STATIONS = [
 // --- STATE ---
 let scheduleData = {};
 let members = [];
+let memberById = {};
 let currentVolunteer = null;
 let zoomLevel = 1.0;
 let currentSearchIndex = -1; 
@@ -526,13 +552,28 @@ let selectedCells = new Set();
 let anchor = null; 
 
 // --- INITIALIZATION ---
-async function init() {
-    STATIONS.forEach(st => {
-        scheduleData[st] = new Array(7).fill("");
-    });
+function makeEmptySchedule() {
+    const base = {};
+    STATIONS.forEach(st => { base[st] = new Array(7).fill(""); });
+    return base;
+}
 
-    renderGrid();
+function normalizeSchedule(incoming) {
+    const base = makeEmptySchedule();
+    Object.entries(incoming || {}).forEach(([station, row]) => {
+        if (!base[station]) return;
+        base[station] = row.slice(0, 7).map(v => v || "");
+        while (base[station].length < 7) base[station].push("");
+    });
+    return base;
+}
+
+async function init() {
+    scheduleData = makeEmptySchedule();
+
     await fetchMembers();
+    await loadSchedule();
+    renderGrid();
     document.getElementById('loading').style.display = 'none';
 }
 
@@ -549,14 +590,30 @@ async function fetchMembers() {
     } catch (e) {
         console.warn("API unavailable, using mock data.");
         members = [
-            { name: "Austin B", user: "austin" },
-            { name: "Kitadan", user: "kitadan" },
-            { name: "Seja", user: ".s3j" },
-            { name: "Alex", user: "alex" },
-            { name: "Abbym65", user: "abby" },
-            { name: "Volunteer 1", user: "v1" },
-            { name: "Volunteer 2", user: "v2" }
+            { name: "Austin B", user: "austin", id: "austin" },
+            { name: "Kitadan", user: "kitadan", id: "kitadan" },
+            { name: "Seja", user: ".s3j", id: "s3j" },
+            { name: "Alex", user: "alex", id: "alex" },
+            { name: "Abbym65", user: "abby", id: "abby" },
+            { name: "Volunteer 1", user: "v1", id: "v1" },
+            { name: "Volunteer 2", user: "v2", id: "v2" }
         ];
+    }
+    memberById = {};
+    members.forEach(m => { if (m.id) memberById[m.id] = m; });
+}
+
+async function loadSchedule() {
+    try {
+        const res = await fetch('/api/schedule', { method: 'GET' });
+        if (!res.ok) throw new Error("Load failed");
+        const data = await res.json();
+        scheduleData = normalizeSchedule(data.schedule);
+        setSaveStatus("Loaded", "ok");
+    } catch (e) {
+        console.warn("No saved schedule, starting fresh.", e);
+        scheduleData = makeEmptySchedule();
+        setSaveStatus("No saved data", "warn");
     }
 }
 
@@ -625,20 +682,21 @@ function renderGrid() {
         th.textContent = station;
         tr.appendChild(th);
 
-        scheduleData[station].forEach((val, c) => {
+        scheduleData[station].forEach((userId, c) => {
             const td = document.createElement('td');
             td.className = 'data-cell';
             td.dataset.coord = `${r}|${c}`;
 
-            if (val) {
+            if (userId) {
                 td.classList.add('assigned');
-                td.style.backgroundColor = getVolunteerColor(val);
+                const member = memberById[userId];
+                const displayName = member ? member.name : userId;
+                td.style.backgroundColor = getVolunteerColor(displayName);
                 
-                const member = members.find(m => m.name === val);
                 const userHandle = member ? `@${member.user}` : '';
 
                 td.innerHTML = `
-                    <span class="cell-name">${val}</span>
+                    <span class="cell-name">${displayName}</span>
                     ${userHandle ? `<span class="cell-user">${userHandle}</span>` : ''}
                 `;
             } else {
@@ -674,6 +732,16 @@ function updateVisualsOnly() {
 
 // --- INTERACTIONS ---
 let isDragging = false;
+const statusEl = document.getElementById('save-status');
+
+function setSaveStatus(text, tone = "info") {
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    if (tone === "ok") statusEl.style.color = "#2b3326";
+    else if (tone === "warn") statusEl.style.color = "#b36b00";
+    else if (tone === "error") statusEl.style.color = "#b00020";
+    else statusEl.style.color = "var(--site-text)";
+}
 
 function handleMouseDown(e, r, c) {
     isDragging = true;
@@ -811,7 +879,7 @@ document.addEventListener('keydown', (e) => {
         applyValue("");
     } else if (e.key === 'Enter') {
         if (currentVolunteer) {
-            applyValue(currentVolunteer.name);
+            applyValue(currentVolunteer.id);
         } else {
             searchInput.focus();
         }
@@ -859,6 +927,25 @@ function applyValue(val) {
         scheduleData[STATIONS[r]][c] = val;
     });
     renderGrid();
+}
+
+async function saveSchedule() {
+    setSaveStatus("Saving...");
+    try {
+        const res = await fetch('/api/schedule/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                schedule: scheduleData,
+                meta: { source: 'ui' }
+            })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        setSaveStatus("Saved", "ok");
+    } catch (e) {
+        console.error(e);
+        setSaveStatus("Save failed", "error");
+    }
 }
 
 // --- ZOOM ---

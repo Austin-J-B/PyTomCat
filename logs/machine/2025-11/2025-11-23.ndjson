@@ -1785,3 +1785,12 @@
 {"event": "reaction_add", "user": "m_digio", "channel": "#feeding-team", "message_id": 1442382755781673030, "emoji": "😆", "message_preview": "not meant to be public yet", "message_author": "austinbaustinb"}
 {"event": "message", "author": "m_digio", "channel": "#cat-name-ideas", "content": "its a loop hole", "attachments": 0}
 {"event": "message", "author": "m_digio", "channel": "#cat-name-ideas", "content": "naming a cat something so awful so that you get to name it twice /silly", "attachments": 0}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "izzy balls has had it up to here tonight", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "izzy balls is going to stop complaining for the night", "attachments": 0}

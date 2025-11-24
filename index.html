@@ -581,6 +581,7 @@ async function fetchMembers() {
         const res = await fetch(endpoint, { credentials: "include" });
         if (!res.ok) throw new Error("API Failed");
         members = await res.json();
+        console.log("Members loaded", members.length);
     } catch (e) {
         console.warn("API unavailable, using mock data.");
         members = [
@@ -604,12 +605,14 @@ async function loadSchedule() {
         if (!res.ok) throw new Error("Load failed");
         const data = await res.json();
         scheduleData = normalizeSchedule(data.schedule);
+        console.log("Schedule loaded", Object.keys(scheduleData));
         setSaveStatus("Loaded", "ok");
     } catch (e) {
         console.warn("No saved schedule, starting fresh.", e);
         scheduleData = makeEmptySchedule();
         setSaveStatus("No saved data", "warn");
     }
+    console.log("Schedule after load", scheduleData);
 }
 
 async function loadOpenSubs() {

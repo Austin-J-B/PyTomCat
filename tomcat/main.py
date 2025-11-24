@@ -25,7 +25,10 @@ if not SESSION_SECRET:
     raise RuntimeError("UI_SESSION_SECRET is required to issue UI session cookies")
 
 SESSION_TTL_SECONDS = int(os.getenv("UI_SESSION_TTL_SECONDS", "3600"))
-_COOKIE_SECURE = os.getenv("UI_COOKIE_SECURE", "false").lower() == "true"
+# Default secure cookies ON so cross-site (e.g., github pages -> your domain) can send them.
+_COOKIE_SECURE = os.getenv("UI_COOKIE_SECURE", "true").lower() == "true"
+# If secure, use SameSite=None (required for third-party); otherwise keep Lax for localhost testing.
+_COOKIE_SAMESITE = "None" if _COOKIE_SECURE else "Lax"
 
 _ALLOWED_ORIGINS = {
     origin.strip()
@@ -102,6 +105,7 @@ def _get_session_from_request(request: web.Request) -> Optional[dict]:
         auth_header = request.headers.get("Authorization", "")
         if auth_header.lower().startswith("bearer "):
             token = auth_header.split(" ", 1)[1]
+    _debug(f"session cookie_present={bool(token)}")
     return _verify_session(token) if token else None
 
 
@@ -113,6 +117,7 @@ def _require_permissions(
 ) -> tuple[Optional[dict], Optional[web.Response]]:
     session = _get_session_from_request(request)
     if not session:
+        _debug(f"_require_permissions missing session require_view={require_view} require_edit={require_edit}")
         return None, _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
 
     permissions = session.get("permissions", {})
@@ -257,8 +262,9 @@ async def auth_token_exchange(request):
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
         secure=_COOKIE_SECURE,
-        samesite="Lax",
+        samesite=_COOKIE_SAMESITE,
     )
+    _debug(f"set-cookie secure={_COOKIE_SECURE} samesite={_COOKIE_SAMESITE}")
     return _with_cors(resp, request)
 
 # --- The Secure Save Endpoint ---
@@ -297,6 +303,7 @@ async def get_schedule(request):
     _, error = _require_permissions(request, require_view=True)
     if error:
         return error
+    _debug(f"GET /api/schedule session_ok")
     if not SCHEDULE_PATH.exists():
         empty = {station: [""] * 7 for station in (getattr(settings, "feeding_schedule", {}) or {}).keys()}
         if not empty:
@@ -305,6 +312,8 @@ async def get_schedule(request):
 
     try:
         payload = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
+        sched = payload.get("schedule", {}) or {}
+        _debug(f"/api/schedule returning stations={list(sched.keys())} saved_at={payload.get('meta',{}).get('saved_at')}")
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
         return _with_cors(web.Response(status=500, text=f"Failed to load schedule: {e}"), request)
@@ -536,6 +545,8 @@ async def start_web_server(bot):
         unique_members = {m['id']: m for m in found_members}.values()
         # Sort alphabetically
         sorted_members = sorted(unique_members, key=lambda x: x['name'].lower())
+
+        _debug(f"/api/members count={len(sorted_members)} roles={[DUE_PAYING_ROLE_ID, HOLIDAY_FEEDER_ROLE_ID]}")
 
         resp = web.json_response(list(sorted_members))
         resp.headers["Cache-Control"] = "no-store"

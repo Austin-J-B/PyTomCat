@@ -1430,11 +1430,9 @@ init();
 <script>
     // --- CONFIGURATION ---
     const CLIENT_ID = "1341667150066225192"; 
-    
-    // DEFAULT BACKEND: Use this if no ?api= param is provided
     const DEFAULT_API = "https://ui.catsofuta.org"; 
 
-    // 1. FIX: Strip search/hash to ensure this matches Discord Portal exactly
+    // Strip search/hash to ensure this matches Discord Portal exactly
     const REDIRECT_URI = window.location.origin + window.location.pathname;
 
     let authState = { token: null, user: null, permissions: {} };
@@ -1445,34 +1443,26 @@ init();
         const code = urlParams.get('code');
         const state = urlParams.get('state');
 
-        // Determine API Base: 
-        // 1. From URL param (initial visit)
-        // 2. From State param (returning from Discord)
-        // 3. Fallback to hardcoded default
+        // Determine API Base
         let currentApi = urlParams.get('api');
-        
         if (state) {
             try {
-                // Restore API url from the state passed through Discord
                 const stateObj = JSON.parse(atob(state));
                 if (stateObj.api) currentApi = stateObj.api;
             } catch(e) { console.warn("Invalid state", e); }
         }
 
-        // Set the global apiBase (used by the rest of the app)
-        // Remove trailing slashes to be safe
+        // Set global apiBase
         apiBase = (currentApi || DEFAULT_API).replace(/\/$/, '');
         console.log("Using Backend:", apiBase);
 
         if (code) {
-            // SCENARIO 1: Returning from Discord Login
-            console.log("Web Auth detected, exchanging code...");
-            
-            // Clean the URL visually
+            // Returning from Discord Login
             const cleanedUrl = new URL(window.location.href);
             cleanedUrl.searchParams.delete('code');
             cleanedUrl.searchParams.delete('state');
-            // Restore the ?api= param to the address bar for consistency
+            
+            // Preserve API param if it's not default
             if (apiBase !== DEFAULT_API.replace(/\/$/, '')) {
                 cleanedUrl.searchParams.set('api', apiBase);
             }
@@ -1481,14 +1471,26 @@ init();
             await exchangeCode(code, REDIRECT_URI);
         } 
         else if (document.referrer.includes("discord.com") && window.Discord) {
-            // SCENARIO 2: Embedded App
-            // ... (Existing embedded logic) ...
-            // [Keep your existing embedded logic here if needed, or see below]
+            // Embedded App
             console.log("Discord Activity environment detected...");
-            // ...
+            try {
+                const discordSdk = new Discord.DiscordSDK(CLIENT_ID);
+                await discordSdk.ready();
+                const { code: activityCode } = await discordSdk.commands.authorize({
+                    client_id: CLIENT_ID,
+                    response_type: "code",
+                    state: "",
+                    prompt: "none",
+                    scope: ["identify", "guilds.members.read"]
+                });
+                await exchangeCode(activityCode, null);
+            } catch (e) {
+                console.warn("Embedded Auth failed, showing button", e);
+                showLoginButton();
+            }
         } 
         else {
-            // SCENARIO 3: Direct Web Visit
+            // Direct Web Visit
             showLoginButton();
         }
     }
@@ -1496,10 +1498,8 @@ init();
     async function exchangeCode(code, redirectUri) {
         try {
             const body = { code };
-            // Ensure we send the SAME redirect_uri we used to generate the link
             if (redirectUri) body.redirect_uri = redirectUri;
 
-            // Use the calculated apiBase
             const endpoint = `${apiBase}/api/auth/token`;
             
             const res = await fetch(endpoint, {
@@ -1514,17 +1514,15 @@ init();
             }
 
             const data = await res.json();
-            
             authState.user = data.user;
             authState.permissions = data.permissions;
 
-            console.log(`Logged in as ${authState.user.username}`);
             updateUIForUser();
             init(); 
             
         } catch (e) {
             console.error("Login Error:", e);
-            alert("Login failed: " + e.message); // Visual feedback
+            alert("Login failed: " + e.message);
             showLoginButton();
         }
     }
@@ -1535,7 +1533,6 @@ init();
         
         if (document.getElementById('web-login-overlay')) return;
 
-        // Pass the current API base into the 'state' parameter so it survives the redirect
         const stateObj = { api: apiBase };
         const stateStr = btoa(JSON.stringify(stateObj));
 
@@ -1549,20 +1546,204 @@ init();
             <h3 style="font-family:'Montserrat', sans-serif; font-weight:500; font-size:1rem; margin:0; color:var(--site-text); opacity:0.8; text-transform: uppercase; letter-spacing: 1px;">
                 Campus Cat Coalition
             </h3>
+            
             <h1 style="font-family:'Merriweather', serif; font-weight:900; font-size:3rem; margin: 10px 0 40px 0; color:var(--site-text);">
                 TomCat-VI UI
             </h1>
-            <a href="${loginUrl}" style="background:#5865F2; color:white; padding:15px 40px; border-radius:30px; text-decoration:none; font-family:'Montserrat', sans-serif; font-weight:700; font-size:1.1rem; box-shadow:0 4px 15px rgba(88,101,242,0.4); transition: transform 0.2s;">
+            
+            <a href="${loginUrl}" style="
+                background: #7289da;
+                color: white;
+                padding: 12px 32px;
+                border-radius: 4px;
+                text-decoration: none;
+                font-family: 'Montserrat', sans-serif;
+                font-weight: 600;
+                font-size: 1.1rem;
+                box-shadow: 0 4px 15px rgba(114, 137, 218, 0.4);
+                transition: transform 0.2s;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            ">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.419-2.1569 2.419zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.419-2.1568 2.419z"/>
+                </svg>
                 Log in with Discord
             </a>
-            <p style="margin-top: 20px; font-size: 0.8rem; opacity: 0.6;">Backend: ${apiBase}</p>
         `;
         document.body.appendChild(div);
     }
 
-    // ... (Keep updateUIForUser, renderOpenSubs, and deleteRequest functions exactly as they were) ...
+    // ... (Keep updateUIForUser, renderOpenSubs, and deleteRequest functions EXACTLY as they were in the previous step) ...
+    // You MUST include them here for the script to work.
     
-    // ... Copy updateUIForUser/etc from your original file ...
+    // Paste updateUIForUser here...
+    function updateUIForUser() {
+        // Remove login overlay
+        const overlay = document.getElementById('web-login-overlay');
+        if (overlay) overlay.remove();
+
+        const isOfficer = authState.permissions.is_officer;
+        
+        // 1. Update Header Profile
+        const pDisplay = document.getElementById('profile-display');
+        const pIcon = document.getElementById('profile-icon');
+        const pName = document.getElementById('profile-name');
+        
+        if (pDisplay) {
+            pDisplay.style.display = 'flex';
+            pName.textContent = authState.user.username;
+            if (isOfficer) {
+                pIcon.textContent = "👑";
+                pIcon.className = "profile-icon role-officer";
+                pDisplay.title = "Officer Account";
+            } else {
+                pIcon.textContent = "👤";
+                pIcon.className = "profile-icon role-user";
+                pDisplay.title = "Volunteer Account";
+            }
+        }
+
+        // 2. Show/Hide Impersonation Controls
+        const displayMode = isOfficer ? 'flex' : 'none';
+        const subWrapper = document.getElementById('sub-user-wrapper');
+        const claimWrapper = document.getElementById('claim-user-wrapper');
+        
+        if (subWrapper) subWrapper.style.display = displayMode;
+        if (claimWrapper) claimWrapper.style.display = displayMode;
+
+        // 3. Save Button
+        const saveBtn = document.getElementById('save-btn');
+        if (saveBtn) {
+            saveBtn.style.display = authState.permissions.can_edit_schedule ? 'block' : 'none';
+        }
+    }
+
+    // Override renderOpenSubs to support Delete button
+    window.renderOpenSubs = function() {
+        const isPrev = requestTab === 'previous';
+        const wrap = isPrev ? document.getElementById('prev-requests-list') : document.getElementById('open-requests-list');
+        if (!wrap) return;
+        wrap.innerHTML = '';
+        
+        const source = isPrev ? prevRequests : openRequests.filter(item => {
+            if (!item.date) return false;
+            const d = new Date(item.date);
+            const today = new Date(); today.setHours(0,0,0,0);
+            d.setHours(0,0,0,0);
+            return d >= today;
+        });
+
+        if (!source.length) {
+            wrap.textContent = "No requests.";
+            return;
+        }
+
+        const grouped = {};
+        source.forEach(item => {
+            const date = item.date || 'Unknown date';
+            grouped[date] = grouped[date] || [];
+            grouped[date].push(item);
+        });
+        
+        const dateKeys = Object.keys(grouped).sort((a,b) => {
+            const da = new Date(a); const db = new Date(b);
+            return requestTab === 'previous' ? db - da : da - db;
+        });
+
+        dateKeys.forEach(date => {
+            grouped[date].forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'open-item';
+                
+                const meta = document.createElement('div');
+                meta.className = 'open-meta';
+                const dayStr = new Date(item.date).toLocaleDateString(undefined, { weekday: 'long', month: 'numeric', day: 'numeric', year: 'numeric' });
+                const requesterName = displayName(item.requester_id, item.requester_name);
+                
+                const line = document.createElement('div');
+                line.innerHTML = `<strong>${item.station}</strong> on ${dayStr} for ${requesterName}`;
+                meta.appendChild(line);
+
+                const status = document.createElement('div');
+                status.className = 'open-status';
+
+                const badge = document.createElement('span');
+                const hasAssignee = !!item.assignee_id;
+                const assigneeName = displayName(item.assignee_id, item.assignee_name);
+
+                if (isPrev) {
+                    if (hasAssignee) {
+                        badge.className = 'status-badge status-grey';
+                        badge.textContent = '✓';
+                        status.textContent = `Fulfilled by ${assigneeName}`;
+                    } else {
+                        badge.className = 'status-badge status-grey';
+                        badge.textContent = '✕';
+                        status.textContent = "Expired";
+                    }
+                } else {
+                    if (hasAssignee) {
+                        badge.className = 'status-badge status-green';
+                        badge.textContent = '✓';
+                        status.textContent = `Filled by ${assigneeName}`;
+                    } else {
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.value = JSON.stringify(item);
+                        div.appendChild(checkbox);
+                    }
+                }
+                div.appendChild(badge);
+                meta.appendChild(status);
+                div.appendChild(meta);
+
+                // Delete Logic
+                const isOfficer = authState.permissions.is_officer;
+                const isOwner = String(item.requester_id) === String(authState.user.id) || String(item.assignee_id) === String(authState.user.id);
+                
+                if (isOfficer || isOwner) {
+                    const trash = document.createElement('button');
+                    trash.className = 'trash-btn';
+                    trash.innerHTML = '🗑';
+                    trash.title = "Delete Request";
+                    trash.onclick = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if(confirm(`Delete this request for ${item.station}?`)) {
+                            deleteRequest(item.id, item.date);
+                        }
+                    };
+                    div.appendChild(trash);
+                }
+
+                wrap.appendChild(div);
+            });
+            const sep = document.createElement('div');
+            sep.className = 'open-day-sep';
+            wrap.appendChild(sep);
+        });
+    };
+
+    async function deleteRequest(id, date) {
+        try {
+            const endpoint = apiBase ? `${apiBase}/api/subrequest/delete` : '/api/subrequest/delete';
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, date })
+            });
+            if (res.ok) {
+                await loadOpenSubs();
+            } else {
+                alert("Failed to delete: " + await res.text());
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error deleting request");
+        }
+    }
 
     // Kickoff
     initAuth();

@@ -32,7 +32,8 @@
             
             /* Header Height for Sticky Positioning */
             --legend-height: 46px; 
-            --legend-offset-adjust: 18px; /* extra to account for padding/border */
+            --site-header-height: 70px;
+            --legend-total-offset: calc(var(--site-header-height) + var(--legend-height));
         }
 
         * { box-sizing: border-box; }
@@ -143,8 +144,9 @@
             justify-content: space-between;
             border-bottom: 1px solid rgba(65, 75, 59, 0.15);
             flex-shrink: 0;
-            z-index: 1000; 
-            position: relative;
+            z-index: 900; 
+            position: sticky;
+            top: 0;
         }
 
         .menu-container {
@@ -471,8 +473,8 @@
         /* --- CONTROLS LEGEND (STICKY) --- */
         .controls-legend {
             position: sticky;
-            top: 0;
-            z-index: 600; 
+            top: var(--site-header-height);
+            z-index: 800; 
             min-height: var(--legend-height);
 
             background: var(--header-tan); 
@@ -550,8 +552,8 @@
             padding: 15px;
             
             position: sticky;
-            top: calc(var(--legend-height) + var(--legend-offset-adjust)); 
-            z-index: 320; 
+            top: var(--legend-total-offset); 
+            z-index: 400; 
             
             background-color: white; 
             box-shadow: inset 0 -5px 0 var(--site-text);
@@ -886,6 +888,7 @@ async function init() {
     apiBase = (urlParams.get('api') || '').replace(/\/$/, '');
     scheduleData = makeEmptySchedule();
 
+    updateStickyHeights();
     await fetchMembers();
     await loadSchedule();
     renderGrid();
@@ -895,6 +898,21 @@ async function init() {
     setRequestTab('available');
     document.getElementById('loading').style.display = 'none';
 }
+
+function updateStickyHeights() {
+    const root = document.documentElement;
+    const header = document.querySelector('header.site-header');
+    const legend = document.querySelector('.controls-legend');
+    const headerH = header ? header.getBoundingClientRect().height : 0;
+    const legendH = legend ? legend.getBoundingClientRect().height : parseFloat(getComputedStyle(root).getPropertyValue('--legend-height')) || 46;
+    root.style.setProperty('--site-header-height', `${headerH}px`);
+    root.style.setProperty('--legend-height', `${legendH}px`);
+    root.style.setProperty('--legend-total-offset', `${headerH + legendH}px`);
+}
+
+window.addEventListener('resize', () => {
+    updateStickyHeights();
+});
 
 // --- API CALL ---
 async function fetchMembers() {
@@ -961,12 +979,28 @@ function setRequestTab(tab) {
 }
 
 // --- DISTINCT COLOR PALETTE ---
-// Evenly spaced hues via golden-angle to maximize separation and stay legible with black text.
+// Curated palette spanning the full hue wheel (reds → purples) with pastel brightness for legibility.
 const colorAssignments = new Map();
-const usedHues = new Set();
-const GOLDEN_ANGLE = 137.508; // degrees
-const COLOR_SAT = 70;
-const COLOR_LIGHT = 72; // keep light enough for black text contrast
+const COLOR_PALETTE = [
+    { h: 0,   s: 70, l: 72 },   // red
+    { h: 15,  s: 72, l: 71 },   // red-orange
+    { h: 28,  s: 78, l: 73 },   // orange
+    { h: 45,  s: 76, l: 74 },   // amber
+    { h: 65,  s: 72, l: 73 },   // yellow-green
+    { h: 90,  s: 68, l: 74 },   // spring
+    { h: 120, s: 64, l: 72 },   // green
+    { h: 145, s: 60, l: 73 },   // jade
+    { h: 170, s: 64, l: 74 },   // teal
+    { h: 195, s: 72, l: 74 },   // aqua
+    { h: 215, s: 70, l: 72 },   // sky
+    { h: 230, s: 64, l: 73 },   // blue
+    { h: 245, s: 66, l: 72 },   // cobalt
+    { h: 265, s: 68, l: 72 },   // indigo
+    { h: 285, s: 70, l: 72 },   // violet
+    { h: 305, s: 72, l: 72 },   // magenta
+    { h: 325, s: 74, l: 72 },   // fuchsia
+    { h: 345, s: 72, l: 72 },   // rose
+];
 
 function hashId(str) {
     let h = 0;
@@ -977,23 +1011,14 @@ function hashId(str) {
     return Math.abs(h);
 }
 
-function pickHue(seed) {
-    let hue = (seed * GOLDEN_ANGLE) % 360;
-    let guard = 0;
-    while (usedHues.has(Math.round(hue)) && guard < 360) {
-        hue = (hue + GOLDEN_ANGLE) % 360;
-        guard++;
-    }
-    usedHues.add(Math.round(hue));
-    return hue;
-}
-
 function getVolunteerColor(id) {
     if (!id) return 'white';
     if (colorAssignments.has(id)) return colorAssignments.get(id);
 
-    const hue = pickHue(hashId(String(id)));
-    const color = `hsl(${hue}, ${COLOR_SAT}%, ${COLOR_LIGHT}%)`;
+    const seed = hashId(String(id));
+    const idx = seed % COLOR_PALETTE.length;
+    const colorSpec = COLOR_PALETTE[idx];
+    const color = `hsl(${colorSpec.h}, ${colorSpec.s}%, ${colorSpec.l}%)`;
     colorAssignments.set(id, color);
     return color;
 }

@@ -32,7 +32,7 @@
             
             /* Header Height for Sticky Positioning */
             --legend-height: 46px; 
-            --site-header-height: 70px;
+            --site-header-height: 0px;
             --legend-total-offset: calc(var(--site-header-height) + var(--legend-height));
         }
 
@@ -467,7 +467,7 @@
             transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
             display: flex;
             flex-direction: column;
-            margin-top: 40px; 
+            margin-top: 16px; 
         }
 
         /* --- CONTROLS LEGEND (STICKY) --- */
@@ -912,6 +912,10 @@ function updateStickyHeights() {
 
 window.addEventListener('resize', () => {
     updateStickyHeights();
+});
+window.addEventListener('load', () => {
+    updateStickyHeights();
+    setTimeout(updateStickyHeights, 60);
 });
 
 // --- API CALL ---

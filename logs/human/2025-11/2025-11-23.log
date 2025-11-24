@@ -275,3 +275,806 @@
 [11/23/2025 09:03:32.540 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
 [11/23/2025 09:03:32.774 PM] Health   || Component: feeding_tab    || Status: ok                                   
 [11/23/2025 09:03:33.580 PM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/23/2025 10:25:59.246 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/23/2025 10:26:00.362 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/23/2025 10:26:01.244 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/23/2025 10:26:02.127 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/23/2025 10:26:03.050 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/23/2025 10:26:03.457 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/23/2025 10:26:04.571 PM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/23/2025 10:26:08.542 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8402 attempt=1 size=1105422
+[11/23/2025 10:26:12.470 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8365 attempt=1 size=498797
+[11/23/2025 10:29:13.157 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/23/2025 10:29:14.242 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/23/2025 10:29:15.207 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/23/2025 10:29:16.108 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/23/2025 10:29:16.975 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/23/2025 10:29:17.414 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/23/2025 10:29:18.654 PM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/23/2025 10:29:20.111 PM] React+   || User: lemonelon_          || Channel: #feeding-team                        || emoji=❤️; msg="Starts monday! im waiting on one more co..." by m_digio
+[11/23/2025 10:29:21.768 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8129 attempt=1 size=894306
+[11/23/2025 10:30:22.097 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/23/2025 10:30:23.203 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/23/2025 10:30:24.138 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/23/2025 10:30:25.249 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/23/2025 10:30:26.005 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/23/2025 10:30:26.504 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/23/2025 10:30:27.790 PM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/23/2025 10:30:31.232 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8363 attempt=1 size=917711
+[11/23/2025 10:30:33.447 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7894 attempt=1 size=1378323
+[11/23/2025 10:30:34.935 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7843 attempt=1 size=1031582
+[11/23/2025 10:30:35.232 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8323 attempt=1 size=1095413
+[11/23/2025 10:30:36.485 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7911 attempt=1 size=635370
+[11/23/2025 10:30:36.808 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8324 attempt=1 size=316356
+[11/23/2025 10:30:39.023 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8389 attempt=1 size=2919766
+[11/23/2025 10:30:39.585 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0623 attempt=1 size=684890
+[11/23/2025 10:30:41.766 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4780 attempt=1 size=673485
+[11/23/2025 10:30:42.341 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7003 attempt=1 size=1049605
+[11/23/2025 10:30:43.620 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4782 attempt=1 size=745002
+[11/23/2025 10:30:43.806 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7131 attempt=1 size=676495
+[11/23/2025 10:30:44.795 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: YAY
+[11/23/2025 10:30:44.915 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0606 attempt=1 size=525744
+[11/23/2025 10:30:45.734 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7009 attempt=1 size=672769
+[11/23/2025 10:30:46.462 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4787 attempt=1 size=695401
+[11/23/2025 10:30:47.698 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7641 attempt=1 size=640211
+[11/23/2025 10:30:48.924 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7541 attempt=1 size=1248220
+[11/23/2025 10:30:50.279 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7708 attempt=1 size=679500
+[11/23/2025 10:30:51.630 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7637 attempt=1 size=1027090
+[11/23/2025 10:30:51.939 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7113 attempt=1 size=1263379
+[11/23/2025 10:30:53.343 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7941 attempt=1 size=780294
+[11/23/2025 10:30:53.542 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7117 attempt=1 size=589970
+[11/23/2025 10:30:54.963 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6464 attempt=1 size=1547498
+[11/23/2025 10:30:55.147 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6937 attempt=1 size=914362
+[11/23/2025 10:30:56.240 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7681 attempt=1 size=451791
+[11/23/2025 10:30:56.521 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8299 attempt=1 size=693916
+[11/23/2025 10:30:58.888 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7549 attempt=1 size=471105
+[11/23/2025 10:30:59.990 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3671 attempt=1 size=404088
+[11/23/2025 10:31:01.742 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1729 attempt=1 size=516731
+[11/23/2025 10:31:02.004 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1382 attempt=1 size=5294109
+[11/23/2025 10:31:03.222 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8316 attempt=1 size=654505
+[11/23/2025 10:31:03.359 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0466 attempt=1 size=1439717
+[11/23/2025 10:31:04.661 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4638 attempt=1 size=841579
+[11/23/2025 10:31:05.045 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4945 attempt=1 size=1165716
+[11/23/2025 10:31:06.409 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0463 attempt=1 size=1427232
+[11/23/2025 10:31:06.599 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3673 attempt=1 size=340462
+[11/23/2025 10:31:08.244 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0444 attempt=1 size=1762705
+[11/23/2025 10:31:09.514 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1087 attempt=1 size=4217860
+[11/23/2025 10:31:10.951 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6151 attempt=1 size=723468
+[11/23/2025 10:31:11.447 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0228 attempt=1 size=813422
+[11/23/2025 10:31:12.310 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6560 attempt=1 size=539668
+[11/23/2025 10:31:12.854 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2695 attempt=1 size=628547
+[11/23/2025 10:31:13.672 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5991 attempt=1 size=567105
+[11/23/2025 10:31:15.040 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0521 attempt=1 size=904789
+[11/23/2025 10:31:15.382 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0400 attempt=1 size=3695193
+[11/23/2025 10:31:17.278 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2697 attempt=1 size=591462
+[11/23/2025 10:31:17.740 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1488 attempt=1 size=2494096
+[11/23/2025 10:31:18.895 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2696 attempt=1 size=614847
+[11/23/2025 10:31:19.142 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0229 attempt=1 size=1923161
+[11/23/2025 10:31:21.064 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1487 attempt=1 size=2006496
+[11/23/2025 10:31:22.140 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7210 attempt=1 size=754711
+[11/23/2025 10:31:23.847 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7937 attempt=1 size=1313140
+[11/23/2025 10:31:25.097 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0398 attempt=1 size=5723344
+[11/23/2025 10:31:25.659 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3891 attempt=1 size=379038
+[11/23/2025 10:31:27.295 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0399 attempt=1 size=4268438
+[11/23/2025 10:31:27.682 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4884 attempt=1 size=697457
+[11/23/2025 10:31:29.314 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4082 attempt=1 size=369394
+[11/23/2025 10:31:30.363 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0397 attempt=1 size=4368651
+[11/23/2025 10:31:32.073 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0092 attempt=1 size=1972926
+[11/23/2025 10:31:33.728 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0231 attempt=1 size=1984134
+[11/23/2025 10:31:35.237 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0233 attempt=1 size=5148729
+[11/23/2025 10:32:30.856 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/23/2025 10:32:31.876 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/23/2025 10:32:32.713 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/23/2025 10:32:33.631 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/23/2025 10:32:34.632 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/23/2025 10:32:35.092 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/23/2025 10:32:36.132 PM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/23/2025 10:32:45.749 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2127 attempt=1 size=670544
+[11/23/2025 10:32:48.099 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0400 attempt=1 size=3695193
+[11/23/2025 10:32:48.993 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6466 attempt=1 size=1099105
+[11/23/2025 10:32:49.626 PM] React+   || User: _rambone_           || Channel: #purrley-pawsitive-pussy-pals        || emoji=‼️; msg=1442321212574535932
+[11/23/2025 10:32:49.863 PM] React+   || User: _rambone_           || Channel: #purrley-pawsitive-pussy-pals        || emoji=🔥; msg=1442321212574535932
+[11/23/2025 10:32:50.018 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0401 attempt=1 size=766222
+[11/23/2025 10:32:50.169 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7056 attempt=1 size=681604
+[11/23/2025 10:32:52.652 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5346 attempt=1 size=646685
+[11/23/2025 10:32:53.069 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1905 attempt=1 size=1762369
+[11/23/2025 10:32:53.778 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7159 attempt=1 size=212458
+[11/23/2025 10:32:55.098 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1245 attempt=1 size=2918939
+[11/23/2025 10:32:56.373 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2309 attempt=1 size=869721
+[11/23/2025 10:32:56.587 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3737 attempt=1 size=492947
+[11/23/2025 10:32:57.988 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4078 attempt=1 size=632316
+[11/23/2025 10:32:58.143 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1357 attempt=1 size=1366982
+[11/23/2025 10:32:59.321 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1359 attempt=1 size=1441468
+[11/23/2025 10:33:00.527 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4081 attempt=1 size=657047
+[11/23/2025 10:33:02.111 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4077 attempt=1 size=602199
+[11/23/2025 10:33:02.478 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1629 attempt=1 size=522429
+[11/23/2025 10:33:03.566 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1879 attempt=1 size=986903
+[11/23/2025 10:33:03.880 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5925 attempt=1 size=460352
+[11/23/2025 10:33:05.642 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2693 attempt=1 size=657927
+[11/23/2025 10:33:06.519 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2414 attempt=1 size=729049
+[11/23/2025 10:33:07.438 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2188 attempt=1 size=517406
+[11/23/2025 10:33:09.038 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4040 attempt=1 size=706103
+[11/23/2025 10:33:11.675 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1265 attempt=1 size=1054049
+[11/23/2025 10:33:14.390 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1255 attempt=1 size=4447694
+[11/23/2025 10:33:14.929 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2185 attempt=1 err=TimeoutError:
+[11/23/2025 10:33:16.098 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1256 attempt=1 size=4438427
+[11/23/2025 10:33:16.487 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2185 attempt=2 size=817067
+[11/23/2025 10:33:17.563 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4646 attempt=1 size=960377
+[11/23/2025 10:33:17.820 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4306 attempt=1 size=709618
+[11/23/2025 10:33:18.903 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1264 attempt=1 size=1131037
+[11/23/2025 10:33:19.901 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1909 attempt=1 size=1046897
+[11/23/2025 10:33:21.170 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1254 attempt=1 size=1828972
+[11/23/2025 10:33:21.509 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3667 attempt=1 size=339994
+[11/23/2025 10:33:23.452 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4481 attempt=1 size=1826918
+[11/23/2025 10:33:24.636 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0244 attempt=1 size=6325945
+[11/23/2025 10:33:24.939 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3662 attempt=1 size=387820
+[11/23/2025 10:33:26.091 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0571 attempt=1 size=674810
+[11/23/2025 10:33:26.698 PM] Roles    || User: melennui            || Guild: Campus Cat Coalition                   || added=['feeding team']; removed=[]
+[11/23/2025 10:33:27.363 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0244 attempt=1 size=6325945
+[11/23/2025 10:33:27.582 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0574 attempt=1 size=408554
+[11/23/2025 10:33:28.045 PM] Roles    || User: melennui            || Guild: Campus Cat Coalition                   || added=['active feeders']; removed=[]
+[11/23/2025 10:33:28.693 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3664 attempt=1 size=429443
+[11/23/2025 10:33:29.669 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4085 attempt=1 size=608680
+[11/23/2025 10:33:30.703 PM] Roles    || User: melennui            || Guild: Campus Cat Coalition                   || added=['Holiday Feeder']; removed=[]
+[11/23/2025 10:33:31.705 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0569 attempt=1 size=819777
+[11/23/2025 10:33:32.943 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6379 attempt=1 size=1708775
+[11/23/2025 10:33:33.231 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0244 attempt=1 size=6325945
+[11/23/2025 10:33:34.454 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6752 attempt=1 size=772315
+[11/23/2025 10:33:34.939 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0580 attempt=1 size=686551
+[11/23/2025 10:33:36.241 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4562 attempt=1 size=1512923
+[11/23/2025 10:33:36.458 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0576 attempt=1 size=577978
+[11/23/2025 10:33:37.849 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4492 attempt=1 size=1270030
+[11/23/2025 10:33:38.143 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0579 attempt=1 size=724906
+[11/23/2025 10:33:39.206 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7165 attempt=1 size=1070806
+[11/23/2025 10:33:41.734 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8205 attempt=1 size=788763
+[11/23/2025 10:33:42.826 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0246 attempt=1 size=4576549
+[11/23/2025 10:33:43.000 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8247 attempt=1 size=758746
+[11/23/2025 10:33:43.758 PM] React+   || User: kitadan             || Channel: #feeding-team                        || emoji=🎉; msg="@feeding team heres the scheudle for thi..." by m_digio
+[11/23/2025 10:33:44.000 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0713 attempt=1 size=959765
+[11/23/2025 10:33:44.492 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8246 attempt=1 size=468975
+[11/23/2025 10:33:45.568 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4451 attempt=1 size=1123079
+[11/23/2025 10:33:45.923 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6512 attempt=1 size=1099055
+[11/23/2025 10:33:48.399 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8278 attempt=1 size=676190
+[11/23/2025 10:33:48.638 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4594 attempt=1 size=562785
+[11/23/2025 10:33:50.915 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2971 attempt=1 size=541548
+[11/23/2025 10:33:51.092 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8272 attempt=1 size=740252
+[11/23/2025 10:33:52.641 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2972 attempt=1 size=442206
+[11/23/2025 10:33:52.813 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6303 attempt=1 size=1121837
+[11/23/2025 10:33:53.993 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0130 attempt=1 size=1140165
+[11/23/2025 10:33:54.159 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8341 attempt=1 size=1002690
+[11/23/2025 10:33:55.477 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8200 attempt=1 size=536837
+[11/23/2025 10:33:56.630 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1469 attempt=1 size=4444624
+[11/23/2025 10:33:57.020 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0002 attempt=1 err=ClientResponseError:404, message='Not Found', u...
+[11/23/2025 10:33:57.440 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0002 attempt=2 err=ClientResponseError:404, message='Not Found', u...
+[11/23/2025 10:33:57.954 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0002 attempt=3 err=ClientResponseError:404, message='Not Found', u...
+[11/23/2025 10:33:58.276 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4546 attempt=1 size=738993
+[11/23/2025 10:33:59.708 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5088 attempt=1 size=1874549
+[11/23/2025 10:33:59.903 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2964 attempt=1 size=1214044
+[11/23/2025 10:34:01.212 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6717 attempt=1 size=688472
+[11/23/2025 10:34:02.522 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7124 attempt=1 size=754167
+[11/23/2025 10:34:02.793 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4590 attempt=1 size=418664
+[11/23/2025 10:34:04.113 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7162 attempt=1 size=826631
+[11/23/2025 10:34:04.301 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5337 attempt=1 size=601683
+[11/23/2025 10:34:05.455 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3647 attempt=1 size=158371
+[11/23/2025 10:34:06.597 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2244 attempt=1 size=1400665
+[11/23/2025 10:34:06.986 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0232 attempt=1 size=307000
+[11/23/2025 10:34:08.574 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4037 attempt=1 size=777903
+[11/23/2025 10:34:09.902 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7454 attempt=1 size=676379
+[11/23/2025 10:34:11.038 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2093 attempt=1 size=712637
+[11/23/2025 10:34:11.848 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0331 attempt=1 size=6552711
+[11/23/2025 10:34:12.415 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8280 attempt=1 size=1361233
+[11/23/2025 10:34:14.587 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0154 attempt=1 size=5684432
+[11/23/2025 10:34:14.888 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2095 attempt=1 size=1271065
+[11/23/2025 10:34:15.897 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8410 attempt=1 size=581906
+[11/23/2025 10:34:16.407 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5199 attempt=1 size=467046
+[11/23/2025 10:34:17.557 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0130 attempt=1 size=1140165
+[11/23/2025 10:34:18.907 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8409 attempt=1 size=1779528
+[11/23/2025 10:34:20.120 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0131 attempt=1 size=696330
+[11/23/2025 10:34:21.601 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8064 attempt=1 size=1510707
+[11/23/2025 10:34:22.213 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0329 attempt=1 size=2993743
+[11/23/2025 10:34:22.992 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5974 attempt=1 size=1428307
+[11/23/2025 10:34:24.255 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0328 attempt=1 size=4192915
+[11/23/2025 10:34:24.780 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5507 attempt=1 size=2937149
+[11/23/2025 10:34:25.406 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8307 attempt=1 size=434795
+[11/23/2025 10:34:26.974 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4663 attempt=1 size=1497876
+[11/23/2025 10:34:27.402 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0330 attempt=1 size=6261650
+[11/23/2025 10:34:28.536 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7907 attempt=1 size=1435625
+[11/23/2025 10:34:30.908 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5689 attempt=1 size=723088
+[11/23/2025 10:34:31.314 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6611 attempt=1 size=401074
+[11/23/2025 10:34:32.797 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8044 attempt=1 size=911037
+[11/23/2025 10:34:32.985 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5287 attempt=1 size=1125356
+[11/23/2025 10:34:34.574 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4981 attempt=1 size=1517709
+[11/23/2025 10:34:34.986 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5289 attempt=1 size=1131216
+[11/23/2025 10:34:36.419 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7505 attempt=1 size=653282
+[11/23/2025 10:34:36.714 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5690 attempt=1 size=683235
+[11/23/2025 10:34:37.544 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7385 attempt=1 size=566141
+[11/23/2025 10:34:38.582 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5291 attempt=1 size=1354256
+[11/23/2025 10:34:41.009 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5304 attempt=1 size=1149177
+[11/23/2025 10:34:41.604 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5477 attempt=1 size=380121
+[11/23/2025 10:34:42.445 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5306 attempt=1 size=1091302
+[11/23/2025 10:34:43.113 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5292 attempt=1 size=1164331
+[11/23/2025 10:34:43.740 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7384 attempt=1 size=578865
+[11/23/2025 10:34:44.776 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5290 attempt=1 size=971056
+[11/23/2025 10:34:45.213 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6885 attempt=1 size=561646
+[11/23/2025 10:34:46.652 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5692 attempt=1 size=747144
+[11/23/2025 10:34:47.058 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6879 attempt=1 size=392946
+[11/23/2025 10:34:48.829 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5978 attempt=1 size=720651
+[11/23/2025 10:34:50.063 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3856 attempt=1 size=523816
+[11/23/2025 10:34:50.462 PM] Message  || User: slayc127            || Channel: #feeding-team                        || Content: how dare u ask questions after using ur resources ccc member bella! ...
+[11/23/2025 10:34:51.094 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3411 attempt=1 size=245005
+[11/23/2025 10:34:51.222 PM] React+   || User: a1darek             || Channel: #feeding-team                        || emoji=🎉; msg="@feeding team heres the scheudle for thi..." by m_digio
+[11/23/2025 10:34:52.274 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3410 attempt=1 size=340609
+[11/23/2025 10:34:52.533 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5976 attempt=1 size=1328524
+[11/23/2025 10:34:53.497 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3853 attempt=1 size=525375
+[11/23/2025 10:34:54.090 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7264 attempt=1 size=636235
+[11/23/2025 10:34:54.599 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7592 attempt=1 size=459696
+[11/23/2025 10:34:54.799 PM] Message  || User: kitadan             || Channel: #feeding-team                        || Content: Starting the abandoning of Zen early I see.   (I'm feeding them my t...
+[11/23/2025 10:34:54.811 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=42786... || Output: stations=Mary Kay and Zen; text=Starting the abandoning of Zen early ...
+[11/23/2025 10:34:55.732 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5506 attempt=1 size=3170253
+[11/23/2025 10:34:56.302 PM] React+   || User: slayc127            || Channel: #feeding-team                        || emoji=🎉; msg="@feeding team heres the scheudle for thi..." by m_digio
+[11/23/2025 10:34:57.677 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5310 attempt=1 size=1125009
+[11/23/2025 10:34:58.113 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7180 attempt=1 size=434082
+[11/23/2025 10:34:59.473 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7968 attempt=1 size=1404455
+[11/23/2025 10:34:59.720 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5631 attempt=1 size=1047756
+[11/23/2025 10:35:02.201 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3241 attempt=1 size=228259
+[11/23/2025 10:35:02.365 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5431 attempt=1 size=690389
+[11/23/2025 10:35:03.691 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3255 attempt=1 size=249368
+[11/23/2025 10:35:04.248 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7258 attempt=1 size=372239
+[11/23/2025 10:35:04.883 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3244 attempt=1 size=341576
+[11/23/2025 10:35:06.091 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3274 attempt=1 size=407096
+[11/23/2025 10:35:06.354 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5307 attempt=1 size=1146019
+[11/23/2025 10:35:07.717 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3218 attempt=1 size=171222
+[11/23/2025 10:35:07.930 PM] React+   || User: slayc127            || Channel: #feeding-team                        || emoji=😭; msg="Starting the abandoning of Zen early I s..." by kitadan
+[11/23/2025 10:35:10.224 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4088 attempt=1 size=1082340
+[11/23/2025 10:35:10.654 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4863 attempt=1 size=854465
+[11/23/2025 10:35:11.795 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4049 attempt=1 size=317174
+[11/23/2025 10:35:12.224 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5689 attempt=1 size=723088
+[11/23/2025 10:35:13.209 PM] React+   || User: lemonelon_          || Channel: #feeding-team                        || emoji=❤️; msg="how dare u ask questions after using ur ..." by slayc127
+[11/23/2025 10:35:13.216 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4100 attempt=1 size=822091
+[11/23/2025 10:35:13.811 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7382 attempt=1 size=586567
+[11/23/2025 10:35:14.661 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4048 attempt=1 size=366200
+[11/23/2025 10:35:15.252 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7203 attempt=1 size=780076
+[11/23/2025 10:35:16.008 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4586 attempt=1 size=1072770
+[11/23/2025 10:35:17.045 PM] React+   || User: lemonelon_          || Channel: #feeding-team                        || emoji=💔; msg="how dare u ask questions after using ur ..." by slayc127
+[11/23/2025 10:35:17.049 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7386 attempt=1 size=534949
+[11/23/2025 10:35:19.509 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0734 attempt=1 size=1021660
+[11/23/2025 10:35:20.103 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6378 attempt=1 size=2133786
+[11/23/2025 10:35:20.865 PM] Message  || User: marieeealexa        || Channel: #feeding-team                        || Content: I can do coba tmr, didn’t realize I was supposed to sign up for Mond...
+[11/23/2025 10:35:20.880 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=51899... || Output: stations=Business; text=I can do coba tmr, didn’t realize I was suppo...
+[11/23/2025 10:35:20.956 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0728 attempt=1 size=516682
+[11/23/2025 10:35:21.730 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4277 attempt=1 size=1038753
+[11/23/2025 10:35:22.216 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4279 attempt=1 size=1071688
+[11/23/2025 10:35:22.966 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0734 attempt=1 size=1021660
+[11/23/2025 10:35:23.559 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5111 attempt=1 size=1126385
+[11/23/2025 10:35:24.482 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4294 attempt=1 size=1031094
+[11/23/2025 10:35:25.266 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6378 attempt=1 size=2133786
+[11/23/2025 10:35:26.331 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0741 attempt=1 size=745238
+[11/23/2025 10:35:28.872 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6427 attempt=1 size=1530686
+[11/23/2025 10:35:29.623 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2123 attempt=1 size=872975
+[11/23/2025 10:35:31.189 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2807 attempt=1 size=799701
+[11/23/2025 10:35:31.704 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0244 attempt=1 size=6325945
+[11/23/2025 10:35:32.883 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0245 attempt=1 size=6206129
+[11/23/2025 10:35:33.121 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6242 attempt=1 size=672676
+[11/23/2025 10:35:34.324 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2395 attempt=1 size=735687
+[11/23/2025 10:35:34.696 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0557 attempt=1 size=759743
+[11/23/2025 10:35:35.599 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2806 attempt=1 size=667543
+[11/23/2025 10:35:35.803 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0564 attempt=1 size=740877
+[11/23/2025 10:35:38.988 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0579 attempt=1 size=724906
+[11/23/2025 10:35:39.795 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1500 attempt=1 size=9636731
+[11/23/2025 10:35:40.240 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0581 attempt=1 size=834576
+[11/23/2025 10:35:41.854 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0244 attempt=1 size=6325945
+[11/23/2025 10:35:42.130 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0244 attempt=1 size=6325945
+[11/23/2025 10:35:45.237 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1150 attempt=1 size=1173512
+[11/23/2025 10:35:45.520 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0249 attempt=1 size=2099690
+[11/23/2025 10:35:46.599 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0251 attempt=1 size=59412
+[11/23/2025 10:35:47.605 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4580 attempt=1 size=2804493
+[11/23/2025 10:35:49.176 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4481 attempt=1 size=1826918
+[11/23/2025 10:35:50.210 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3112 attempt=1 size=128156
+[11/23/2025 10:35:51.530 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3109 attempt=1 size=128383
+[11/23/2025 10:35:52.131 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8189 attempt=1 size=420554
+[11/23/2025 10:35:52.961 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3078 attempt=1 size=292886
+[11/23/2025 10:35:53.462 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7734 attempt=1 size=540559
+[11/23/2025 10:35:54.547 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0302 attempt=1 size=881588
+[11/23/2025 10:35:54.778 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7674 attempt=1 size=474711
+[11/23/2025 10:35:55.719 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3077 attempt=1 size=184639
+[11/23/2025 10:35:56.722 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8192 attempt=1 size=445774
+[11/23/2025 10:35:58.128 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8418 attempt=1 size=1835894
+[11/23/2025 10:35:59.259 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5013 attempt=1 size=304136
+[11/23/2025 10:36:00.788 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0395 attempt=1 size=113601
+[11/23/2025 10:36:01.295 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0396 attempt=1 size=276019
+[11/23/2025 10:36:02.483 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5015 attempt=1 size=710934
+[11/23/2025 10:36:02.823 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5016 attempt=1 size=995841
+[11/23/2025 10:36:03.955 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5014 attempt=1 size=1215819
+[11/23/2025 10:36:05.700 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6731 attempt=1 size=470323
+[11/23/2025 10:36:06.539 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5285 attempt=1 size=1620054
+[11/23/2025 10:36:07.306 PM] Message  || User: m_digio             || Channel: #feeding-team                        || Content: i left it on the sign-up for people but no one chose it, i assumed y...
+[11/23/2025 10:36:07.690 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3956 attempt=1 size=515688
+[11/23/2025 10:36:08.365 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5303 attempt=1 size=1058498
+[11/23/2025 10:36:09.413 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7204 attempt=1 size=322464
+[11/23/2025 10:36:09.873 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5689 attempt=1 size=723088
+[11/23/2025 10:36:10.638 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3950 attempt=1 size=649285
+[11/23/2025 10:36:11.754 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5281 attempt=1 size=995012
+[11/23/2025 10:36:12.182 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5103 attempt=1 size=702858
+[11/23/2025 10:36:13.669 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5311 attempt=1 size=791077
+[11/23/2025 10:36:15.662 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4560 attempt=1 size=863087
+[11/23/2025 10:36:16.100 PM] React+   || User: kitadan             || Channel: #feeding-team                        || emoji=👍; msg="i left it on the sign-up for people but ..." by m_digio
+[11/23/2025 10:36:16.469 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7391 attempt=1 size=629363
+[11/23/2025 10:36:17.753 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0430 attempt=1 size=6705367
+[11/23/2025 10:36:17.990 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7401 attempt=1 size=829245
+[11/23/2025 10:36:19.082 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0441 attempt=1 size=643362
+[11/23/2025 10:36:19.700 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7405 attempt=1 size=405526
+[11/23/2025 10:36:21.040 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8033 attempt=1 size=1489786
+[11/23/2025 10:36:31.743 PM] Message  || User: m_digio             || Channel: #feeding-team                        || Content: youll have to ask elusive if thats okay
+[11/23/2025 10:36:31.751 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=49903... || Output: stations=Mary Kay and Zen; text=youll have to ask elusive if thats okay
+[11/23/2025 10:36:32.327 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/23/2025 10:36:33.481 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/23/2025 10:36:34.623 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/23/2025 10:36:35.726 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/23/2025 10:36:36.766 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/23/2025 10:36:37.338 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/23/2025 10:36:38.340 PM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/23/2025 10:36:53.058 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7975 attempt=1 size=567108
+[11/23/2025 10:36:55.201 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7512 attempt=1 size=139836
+[11/23/2025 10:36:56.665 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7184 attempt=1 size=520613
+[11/23/2025 10:36:58.136 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3696 attempt=1 size=667018
+[11/23/2025 10:36:59.540 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4484 attempt=1 size=800523
+[11/23/2025 10:37:00.069 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1770 attempt=1 size=808246
+[11/23/2025 10:37:01.343 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1368 attempt=1 size=924636
+[11/23/2025 10:37:01.506 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1772 attempt=1 size=1173188
+[11/23/2025 10:37:02.833 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1769 attempt=1 size=764522
+[11/23/2025 10:37:02.983 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4013 attempt=1 size=811122
+[11/23/2025 10:37:03.989 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1775 attempt=1 size=922351
+[11/23/2025 10:37:04.426 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1365 attempt=1 size=1357677
+[11/23/2025 10:37:05.726 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1151 attempt=1 size=3426772
+[11/23/2025 10:37:07.308 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2082 attempt=1 size=751701
+[11/23/2025 10:37:08.362 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1327 attempt=1 size=784272
+[11/23/2025 10:37:08.767 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2324 attempt=1 size=417244
+[11/23/2025 10:37:10.220 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1690 attempt=1 size=496044
+[11/23/2025 10:37:10.856 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1259 attempt=1 size=7335916
+[11/23/2025 10:37:11.448 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3485 attempt=1 size=322348
+[11/23/2025 10:37:12.913 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1780 attempt=1 size=484457
+[11/23/2025 10:37:13.101 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7554 attempt=1 size=570062
+[11/23/2025 10:37:14.332 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2012 attempt=1 size=813004
+[11/23/2025 10:37:14.576 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6805 attempt=1 size=1477731
+[11/23/2025 10:37:17.429 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4516 attempt=1 size=667800
+[11/23/2025 10:37:17.945 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1329 attempt=1 size=3965751
+[11/23/2025 10:37:18.893 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5098 attempt=1 size=699635
+[11/23/2025 10:37:20.048 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1335 attempt=1 size=913265
+[11/23/2025 10:37:20.209 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5625 attempt=1 size=564472
+[11/23/2025 10:37:21.613 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1630 attempt=1 size=447707
+[11/23/2025 10:37:21.793 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1792 attempt=1 size=453055
+[11/23/2025 10:37:23.612 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4517 attempt=1 size=660142
+[11/23/2025 10:37:24.657 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1336 attempt=1 size=3865695
+[11/23/2025 10:37:26.384 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1362 attempt=1 size=3769106
+[11/23/2025 10:37:26.567 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1703 attempt=1 size=692821
+[11/23/2025 10:37:29.751 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1764 attempt=1 size=938348
+[11/23/2025 10:37:29.996 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2371 attempt=1 size=528999
+[11/23/2025 10:37:31.159 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1828 attempt=1 size=553527
+[11/23/2025 10:37:31.596 PM] React+   || User: bixzu               || Channel: #feeding-team                        || emoji=‼️; msg="greedywave fed" by cici4f3
+[11/23/2025 10:37:32.719 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5916 attempt=1 size=1167951
+[11/23/2025 10:37:32.952 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1827 attempt=1 size=569900
+[11/23/2025 10:37:34.076 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3516 attempt=1 size=115754
+[11/23/2025 10:37:34.885 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1713 attempt=1 size=496646
+[11/23/2025 10:37:35.456 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5914 attempt=1 size=685708
+[11/23/2025 10:37:36.401 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1711 attempt=1 size=554960
+[11/23/2025 10:37:36.618 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3555 attempt=1 size=90734
+[11/23/2025 10:37:38.204 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5918 attempt=1 size=746446
+[11/23/2025 10:37:40.866 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6748 attempt=1 size=1422669
+[11/23/2025 10:37:41.051 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1597 attempt=1 size=2210778
+[11/23/2025 10:37:42.361 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4835 attempt=1 size=661297
+[11/23/2025 10:37:42.643 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0426 attempt=1 size=2826637
+[11/23/2025 10:37:43.562 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8118 attempt=1 size=371300
+[11/23/2025 10:37:44.186 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=0425 attempt=1 size=2589192
+[11/23/2025 10:37:45.020 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7779 attempt=1 size=614991
+[11/23/2025 10:37:45.826 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2052 attempt=1 size=2086178
+[11/23/2025 10:37:46.911 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=1926 attempt=1 size=342164
+[11/23/2025 10:37:47.059 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2053 attempt=1 size=1001892
+[11/23/2025 10:37:50.035 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2718 attempt=1 size=759048
+[11/23/2025 10:37:50.140 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2344 attempt=1 size=361651
+[11/23/2025 10:37:51.110 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2609 attempt=1 size=31319
+[11/23/2025 10:37:51.557 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2721 attempt=1 size=843842
+[11/23/2025 10:37:52.319 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2719 attempt=1 size=756896
+[11/23/2025 10:37:53.166 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2719 attempt=1 size=756896
+[11/23/2025 10:37:53.690 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2151 attempt=1 size=1596588
+[11/23/2025 10:37:54.775 PM] React+   || User: bixzu               || Channel: #feeding-team                        || emoji=🎉; msg="@feeding team heres the scheudle for thi..." by m_digio
+[11/23/2025 10:37:54.882 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2157 attempt=1 size=1263604
+[11/23/2025 10:37:55.375 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2345 attempt=1 size=292366
+[11/23/2025 10:37:56.388 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2720 attempt=1 size=726005
+[11/23/2025 10:37:58.431 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5611 attempt=1 size=518767
+[11/23/2025 10:37:59.026 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2357 attempt=1 size=37509
+[11/23/2025 10:38:00.086 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6587 attempt=1 size=1022587
+[11/23/2025 10:38:00.836 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2360 attempt=1 size=634644
+[11/23/2025 10:38:01.524 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6716 attempt=1 size=966642
+[11/23/2025 10:38:02.669 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2355 attempt=1 size=45952
+[11/23/2025 10:38:02.855 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7322 attempt=1 size=637234
+[11/23/2025 10:38:04.307 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6014 attempt=1 size=607167
+[11/23/2025 10:38:05.340 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2356 attempt=1 size=50079
+[11/23/2025 10:38:07.427 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2356 attempt=1 size=50079
+[11/23/2025 10:38:07.829 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2359 attempt=1 size=58635
+[11/23/2025 10:38:08.654 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2357 attempt=1 size=37509
+[11/23/2025 10:38:09.171 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2355 attempt=1 size=45952
+[11/23/2025 10:38:09.690 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2355 attempt=1 size=45952
+[11/23/2025 10:38:10.546 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2356 attempt=1 size=50079
+[11/23/2025 10:38:11.738 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2357 attempt=1 size=37509
+[11/23/2025 10:38:12.724 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2570 attempt=1 size=647161
+[11/23/2025 10:38:13.943 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6234 attempt=1 size=415387
+[11/23/2025 10:38:14.196 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3082 attempt=1 size=189846
+[11/23/2025 10:38:15.549 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5413 attempt=1 size=564306
+[11/23/2025 10:38:15.769 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2575 attempt=1 size=679083
+[11/23/2025 10:38:16.925 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2572 attempt=1 size=654744
+[11/23/2025 10:38:17.425 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2577 attempt=1 size=656484
+[11/23/2025 10:38:18.127 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7593 attempt=1 size=422527
+[11/23/2025 10:38:19.141 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3071 attempt=1 size=145688
+[11/23/2025 10:38:20.675 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2574 attempt=1 size=608014
+[11/23/2025 10:38:21.785 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2657 attempt=1 size=712586
+[11/23/2025 10:38:23.197 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2562 attempt=1 size=661205
+[11/23/2025 10:38:23.482 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2683 attempt=1 size=867062
+[11/23/2025 10:38:24.475 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2625 attempt=1 size=692551
+[11/23/2025 10:38:24.850 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2684 attempt=1 size=928706
+[11/23/2025 10:38:25.896 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2564 attempt=1 size=523268
+[11/23/2025 10:38:26.252 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2682 attempt=1 size=885216
+[11/23/2025 10:38:27.408 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=3991 attempt=1 size=373415
+[11/23/2025 10:38:28.365 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2681 attempt=1 size=883562
+[11/23/2025 10:38:29.898 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5514 attempt=1 size=1054364
+[11/23/2025 10:38:30.084 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2680 attempt=1 size=686304
+[11/23/2025 10:38:31.193 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7186 attempt=1 size=644501
+[11/23/2025 10:38:32.560 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5431 attempt=1 size=690389
+[11/23/2025 10:38:33.386 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6073 attempt=1 size=528087
+[11/23/2025 10:38:34.456 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7702 attempt=1 size=719474
+[11/23/2025 10:38:34.688 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6071 attempt=1 size=478302
+[11/23/2025 10:38:35.920 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5700 attempt=1 size=789330
+[11/23/2025 10:38:36.420 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6067 attempt=1 size=594973
+[11/23/2025 10:38:37.697 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5764 attempt=1 size=556659
+[11/23/2025 10:38:39.086 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6117 attempt=1 size=752220
+[11/23/2025 10:38:39.509 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6082 attempt=1 size=85141
+[11/23/2025 10:38:40.476 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4902 attempt=1 size=443383
+[11/23/2025 10:38:41.647 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6123 attempt=1 size=980759
+[11/23/2025 10:38:42.309 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4770 attempt=1 size=1316180
+[11/23/2025 10:38:43.205 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4904 attempt=1 size=641527
+[11/23/2025 10:38:43.626 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4456 attempt=1 size=758600
+[11/23/2025 10:38:44.590 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6121 attempt=1 size=1530817
+[11/23/2025 10:38:45.003 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4769 attempt=1 size=900780
+[11/23/2025 10:38:47.211 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=4771 attempt=1 size=1337470
+[11/23/2025 10:38:47.493 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5313 attempt=1 size=732547
+[11/23/2025 10:38:49.656 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5989 attempt=1 size=847489
+[11/23/2025 10:38:50.091 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6372 attempt=1 size=707126
+[11/23/2025 10:38:51.304 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5963 attempt=1 size=735104
+[11/23/2025 10:38:51.492 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6371 attempt=1 size=578949
+[11/23/2025 10:38:52.891 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5526 attempt=1 size=590545
+[11/23/2025 10:38:53.048 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5987 attempt=1 size=735195
+[11/23/2025 10:38:54.253 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8424 attempt=1 size=1455800
+[11/23/2025 10:38:54.610 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5964 attempt=1 size=452636
+[11/23/2025 10:38:55.925 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6533 attempt=1 size=593377
+[11/23/2025 10:38:57.471 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5391 attempt=1 size=477420
+[11/23/2025 10:38:58.498 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7591 attempt=1 size=384045
+[11/23/2025 10:38:58.769 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5828 attempt=1 size=1280749
+[11/23/2025 10:39:00.258 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8013 attempt=1 size=1174770
+[11/23/2025 10:39:00.494 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8087 attempt=1 size=955960
+[11/23/2025 10:39:01.808 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8061 attempt=1 size=942608
+[11/23/2025 10:39:02.056 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7648 attempt=1 size=1108086
+[11/23/2025 10:39:03.235 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8091 attempt=1 size=935735
+[11/23/2025 10:39:03.411 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7662 attempt=1 size=269212
+[11/23/2025 10:39:05.493 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7317 attempt=1 size=72905
+[11/23/2025 10:39:05.530 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7719 attempt=1 size=803252
+[11/23/2025 10:39:06.665 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6698 attempt=1 size=347684
+[11/23/2025 10:39:08.397 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5601 attempt=1 size=631214
+[11/23/2025 10:39:08.656 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5119 attempt=1 size=737730
+[11/23/2025 10:39:09.553 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6699 attempt=1 size=392306
+[11/23/2025 10:39:10.819 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5415 attempt=1 size=381764
+[11/23/2025 10:39:13.016 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7784 attempt=1 size=909869
+[11/23/2025 10:39:13.830 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5862 attempt=1 size=1026265
+[11/23/2025 10:39:14.062 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5140 attempt=1 size=130798
+[11/23/2025 10:39:15.394 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8289 attempt=1 size=191135
+[11/23/2025 10:39:15.448 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7783 attempt=1 size=1096355
+[11/23/2025 10:39:16.622 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5861 attempt=1 size=629643
+[11/23/2025 10:39:16.830 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7820 attempt=1 size=598527
+[11/23/2025 10:39:17.970 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5863 attempt=1 size=700557
+[11/23/2025 10:39:19.274 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5851 attempt=1 size=274504
+[11/23/2025 10:39:20.280 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7851 attempt=1 size=796880
+[11/23/2025 10:39:21.499 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8013 attempt=1 size=1174770
+[11/23/2025 10:39:22.485 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6742 attempt=1 size=845317
+[11/23/2025 10:39:22.652 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7855 attempt=1 size=658091
+[11/23/2025 10:39:23.940 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6764 attempt=1 size=848961
+[11/23/2025 10:39:24.225 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7648 attempt=1 size=1108086
+[11/23/2025 10:39:25.272 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8159 attempt=1 size=916579
+[11/23/2025 10:39:25.508 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7646 attempt=1 size=907084
+[11/23/2025 10:39:26.754 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5389 attempt=1 size=515054
+[11/23/2025 10:39:27.965 PM] Message  || User: m_digio             || Channel: #cat-name-ideas                      || Content: lets start naming cats based on the officers legal name /silly
+[11/23/2025 10:39:28.433 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5663 attempt=1 size=1333876
+[11/23/2025 10:39:29.764 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6062 attempt=1 size=957518
+[11/23/2025 10:39:31.237 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6167 attempt=1 size=658828
+[11/23/2025 10:39:32.583 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6060 attempt=1 size=781782
+[11/23/2025 10:39:32.803 PM] Edit     || User: m_digio             || Channel: #cat-name-ideas                      || lets start naming cats based on the officers legal name /silly -> lets start ...
+[11/23/2025 10:39:33.274 PM] React+   || User: cici4f3             || Channel: #yapper-committee                    || emoji=😭; msg="people with no cars MUST stop commenting..." by izzyballz
+[11/23/2025 10:39:33.458 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8149 attempt=1 size=1281955
+[11/23/2025 10:39:33.778 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5664 attempt=1 size=1117372
+[11/23/2025 10:39:37.154 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6892 attempt=1 size=627685
+[11/23/2025 10:39:37.455 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5309 attempt=1 size=1114203
+[11/23/2025 10:39:38.489 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7214 attempt=1 size=592030
+[11/23/2025 10:39:39.035 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5310 attempt=1 size=1125009
+[11/23/2025 10:39:39.748 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7181 attempt=1 size=448261
+[11/23/2025 10:39:40.527 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6595 attempt=1 size=418318
+[11/23/2025 10:39:41.283 PM] React+   || User: cici4f3             || Channel: #yapper-committee                    || emoji=🐙; msg="(i will not risk my free ride)" by slayc127
+[11/23/2025 10:39:41.491 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8065 attempt=1 size=1140763
+[11/23/2025 10:39:41.887 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5306 attempt=1 size=1091302
+[11/23/2025 10:39:42.918 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6828 attempt=1 size=488072
+[11/23/2025 10:39:43.281 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6831 attempt=1 size=346997
+[11/23/2025 10:39:45.418 PM] React+   || User: cici4f3             || Channel: #yapper-committee                    || emoji=😭; msg="backseat drivers are even worse why are ..." by izzyballz
+[11/23/2025 10:39:46.317 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6592 attempt=1 size=268121
+[11/23/2025 10:39:46.592 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8157 attempt=1 size=1006668
+[11/23/2025 10:39:47.827 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5306 attempt=1 size=1091302
+[11/23/2025 10:39:48.273 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6838 attempt=1 size=490580
+[11/23/2025 10:39:49.417 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6591 attempt=1 size=331175
+[11/23/2025 10:39:49.621 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6771 attempt=1 size=645136
+[11/23/2025 10:39:50.253 PM] Message  || User: kitadan             || Channel: #feeding-team                        || Content: You assumed correctly.  Just a matter of how much I want them to rev...
+[11/23/2025 10:39:50.651 PM] Message  || User: cici4f3             || Channel: #yapper-committee                    || Content: no literally bro
+[11/23/2025 10:39:50.942 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6738 attempt=1 size=541708
+[11/23/2025 10:39:51.146 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5309 attempt=1 size=1114203
+[11/23/2025 10:39:52.619 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7972 attempt=1 size=792006
+[11/23/2025 10:39:52.782 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5310 attempt=1 size=1125009
+[11/23/2025 10:39:54.913 PM] Message  || User: cici4f3             || Channel: #yapper-committee                    || Content: YAYYYYYY
+[11/23/2025 10:39:56.124 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5379 attempt=1 size=573877
+[11/23/2025 10:39:56.347 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7477 attempt=1 size=902920
+[11/23/2025 10:39:58.419 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7557 attempt=1 size=658140
+[11/23/2025 10:39:58.747 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7612 attempt=1 size=859592
+[11/23/2025 10:39:59.554 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8342 attempt=1 size=702328
+[11/23/2025 10:40:00.306 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6960 attempt=1 size=1060964
+[11/23/2025 10:40:00.696 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5910 attempt=1 size=660477
+[11/23/2025 10:40:01.798 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5850 attempt=1 size=664338
+[11/23/2025 10:40:02.034 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8340 attempt=1 size=1252604
+[11/23/2025 10:40:03.567 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7509 attempt=1 size=1300134
+[11/23/2025 10:40:04.767 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7389 attempt=1 size=1055814
+[11/23/2025 10:40:04.956 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5403 attempt=1 size=539646
+[11/23/2025 10:40:05.109 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: dnd lore going so crazy me and my dm are trying to understand the bi...
+[11/23/2025 10:40:06.817 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6444 attempt=1 size=760851
+[11/23/2025 10:40:07.397 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7942 attempt=1 size=622670
+[11/23/2025 10:40:08.392 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7389 attempt=1 size=1055814
+[11/23/2025 10:40:08.619 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7608 attempt=1 size=395465
+[11/23/2025 10:40:09.935 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8110 attempt=1 size=1162493
+[11/23/2025 10:40:10.838 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8110 attempt=1 size=1162493
+[11/23/2025 10:40:11.349 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8106 attempt=1 size=180522
+[11/23/2025 10:40:12.261 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6012 attempt=1 size=474835
+[11/23/2025 10:40:13.440 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5399 attempt=1 size=581936
+[11/23/2025 10:40:14.568 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7397 attempt=1 size=1116985
+[11/23/2025 10:40:15.643 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7393 attempt=1 size=190446
+[11/23/2025 10:40:15.990 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6742 attempt=1 size=845317
+[11/23/2025 10:40:16.789 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7005 attempt=1 size=1059966
+[11/23/2025 10:40:16.950 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: i had to pull out my zoology notes and im not even kidding
+[11/23/2025 10:40:17.527 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6904 attempt=1 size=570517
+[11/23/2025 10:40:17.960 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7037 attempt=1 size=1190234
+[11/23/2025 10:40:18.587 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5365 attempt=1 size=628307
+[11/23/2025 10:40:19.742 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7850 attempt=1 size=975056
+[11/23/2025 10:40:19.976 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5363 attempt=1 size=681389
+[11/23/2025 10:40:21.831 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6907 attempt=1 size=1149971
+[11/23/2025 10:40:22.079 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5524 attempt=1 size=644102
+[11/23/2025 10:40:25.280 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5953 attempt=1 size=706871
+[11/23/2025 10:40:25.788 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8026 attempt=1 size=379429
+[11/23/2025 10:40:27.103 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5951 attempt=1 size=686844
+[11/23/2025 10:40:27.458 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5530 attempt=1 size=441920
+[11/23/2025 10:40:27.879 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: i miss playing dnd so bad
+[11/23/2025 10:40:28.476 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8027 attempt=1 size=887868
+[11/23/2025 10:40:28.737 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6347 attempt=1 size=604892
+[11/23/2025 10:40:29.745 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8305 attempt=1 size=389167
+[11/23/2025 10:40:30.033 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6243 attempt=1 size=387718
+[11/23/2025 10:40:30.970 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7974 attempt=1 size=550416
+[11/23/2025 10:40:31.333 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6026 attempt=1 size=1017166
+[11/23/2025 10:40:34.126 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6619 attempt=1 size=977181
+[11/23/2025 10:40:34.906 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5985 attempt=1 size=747103
+[11/23/2025 10:40:35.408 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7560 attempt=1 size=802500
+[11/23/2025 10:40:36.504 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6375 attempt=1 size=950842
+[11/23/2025 10:40:36.822 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7070 attempt=1 size=963797
+[11/23/2025 10:40:37.758 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: derek have i shown you my dice???
+[11/23/2025 10:40:38.113 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6631 attempt=1 size=1405645
+[11/23/2025 10:40:38.293 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6374 attempt=1 size=804931
+[11/23/2025 10:40:39.569 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7066 attempt=1 size=868524
+[11/23/2025 10:40:39.714 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5987 attempt=1 size=735195
+[11/23/2025 10:40:40.895 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5961 attempt=1 size=764614
+[11/23/2025 10:40:42.380 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5948 attempt=1 size=945242
+[11/23/2025 10:40:43.960 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: no
+[11/23/2025 10:40:43.964 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7571 attempt=1 size=415575
+[11/23/2025 10:40:44.302 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6226 attempt=1 size=2677411
+[11/23/2025 10:40:45.459 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8040 attempt=1 size=712912
+[11/23/2025 10:40:46.677 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5957 attempt=1 size=375350
+[11/23/2025 10:40:47.459 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6226 attempt=1 size=2677411
+[11/23/2025 10:40:48.088 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: bc u hat me
+[11/23/2025 10:40:48.216 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5955 attempt=1 size=245752
+[11/23/2025 10:40:49.315 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6227 attempt=1 size=2570926
+[11/23/2025 10:40:51.021 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6363 attempt=1 size=465479
+[11/23/2025 10:40:52.254 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7103 attempt=1 size=363855
+[11/23/2025 10:40:52.493 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7782 attempt=1 size=1250827
+[11/23/2025 10:40:53.763 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6360 attempt=1 size=539141
+[11/23/2025 10:40:54.062 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7102 attempt=1 size=294599
+[11/23/2025 10:40:54.981 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6361 attempt=1 size=566674
+[11/23/2025 10:40:55.676 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6422 attempt=1 size=78093
+[11/23/2025 10:40:56.277 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7783 attempt=1 size=1096355
+[11/23/2025 10:40:57.909 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6423 attempt=1 size=84954
+[11/23/2025 10:40:58.917 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6957 attempt=1 size=804735
+[11/23/2025 10:41:00.163 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6588 attempt=1 size=1105152
+[11/23/2025 10:41:00.885 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7241 attempt=1 size=805992
+[11/23/2025 10:41:01.542 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6631 attempt=1 size=1405645
+[11/23/2025 10:41:02.176 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7364 attempt=1 size=783990
+[11/23/2025 10:41:02.945 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7077 attempt=1 size=971583
+[11/23/2025 10:41:03.511 PM] React+   || User: nostalgicsapphic    || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="dnd lore going so crazy me and my dm are..." by a1darek
+[11/23/2025 10:41:03.730 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7381 attempt=1 size=1025111
+[11/23/2025 10:41:04.389 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7245 attempt=1 size=764320
+[11/23/2025 10:41:05.492 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7209 attempt=1 size=878763
+[11/23/2025 10:41:06.762 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7378 attempt=1 size=574697
+[11/23/2025 10:41:07.862 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7373 attempt=1 size=328006
+[11/23/2025 10:41:09.278 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6897 attempt=1 size=406740
+[11/23/2025 10:41:09.566 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7287 attempt=1 size=773945
+[11/23/2025 10:41:10.667 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7225 attempt=1 size=723642
+[11/23/2025 10:41:10.906 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6952 attempt=1 size=576949
+[11/23/2025 10:41:12.232 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6893 attempt=1 size=718590
+[11/23/2025 10:41:12.439 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7062 attempt=1 size=694120
+[11/23/2025 10:41:13.702 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7346 attempt=1 size=626100
+[11/23/2025 10:41:13.887 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6625 attempt=1 size=555021
+[11/23/2025 10:41:15.188 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6767 attempt=1 size=1050487
+[11/23/2025 10:41:16.372 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7357 attempt=1 size=699049
+[11/23/2025 10:41:17.665 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7356 attempt=1 size=393879
+[11/23/2025 10:41:17.930 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=6895 attempt=1 size=446478
+[11/23/2025 10:41:19.388 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7699 attempt=1 size=619083
+[11/23/2025 10:41:19.586 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7239 attempt=1 size=561733
+[11/23/2025 10:41:21.212 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8051 attempt=1 size=862244
+[11/23/2025 10:41:21.480 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7202 attempt=1 size=905789
+[11/23/2025 10:41:22.569 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7370 attempt=1 size=581245
+[11/23/2025 10:41:22.833 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7355 attempt=1 size=448535
+[11/23/2025 10:41:24.499 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7224 attempt=1 size=467204
+[11/23/2025 10:41:25.736 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8410 attempt=1 size=581906
+[11/23/2025 10:41:27.077 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8393 attempt=1 size=330100
+[11/23/2025 10:41:27.534 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7312 attempt=1 size=521605
+[11/23/2025 10:41:28.574 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7053 attempt=1 size=1442930
+[11/23/2025 10:41:28.806 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7297 attempt=1 size=851430
+[11/23/2025 10:41:30.060 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8163 attempt=1 size=620162
+[11/23/2025 10:41:30.235 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8409 attempt=1 size=1779528
+[11/23/2025 10:41:31.412 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7054 attempt=1 size=1399121
+[11/23/2025 10:41:31.713 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7299 attempt=1 size=1217180
+[11/23/2025 10:41:33.724 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7294 attempt=1 size=972553
+[11/23/2025 10:41:34.017 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7293 attempt=1 size=681647
+[11/23/2025 10:41:35.263 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: my mom literally screams even when nothing is happening
+[11/23/2025 10:41:35.837 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7298 attempt=1 size=793717
+[11/23/2025 10:41:36.240 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7294 attempt=1 size=972553
+[11/23/2025 10:41:36.993 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7294 attempt=1 size=972553
+[11/23/2025 10:41:37.506 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7297 attempt=1 size=851430
+[11/23/2025 10:41:38.473 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7295 attempt=1 size=887936
+[11/23/2025 10:41:38.864 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7289 attempt=1 size=680907
+[11/23/2025 10:41:40.678 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: (no text; attachments=2)
+[11/23/2025 10:41:41.717 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8163 attempt=1 size=620162
+[11/23/2025 10:41:42.234 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7294 attempt=1 size=972553
+[11/23/2025 10:41:42.478 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: 60 dollar
+[11/23/2025 10:41:42.838 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7293 attempt=1 size=681647
+[11/23/2025 10:41:43.199 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: she has the reaction time of a glacier
+[11/23/2025 10:41:43.828 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7312 attempt=1 size=521605
+[11/23/2025 10:41:44.298 PM] Message  || User: kitadan             || Channel: #cat-name-ideas                      || Content: Officers initials.  Must be at least 3 letters.
+[11/23/2025 10:41:45.583 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7312 attempt=1 size=521605
+[11/23/2025 10:41:45.808 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7313 attempt=1 size=856352
+[11/23/2025 10:41:46.141 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: So worth it
+[11/23/2025 10:41:46.952 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7293 attempt=1 size=681647
+[11/23/2025 10:41:47.119 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7292 attempt=1 size=750083
+[11/23/2025 10:41:48.110 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7295 attempt=1 size=887936
+[11/23/2025 10:41:48.351 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7293 attempt=1 size=681647
+[11/23/2025 10:41:49.578 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7298 attempt=1 size=793717
+[11/23/2025 10:41:50.806 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7294 attempt=1 size=972553
+[11/23/2025 10:41:51.969 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7433 attempt=1 size=854742
+[11/23/2025 10:41:53.463 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7446 attempt=1 size=1414341
+[11/23/2025 10:41:53.702 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7434 attempt=1 size=1066490
+[11/23/2025 10:41:55.122 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7645 attempt=1 size=484156
+[11/23/2025 10:41:56.313 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7445 attempt=1 size=1133585
+[11/23/2025 10:41:57.358 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7590 attempt=1 size=378375
+[11/23/2025 10:41:59.023 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7588 attempt=1 size=364071
+[11/23/2025 10:41:59.256 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7668 attempt=1 size=420088
+[11/23/2025 10:42:00.309 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7666 attempt=1 size=486341
+[11/23/2025 10:42:00.473 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7732 attempt=1 size=514664
+[11/23/2025 10:42:01.759 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7667 attempt=1 size=511516
+[11/23/2025 10:42:01.996 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7589 attempt=1 size=492954
+[11/23/2025 10:42:03.299 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7588 attempt=1 size=364071
+[11/23/2025 10:42:03.638 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7665 attempt=1 size=480179
+[11/23/2025 10:42:05.804 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7645 attempt=1 size=484156
+[11/23/2025 10:42:05.982 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7669 attempt=1 size=592249
+[11/23/2025 10:42:07.030 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7668 attempt=1 size=420088
+[11/23/2025 10:42:08.340 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7669 attempt=1 size=592249
+[11/23/2025 10:42:09.564 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8378 attempt=1 size=575650
+[11/23/2025 10:42:10.439 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: why am i seriously considering trading my lenovo yoga for a macbook ...
+[11/23/2025 10:42:10.858 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=2560 attempt=1 size=713128
+[11/23/2025 10:42:12.087 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7969 attempt=1 size=922816
+[11/23/2025 10:42:12.365 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8390 attempt=1 size=526770
+[11/23/2025 10:42:14.123 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7594 attempt=1 size=371087
+[11/23/2025 10:42:14.448 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7775 attempt=1 size=1167920
+[11/23/2025 10:42:15.339 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8377 attempt=1 size=539021
+[11/23/2025 10:42:16.742 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7776 attempt=1 size=24588
+[11/23/2025 10:42:18.064 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7846 attempt=1 size=618608
+[11/23/2025 10:42:19.270 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=8048 attempt=1 size=1204109
+[11/23/2025 10:42:29.500 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: i condone macbook air
+[11/23/2025 10:42:45.526 PM] Message  || User: yaeji               || Channel: #yapper-committee                    || Content: i love mine
+[11/23/2025 10:43:09.918 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: bought them at fan expo, me and bel seperately spotted them, left, a...
+[11/23/2025 10:43:10.377 PM] Message  || User: baseketballin       || Channel: #feeding-team                        || Content: oh shit @feeding team im so sorry today was so busy did someone feed...
+[11/23/2025 10:43:10.385 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=41372... || Output: stations=West Hall; text=oh shit <@&643587274797481988> im so sorry t...
+[11/23/2025 10:43:47.264 PM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/23/2025 10:43:48.211 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/23/2025 10:43:49.178 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/23/2025 10:43:50.076 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/23/2025 10:43:50.983 PM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/23/2025 10:43:51.375 PM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/23/2025 10:43:52.305 PM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/23/2025 10:43:52.771 PM] React+   || User: simplyshadow171295  || Channel: #feeding-team                        || emoji=😭; msg="Starting the abandoning of Zen early I s..." by kitadan
+[11/23/2025 10:44:11.956 PM] Message  || User: m_digio             || Channel: #feeding-team                        || Content: (if havent been fed dont worry abt it they will be okay)
+[11/23/2025 10:44:11.964 PM] Intent   || feed_update               ||                                               || station=Mary Kay and Zen; dates=['2025-11-23']
+[11/23/2025 10:44:13.214 PM] Action   || Name: sheet_mark          || Trigger: station=Mary Kay and Zen date=202... || Output: ok
+[11/23/2025 10:44:13.216 PM] Action   || Name: feed_update         || Trigger: station=Mary Kay and Zen; dates=2... || Output: ok
+[11/23/2025 10:44:15.071 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: prettyyy
+[11/23/2025 10:44:19.633 PM] React+   || User: simplyshadow171295  || Channel: #feeding-team                        || emoji=‼️; msg="(if havent been fed dont worry abt it th..." by m_digio
+[11/23/2025 10:44:26.870 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: NOOOOOOOOO
+[11/23/2025 10:44:27.246 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i have always wanted a macbook but my parents never wanted to buy on...
+[11/23/2025 10:44:33.447 PM] Message  || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || Content: good taste have struggle
+[11/23/2025 10:44:37.142 PM] React+   || User: lemonelon_          || Channel: #feeding-team                        || emoji=‼️; msg="greedywave fed" by cici4f3
+[11/23/2025 10:44:37.322 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: They have the 'dumpster cat' life but also the greens isn't too far ...
+[11/23/2025 10:44:37.331 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=62444... || Output: stations=Greens,Microwave; text=They have the 'dumpster cat' life but...
+[11/23/2025 10:44:37.706 PM] Edit     || User: a1darek             || Channel: #purrley-pawsitive-pussy-pals        || good taste have struggle -> good taste haver struggle
+[11/23/2025 10:44:46.950 PM] Message  || User: simplyshadow171295  || Channel: #cat-name-ideas                      || Content: we do have a ty
+[11/23/2025 10:44:55.276 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: tomcat who is ty
+[11/23/2025 10:44:55.282 PM] Intent   || who_is                    ||                                               || cat=Ty
+[11/23/2025 10:44:56.624 PM] React+   || User: baseketballin       || Channel: #feeding-team                        || emoji=❤️; msg="(if havent been fed dont worry abt it th..." by m_digio
+[11/23/2025 10:45:04.594 PM] Message  || User: austinbaustinb      || Channel: #feeding-team                        || Content: Not sure how easy it is for them to sniff out that stuff but if some...
+[11/23/2025 10:45:04.608 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=62444... || Output: stations=Microwave; text=Not sure how easy it is for them to sniff ou...
+[11/23/2025 10:45:06.942 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: absolute funniest situation ive ever been in
+[11/23/2025 10:45:07.492 PM] React+   || User: baseketballin       || Channel: #feeding-team                        || emoji=🎉; msg="@feeding team heres the scheudle for thi..." by m_digio
+[11/23/2025 10:45:23.822 PM] Message  || User: m_digio             || Channel: #purrley-pawsitive-pussy-pals        || Content: "are these the dice you are looking for"
+[11/23/2025 10:45:46.357 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: there’s literally nothing i do on my laptop that i wouldn’t be able ...
+[11/23/2025 10:46:32.792 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: @emiximez was this the cat you saw in the tree yesterday
+[11/23/2025 10:46:37.217 PM] Message  || User: m_digio             || Channel: #cat-name-ideas                      || Content: but those initals are not from a name
+[11/23/2025 10:47:03.000 PM] Message  || User: m_digio             || Channel: #cat-name-ideas                      || Content: starting to get obsessed with the idea of naming the next cat i find...
+[11/23/2025 10:47:03.256 PM] Message  || User: simplyshadow171295  || Channel: #cat-name-ideas                      || Content: what is a name anyways
+[11/23/2025 10:47:22.502 PM] Message  || User: emiximez            || Channel: #bot-spam                            || Content: no it was white with brown patches
+[11/23/2025 10:47:29.638 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: hm
+[11/23/2025 10:47:33.446 PM] Edit     || User: m_digio             || Channel: #cat-name-ideas                      || starting to get obsessed with the idea of naming the next cat i find "DiGiova...
+[11/23/2025 10:47:36.521 PM] Message  || User: emiximez            || Channel: #bot-spam                            || Content: small adult i think
+[11/23/2025 10:48:05.311 PM] React+   || User: kitadan             || Channel: #feeding-team                        || emoji=❤️; msg="(if havent been fed dont worry abt it th..." by m_digio
+[11/23/2025 10:48:09.337 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: barbie would be the only other one
+[11/23/2025 10:48:15.861 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: tomcat show me barbie
+[11/23/2025 10:48:15.864 PM] Intent   || show_photo                ||                                               || cat=Barbie
+[11/23/2025 10:48:19.007 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5120 attempt=1 size=1080217
+[11/23/2025 10:48:29.455 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: but she’s not got much white
+[11/23/2025 10:49:17.785 PM] React+   || User: simplyshadow171295  || Channel: #memes                               || emoji=💀; msg="https://x.com/lowkeydex/status/199239638..." by ludavis
+[11/23/2025 10:49:50.446 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: hm
+[11/23/2025 10:50:06.615 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: (i refuse to acknowledge that this may be an unknown cat)
+[11/23/2025 10:50:07.279 PM] Message  || User: pancakemixteamdj    || Channel: #yapper-committee                    || Content: )Me when my passages sees the quick trip trash in passenger seat , )...
+[11/23/2025 10:50:20.834 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: perhaps petal … but i think she’s pretty fluffy
+[11/23/2025 10:50:24.503 PM] Message  || User: kitadan             || Channel: #feeding-team                        || Content: Only Angel went as far as the old Mary Kay station if you want how m...
+[11/23/2025 10:50:24.522 PM] Action   || Name: feed_pending_set    || Trigger: ch=643586809166561310; user=42786... || Output: stations=Mary Kay and Zen,Microwave; text=Only Angel went as far as t...
+[11/23/2025 10:50:28.082 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: tomcat show me petal
+[11/23/2025 10:50:28.085 PM] Intent   || show_photo                ||                                               || cat=Petal
+[11/23/2025 10:50:32.175 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=5822 attempt=1 size=237618
+[11/23/2025 10:50:37.434 PM] Message  || User: simplyshadow171295  || Channel: #bot-spam                            || Content: also she’s maintenance
+[11/23/2025 10:50:41.593 PM] Action   || Name: show_cache_downl... || Trigger: https://drive.google.com/uc?expor... || Output: sn=7484 attempt=1 size=941753
+[11/23/2025 10:52:00.173 PM] Message  || User: kitadan             || Channel: #cat-name-ideas                      || Content: Shitbag Cuntface having to be called Steve would have a word.
+[11/23/2025 10:52:12.471 PM] React+   || User: simplyshadow171295  || Channel: #cat-name-ideas                      || emoji=😆; msg="Shitbag Cuntface having to be called Ste..." by kitadan
+[11/23/2025 10:52:36.721 PM] Message  || User: simplyshadow171295  || Channel: #cat-name-ideas                      || Content: redacted being marshmallow publicly will forever have my heart
+[11/23/2025 10:53:01.748 PM] React+   || User: kitadan             || Channel: #cat-name-ideas                      || emoji=🎉; msg="redacted being marshmallow publicly will..." by simplyshadow171295
+[11/23/2025 10:53:40.359 PM] Message  || User: austinbaustinb      || Channel: #thomas-cat-sandbox                  || Content: TomCat, recache show photos
+[11/23/2025 10:53:40.360 PM] Intent   || show_cache_recache        ||                                               || cat=show
+[11/23/2025 10:54:18.955 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i’m genuinely going to burn my house down what do you mean the toile...
+[11/23/2025 10:54:38.486 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i’m not plunging the fucking toilet i’ve been at work all day
+[11/23/2025 10:54:59.727 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: the youngest person in this house is 11 this is so ridiculous
+[11/23/2025 10:56:13.068 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: I NEED TO GET AN APARTMENT
+[11/23/2025 10:56:20.122 PM] React+   || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || emoji=😭; msg="dnd lore going so crazy me and my dm are..." by a1darek
+[11/23/2025 10:56:27.931 PM] Message  || User: slayc127            || Channel: #purrley-pawsitive-pussy-pals        || Content: ao3 is ur best friend ♥️
+[11/23/2025 10:57:06.132 PM] React+   || User: slayc127            || Channel: #cat-name-ideas                      || emoji=🎉; msg="redacted being marshmallow publicly will..." by simplyshadow171295
+[11/23/2025 10:57:09.983 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: https://tenor.com/view/crash-out-strangle-over-it-im-done-wtf-gif-57...
+[11/23/2025 10:57:20.905 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: but then u have to account for the dishes u have been leaving since ...
+[11/23/2025 10:57:25.678 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: not that i did that or anything
+[11/23/2025 10:57:37.196 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i have zero problem with this
+[11/23/2025 10:57:46.895 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: ( i forgot i had a crock pot of hot chocolate on my counter ) ( the ...
+[11/23/2025 10:57:56.335 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="i have zero problem with this" by izzyballz
+[11/23/2025 10:58:13.836 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i have to do that anyway i have tupperware that’s tucked in the corn...
+[11/23/2025 10:58:18.596 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: real
+[11/23/2025 10:58:18.872 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i just keep pretending it’s not there
+[11/23/2025 10:58:23.041 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: it’s sealed so it can’t hurt me
+[11/23/2025 10:58:32.899 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: just throw it away atp
+[11/23/2025 10:58:42.760 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: i probably will
+[11/23/2025 10:58:48.206 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: thatz what i do eventually even tho it kills my environmentalist spirit
+[11/23/2025 10:59:00.586 PM] Message  || User: izzyballz           || Channel: #yapper-committee                    || Content: they’re not insanely bad though so maybe they’ll catch me in a good ...
+[11/23/2025 10:59:06.490 PM] Message  || User: pancakemixteamdj    || Channel: #yapper-committee                    || Content: @kazius [membership+fundraising] I’m gonna drive off a cliff , î was...
+[11/23/2025 10:59:06.789 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: i had to start quartering the recipes i made bc i realized i just do...
+[11/23/2025 10:59:13.852 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: also means i have too much tupperware now
+[11/23/2025 10:59:16.499 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=😭; msg="@kazius [membership+fundraising] I’m gon..." by pancakemixteamdj
+[11/23/2025 10:59:20.410 PM] Message  || User: slayc127            || Channel: #yapper-committee                    || Content: NOOOOOOOOOOOOOOOOOO
+[11/23/2025 10:59:24.505 PM] React+   || User: slayc127            || Channel: #yapper-committee                    || emoji=❤️; msg="they’re not insanely bad though so maybe..." by izzyballz

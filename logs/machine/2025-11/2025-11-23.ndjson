@@ -190,3 +190,34 @@
 {"event": "message", "author": "austinbaustinb", "channel": "#yapper-committee", "content": "i can buy so much taco bell with $700", "attachments": 0}
 {"event": "reaction_add", "user": "slayc127", "channel": "#purrley-pawsitive-pussy-pals", "message_id": 1442321212574535932, "emoji": "‼️", "message_preview": "", "message_author": "m_digio"}
 {"event": "reaction_add", "user": "kitadan", "channel": "#pictures-of-the-cats", "message_id": 1442319655929905326, "emoji": "‼️", "message_preview": "waiting to get pregnant", "message_author": "adeyumii"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "reaction_add", "user": "_costco_wholesale_", "channel": "#itty-bitty-kitty-commitee", "message_id": 1442313502747525120, "emoji": "❤️", "message_preview": "", "message_author": "a1darek"}
+{"event": "reaction_add", "user": "_costco_wholesale_", "channel": "#itty-bitty-kitty-commitee", "message_id": 1442313720805199923, "emoji": "😭", "message_preview": "", "message_author": "a1darek"}
+{"event": "reaction_add", "user": "_costco_wholesale_", "channel": "#yapper-committee", "message_id": 1442300790164160624, "emoji": "😆", "message_preview": "", "message_author": "izzyballz"}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#external-adoption-ads", "content": "FOUND HER A HOME", "attachments": 0}
+{"event": "message", "author": "m_digio", "channel": "#announcements", "content": "If you signed up for thansgiving feeding check your dms @​here", "attachments": 0}
+{"event": "message", "author": "austinbaustinb", "channel": "#external-adoption-ads", "content": "was it my bud", "attachments": 0}
+{"event": "reaction_add", "user": "m_digio", "channel": "#external-adoption-ads", "message_id": 1442328005623156857, "emoji": "🔥", "message_preview": "FOUND HER A HOME", "message_author": "_costco_wholesale_"}
+{"event": "reaction_add", "user": "m_digio", "channel": "#external-adoption-ads", "message_id": 1442115982595194940, "emoji": "😭", "message_preview": "she followed a resident from somewhere d...", "message_author": "_costco_wholesale_"}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#external-adoption-ads", "content": "demon child is no longer a stowaway", "attachments": 1}
+{"event": "reaction_add", "user": "_costco_wholesale_", "channel": "#external-adoption-ads", "message_id": 1442328122254164060, "emoji": "👎", "message_preview": "was it my bud", "message_author": "austinbaustinb"}
+{"event": "reaction_add", "user": "m_digio", "channel": "#external-adoption-ads", "message_id": 1442328222929785016, "emoji": "❤️", "message_preview": "demon child is no longer a stowaway", "message_author": "_costco_wholesale_"}
+{"event": "message", "author": "m_digio", "channel": "#external-adoption-ads", "content": "Looks like puddle", "attachments": 0}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#external-adoption-ads", "content": "he was looking for a different personality 😔", "attachments": 0}
+{"event": "reaction_add", "user": ".s3j", "channel": "#itty-bitty-kitty-commitee", "message_id": 1442313502747525120, "emoji": "❤️", "message_preview": "", "message_author": "a1darek"}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#external-adoption-ads", "content": "shes puddles 2.0", "attachments": 0}
+{"event": "reaction_add", "user": "austinbaustinb", "channel": "#external-adoption-ads", "message_id": 1442328306815992039, "emoji": "💔", "message_preview": "he was looking for a different personali...", "message_author": "_costco_wholesale_"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "message", "author": "_costco_wholesale_", "channel": "#external-adoption-ads", "content": "ig it was also easier since shes a super cuddly kitten", "attachments": 0}

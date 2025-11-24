@@ -605,12 +605,14 @@ async def start_web_server(bot):
                 except Exception:
                     out["requester_name"] = ""
             if assignee:
-                out["assignee_id"] = assignee
+                out["assignee_id"] = str(assignee)
                 if not out.get("assignee_name"):
                     try:
                         out["assignee_name"] = assignee_name_cache.get(int(assignee), "")
                     except Exception:
                         out["assignee_name"] = ""
+            if requester_id:
+                out["requester_id"] = str(requester_id)
             target_list.append(out)
 
         resp = web.json_response({

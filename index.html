@@ -1719,12 +1719,12 @@ async function submitClaim() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                user_id: claimUser.id,
+                user_id: String(claimUser.id || ""),
                 picks: picks.map(p => ({
                     id: p.id,
                     station: p.station,
                     date: p.date,
-                    requester_id: p.requester_id,
+                    requester_id: p.requester_id ? String(p.requester_id) : "",
                     requester_name: p.requester_name
                 }))
             })

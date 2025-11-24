@@ -31,7 +31,7 @@
             --focus-ring: #414B3B;
             
             /* Header Height for Sticky Positioning */
-            --legend-height: 52px; 
+            --legend-height: 46px; 
         }
 
         * { box-sizing: border-box; }
@@ -476,7 +476,7 @@
 
             background: var(--header-tan); 
             color: var(--site-text);
-            padding: 10px 16px; 
+            padding: 8px 16px; 
             border-bottom: 2px solid var(--site-text);
             
             display: flex;
@@ -527,8 +527,8 @@
         }
 
         .legend-actions .search-container {
-            padding: 8px 0;
-            margin: 6px 0;
+            padding: 6px 0;
+            margin: 4px 0;
         }
 
         table {
@@ -549,7 +549,7 @@
             padding: 15px;
             
             position: sticky;
-            top: var(--legend-height); 
+            top: calc(var(--legend-height) + 4px); 
             z-index: 350; 
             
             background-color: white; 

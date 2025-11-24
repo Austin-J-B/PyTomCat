@@ -33,6 +33,14 @@ _ALLOWED_ORIGINS = {
     if origin.strip()
 }
 
+_AUTH_DEBUG = os.getenv("UI_AUTH_DEBUG", "false").lower() == "true"
+
+
+def _debug(msg: str) -> None:
+    """Print lightweight auth/debug traces when enabled."""
+    if _AUTH_DEBUG:
+        print(f"[UI-AUTH] {msg}")
+
 # Local persistence for the UI schedule
 SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
 # Fallback station list for empty schedules (mirrors UI)
@@ -114,6 +122,7 @@ def _require_permissions(
 
 async def auth_token_exchange(request):
     """Exchanges the temporary code from frontend for a user access token."""
+    _debug(f"POST /api/auth/token headers_origin={request.headers.get('Origin')} query={dict(request.query)}")
     try:
         data = await request.json()
     except Exception:
@@ -122,7 +131,8 @@ async def auth_token_exchange(request):
     code = data.get("code")
     # 1. Capture the redirect_uri sent from the frontend
     redirect_uri = data.get("redirect_uri") 
-    
+    _debug(f"payload redirect_uri={redirect_uri} code_present={bool(code)}")
+
     if not code:
         return _with_cors(web.Response(status=400, text="Missing authorization code"), request)
     if not CLIENT_SECRET or not CLIENT_ID:
@@ -141,26 +151,42 @@ async def auth_token_exchange(request):
         if redirect_uri:
             token_payload['redirect_uri'] = redirect_uri
 
-        async with session.post(
-            'https://discord.com/api/oauth2/token',
-            data=token_payload,
-        ) as resp:
-            if resp.status != 200:
-                # Log the exact error from Discord to your console
-                err_text = await resp.text()
-                print(f"[Auth Error] Discord rejected token exchange: {err_text}")
-                return _with_cors(web.Response(status=401, text="Token exchange failed"), request)
+        try:
+            async with session.post(
+                'https://discord.com/api/oauth2/token',
+                data=token_payload,
+            ) as resp:
+                if resp.status != 200:
+                    # Log the exact error from Discord to your console
+                    err_text = await resp.text()
+                    _debug(f"discord token error status={resp.status} body={err_text}")
+                    return _with_cors(
+                        web.Response(
+                            status=401,
+                            text=f"Token exchange failed (discord status={resp.status})"
+                        ),
+                        request
+                    )
             
-            token_data = await resp.json()
-            access_token = token_data.get('access_token')
+                token_data = await resp.json()
+                access_token = token_data.get('access_token')
+                _debug(f"discord token ok scopes={token_data.get('scope')} expires_in={token_data.get('expires_in')}")
+        except Exception as exc:
+            _debug(f"discord token exception={exc}")
+            return _with_cors(web.Response(status=502, text="Token exchange request failed"), request)
 
         # Get User ID from Discord
-        async with session.get(
-            'https://discord.com/api/users/@me',
-            headers={'Authorization': f'Bearer {access_token}'}
-        ) as user_resp:
-            user_info = await user_resp.json()
-            user_id = int(user_info['id'])
+        try:
+            async with session.get(
+                'https://discord.com/api/users/@me',
+                headers={'Authorization': f'Bearer {access_token}'}
+            ) as user_resp:
+                user_info = await user_resp.json()
+                user_id = int(user_info['id'])
+                _debug(f"discord /users/@me status={user_resp.status} user_id={user_id}")
+        except Exception as exc:
+            _debug(f"/users/@me exception={exc}")
+            return _with_cors(web.Response(status=502, text="Failed to fetch user profile"), request)
 
     # CHECK ROLES
     guild = bot.get_guild(YOUR_GUILD_ID)
@@ -172,6 +198,7 @@ async def auth_token_exchange(request):
             member = None
 
     if not guild or not member:
+        _debug(f"guild/member missing guild={bool(guild)} member={bool(member)}")
         return _with_cors(web.Response(status=403, text="Unable to validate guild membership"), request)
 
     user_roles = [r.id for r in member.roles] if member else []
@@ -437,6 +464,7 @@ def _cors_headers(request: web.Request) -> Dict[str, str]:
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Vary": "Origin",
     }
+    _debug(f"CORS origin={origin!r} allow_origin={allow_origin!r}")
     if allow_origin:
         headers["Access-Control-Allow-Origin"] = allow_origin
     if allow_origin and allow_origin != "*":

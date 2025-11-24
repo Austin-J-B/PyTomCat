@@ -1504,21 +1504,29 @@ init();
 
     function showLoginButton() {
         document.getElementById('loading').style.display = 'none';
-        // Check if we already created the button
+        
+        // Prevent duplicates
         if (document.getElementById('web-login-overlay')) return;
 
         const div = document.createElement('div');
         div.id = 'web-login-overlay';
-        div.style.cssText = "position:fixed; inset:0; background:var(--site-bg); display:flex; flex-direction:column; gap:20px; justify-content:center; align-items:center; z-index:9999;";
+        div.style.cssText = "position:fixed; inset:0; background:var(--site-bg); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:9999; text-align:center;";
+        
         div.innerHTML = `
-            <h2 style="font-family:'Merriweather',serif;">Campus Cat Coalition</h2>
-            <a href="${LOGIN_URL}" style="background:#5865F2; color:white; padding:15px 30px; border-radius:30px; text-decoration:none; font-weight:bold; font-size:1.2rem; box-shadow:0 4px 12px rgba(88,101,242,0.4);">
+            <h3 style="font-family:'Montserrat', sans-serif; font-weight:500; font-size:1rem; margin:0; color:var(--site-text); opacity:0.8; text-transform: uppercase; letter-spacing: 1px;">
+                Campus Cat Coalition
+            </h3>
+            
+            <h1 style="font-family:'Merriweather', serif; font-weight:900; font-size:3rem; margin: 10px 0 40px 0; color:var(--site-text);">
+                TomCat-VI UI
+            </h1>
+            
+            <a href="${LOGIN_URL}" style="background:#5865F2; color:white; padding:15px 40px; border-radius:30px; text-decoration:none; font-family:'Montserrat', sans-serif; font-weight:700; font-size:1.1rem; box-shadow:0 4px 15px rgba(88,101,242,0.4); transition: transform 0.2s;">
                 Log in with Discord
             </a>
         `;
         document.body.appendChild(div);
     }
-
     // --- UI UPDATES ---
     function updateUIForUser() {
         // Remove login overlay if present

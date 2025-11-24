@@ -454,29 +454,40 @@
             z-index: 300; 
             height: var(--legend-height);
 
-            /* Updated to Tan Background */
-            background: var(--header-tan); /* Slightly darker tan */
+            background: var(--header-tan); 
             color: var(--site-text);
-            padding: 0 25px; 
-            border-bottom: 2px solid var(--site-text); /* Thinner persistent gray bar */
+            padding: 6px 16px; 
+            border-bottom: 2px solid var(--site-text);
             
             display: flex;
             align-items: center;
-            justify-content: flex-start; 
-            gap: 25px;
+            justify-content: space-between; 
+            gap: 12px;
             
-            /* Updated Font to match Header */
             font-family: 'Montserrat', sans-serif;
-            font-size: 0.75rem; 
+            font-size: 0.7rem; 
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.05em;
+        }
+
+        .legend-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
         }
 
         .key-combo {
             display: inline-flex;
             align-items: center;
             white-space: nowrap;
+        }
+
+        .legend-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
         table {
@@ -632,29 +643,32 @@
                     <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
                 </svg>
             </button>
-
-            <div class="search-container">
-                <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
-                <div id="search-results" class="search-results"></div>
-            </div>
-
-            <div id="selection-display" class="current-selection empty">
-                Select User
-            </div>
-
-            <button class="save-btn" onclick="saveSchedule()" title="Save schedule">Save</button>
-            <div id="save-status" class="save-status"></div>
         </div>
     </header>
 
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
             <div class="controls-legend">
-                <div class="key-combo">"Click" to select</div>
-                <div class="key-combo">"Ctrl" + "Click" to multi-select</div>
-                <div class="key-combo">"Shift" + "Click" for range</div>
-                <div class="key-combo">"Enter" to assign</div>
-                <div class="key-combo">"Del" to erase</div>
+                <div class="legend-left">
+                    <div class="key-combo">"Click" to select</div>
+                    <div class="key-combo">"Ctrl" + "Click" to multi-select</div>
+                    <div class="key-combo">"Shift" + "Click" for range</div>
+                    <div class="key-combo">"Enter" to assign</div>
+                    <div class="key-combo">"Del" to erase</div>
+                </div>
+                <div class="legend-actions">
+                    <div class="search-container" style="width: 240px;">
+                        <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
+                        <div id="search-results" class="search-results"></div>
+                    </div>
+
+                    <div id="selection-display" class="current-selection empty">
+                        Select User
+                    </div>
+
+                    <button class="save-btn" id="save-btn" onclick="saveSchedule()" title="Save schedule">Save</button>
+                    <div id="save-status" class="save-status"></div>
+                </div>
             </div>
 
             <table id="schedule-table">
@@ -831,6 +845,7 @@ async function init() {
     renderCalendar();
     updateSubUserOptions();
     await loadOpenSubs();
+    setRequestTab('available');
     document.getElementById('loading').style.display = 'none';
 }
 
@@ -1009,6 +1024,8 @@ function updateVisualsOnly() {
 // --- INTERACTIONS ---
 let isDragging = false;
 const statusEl = document.getElementById('save-status');
+const saveBtn = document.getElementById('save-btn');
+let saveResetTimer = null;
 
 function setSaveStatus(text, tone = "info") {
     if (!statusEl) return;
@@ -1017,6 +1034,25 @@ function setSaveStatus(text, tone = "info") {
     else if (tone === "warn") statusEl.style.color = "#b36b00";
     else if (tone === "error") statusEl.style.color = "#b00020";
     else statusEl.style.color = "var(--site-text)";
+}
+
+function setSaveButtonState(state) {
+    if (!saveBtn) return;
+    if (saveResetTimer) {
+        clearTimeout(saveResetTimer);
+        saveResetTimer = null;
+    }
+    if (state === "saving") {
+        saveBtn.textContent = "Saving...";
+        saveBtn.disabled = true;
+    } else if (state === "saved") {
+        saveBtn.textContent = "Saved";
+        saveBtn.disabled = false;
+        saveResetTimer = setTimeout(() => setSaveButtonState("idle"), 1400);
+    } else {
+        saveBtn.textContent = "Save";
+        saveBtn.disabled = false;
+    }
 }
 
 function handleMouseDown(e, r, c) {
@@ -1207,6 +1243,7 @@ function applyValue(val) {
 
 async function saveSchedule() {
     setSaveStatus("Saving...");
+    setSaveButtonState("saving");
     try {
         const endpoint = apiBase ? `${apiBase}/api/schedule/save` : '/api/schedule/save';
         const res = await fetch(endpoint, {
@@ -1219,10 +1256,12 @@ async function saveSchedule() {
         });
         if (!res.ok) throw new Error(await res.text());
         setSaveStatus("Saved", "ok");
+        setSaveButtonState("saved");
     } catch (e) {
         console.error(e);
         setSaveStatus("Save failed", "error");
         if (statusEl) statusEl.title = e?.message || '';
+        setSaveButtonState("idle");
     }
 }
 
@@ -1254,6 +1293,7 @@ function setView(view, opts = {}) {
     document.getElementById('sheet-container').style.display = nextView === 'schedule' ? 'flex' : 'none';
     document.getElementById('sub-container').style.display = nextView === 'sub' ? 'flex' : 'none';
     document.getElementById('claim-container').style.display = nextView === 'claim' ? 'flex' : 'none';
+    if (nextView === 'claim') setRequestTab('available');
     highlightMenu(nextView);
     if (!opts.skipUrlUpdate) updateUrlForView(nextView);
     const viewTitles = { schedule: "Feeding Schedule", sub: "Request a Substitute", claim: "Substitute Requests" };
@@ -1537,11 +1577,11 @@ function renderOpenSubs() {
 
             const badge = document.createElement('span');
             const hasAssignee = !!item.assignee_id;
+            const assigneeName = displayName(item.assignee_id, item.assignee_name);
             if (isPrev) {
                 if (hasAssignee) {
                     badge.className = 'status-badge status-grey';
                     badge.textContent = '✓';
-                    const assigneeName = memberById[item.assignee_id]?.name || `User ${item.assignee_id}`;
                     status.textContent = `Fulfilled by ${assigneeName}`;
                 } else {
                     badge.className = 'status-badge status-grey';
@@ -1552,8 +1592,7 @@ function renderOpenSubs() {
                 if (hasAssignee) {
                     badge.className = 'status-badge status-green';
                     badge.textContent = '✓';
-                    const assigneeName = memberById[item.assignee_id]?.name || `User ${item.assignee_id}`;
-                    status.textContent = `Currently filled by ${assigneeName}`;
+                    status.textContent = `Filled by ${assigneeName}`;
                 } else {
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';

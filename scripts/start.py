@@ -27,7 +27,28 @@ def main() -> None:
 
     cmd = [str(python_path), "-m", "tomcat.main"]
     print(f"Starting TomCat (cwd={ROOT})\n→ {' '.join(cmd)}")
-    subprocess.run(cmd, cwd=ROOT)
+    # Use your actual tunnel name here:
+
+    # Use bundled cloudflared.exe from project root (Windows)
+    if os.name == "nt":
+        cloudflared_path = str(ROOT / "cloudflared.exe")
+    else:
+        cloudflared_path = "cloudflared"
+    cloudflared_cmd = [cloudflared_path, "tunnel", "run", "tomcat-ui"]
+
+    # Start API server
+    api_proc = subprocess.Popen(cmd, cwd=ROOT)
+    # Start cloudflared tunnel
+    tunnel_proc = subprocess.Popen(cloudflared_cmd, cwd=ROOT)
+
+    print("TomCat API server and Cloudflare tunnel are running. Press Ctrl+C to stop both.")
+    try:
+        api_proc.wait()
+        tunnel_proc.wait()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+        api_proc.terminate()
+        tunnel_proc.terminate()
 
 
 if __name__ == "__main__":

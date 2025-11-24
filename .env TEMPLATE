@@ -5,6 +5,7 @@ UI_SESSION_SECRET=                      # Required: secret for signing UI sessio
 UI_ALLOWED_ORIGINS=#fuck if I know! localhost:8000,github page?
 UI_AUTH_DEBUG=false                  # Enable verbose auth/CORS logging when true
 UI_GUILD_ID=                         # Optional: override guild ID to validate membership for UI auth
+UI_COOKIE_SECURE=true                # Use secure cookies (SameSite=None) so cross-site pages send session
 COMMAND_PREFIX=! # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago

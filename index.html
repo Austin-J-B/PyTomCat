@@ -31,7 +31,7 @@
             --focus-ring: #414B3B;
             
             /* Header Height for Sticky Positioning */
-            --legend-height: 40px; 
+            --legend-height: 52px; 
         }
 
         * { box-sizing: border-box; }
@@ -193,17 +193,29 @@
             font-weight: 700;
             cursor: pointer;
             box-shadow: 0 4px 10px rgba(0,0,0,0.12);
-            transition: transform 0.2s ease, box-shadow 0.2s ease, padding 0.2s ease;
+            transition: background-color 1s ease, color 1s ease, transform 1s ease, padding 1s ease, box-shadow 0.35s ease, opacity 1s ease;
         }
         .save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
         .save-btn:active { transform: translateY(0); box-shadow: 0 3px 8px rgba(0,0,0,0.12); }
 
         .save-btn.saving {
+            background: var(--site-accent);
+            color: var(--site-text);
             transform: scale(1.02);
-            padding: 9px 18px;
+            padding: 10px 20px;
         }
         .save-btn.saved {
-            transform: scale(1.005);
+            background: #5c8f4a;
+            color: #f6fff2;
+            transform: scale(1.01);
+        }
+        .save-btn.returning {
+            animation: saveReturn 1s ease forwards;
+        }
+        @keyframes saveReturn {
+            0% { opacity: 1; transform: scale(1.01); }
+            45% { opacity: 0.45; transform: scale(0.98); }
+            100% { opacity: 1; transform: scale(1); }
         }
 
         .save-status {
@@ -460,11 +472,11 @@
             position: sticky;
             top: 0;
             z-index: 300; 
-            height: var(--legend-height);
+            min-height: var(--legend-height);
 
             background: var(--header-tan); 
             color: var(--site-text);
-            padding: 6px 16px; 
+            padding: 10px 16px; 
             border-bottom: 2px solid var(--site-text);
             
             display: flex;
@@ -515,8 +527,8 @@
         }
 
         .legend-actions .search-container {
-            padding: 4px 0;
-            margin: 2px 0;
+            padding: 8px 0;
+            margin: 6px 0;
         }
 
         table {
@@ -1059,6 +1071,11 @@ function updateVisualsOnly() {
 let isDragging = false;
 const saveBtn = document.getElementById('save-btn');
 let saveResetTimer = null;
+function triggerReturnAnimation() {
+    if (!saveBtn) return;
+    saveBtn.classList.add("returning");
+    setTimeout(() => saveBtn.classList.remove("returning"), 1000);
+}
 
 function setSaveStatus(text, tone = "info") {
     if (!saveBtn) return;
@@ -1081,6 +1098,7 @@ function setSaveButtonState(state) {
         clearTimeout(saveResetTimer);
         saveResetTimer = null;
     }
+    saveBtn.classList.remove("returning");
     saveBtn.classList.remove("saving", "saved");
     if (state === "saving") {
         saveBtn.textContent = "Saving...";
@@ -1094,10 +1112,12 @@ function setSaveButtonState(state) {
         saveResetTimer = setTimeout(() => {
             saveBtn.textContent = "Save";
             saveBtn.classList.remove("saved");
+            triggerReturnAnimation();
         }, 1600);
     } else {
         saveBtn.textContent = "Save";
         saveBtn.disabled = false;
+        triggerReturnAnimation();
     }
 }
 

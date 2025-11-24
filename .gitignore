@@ -51,3 +51,6 @@ ENV/
 ## Transient image downloads
 temp_images/
 
+cloudflared.exe
+config.yml
+cloudflared

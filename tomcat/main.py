@@ -113,109 +113,108 @@ def _require_permissions(
     return session, None
 
 async def auth_token_exchange(request):
-        """Exchanges the temporary code from frontend for a user access token."""
+    """Exchanges the temporary code from frontend for a user access token."""
+    try:
+        data = await request.json()
+    except Exception:
+        return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
+    code = data.get("code")
+    # 1. Capture the redirect_uri sent from the frontend
+    redirect_uri = data.get("redirect_uri") 
+    
+    if not code:
+        return _with_cors(web.Response(status=400, text="Missing authorization code"), request)
+    if not CLIENT_SECRET or not CLIENT_ID:
+        return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)
+
+    # Exchange code with Discord API
+    async with aiohttp.ClientSession() as session:
+        token_payload = {
+            'client_id': CLIENT_ID,
+            'client_secret': CLIENT_SECRET,
+            'grant_type': 'authorization_code',
+            'code': code,
+        }
+        
+        # 2. If we have a redirect_uri, we MUST send it to Discord for verification
+        if redirect_uri:
+            token_payload['redirect_uri'] = redirect_uri
+
+        async with session.post(
+            'https://discord.com/api/oauth2/token',
+            data=token_payload,
+        ) as resp:
+            if resp.status != 200:
+                # Log the error text for debugging
+                err_text = await resp.text()
+                print(f"[Auth Error] Discord response: {err_text}")
+                return _with_cors(web.Response(status=401, text="Invalid authorization code or redirect_uri mismatch"), request)
+            token_data = await resp.json()
+            access_token = token_data.get('access_token')
+            if not access_token:
+                return _with_cors(web.Response(status=401, text="Token exchange failed"), request)
+
+        # Get User ID from Discord
+        async with session.get(
+            'https://discord.com/api/users/@me',
+            headers={'Authorization': f'Bearer {access_token}'}
+        ) as user_resp:
+            user_info = await user_resp.json()
+            user_id = int(user_info['id'])
+
+    # CHECK ROLES (Existing Logic)
+    guild = bot.get_guild(YOUR_GUILD_ID)
+    member = guild.get_member(user_id) if guild else None
+    if not member and guild:
         try:
-            data = await request.json()
+            member = await guild.fetch_member(user_id)
         except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+            member = None
 
-        code = data.get("code")
-        redirect_uri = data.get("redirect_uri")  # <--- Capture redirect_uri from frontend
-        
-        if not code:
-            return _with_cors(web.Response(status=400, text="Missing authorization code"), request)
-        if not CLIENT_SECRET or not CLIENT_ID:
-            return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)
+    if not guild or not member:
+        return _with_cors(web.Response(status=403, text="Unable to validate guild membership"), request)
 
-        # Exchange code with Discord API
-        async with aiohttp.ClientSession() as session:
-            token_payload = {
-                'client_id': CLIENT_ID,
-                'client_secret': CLIENT_SECRET,
-                'grant_type': 'authorization_code',
-                'code': code,
-            }
-            # <--- Important: If web flow, we MUST pass the matching redirect_uri
-            if redirect_uri:
-                token_payload['redirect_uri'] = redirect_uri
+    user_roles = [r.id for r in member.roles] if member else []
 
-            async with session.post(
-                'https://discord.com/api/oauth2/token',
-                data=token_payload,
-            ) as resp:
-                if resp.status != 200:
-                    # Log the response for debugging if needed
-                    txt = await resp.text()
-                    print(f"Auth failed: {txt}")
-                    return _with_cors(web.Response(status=401, text="Invalid authorization code"), request)
-                token_data = await resp.json()
-                access_token = token_data.get('access_token')
+    # Determine permissions (Make sure OFFICER_ROLE_ID is defined in your config or imports)
+    OFFICER_ROLE_ID = 845035667661783061
+    is_officer = OFFICER_ROLE_ID in user_roles
+    
+    permissions = {
+        "can_edit_schedule": is_officer,
+        "can_label_photos": ROLES.get("PHOTO_LABELER") in user_roles,
+        "can_view": True,
+        "is_officer": is_officer
+    }
 
-            # Get User ID from Discord
-            async with session.get(
-                'https://discord.com/api/users/@me',
-                headers={'Authorization': f'Bearer {access_token}'}
-            ) as user_resp:
-                user_info = await user_resp.json()
-                user_id = int(user_info['id'])
+    now_ts = int(time.time())
+    session_payload = {
+        "user_id": str(user_id),
+        "permissions": permissions,
+        "iat": now_ts,
+        "exp": now_ts + SESSION_TTL_SECONDS,
+    }
+    session_token = _sign_payload(session_payload)
 
-        # CHECK ROLES
-        guild = bot.get_guild(YOUR_GUILD_ID)
-        member = guild.get_member(user_id) if guild else None
-        if not member and guild:
-            try:
-                member = await guild.fetch_member(user_id)
-            except Exception:
-                member = None
-
-        if not guild or not member:
-            return _with_cors(web.Response(status=403, text="Unable to validate guild membership"), request)
-
-        user_roles = [r.id for r in member.roles] if member else []
-
-        # OFFICER ROLE ID (Update this if it changes)
-        OFFICER_ROLE_ID = 845035667661783061 
-
-        # Determine permissions
-        is_officer = OFFICER_ROLE_ID in user_roles
-        permissions = {
-            "can_edit_schedule": is_officer, # Mapping officer to edit permission
-            "can_label_photos": ROLES["PHOTO_LABELER"] in user_roles,
-            "can_view": True, # Allow all members to view
-            "is_officer": is_officer # Explicit flag for UI
-        }
-
-        now_ts = int(time.time())
-        session_payload = {
-            "user_id": str(user_id),
-            "username": user_info.get("username"), # Store username for logs
-            "permissions": permissions,
-            "iat": now_ts,
-            "exp": now_ts + SESSION_TTL_SECONDS,
-        }
-        session_token = _sign_payload(session_payload)
-
-        safe_user = {
-            "id": user_info.get("id"),
-            "username": user_info.get("username"),
-            "global_name": user_info.get("global_name"),
-        }
-        
-        resp = web.json_response({
-            "user": safe_user,
-            "permissions": permissions
-        })
-        
-        # Set Secure Cookie
-        resp.set_cookie(
-            "tc_session",
-            session_token,
-            max_age=SESSION_TTL_SECONDS,
-            httponly=True,
-            secure=_COOKIE_SECURE,
-            samesite="Lax", # Allow cookie on redirect from OAuth
-        )
-        return _with_cors(resp, request)
+    safe_user = {
+        "id": user_info.get("id"),
+        "username": user_info.get("username"),
+        "global_name": user_info.get("global_name"),
+    }
+    resp = web.json_response({
+        "user": safe_user,
+        "permissions": permissions
+    })
+    resp.set_cookie(
+        "tc_session",
+        session_token,
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=_COOKIE_SECURE,
+        samesite="Lax",
+    )
+    return _with_cors(resp, request)
 
 # --- The Secure Save Endpoint ---
 async def save_schedule(request):

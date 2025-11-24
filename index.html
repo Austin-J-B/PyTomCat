@@ -326,6 +326,7 @@
             border-radius: 0 12px 12px 12px;
             padding: 12px;
             background: white;
+            margin-top: -1px;
         }
         .cal-weekday { font-weight: 700; color: var(--site-text); }
 
@@ -761,6 +762,13 @@ let openRequestsByDate = {};
 let prevRequests = [];
 let prevRequestsByDate = {};
 let requestTab = 'available';
+
+function displayName(id, fallback="") {
+    const byId = memberById[id];
+    if (byId && byId.name) return byId.name;
+    if (fallback) return fallback;
+    return `User ${id}`;
+}
 
 function parseISODate(iso) {
     const [y,m,d] = iso.split('-').map(Number);
@@ -1461,17 +1469,21 @@ function renderOpenSubs() {
     const grouped = {};
     source.forEach(item => {
         const date = item.date || 'Unknown date';
-            grouped[date] = grouped[date] || [];
-            grouped[date].push(item);
-        });
-    Object.keys(grouped).sort().forEach(date => {
+        grouped[date] = grouped[date] || [];
+        grouped[date].push(item);
+    });
+    const dateKeys = Object.keys(grouped).sort((a,b) => {
+        const da = new Date(a); const db = new Date(b);
+        return requestTab === 'previous' ? db - da : da - db;
+    });
+    dateKeys.forEach(date => {
         grouped[date].forEach(item => {
             const div = document.createElement('div');
             div.className = 'open-item';
             const meta = document.createElement('div');
             meta.className = 'open-meta';
             const dayStr = new Date(item.date).toLocaleDateString(undefined, { weekday: 'long', month: 'numeric', day: 'numeric', year: 'numeric' });
-            const requesterName = item.requester_name || (memberById[item.requester_id]?.name) || `User ${item.requester_id}`;
+            const requesterName = displayName(item.requester_id, item.requester_name);
             const line = document.createElement('div');
             line.innerHTML = `<strong>${item.station}</strong> on ${dayStr} for ${requesterName}`;
             meta.appendChild(line);

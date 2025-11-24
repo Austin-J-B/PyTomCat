@@ -303,6 +303,24 @@
         .open-item input { accent-color: var(--site-accent); }
         .open-meta { display: flex; flex-direction: column; gap: 4px; font-size: 0.95rem; }
         .open-day-sep { height: 1px; background: var(--grid-line); margin: 6px 2px; }
+        .open-status { font-size: 0.85rem; color: #555; }
+        .status-badge { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; }
+        .status-green { background: #98c379; color: #1f2d1f; }
+        .status-grey { background: #d9d9d9; color: #5a5a5a; }
+        .tab-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .tab-btn {
+            border: 1px solid var(--grid-line);
+            background: #f5f5f5;
+            padding: 8px 14px;
+            border-radius: 10px 10px 0 0;
+            cursor: pointer;
+            font-weight: 700;
+        }
+        .tab-btn.active {
+            background: white;
+            border-bottom-color: white;
+            box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
+        }
         .cal-weekday { font-weight: 700; color: var(--site-text); }
 
         /* --- SEARCH --- */
@@ -564,8 +582,8 @@
         </div>
         <div class="sidebar-content">
             <a href="#" class="menu-item" onclick="setView('schedule'); toggleMenu();">Feeding Schedule</a>
-            <a href="#" class="menu-item" onclick="setView('sub'); toggleMenu();">Sub Request</a>
-            <a href="#" class="menu-item" onclick="setView('claim'); toggleMenu();">Open Substitutes</a>
+            <a href="#" class="menu-item" onclick="setView('sub'); toggleMenu();">Request a sub here</a>
+            <a href="#" class="menu-item" onclick="setView('claim'); toggleMenu();">Substitute Requests</a>
             <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat VI Repository</a>
         </div>
     </div>
@@ -678,9 +696,13 @@
 
         <div class="sheet-wrapper" id="claim-container" style="display:none; padding: 0 0 20px 0; width: min(960px, 100%); box-sizing: border-box;">
             <div class="controls-legend" style="margin:0; padding: 0 20px; width: 100%; box-sizing: border-box;">
-                <div class="key-combo">Open substitute requests</div>
+                <div class="key-combo">Substitute Requests</div>
             </div>
             <div class="sub-form">
+                <div class="tab-row">
+                    <button class="tab-btn" id="tab-available" onclick="setRequestTab('available')">Available Requests</button>
+                    <button class="tab-btn" id="tab-previous" onclick="setRequestTab('previous')">Previous Requests</button>
+                </div>
                 <div class="form-row">
                     <label for="claim-user">What is your account?</label>
                     <div class="search-container">
@@ -688,10 +710,14 @@
                         <div id="claim-user-results" class="search-results"></div>
                     </div>
                 </div>
-                <div class="form-row">
+                <div class="form-row" id="available-block">
                     <label>Available requests</label>
                     <div id="open-requests-list" class="open-list"></div>
                     <div id="claim-status" class="warn"></div>
+                </div>
+                <div class="form-row" id="previous-block" style="display:none;">
+                    <label>Previous requests</label>
+                    <div id="prev-requests-list" class="open-list"></div>
                 </div>
                 <div class="form-row actions">
                     <button class="save-btn" onclick="submitClaim()">Submit</button>
@@ -726,6 +752,9 @@ let calendarMonth = new Date();
 let claimUser = null;
 let openRequests = [];
 let openRequestsByDate = {};
+let prevRequests = [];
+let prevRequestsByDate = {};
+let requestTab = 'available';
 
 function parseISODate(iso) {
     const [y,m,d] = iso.split('-').map(Number);
@@ -818,11 +847,22 @@ async function loadOpenSubs() {
         const res = await fetch(endpoint);
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
-        openRequests = data.open || [];
+        openRequests = (data.available || []).concat(data.upcoming_filled || []);
+        prevRequests = data.past || [];
         renderOpenSubs();
     } catch (e) {
         console.warn("Failed to load open subs", e);
     }
+}
+
+function setRequestTab(tab) {
+    requestTab = tab;
+    document.getElementById('tab-available').classList.toggle('active', tab === 'available');
+    document.getElementById('tab-previous').classList.toggle('active', tab === 'previous');
+    document.getElementById('available-block').style.display = tab === 'available' ? 'flex' : 'none';
+    document.getElementById('previous-block').style.display = tab === 'previous' ? 'flex' : 'none';
+    document.querySelector('.form-row.actions').style.display = tab === 'available' ? 'flex' : 'none';
+    renderOpenSubs();
 }
 
 // --- DISTINCT COLOR PALETTE ---
@@ -1399,12 +1439,14 @@ function renderOpenSubs() {
     const wrap = document.getElementById('open-requests-list');
     if (!wrap) return;
     wrap.innerHTML = '';
-    if (!openRequests.length) {
-        wrap.textContent = "No open requests.";
+    const isPrev = requestTab === 'previous';
+    const source = isPrev ? prevRequests : openRequests;
+    if (!source.length) {
+        wrap.textContent = "No requests.";
         return;
     }
     const grouped = {};
-    openRequests.forEach(item => {
+    source.forEach(item => {
         const date = item.date || 'Unknown date';
         grouped[date] = grouped[date] || [];
         grouped[date].push(item);
@@ -1413,15 +1455,45 @@ function renderOpenSubs() {
         grouped[date].forEach(item => {
             const div = document.createElement('div');
             div.className = 'open-item';
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.value = JSON.stringify(item);
             const meta = document.createElement('div');
             meta.className = 'open-meta';
             const dayStr = new Date(item.date).toLocaleDateString(undefined, { weekday: 'long', month: 'numeric', day: 'numeric', year: 'numeric' });
             const requesterName = item.requester_name || (memberById[item.requester_id]?.name) || `User ${item.requester_id}`;
-            meta.innerHTML = `<div><strong>${item.station}</strong> on ${dayStr}</div><div>for ${requesterName}</div>`;
-            div.appendChild(checkbox);
+            const line = document.createElement('div');
+            line.innerHTML = `<strong>${item.station}</strong> on ${dayStr} for ${requesterName}`;
+            meta.appendChild(line);
+
+            const status = document.createElement('div');
+            status.className = 'open-status';
+
+            const badge = document.createElement('span');
+            const hasAssignee = !!item.assignee_id;
+            if (isPrev) {
+                if (hasAssignee) {
+                    badge.className = 'status-badge status-grey';
+                    badge.textContent = '✓';
+                    const assigneeName = memberById[item.assignee_id]?.name || `User ${item.assignee_id}`;
+                    status.textContent = `Fulfilled by ${assigneeName}`;
+                } else {
+                    badge.className = 'status-badge status-grey';
+                    badge.textContent = '✕';
+                    status.textContent = "Expired";
+                }
+            } else {
+                if (hasAssignee) {
+                    badge.className = 'status-badge status-green';
+                    badge.textContent = '✓';
+                    const assigneeName = memberById[item.assignee_id]?.name || `User ${item.assignee_id}`;
+                    status.textContent = `Currently filled by ${assigneeName}`;
+                } else {
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.value = JSON.stringify(item);
+                    div.appendChild(checkbox);
+                }
+            }
+            div.appendChild(badge);
+            meta.appendChild(status);
             div.appendChild(meta);
             wrap.appendChild(div);
         });

@@ -453,6 +453,7 @@ async def start_web_server(bot):
         accepted_meta = {}  # (parent_id, station, date_iso) -> requester_name
         requested_items = []
         missing_requester_ids = set()
+        missing_assignee_ids = set()
 
         for path in glob.glob(os.path.join("logs", "subs", "*", "*.jsonl")):
             try:
@@ -472,6 +473,11 @@ async def start_web_server(bot):
                         parent_id = rec.get("id")
                         if status == "accepted":
                             assignee = rec.get("assignee")
+                            if assignee:
+                                try:
+                                    missing_assignee_ids.add(int(assignee))
+                                except Exception:
+                                    pass
                             for st in stations:
                                 accepted_map[(parent_id, st, date_iso)] = assignee
                         elif status == "requested":
@@ -524,6 +530,35 @@ async def start_web_server(bot):
                 if display:
                     name_cache[uid] = display
 
+        assignee_name_cache: Dict[int, str] = {}
+        if missing_assignee_ids:
+            guild = bot.get_guild(YOUR_GUILD_ID) if "bot" in globals() else None
+            for uid in list(missing_assignee_ids):
+                display = ""
+                try:
+                    if guild:
+                        member = guild.get_member(uid)
+                        if not member:
+                            try:
+                                member = await guild.fetch_member(uid)
+                            except Exception:
+                                member = None
+                        if member:
+                            display = getattr(member, "display_name", None) or getattr(member, "global_name", None) or member.name
+                    if not display and "bot" in globals():
+                        user = bot.get_user(uid)  # type: ignore[name-defined]
+                        if not user and hasattr(bot, "fetch_user"):
+                            try:
+                                user = await bot.fetch_user(uid)  # type: ignore[attr-defined]
+                            except Exception:
+                                user = None
+                        if user:
+                            display = getattr(user, "global_name", None) or getattr(user, "name", None) or ""
+                except Exception:
+                    display = ""
+                if display:
+                    assignee_name_cache[uid] = display
+
         available = []
         upcoming_filled = []
         past = []
@@ -550,6 +585,11 @@ async def start_web_server(bot):
                     out["requester_name"] = ""
             if assignee:
                 out["assignee_id"] = assignee
+                if not out.get("assignee_name"):
+                    try:
+                        out["assignee_name"] = assignee_name_cache.get(int(assignee), "")
+                    except Exception:
+                        out["assignee_name"] = ""
             target_list.append(out)
 
         resp = web.json_response({

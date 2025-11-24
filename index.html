@@ -307,7 +307,7 @@
         .status-badge { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; }
         .status-green { background: #98c379; color: #1f2d1f; }
         .status-grey { background: #d9d9d9; color: #5a5a5a; }
-        .tab-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .tab-row { display: flex; gap: 8px; margin-bottom: 0; }
         .tab-btn {
             border: 1px solid var(--grid-line);
             background: #f5f5f5;
@@ -1443,10 +1443,10 @@ async function submitSubRequest() {
 }
 
 function renderOpenSubs() {
-    const wrap = document.getElementById('open-requests-list');
+    const isPrev = requestTab === 'previous';
+    const wrap = isPrev ? document.getElementById('prev-requests-list') : document.getElementById('open-requests-list');
     if (!wrap) return;
     wrap.innerHTML = '';
-    const isPrev = requestTab === 'previous';
     const source = isPrev ? prevRequests : openRequests.filter(item => {
         if (!item.date) return false;
         const d = new Date(item.date);

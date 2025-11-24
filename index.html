@@ -578,7 +578,7 @@ async function fetchMembers() {
     try {
         const endpoint = apiBase ? `${apiBase}/api/members` : '/api/members';
         
-        const res = await fetch(endpoint);
+        const res = await fetch(endpoint, { credentials: "include" });
         if (!res.ok) throw new Error("API Failed");
         members = await res.json();
     } catch (e) {
@@ -600,7 +600,7 @@ async function fetchMembers() {
 async function loadSchedule() {
     try {
         const endpoint = apiBase ? `${apiBase}/api/schedule` : '/api/schedule';
-        const res = await fetch(endpoint, { method: 'GET' });
+        const res = await fetch(endpoint, { method: 'GET', credentials: "include" });
         if (!res.ok) throw new Error("Load failed");
         const data = await res.json();
         scheduleData = normalizeSchedule(data.schedule);
@@ -615,7 +615,7 @@ async function loadSchedule() {
 async function loadOpenSubs() {
     try {
         const endpoint = apiBase ? `${apiBase}/api/subs/open` : '/api/subs/open';
-        const res = await fetch(endpoint);
+        const res = await fetch(endpoint, { credentials: "include" });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         openRequests = (data.available || []).concat(data.upcoming_filled || []);
@@ -1000,6 +1000,7 @@ async function saveSchedule() {
         const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: "include",
             body: JSON.stringify({
                 schedule: scheduleData,
                 meta: { source: 'ui' }
@@ -1270,6 +1271,7 @@ async function submitSubRequest() {
         const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: "include",
             body: JSON.stringify({
                 user_id: subSelectedUser.id,
                 user_name: subSelectedUser.name,
@@ -1372,6 +1374,7 @@ async function submitClaim() {
         const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: "include",
             body: JSON.stringify({
                 user_id: String(claimUser.id || ""),
                 picks: picks.map(p => ({
@@ -1733,6 +1736,7 @@ init();
             const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: "include",
                 body: JSON.stringify({ id, date })
             });
             if (res.ok) {

@@ -58,6 +58,8 @@ ROLES = {
 
 # Your main guild ID (replace with your actual guild/server ID)
 YOUR_GUILD_ID = 643586809166561310
+# UI can override via env if needed
+UI_GUILD_ID = int(os.getenv("UI_GUILD_ID", str(YOUR_GUILD_ID or 0)) or 0)
 
 
 def _b64_encode(data: str) -> str:
@@ -197,8 +199,24 @@ async def auth_token_exchange(request):
         except Exception:
             member = None
 
+    # Fallback: search all guilds the bot is in for this user to avoid hard-coded ID issues
+    if not member:
+        for g in bot.guilds:
+            try:
+                candidate = g.get_member(user_id)
+                if not candidate:
+                    candidate = await g.fetch_member(user_id)
+                if candidate:
+                    guild = g
+                    member = candidate
+                    _debug(f"fallback guild match guild_id={g.id}")
+                    break
+            except Exception:
+                continue
+
     if not guild or not member:
-        _debug(f"guild/member missing guild={bool(guild)} member={bool(member)}")
+        guild_ids = [getattr(g, "id", None) for g in bot.guilds]
+        _debug(f"guild/member missing guild={bool(guild)} member={bool(member)} bot_guilds={guild_ids}")
         return _with_cors(web.Response(status=403, text="Unable to validate guild membership"), request)
 
     user_roles = [r.id for r in member.roles] if member else []
@@ -530,6 +548,9 @@ async def start_web_server(bot):
         return _with_cors(web.Response(status=204), request)
 
     async def options_schedule_save(request):
+        return _with_cors(web.Response(status=204), request)
+
+    async def options_auth_token(request):
         return _with_cors(web.Response(status=204), request)
 
     async def options_subrequest(request):
@@ -971,6 +992,7 @@ async def start_web_server(bot):
         web.get('/api/members', get_members),
         web.options('/api/members', options_members),
         web.post('/api/auth/token', auth_token_exchange),
+        web.options('/api/auth/token', options_auth_token),
         web.post('/api/schedule/save', save_schedule),
         web.get('/api/schedule', get_schedule),
         web.options('/api/schedule', options_schedule),

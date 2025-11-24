@@ -102,3 +102,43 @@
 [11/24/2025 01:42:39.167 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
 [11/24/2025 01:42:39.758 AM] Health   || Component: feeding_tab    || Status: ok                                   
 [11/24/2025 01:42:40.748 AM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/24/2025 01:46:57.587 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/24/2025 01:46:58.874 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/24/2025 01:46:59.823 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/24/2025 01:47:00.921 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/24/2025 01:47:01.916 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/24/2025 01:47:02.448 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/24/2025 01:47:03.604 AM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/24/2025 01:48:13.412 AM] React+   || User: .s3j                || Channel: #cat-name-ideas                      || emoji=😆; msg="Shitbag Cuntface having to be called Ste..." by kitadan
+[11/24/2025 01:50:52.373 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/24/2025 01:50:53.356 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/24/2025 01:50:54.166 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/24/2025 01:50:55.061 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/24/2025 01:50:56.193 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/24/2025 01:50:56.663 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/24/2025 01:50:57.656 AM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/24/2025 01:54:49.950 AM] Online   || User: Tom Cat#8337        || Guilds: 2                                    
+[11/24/2025 01:54:51.184 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=551084964318543904 tab=TCBPicsInput
+[11/24/2025 01:54:52.232 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=639882573199441930 tab=TCBPicsInput
+[11/24/2025 01:54:52.984 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1341696618688286720 tab=TCBPicsInput
+[11/24/2025 01:54:53.876 AM] Health   || Component: image_tab      || Status: ok                                    || channel_id=1344745306620694558 tab=TCBVetBillInput
+[11/24/2025 01:54:54.446 AM] Health   || Component: feeding_tab    || Status: ok                                   
+[11/24/2025 01:54:55.437 AM] Action   || Name: feeding_scheduler   || Trigger: started                              || Output: ok
+[11/24/2025 02:00:54.164 AM] Join     || User: __friend_ (14424... || Guild: Campus Cat Coalition                   || age_days=0; invite=None
+[11/24/2025 02:06:34.849 AM] Roles    || User: __friend_           || Guild: Campus Cat Coalition                   || added=['acknowledged rules']; removed=[]
+[11/24/2025 02:08:39.519 AM] Message  || User: __friend_           || Channel: #bot-spam                            || Content: tomcat uitest
+[11/24/2025 02:08:43.799 AM] Message  || User: __friend_           || Channel: #bot-spam                            || Content: meow
+[11/24/2025 02:08:44.181 AM] Action   || Name: handle_misc         || Trigger: trigger=meow                         || Output: mrow!
+[11/24/2025 02:08:49.647 AM] Message  || User: __friend_           || Channel: #bot-spam                            || Content: Tomcat, UItest
+[11/24/2025 02:09:01.327 AM] Message  || User: __friend_           || Channel: #bot-spam                            || Content: tomcat whats the feeding schedule
+[11/24/2025 02:09:01.339 AM] Intent   || feeding_schedule_link     ||                                              
+[11/24/2025 02:09:01.665 AM] Action   || Name: feeding_schedule... || Trigger: user=1442424373347614830; channel... || Output: message_id=1442426771093065769
+[11/24/2025 02:10:00.250 AM] Action   || Name: profiles_error      || Trigger: sheet_read                           || Output: APIError: [429]: Quota exceeded for quota metric 'Read requests' and ...
+[11/24/2025 02:10:00.251 AM] Action   || Name: profiles_scheduler  || Trigger: update_all                           || Output: ran
+[11/24/2025 02:14:07.442 AM] Message  || User: austinbaustinb      || Channel: #logging                             || Content: friend is my alt. TomCat's UI is going to be different depending on ...
+[11/24/2025 02:14:18.914 AM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: Why tf do we even have school tomorrow or tuesday
+[11/24/2025 02:14:25.188 AM] Roles    || User: __friend_           || Guild: Campus Cat Coalition                   || added=['red [color]']; removed=[]
+[11/24/2025 02:14:38.886 AM] Roles    || User: __friend_           || Guild: Campus Cat Coalition                   || added=['cat bot']; removed=[]
+[11/24/2025 02:14:55.750 AM] Message  || User: austinbaustinb      || Channel: #yapper-committee                    || Content: To study and work hard!
+[11/24/2025 02:15:43.640 AM] Message  || User: kitadan             || Channel: #yapper-committee                    || Content: For those odd days that matter. /silly
+[11/24/2025 02:17:42.275 AM] Message  || User: .bettercalljack     || Channel: #yapper-committee                    || Content: TO SKIP AND SLEEP IN

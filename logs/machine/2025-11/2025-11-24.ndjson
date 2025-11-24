@@ -102,3 +102,43 @@
 {"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
 {"event": "health", "component": "feeding_tab", "status": "ok"}
 {"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "reaction_add", "user": ".s3j", "channel": "#cat-name-ideas", "message_id": 1442377188392308737, "emoji": "😆", "message_preview": "Shitbag Cuntface having to be called Ste...", "message_author": "kitadan"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "member_join", "user": "__friend_", "user_id": 1442424373347614830, "guild": "Campus Cat Coalition", "guild_id": 551082419768393729, "account_age_days": 0, "invite_code": null, "inviter_id": null}
+{"event": "member_update", "user": "__friend_", "user_id": 1442424373347614830, "guild": "Campus Cat Coalition", "roles_added": ["acknowledged rules"], "roles_removed": []}
+{"event": "message", "author": "__friend_", "channel": "#bot-spam", "content": "tomcat uitest", "attachments": 0}
+{"event": "message", "author": "__friend_", "channel": "#bot-spam", "content": "meow", "attachments": 0}
+{"event": "action", "name": "handle_misc", "trigger": "trigger=meow", "output": "mrow!"}
+{"event": "message", "author": "__friend_", "channel": "#bot-spam", "content": "Tomcat, UItest", "attachments": 0}
+{"event": "message", "author": "__friend_", "channel": "#bot-spam", "content": "tomcat whats the feeding schedule", "attachments": 0}
+{"event": "intent", "kind": "feeding_schedule_link", "confidence": 0.99, "channel_id": 956398865421074462, "user_id": 1442424373347614830, "message_id": 1442426770472308786, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "feeding_schedule_link", "trigger": "user=1442424373347614830; channel=956398865421074462", "output": "message_id=1442426771093065769"}
+{"event": "action", "name": "profiles_error", "trigger": "sheet_read", "output": "APIError: [429]: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'sheets.googleapis.com' for consumer 'project_number:1060012833432'."}
+{"event": "action", "name": "profiles_scheduler", "trigger": "update_all", "output": "ran"}
+{"event": "message", "author": "austinbaustinb", "channel": "#logging", "content": "friend is my alt. TomCat's UI is going to be different depending on the roles that each person has. Needed one that did not have very many roles.", "attachments": 0}
+{"event": "message", "author": ".bettercalljack", "channel": "#yapper-committee", "content": "Why tf do we even have school tomorrow or tuesday", "attachments": 0}
+{"event": "member_update", "user": "__friend_", "user_id": 1442424373347614830, "guild": "Campus Cat Coalition", "roles_added": ["red [color]"], "roles_removed": []}
+{"event": "member_update", "user": "__friend_", "user_id": 1442424373347614830, "guild": "Campus Cat Coalition", "roles_added": ["cat bot"], "roles_removed": []}
+{"event": "message", "author": "austinbaustinb", "channel": "#yapper-committee", "content": "To study and work hard!", "attachments": 0}
+{"event": "message", "author": "kitadan", "channel": "#yapper-committee", "content": "For those odd days that matter. /silly", "attachments": 0}
+{"event": "message", "author": ".bettercalljack", "channel": "#yapper-committee", "content": "TO SKIP AND SLEEP IN", "attachments": 0}

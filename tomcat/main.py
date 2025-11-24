@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 import asyncio
+import base64
+import hashlib
+import hmac
 import time
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 import os
 import json
@@ -15,6 +18,19 @@ from .config import settings
 # Config specific to your Discord App (from Developer Portal)
 CLIENT_ID = getattr(settings, 'ui_activity_app_id', None) or os.getenv("UITEST_ACTIVITY_APP_ID")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+
+SESSION_SECRET = os.getenv("UI_SESSION_SECRET")
+if not SESSION_SECRET:
+    raise RuntimeError("UI_SESSION_SECRET is required to issue UI session cookies")
+
+SESSION_TTL_SECONDS = int(os.getenv("UI_SESSION_TTL_SECONDS", "3600"))
+_COOKIE_SECURE = os.getenv("UI_COOKIE_SECURE", "false").lower() == "true"
+
+_ALLOWED_ORIGINS = {
+    origin.strip()
+    for origin in os.getenv("UI_ALLOWED_ORIGINS", "http://localhost:8080").split(",")
+    if origin.strip()
+}
 
 # Local persistence for the UI schedule
 SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
@@ -34,25 +50,102 @@ ROLES = {
 # Your main guild ID (replace with your actual guild/server ID)
 YOUR_GUILD_ID = 643586809166561310
 
+
+def _b64_encode(data: str) -> str:
+    return base64.urlsafe_b64encode(data.encode("utf-8")).decode("utf-8").rstrip("=")
+
+
+def _b64_decode(data: str) -> str:
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding).decode("utf-8")
+
+
+def _sign_payload(payload: dict) -> str:
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    sig = hmac.new(SESSION_SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{_b64_encode(body)}.{sig}"
+
+
+def _verify_session(token: str) -> Optional[dict]:
+    if not token or "." not in token:
+        return None
+    try:
+        encoded_body, sig = token.split(".", 1)
+        body = _b64_decode(encoded_body)
+        expected_sig = hmac.new(
+            SESSION_SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(expected_sig, sig):
+            return None
+        payload = json.loads(body)
+        if payload.get("exp", 0) < int(time.time()):
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+def _get_session_from_request(request: web.Request) -> Optional[dict]:
+    token = request.cookies.get("tc_session")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1]
+    return _verify_session(token) if token else None
+
+
+def _require_permissions(
+    request: web.Request,
+    *,
+    require_view: bool = False,
+    require_edit: bool = False,
+) -> tuple[Optional[dict], Optional[web.Response]]:
+    session = _get_session_from_request(request)
+    if not session:
+        return None, _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
+
+    permissions = session.get("permissions", {})
+    if require_view and not permissions.get("can_view"):
+        return None, _with_cors(web.Response(status=403, text="Not authorized to view"), request)
+    if require_edit and not permissions.get("can_edit_schedule"):
+        return None, _with_cors(web.Response(status=403, text="Schedule editing not allowed"), request)
+    return session, None
+
 async def auth_token_exchange(request):
     """Exchanges the temporary code from frontend for a user access token."""
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
     code = data.get("code")
+    code_verifier = data.get("code_verifier")
+    if not code:
+        return _with_cors(web.Response(status=400, text="Missing authorization code"), request)
+    if not CLIENT_SECRET or not CLIENT_ID:
+        return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)
+
     # Exchange code with Discord API
     async with aiohttp.ClientSession() as session:
+        token_payload = {
+            'client_id': CLIENT_ID,
+            'client_secret': CLIENT_SECRET,
+            'grant_type': 'authorization_code',
+            'code': code,
+        }
+        if code_verifier:
+            token_payload['code_verifier'] = code_verifier
+
         async with session.post(
             'https://discord.com/api/oauth2/token',
-            data={
-                'client_id': CLIENT_ID,
-                'client_secret': CLIENT_SECRET,
-                'grant_type': 'authorization_code',
-                'code': code,
-            }
+            data=token_payload,
         ) as resp:
             if resp.status != 200:
-                return web.Response(status=401, text="Invalid code")
+                return _with_cors(web.Response(status=401, text="Invalid authorization code"), request)
             token_data = await resp.json()
-            access_token = token_data['access_token']
+            access_token = token_data.get('access_token')
+            if not access_token:
+                return _with_cors(web.Response(status=401, text="Token exchange failed"), request)
 
         # Get User ID from Discord
         async with session.get(
@@ -73,6 +166,9 @@ async def auth_token_exchange(request):
         except Exception:
             member = None
 
+    if not guild or not member:
+        return _with_cors(web.Response(status=403, text="Unable to validate guild membership"), request)
+
     user_roles = [r.id for r in member.roles] if member else []
 
     # Determine permissions
@@ -83,22 +179,51 @@ async def auth_token_exchange(request):
     }
 
     if not permissions["can_view"]:
-         return web.Response(status=403, text="Not authorized to view this app.")
+         return _with_cors(web.Response(status=403, text="Not authorized to view this app."), request)
 
-    # Return the token back to frontend (or a session cookie) 
-    # + the permissions so the UI knows what buttons to show
-    return web.json_response({
-        "access_token": access_token,
-        "user": user_info,
+    now_ts = int(time.time())
+    session_payload = {
+        "user_id": str(user_id),
+        "permissions": permissions,
+        "iat": now_ts,
+        "exp": now_ts + SESSION_TTL_SECONDS,
+    }
+    session_token = _sign_payload(session_payload)
+
+    safe_user = {
+        "id": user_info.get("id"),
+        "username": user_info.get("username"),
+        "global_name": user_info.get("global_name"),
+    }
+    resp = web.json_response({
+        "user": safe_user,
         "permissions": permissions
     })
+    resp.set_cookie(
+        "tc_session",
+        session_token,
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=_COOKIE_SECURE,
+        samesite="Lax",
+    )
+    return _with_cors(resp, request)
 
 # --- The Secure Save Endpoint ---
 async def save_schedule(request):
     """Persist the feeding schedule to a local JSON file."""
-    data = await request.json()
+    _, error = _require_permissions(request, require_view=True, require_edit=True)
+    if error:
+        return error
+    try:
+        data = await request.json()
+    except Exception:
+        return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
     schedule = data.get("schedule", {})
     meta = data.get("meta", {})
+    if not isinstance(schedule, dict):
+        return _with_cors(web.Response(status=400, text="Schedule must be an object"), request)
 
     # Persist to disk (cache/feeding_schedule.json)
     try:
@@ -109,34 +234,27 @@ async def save_schedule(request):
         }
         SCHEDULE_PATH.write_text(json.dumps(payload), encoding="utf-8")
     except Exception as e:
-        resp = web.Response(status=500, text=f"Failed to save schedule: {e}")
-        resp.headers.update(_CORS_HEADERS)
-        return resp
+        return _with_cors(web.Response(status=500, text=f"Failed to save schedule: {e}"), request)
 
-    resp = web.json_response({"status": "ok"})
-    resp.headers.update(_CORS_HEADERS)
-    return resp
+    return _with_cors(web.json_response({"status": "ok"}), request)
 
 
 async def get_schedule(request):
     """Load the last saved schedule if it exists; otherwise return empty slots."""
+    _, error = _require_permissions(request, require_view=True)
+    if error:
+        return error
     if not SCHEDULE_PATH.exists():
         empty = {station: [""] * 7 for station in (getattr(settings, "feeding_schedule", {}) or {}).keys()}
         if not empty:
             empty = {station: [""] * 7 for station in DEFAULT_STATIONS}
-        resp = web.json_response({"schedule": empty, "meta": {"saved_at": None}})
-        resp.headers.update(_CORS_HEADERS)
-        return resp
+        return _with_cors(web.json_response({"schedule": empty, "meta": {"saved_at": None}}), request)
 
     try:
         payload = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
-        resp = web.json_response(payload)
-        resp.headers.update(_CORS_HEADERS)
-        return resp
+        return _with_cors(web.json_response(payload), request)
     except Exception as e:
-        resp = web.Response(status=500, text=f"Failed to load schedule: {e}")
-        resp.headers.update(_CORS_HEADERS)
-        return resp
+        return _with_cors(web.Response(status=500, text=f"Failed to load schedule: {e}"), request)
 
 import discord
 from discord.ext import commands
@@ -297,11 +415,30 @@ async def _refresh_invites(guild: discord.Guild):
     invites_cache[guild.id] = {inv.code: inv.uses or 0 for inv in invites}
 
 #TomCatUI
-_CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-}
+
+def _cors_headers(request: web.Request) -> Dict[str, str]:
+    origin = request.headers.get("Origin")
+    allow_origin = None
+    if origin and ("*" in _ALLOWED_ORIGINS or origin in _ALLOWED_ORIGINS):
+        allow_origin = origin
+    elif "*" in _ALLOWED_ORIGINS:
+        allow_origin = "*"
+
+    headers = {
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Vary": "Origin",
+    }
+    if allow_origin:
+        headers["Access-Control-Allow-Origin"] = allow_origin
+    if allow_origin and allow_origin != "*":
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return headers
+
+
+def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResponse:
+    resp.headers.update(_cors_headers(request))
+    return resp
 
 
 async def start_web_server(bot):
@@ -312,14 +449,15 @@ async def start_web_server(bot):
         """Serve the index.html file."""
         try:
             with open("index.html", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="text/html")
-                resp.headers.update(_CORS_HEADERS)
-                return resp
+                return _with_cors(web.Response(text=f.read(), content_type="text/html"), request)
         except FileNotFoundError:
             return web.Response(text="index.html not found. Please upload it to the bot root.", status=404)
 
     async def get_members(request):
         """Return JSON list of members allowed to be scheduled."""
+        _, error = _require_permissions(request, require_view=True)
+        if error:
+            return error
         FEEDING_TEAM_ROLE_ID = None
         DUE_PAYING_ROLE_ID = 774442956375064606
         HOLIDAY_FEEDER_ROLE_ID = 1419369282634125384
@@ -346,41 +484,43 @@ async def start_web_server(bot):
         sorted_members = sorted(unique_members, key=lambda x: x['name'].lower())
 
         resp = web.json_response(list(sorted_members))
-        resp.headers.update(_CORS_HEADERS)
         resp.headers["Cache-Control"] = "no-store"
-        return resp
+        return _with_cors(resp, request)
 
     async def options_members(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+        return _with_cors(web.Response(status=204), request)
 
     async def options_schedule(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+        return _with_cors(web.Response(status=204), request)
 
     async def options_schedule_save(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+        return _with_cors(web.Response(status=204), request)
 
     async def options_subrequest(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+        return _with_cors(web.Response(status=204), request)
 
     async def options_sub_open(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+        return _with_cors(web.Response(status=204), request)
 
     async def options_sub_claim(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+        return _with_cors(web.Response(status=204), request)
 
     async def submit_subrequest(request):
         """Record a manual sub request and notify the feeding team channel."""
+        session, error = _require_permissions(request, require_view=True)
+        if error:
+            return error
         try:
             data = await request.json()
         except Exception:
-            return web.Response(status=400, text="Invalid JSON", headers=_CORS_HEADERS)
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
-        user_id = data.get("user_id")
+        user_id = data.get("user_id") or session.get("user_id")
         user_name = data.get("user_name") or ""
         date_iso = data.get("date")
         stations = data.get("stations") or []
         if not user_id or not date_iso or not stations:
-            return web.Response(status=400, text="Missing user_id, date, or stations", headers=_CORS_HEADERS)
+            return _with_cors(web.Response(status=400, text="Missing user_id, date, or stations"), request)
 
         # Append to logs/subs/YYYY/YYYY-MM.jsonl
         try:
@@ -412,7 +552,7 @@ async def start_web_server(bot):
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record) + "\n")
         except Exception as e:
-            return web.Response(status=500, text=f"Failed to log sub request: {e}", headers=_CORS_HEADERS)
+            return _with_cors(web.Response(status=500, text=f"Failed to log sub request: {e}"), request)
 
         # Notify feeding team channel (include day-of-week and friendly date)
         try:
@@ -444,10 +584,13 @@ async def start_web_server(bot):
         except Exception:
             pass
 
-        return web.json_response({"status": "ok"}, headers=_CORS_HEADERS)
+        return _with_cors(web.json_response({"status": "ok"}), request)
 
     async def list_open_subs(request):
         """List sub requests separated into available, upcoming filled, and past (expired/fulfilled)."""
+        _, error = _require_permissions(request, require_view=True)
+        if error:
+            return error
         import glob, json
         from datetime import datetime
         today = datetime.now().date()
@@ -615,24 +758,25 @@ async def start_web_server(bot):
                 out["requester_id"] = str(requester_id)
             target_list.append(out)
 
-        resp = web.json_response({
+        return _with_cors(web.json_response({
             "available": available,
             "upcoming_filled": upcoming_filled,
             "past": past,
-        })
-        resp.headers.update(_CORS_HEADERS)
-        return resp
+        }), request)
 
     async def claim_subs(request):
         """Mark sub requests as accepted by a user."""
+        session, error = _require_permissions(request, require_view=True)
+        if error:
+            return error
         try:
             data = await request.json()
         except Exception:
-            return web.Response(status=400, text="Invalid JSON", headers=_CORS_HEADERS)
-        user_id = data.get("user_id")
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+        user_id = data.get("user_id") or session.get("user_id")
         picks = data.get("picks") or []
         if not user_id or not picks:
-            return web.Response(status=400, text="Missing user_id or picks", headers=_CORS_HEADERS)
+            return _with_cors(web.Response(status=400, text="Missing user_id or picks"), request)
 
         from datetime import datetime
         now_iso = datetime.now().isoformat()
@@ -727,7 +871,7 @@ async def start_web_server(bot):
         except Exception:
             pass
 
-        return web.json_response({"status": "ok"}, headers=_CORS_HEADERS)
+        return _with_cors(web.json_response({"status": "ok"}), request)
 
     app.add_routes([
         web.get('/', get_index),
@@ -748,8 +892,8 @@ async def start_web_server(bot):
 
     runner = web.AppRunner(app)
     await runner.setup()
-    # Listen on all interfaces at port 8080
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    # Listen on localhost to avoid exposing the UI externally by default
+    site = web.TCPSite(runner, '127.0.0.1', 8080)
     print("[TomCat-UI] Web server starting on http://localhost:8080")
     await site.start()
 

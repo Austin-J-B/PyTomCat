@@ -634,7 +634,7 @@ async def start_web_server(bot):
 
         from datetime import datetime
         now_iso = datetime.now().isoformat()
-        messages_by_date = {}
+        messages_by_date = {}  # date_iso -> list of (station, requester_id, requester_name)
 
         for pick in picks:
             parent_id = pick.get("id")
@@ -670,7 +670,7 @@ async def start_web_server(bot):
                 }
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(json.dumps(rec) + "\n")
-                messages_by_date.setdefault(date_iso, []).append((station, requester))
+                messages_by_date.setdefault(date_iso, []).append((station, requester, requester_name))
             except Exception:
                 continue
 
@@ -683,13 +683,20 @@ async def start_web_server(bot):
                 if isinstance(ch, Messageable):
                     # Build a single aggregated message
                     try:
-                        req_ids = []
+                        req_mentions_set = set()
                         date_bits = []
-                        all_req_ids = set()
                         for date_iso, items in messages_by_date.items():
-                            stations = [st for st, _ in items]
-                            reqs = [req for _, req in items if req]
-                            all_req_ids.update(reqs)
+                            stations = [st for st, _, _ in items]
+                            reqs = [(req, req_name) for _, req, req_name in items]
+                            for req, req_name in reqs:
+                                mention = None
+                                if req and str(req).isdigit():
+                                    mention = f"<@{req}>"
+                                elif req_name:
+                                    mention = req_name
+                                else:
+                                    mention = "someone"
+                                req_mentions_set.add(mention)
                             if len(stations) >= 3:
                                 stations_text = ", ".join(stations[:-1]) + f", and {stations[-1]}"
                             elif len(stations) == 2:
@@ -705,10 +712,10 @@ async def start_web_server(bot):
                                 date_pretty = date_iso
                             date_bits.append(f"{stations_text} on {dow + ', ' if dow else ''}{date_pretty}")
                         req_mentions = ""
-                        if len(all_req_ids) >= 2:
-                            req_mentions = " and ".join([f"<@{rid}>" for rid in all_req_ids])
-                        elif len(all_req_ids) == 1:
-                            req_mentions = f"<@{list(all_req_ids)[0]}>"
+                        if len(req_mentions_set) >= 2:
+                            req_mentions = " and ".join(req_mentions_set)
+                        elif len(req_mentions_set) == 1:
+                            req_mentions = next(iter(req_mentions_set))
                         else:
                             req_mentions = "someone"
                         msg = f"<@{user_id}> picked up {req_mentions}'s substitute request for " + " and ".join(date_bits)

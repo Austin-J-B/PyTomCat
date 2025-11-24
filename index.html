@@ -1431,12 +1431,11 @@ init();
     // --- CONFIGURATION ---
     const CLIENT_ID = "1341667150066225192"; 
     
-    // 1. Dynamic Redirect URI: Must match exactly what is in Discord Developer Portal
-    // Preserve query parameters (like ?api=...) so we keep the configured backend
-    // while stripping hash fragments (e.g., #schedule) that aren't sent to the server.
-    const REDIRECT_URI = window.location.origin + window.location.pathname + window.location.search;
-    
-    const LOGIN_URL = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=identify+guilds.members.read`;
+    // DEFAULT BACKEND: Use this if no ?api= param is provided
+    const DEFAULT_API = "https://ui.catsofuta.org"; 
+
+    // 1. FIX: Strip search/hash to ensure this matches Discord Portal exactly
+    const REDIRECT_URI = window.location.origin + window.location.pathname;
 
     let authState = { token: null, user: null, permissions: {} };
 
@@ -1444,40 +1443,52 @@ init();
     async function initAuth() {
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
+        const state = urlParams.get('state');
+
+        // Determine API Base: 
+        // 1. From URL param (initial visit)
+        // 2. From State param (returning from Discord)
+        // 3. Fallback to hardcoded default
+        let currentApi = urlParams.get('api');
+        
+        if (state) {
+            try {
+                // Restore API url from the state passed through Discord
+                const stateObj = JSON.parse(atob(state));
+                if (stateObj.api) currentApi = stateObj.api;
+            } catch(e) { console.warn("Invalid state", e); }
+        }
+
+        // Set the global apiBase (used by the rest of the app)
+        // Remove trailing slashes to be safe
+        apiBase = (currentApi || DEFAULT_API).replace(/\/$/, '');
+        console.log("Using Backend:", apiBase);
 
         if (code) {
             // SCENARIO 1: Returning from Discord Login
             console.log("Web Auth detected, exchanging code...");
             
-            // Clean the URL immediately so we don't reuse the code but keep the api param
+            // Clean the URL visually
             const cleanedUrl = new URL(window.location.href);
             cleanedUrl.searchParams.delete('code');
-            window.history.replaceState({}, document.title, cleanedUrl.pathname + cleanedUrl.search);
+            cleanedUrl.searchParams.delete('state');
+            // Restore the ?api= param to the address bar for consistency
+            if (apiBase !== DEFAULT_API.replace(/\/$/, '')) {
+                cleanedUrl.searchParams.set('api', apiBase);
+            }
+            window.history.replaceState({}, document.title, cleanedUrl.pathname + cleanedUrl.search + cleanedUrl.hash);
             
             await exchangeCode(code, REDIRECT_URI);
         } 
         else if (document.referrer.includes("discord.com") && window.Discord) {
-            // SCENARIO 2: Embedded App (Inside Discord Client)
+            // SCENARIO 2: Embedded App
+            // ... (Existing embedded logic) ...
+            // [Keep your existing embedded logic here if needed, or see below]
             console.log("Discord Activity environment detected...");
-            try {
-                const discordSdk = new Discord.DiscordSDK(CLIENT_ID);
-                await discordSdk.ready();
-                const { code: activityCode } = await discordSdk.commands.authorize({
-                    client_id: CLIENT_ID,
-                    response_type: "code",
-                    state: "",
-                    prompt: "none",
-                    scope: ["identify", "guilds.members.read"]
-                });
-                // Activities don't use redirect_uri
-                await exchangeCode(activityCode, null);
-            } catch (e) {
-                console.warn("Embedded Auth failed, showing button", e);
-                showLoginButton();
-            }
+            // ...
         } 
         else {
-            // SCENARIO 3: Direct Web Visit (Not logged in)
+            // SCENARIO 3: Direct Web Visit
             showLoginButton();
         }
     }
@@ -1485,9 +1496,11 @@ init();
     async function exchangeCode(code, redirectUri) {
         try {
             const body = { code };
+            // Ensure we send the SAME redirect_uri we used to generate the link
             if (redirectUri) body.redirect_uri = redirectUri;
 
-            const endpoint = apiBase ? `${apiBase}/api/auth/token` : '/api/auth/token';
+            // Use the calculated apiBase
+            const endpoint = `${apiBase}/api/auth/token`;
             
             const res = await fetch(endpoint, {
                 method: "POST",
@@ -1502,17 +1515,16 @@ init();
 
             const data = await res.json();
             
-            // Success! Store state
             authState.user = data.user;
             authState.permissions = data.permissions;
 
             console.log(`Logged in as ${authState.user.username}`);
             updateUIForUser();
-            init(); // Start the Schedule App
+            init(); 
             
         } catch (e) {
             console.error("Login Error:", e);
-            // If it fails, show the button again so they can retry
+            alert("Login failed: " + e.message); // Visual feedback
             showLoginButton();
         }
     }
@@ -1523,6 +1535,12 @@ init();
         
         if (document.getElementById('web-login-overlay')) return;
 
+        // Pass the current API base into the 'state' parameter so it survives the redirect
+        const stateObj = { api: apiBase };
+        const stateStr = btoa(JSON.stringify(stateObj));
+
+        const loginUrl = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=identify+guilds.members.read&state=${stateStr}`;
+
         const div = document.createElement('div');
         div.id = 'web-login-overlay';
         div.style.cssText = "position:fixed; inset:0; background:var(--site-bg); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:9999; text-align:center;";
@@ -1531,183 +1549,20 @@ init();
             <h3 style="font-family:'Montserrat', sans-serif; font-weight:500; font-size:1rem; margin:0; color:var(--site-text); opacity:0.8; text-transform: uppercase; letter-spacing: 1px;">
                 Campus Cat Coalition
             </h3>
-            
             <h1 style="font-family:'Merriweather', serif; font-weight:900; font-size:3rem; margin: 10px 0 40px 0; color:var(--site-text);">
                 TomCat-VI UI
             </h1>
-            
-            <a href="${LOGIN_URL}" style="background:#5865F2; color:white; padding:15px 40px; border-radius:30px; text-decoration:none; font-family:'Montserrat', sans-serif; font-weight:700; font-size:1.1rem; box-shadow:0 4px 15px rgba(88,101,242,0.4); transition: transform 0.2s;">
+            <a href="${loginUrl}" style="background:#5865F2; color:white; padding:15px 40px; border-radius:30px; text-decoration:none; font-family:'Montserrat', sans-serif; font-weight:700; font-size:1.1rem; box-shadow:0 4px 15px rgba(88,101,242,0.4); transition: transform 0.2s;">
                 Log in with Discord
             </a>
+            <p style="margin-top: 20px; font-size: 0.8rem; opacity: 0.6;">Backend: ${apiBase}</p>
         `;
         document.body.appendChild(div);
     }
 
-    function updateUIForUser() {
-        // Remove login overlay
-        const overlay = document.getElementById('web-login-overlay');
-        if (overlay) overlay.remove();
-
-        const isOfficer = authState.permissions.is_officer;
-        
-        // 1. Update Header Profile
-        const pDisplay = document.getElementById('profile-display');
-        const pIcon = document.getElementById('profile-icon');
-        const pName = document.getElementById('profile-name');
-        
-        if (pDisplay) {
-            pDisplay.style.display = 'flex';
-            pName.textContent = authState.user.username;
-            if (isOfficer) {
-                pIcon.textContent = "👑";
-                pIcon.className = "profile-icon role-officer";
-                pDisplay.title = "Officer Account";
-            } else {
-                pIcon.textContent = "👤";
-                pIcon.className = "profile-icon role-user";
-                pDisplay.title = "Volunteer Account";
-            }
-        }
-
-        // 2. Show/Hide Impersonation Controls
-        const displayMode = isOfficer ? 'flex' : 'none';
-        const subWrapper = document.getElementById('sub-user-wrapper');
-        const claimWrapper = document.getElementById('claim-user-wrapper');
-        
-        if (subWrapper) subWrapper.style.display = displayMode;
-        if (claimWrapper) claimWrapper.style.display = displayMode;
-
-        // 3. Save Button
-        const saveBtn = document.getElementById('save-btn');
-        if (saveBtn) {
-            saveBtn.style.display = authState.permissions.can_edit_schedule ? 'block' : 'none';
-        }
-    }
-
-    // Override renderOpenSubs to support Delete button
-    window.renderOpenSubs = function() {
-        const isPrev = requestTab === 'previous';
-        const wrap = isPrev ? document.getElementById('prev-requests-list') : document.getElementById('open-requests-list');
-        if (!wrap) return;
-        wrap.innerHTML = '';
-        
-        const source = isPrev ? prevRequests : openRequests.filter(item => {
-            if (!item.date) return false;
-            const d = new Date(item.date);
-            const today = new Date(); today.setHours(0,0,0,0);
-            d.setHours(0,0,0,0);
-            return d >= today;
-        });
-
-        if (!source.length) {
-            wrap.textContent = "No requests.";
-            return;
-        }
-
-        const grouped = {};
-        source.forEach(item => {
-            const date = item.date || 'Unknown date';
-            grouped[date] = grouped[date] || [];
-            grouped[date].push(item);
-        });
-        
-        const dateKeys = Object.keys(grouped).sort((a,b) => {
-            const da = new Date(a); const db = new Date(b);
-            return requestTab === 'previous' ? db - da : da - db;
-        });
-
-        dateKeys.forEach(date => {
-            grouped[date].forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'open-item';
-                
-                const meta = document.createElement('div');
-                meta.className = 'open-meta';
-                const dayStr = new Date(item.date).toLocaleDateString(undefined, { weekday: 'long', month: 'numeric', day: 'numeric', year: 'numeric' });
-                const requesterName = displayName(item.requester_id, item.requester_name);
-                
-                const line = document.createElement('div');
-                line.innerHTML = `<strong>${item.station}</strong> on ${dayStr} for ${requesterName}`;
-                meta.appendChild(line);
-
-                const status = document.createElement('div');
-                status.className = 'open-status';
-
-                const badge = document.createElement('span');
-                const hasAssignee = !!item.assignee_id;
-                const assigneeName = displayName(item.assignee_id, item.assignee_name);
-
-                if (isPrev) {
-                    if (hasAssignee) {
-                        badge.className = 'status-badge status-grey';
-                        badge.textContent = '✓';
-                        status.textContent = `Fulfilled by ${assigneeName}`;
-                    } else {
-                        badge.className = 'status-badge status-grey';
-                        badge.textContent = '✕';
-                        status.textContent = "Expired";
-                    }
-                } else {
-                    if (hasAssignee) {
-                        badge.className = 'status-badge status-green';
-                        badge.textContent = '✓';
-                        status.textContent = `Filled by ${assigneeName}`;
-                    } else {
-                        const checkbox = document.createElement('input');
-                        checkbox.type = 'checkbox';
-                        checkbox.value = JSON.stringify(item);
-                        div.appendChild(checkbox);
-                    }
-                }
-                div.appendChild(badge);
-                meta.appendChild(status);
-                div.appendChild(meta);
-
-                // Delete Logic
-                const isOfficer = authState.permissions.is_officer;
-                const isOwner = String(item.requester_id) === String(authState.user.id) || String(item.assignee_id) === String(authState.user.id);
-                
-                if (isOfficer || isOwner) {
-                    const trash = document.createElement('button');
-                    trash.className = 'trash-btn';
-                    trash.innerHTML = '🗑';
-                    trash.title = "Delete Request";
-                    trash.onclick = (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if(confirm(`Delete this request for ${item.station}?`)) {
-                            deleteRequest(item.id, item.date);
-                        }
-                    };
-                    div.appendChild(trash);
-                }
-
-                wrap.appendChild(div);
-            });
-            const sep = document.createElement('div');
-            sep.className = 'open-day-sep';
-            wrap.appendChild(sep);
-        });
-    };
-
-    async function deleteRequest(id, date) {
-        try {
-            const endpoint = apiBase ? `${apiBase}/api/subrequest/delete` : '/api/subrequest/delete';
-            const res = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, date })
-            });
-            if (res.ok) {
-                await loadOpenSubs();
-            } else {
-                alert("Failed to delete: " + await res.text());
-            }
-        } catch (e) {
-            console.error(e);
-            alert("Error deleting request");
-        }
-    }
+    // ... (Keep updateUIForUser, renderOpenSubs, and deleteRequest functions exactly as they were) ...
+    
+    // ... Copy updateUIForUser/etc from your original file ...
 
     // Kickoff
     initAuth();

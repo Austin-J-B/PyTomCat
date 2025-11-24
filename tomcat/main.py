@@ -137,7 +137,7 @@ async def auth_token_exchange(request):
             'code': code,
         }
         
-        # 2. If we have a redirect_uri, we MUST send it to Discord for verification
+        # 2. CRITICAL FIX: Pass the redirect_uri to Discord if it exists
         if redirect_uri:
             token_payload['redirect_uri'] = redirect_uri
 
@@ -146,14 +146,13 @@ async def auth_token_exchange(request):
             data=token_payload,
         ) as resp:
             if resp.status != 200:
-                # Log the error text for debugging
+                # Log the exact error from Discord to your console
                 err_text = await resp.text()
-                print(f"[Auth Error] Discord response: {err_text}")
-                return _with_cors(web.Response(status=401, text="Invalid authorization code or redirect_uri mismatch"), request)
+                print(f"[Auth Error] Discord rejected token exchange: {err_text}")
+                return _with_cors(web.Response(status=401, text="Token exchange failed"), request)
+            
             token_data = await resp.json()
             access_token = token_data.get('access_token')
-            if not access_token:
-                return _with_cors(web.Response(status=401, text="Token exchange failed"), request)
 
         # Get User ID from Discord
         async with session.get(
@@ -163,7 +162,7 @@ async def auth_token_exchange(request):
             user_info = await user_resp.json()
             user_id = int(user_info['id'])
 
-    # CHECK ROLES (Existing Logic)
+    # CHECK ROLES
     guild = bot.get_guild(YOUR_GUILD_ID)
     member = guild.get_member(user_id) if guild else None
     if not member and guild:
@@ -177,10 +176,10 @@ async def auth_token_exchange(request):
 
     user_roles = [r.id for r in member.roles] if member else []
 
-    # Determine permissions (Make sure OFFICER_ROLE_ID is defined in your config or imports)
+    # Define Officer Role (Make sure this ID is correct)
     OFFICER_ROLE_ID = 845035667661783061
-    is_officer = OFFICER_ROLE_ID in user_roles
     
+    is_officer = OFFICER_ROLE_ID in user_roles
     permissions = {
         "can_edit_schedule": is_officer,
         "can_label_photos": ROLES.get("PHOTO_LABELER") in user_roles,
@@ -191,6 +190,7 @@ async def auth_token_exchange(request):
     now_ts = int(time.time())
     session_payload = {
         "user_id": str(user_id),
+        "username": user_info.get("username"),
         "permissions": permissions,
         "iat": now_ts,
         "exp": now_ts + SESSION_TTL_SECONDS,

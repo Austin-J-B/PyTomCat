@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Launch TomCat using the project virtual environment."""
+"""Launch TomCat using the project virtual environment.
+
+Starts:
+  1. The Discord Bot (API Server)
+  2. The Cloudflare Tunnel (tomcat-ui)
+"""
 
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -22,34 +29,63 @@ def _venv_python() -> Path:
 def main() -> None:
     python_path = _venv_python()
     if not python_path.exists():
-        print("Virtual environment not found. Run `python scripts/install.py` first.")
+        print("❌ Virtual environment not found. Run `python scripts/install.py` first.")
         sys.exit(1)
 
-    cmd = [str(python_path), "-m", "tomcat.main"]
-    print(f"Starting TomCat (cwd={ROOT})\n→ {' '.join(cmd)}")
-    # Use your actual tunnel name here:
+    # 1. Prepare Bot Command
+    bot_cmd = [str(python_path), "-m", "tomcat.main"]
 
-    # Use bundled cloudflared.exe from project root (Windows)
+    # 2. Prepare Cloudflare Tunnel Command
     if os.name == "nt":
-        cloudflared_path = str(ROOT / "cloudflared.exe")
+        cloudflared_path = ROOT / "cloudflared.exe"
     else:
-        cloudflared_path = "cloudflared"
-    cloudflared_cmd = [cloudflared_path, "tunnel", "run", "tomcat-ui"]
+        cloudflared_path = ROOT / "cloudflared"
 
-    # Start API server
-    api_proc = subprocess.Popen(cmd, cwd=ROOT)
-    # Start cloudflared tunnel
-    tunnel_proc = subprocess.Popen(cloudflared_cmd, cwd=ROOT)
+    if not cloudflared_path.exists():
+        print(f"⚠️  {cloudflared_path.name} not found in root. UI Tunnel will not start.")
+        print("   Run `python scripts/install.py` to download it.")
+        tunnel_cmd = None
+    else:
+        # Tunnel ID/Name from your prompt
+        tunnel_cmd = [str(cloudflared_path), "tunnel", "run", "tomcat-ui"]
 
-    print("TomCat API server and Cloudflare tunnel are running. Press Ctrl+C to stop both.")
+    print(f"Starting TomCat ecosystem (cwd={ROOT})...")
+    
+    processes = []
+
     try:
-        api_proc.wait()
-        tunnel_proc.wait()
-    except KeyboardInterrupt:
-        print("\nShutting down...")
-        api_proc.terminate()
-        tunnel_proc.terminate()
+        # Start API/Bot
+        print(f"→ Bot: {' '.join(bot_cmd)}")
+        bot_proc = subprocess.Popen(bot_cmd, cwd=ROOT)
+        processes.append(bot_proc)
 
+        # Start Tunnel (if available)
+        if tunnel_cmd:
+            print(f"→ Tunnel: {' '.join(tunnel_cmd)}")
+            # Redirecting tunnel stderr to allow user to see connection logs if needed
+            tunnel_proc = subprocess.Popen(tunnel_cmd, cwd=ROOT)
+            processes.append(tunnel_proc)
+        
+        print("\n✅ TomCat is running. Press Ctrl+C to stop.\n")
+
+        # Wait for bot to exit (or crash)
+        exit_code = bot_proc.wait()
+        
+        if exit_code != 0:
+            print(f"⚠️ Bot exited with code {exit_code}")
+
+    except KeyboardInterrupt:
+        print("\n🛑 Shutting down...")
+    finally:
+        # Kill everything on exit
+        for p in processes:
+            if p.poll() is None:
+                # On Windows, terminate() is usually enough, but we want to be sure
+                p.terminate()
+                try:
+                    p.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    p.kill()
 
 if __name__ == "__main__":
     main()

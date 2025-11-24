@@ -31,7 +31,7 @@
             --focus-ring: #414B3B;
             
             /* Header Height for Sticky Positioning */
-            --legend-height: 48px; 
+            --legend-height: 40px; 
         }
 
         * { box-sizing: border-box; }
@@ -193,7 +193,7 @@
             font-weight: 700;
             cursor: pointer;
             box-shadow: 0 4px 10px rgba(0,0,0,0.12);
-            transition: transform 0.16s ease, box-shadow 0.16s ease, padding 0.16s ease;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, padding 0.2s ease;
         }
         .save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
         .save-btn:active { transform: translateY(0); box-shadow: 0 3px 8px rgba(0,0,0,0.12); }
@@ -203,7 +203,7 @@
             padding: 9px 18px;
         }
         .save-btn.saved {
-            transform: scale(1.01);
+            transform: scale(1.005);
         }
 
         .save-status {
@@ -464,10 +464,8 @@
 
             background: var(--header-tan); 
             color: var(--site-text);
-            padding: 10px 18px; 
+            padding: 6px 16px; 
             border-bottom: 2px solid var(--site-text);
-            margin: 4px 12px 10px;
-            border-radius: 10px;
             
             display: flex;
             align-items: center;
@@ -517,7 +515,8 @@
         }
 
         .legend-actions .search-container {
-            padding: 6px 0;
+            padding: 4px 0;
+            margin: 2px 0;
         }
 
         table {
@@ -1095,7 +1094,7 @@ function setSaveButtonState(state) {
         saveResetTimer = setTimeout(() => {
             saveBtn.textContent = "Save";
             saveBtn.classList.remove("saved");
-        }, 900);
+        }, 1600);
     } else {
         saveBtn.textContent = "Save";
         saveBtn.disabled = false;

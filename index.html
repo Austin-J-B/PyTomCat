@@ -199,11 +199,12 @@
             padding: 0;
             border-radius: 0 0 4px 4px;
             box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.10);
-            transform-origin: top center;
-            transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+            
+            /* REMOVED: transform-origin and transition */
+            /* These properties fight with the 'zoom' property */
+            
             display: flex;
             flex-direction: column;
-            /* Added margin so user sees header scroll up before sticking */
             margin-top: 40px; 
         }
 
@@ -1375,11 +1376,11 @@ function resetZoom() {
 function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
     const container = document.getElementById('sheet-container');
-    if (zoomLevel === 1) {
-        container.style.transform = ''; // Remove transform to restore sticky behavior
-    } else {
-        container.style.transform = `scale(${zoomLevel})`; // Apply zoom
-    }
+    
+    // Use CSS 'zoom' instead of 'transform'. 
+    // 'zoom' triggers a layout recalculation, which allows position:sticky 
+    // to understand exactly where the top of the screen is at any scale.
+    container.style.zoom = zoomLevel;
 }
 
 const initialView = getViewFromLocation() || 'schedule';

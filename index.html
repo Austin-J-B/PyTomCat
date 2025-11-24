@@ -127,6 +127,12 @@
             border-left-color: var(--site-accent);
         }
 
+        .menu-item.active {
+            background-color: #eef3ea;
+            border-left-color: var(--site-accent);
+            font-weight: 700;
+        }
+
         /* --- HEADER --- */
         header.site-header {
             background-color: var(--header-tan);
@@ -320,6 +326,15 @@
             background: white;
             border-bottom-color: white;
             box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
+        }
+        .tab-section {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            margin-top: -4px; /* pull tabs down to rest on the border */
+        }
+        .tab-row {
+            margin-bottom: -1px; /* let the tab body border meet the tabs */
         }
         .tab-body {
             border: 1px solid var(--grid-line);
@@ -588,9 +603,9 @@
             <button class="close-menu-btn" onclick="toggleMenu()">×</button>
         </div>
         <div class="sidebar-content">
-            <a href="#" class="menu-item" onclick="setView('schedule'); toggleMenu();">Feeding Schedule</a>
-            <a href="#" class="menu-item" onclick="setView('sub'); toggleMenu();">Request a sub here</a>
-            <a href="#" class="menu-item" onclick="setView('claim'); toggleMenu();">Substitute Requests</a>
+            <a href="#schedule" class="menu-item" data-view="schedule" onclick="setView('schedule'); toggleMenu();">Feeding Schedule</a>
+            <a href="#sub" class="menu-item" data-view="sub" onclick="setView('sub'); toggleMenu();">Request a sub here</a>
+            <a href="#claim" class="menu-item" data-view="claim" onclick="setView('claim'); toggleMenu();">Substitute Requests</a>
             <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat VI Repository</a>
         </div>
     </div>
@@ -713,17 +728,19 @@
                         <div id="claim-user-results" class="search-results"></div>
                     </div>
                 </div>
-                <div class="tab-row">
-                    <button class="tab-btn" id="tab-available" onclick="setRequestTab('available')">Available Requests</button>
-                    <button class="tab-btn" id="tab-previous" onclick="setRequestTab('previous')">Previous Requests</button>
-                </div>
-                <div class="tab-body">
-                    <div class="form-row" id="available-block">
-                        <div id="open-requests-list" class="open-list"></div>
-                        <div id="claim-status" class="warn"></div>
+                <div class="tab-section">
+                    <div class="tab-row">
+                        <button class="tab-btn" id="tab-available" onclick="setRequestTab('available')">Available Requests</button>
+                        <button class="tab-btn" id="tab-previous" onclick="setRequestTab('previous')">Previous Requests</button>
                     </div>
-                    <div class="form-row" id="previous-block" style="display:none;">
-                        <div id="prev-requests-list" class="open-list"></div>
+                    <div class="tab-body">
+                        <div class="form-row" id="available-block">
+                            <div id="open-requests-list" class="open-list"></div>
+                            <div id="claim-status" class="warn"></div>
+                        </div>
+                        <div class="form-row" id="previous-block" style="display:none;">
+                            <div id="prev-requests-list" class="open-list"></div>
+                        </div>
                     </div>
                 </div>
                 <div class="form-row actions" id="claim-actions">
@@ -740,6 +757,7 @@ const STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP", 
     "Lot 50", "Mary Kay & Zen", "West Hall", "Maintenance"
 ];
+const VIEWS = ["schedule", "sub", "claim"];
 
 // --- STATE ---
 let scheduleData = {};
@@ -1209,11 +1227,37 @@ async function saveSchedule() {
 }
 
 // --- VIEW SWITCHING ---
-function setView(view) {
-    activeView = view;
-    document.getElementById('sheet-container').style.display = view === 'schedule' ? 'flex' : 'none';
-    document.getElementById('sub-container').style.display = view === 'sub' ? 'flex' : 'none';
-    document.getElementById('claim-container').style.display = view === 'claim' ? 'flex' : 'none';
+function getViewFromLocation() {
+    const hashView = (window.location.hash || '').replace('#','').toLowerCase();
+    if (VIEWS.includes(hashView)) return hashView;
+    const params = new URLSearchParams(window.location.search);
+    const queryView = (params.get('view') || '').toLowerCase();
+    if (VIEWS.includes(queryView)) return queryView;
+    return null;
+}
+
+function updateUrlForView(view) {
+    const url = new URL(window.location.href);
+    url.hash = view;
+    history.replaceState(null, "", url);
+}
+
+function highlightMenu(view) {
+    document.querySelectorAll('.menu-item[data-view]').forEach(link => {
+        link.classList.toggle('active', link.dataset.view === view);
+    });
+}
+
+function setView(view, opts = {}) {
+    const nextView = VIEWS.includes(view) ? view : 'schedule';
+    activeView = nextView;
+    document.getElementById('sheet-container').style.display = nextView === 'schedule' ? 'flex' : 'none';
+    document.getElementById('sub-container').style.display = nextView === 'sub' ? 'flex' : 'none';
+    document.getElementById('claim-container').style.display = nextView === 'claim' ? 'flex' : 'none';
+    highlightMenu(nextView);
+    if (!opts.skipUrlUpdate) updateUrlForView(nextView);
+    const viewTitles = { schedule: "Feeding Schedule", sub: "Request a Substitute", claim: "Substitute Requests" };
+    document.title = `${viewTitles[nextView] || "TomCat"} | Campus Cat Coalition`;
 }
 
 // --- SUB REQUEST FORM ---
@@ -1573,6 +1617,15 @@ function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
     document.getElementById('sheet-container').style.transform = `scale(${zoomLevel})`;
 }
+
+const initialView = getViewFromLocation() || 'schedule';
+setView(initialView, { skipUrlUpdate: true });
+window.addEventListener('hashchange', () => {
+    const hashView = getViewFromLocation();
+    if (hashView && hashView !== activeView) {
+        setView(hashView, { skipUrlUpdate: true });
+    }
+});
 
 // Run
 init();

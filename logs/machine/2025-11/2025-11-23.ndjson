@@ -221,3 +221,14 @@
 {"event": "health", "component": "feeding_tab", "status": "ok"}
 {"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
 {"event": "message", "author": "_costco_wholesale_", "channel": "#external-adoption-ads", "content": "ig it was also easier since shes a super cuddly kitten", "attachments": 0}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "i forgot how bad hair lightener smells", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "holy shit", "attachments": 0}
+{"event": "reaction_add", "user": "a1darek", "channel": "#external-adoption-ads", "message_id": 1442328222929785016, "emoji": "❤️", "message_preview": "demon child is no longer a stowaway", "message_author": "_costco_wholesale_"}
+{"event": "reaction_add", "user": "a1darek", "channel": "#external-adoption-ads", "message_id": 1442328005623156857, "emoji": "🔥", "message_preview": "FOUND HER A HOME", "message_author": "_costco_wholesale_"}

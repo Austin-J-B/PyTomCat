@@ -321,6 +321,12 @@
             border-bottom-color: white;
             box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
         }
+        .tab-body {
+            border: 1px solid var(--grid-line);
+            border-radius: 0 12px 12px 12px;
+            padding: 12px;
+            background: white;
+        }
         .cal-weekday { font-weight: 700; color: var(--site-text); }
 
         /* --- SEARCH --- */
@@ -699,10 +705,6 @@
                 <div class="key-combo">Substitute Requests</div>
             </div>
             <div class="sub-form">
-                <div class="tab-row">
-                    <button class="tab-btn" id="tab-available" onclick="setRequestTab('available')">Available Requests</button>
-                    <button class="tab-btn" id="tab-previous" onclick="setRequestTab('previous')">Previous Requests</button>
-                </div>
                 <div class="form-row">
                     <label for="claim-user">What is your account?</label>
                     <div class="search-container">
@@ -710,16 +712,20 @@
                         <div id="claim-user-results" class="search-results"></div>
                     </div>
                 </div>
-                <div class="form-row" id="available-block">
-                    <label>Available requests</label>
-                    <div id="open-requests-list" class="open-list"></div>
-                    <div id="claim-status" class="warn"></div>
+                <div class="tab-row">
+                    <button class="tab-btn" id="tab-available" onclick="setRequestTab('available')">Available Requests</button>
+                    <button class="tab-btn" id="tab-previous" onclick="setRequestTab('previous')">Previous Requests</button>
                 </div>
-                <div class="form-row" id="previous-block" style="display:none;">
-                    <label>Previous requests</label>
-                    <div id="prev-requests-list" class="open-list"></div>
+                <div class="tab-body">
+                    <div class="form-row" id="available-block">
+                        <div id="open-requests-list" class="open-list"></div>
+                        <div id="claim-status" class="warn"></div>
+                    </div>
+                    <div class="form-row" id="previous-block" style="display:none;">
+                        <div id="prev-requests-list" class="open-list"></div>
+                    </div>
                 </div>
-                <div class="form-row actions">
+                <div class="form-row actions" id="claim-actions">
                     <button class="save-btn" onclick="submitClaim()">Submit</button>
                 </div>
             </div>
@@ -861,7 +867,8 @@ function setRequestTab(tab) {
     document.getElementById('tab-previous').classList.toggle('active', tab === 'previous');
     document.getElementById('available-block').style.display = tab === 'available' ? 'flex' : 'none';
     document.getElementById('previous-block').style.display = tab === 'previous' ? 'flex' : 'none';
-    document.querySelector('.form-row.actions').style.display = tab === 'available' ? 'flex' : 'none';
+    const actions = document.getElementById('claim-actions');
+    if (actions) actions.style.display = tab === 'available' ? 'flex' : 'none';
     renderOpenSubs();
 }
 
@@ -1440,7 +1447,13 @@ function renderOpenSubs() {
     if (!wrap) return;
     wrap.innerHTML = '';
     const isPrev = requestTab === 'previous';
-    const source = isPrev ? prevRequests : openRequests;
+    const source = isPrev ? prevRequests : openRequests.filter(item => {
+        if (!item.date) return false;
+        const d = new Date(item.date);
+        const today = new Date(); today.setHours(0,0,0,0);
+        d.setHours(0,0,0,0);
+        return d >= today;
+    });
     if (!source.length) {
         wrap.textContent = "No requests.";
         return;
@@ -1448,9 +1461,9 @@ function renderOpenSubs() {
     const grouped = {};
     source.forEach(item => {
         const date = item.date || 'Unknown date';
-        grouped[date] = grouped[date] || [];
-        grouped[date].push(item);
-    });
+            grouped[date] = grouped[date] || [];
+            grouped[date].push(item);
+        });
     Object.keys(grouped).sort().forEach(date => {
         grouped[date].forEach(item => {
             const div = document.createElement('div');

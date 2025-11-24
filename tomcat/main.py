@@ -450,6 +450,7 @@ async def start_web_server(bot):
         today = datetime.now().date()
 
         accepted_map = {}  # (parent_id, station, date_iso) -> assignee_id
+        accepted_meta = {}  # (parent_id, station, date_iso) -> requester_name
         requested_items = []
 
         for path in glob.glob(os.path.join("logs", "subs", "*", "*.jsonl")):

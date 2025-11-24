@@ -1,6 +1,7 @@
 # ===== Discord =====
 DISCORD_TOKEN=#
 DISCORD_CLIENT_SECRET=#
+UI_SESSION_SECRET=                      # Required: secret for signing UI session cookies
 COMMAND_PREFIX=! # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago

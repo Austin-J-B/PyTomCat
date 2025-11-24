@@ -1430,10 +1430,11 @@ init();
 <script>
     // --- CONFIGURATION ---
     const CLIENT_ID = "1341667150066225192"; 
-    // Dynamically determine redirect URI based on where the user is currently visiting
+    
+    // 1. Dynamic Redirect URI: Must match exactly what is in Discord Developer Portal
+    // Removes hash fragments like #schedule so they don't break the auth callback
     const REDIRECT_URI = window.location.origin + window.location.pathname; 
     
-    // Generate the OAuth URL dynamically
     const LOGIN_URL = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=identify+guilds.members.read`;
 
     let authState = { token: null, user: null, permissions: {} };
@@ -1444,14 +1445,17 @@ init();
         const code = urlParams.get('code');
 
         if (code) {
-            // Scenario 1: Returning from Web Login
-            console.log("Web Auth detected");
-            // Clean URL
+            // SCENARIO 1: Returning from Discord Login
+            console.log("Web Auth detected, exchanging code...");
+            
+            // Clean the URL immediately so we don't reuse the code
             window.history.replaceState({}, document.title, window.location.pathname);
+            
             await exchangeCode(code, REDIRECT_URI);
-        } else if (document.referrer.includes("discord.com")) {
-            // Scenario 2: Embedded in Discord
-            console.log("Discord Activity detected");
+        } 
+        else if (document.referrer.includes("discord.com") && window.Discord) {
+            // SCENARIO 2: Embedded App (Inside Discord Client)
+            console.log("Discord Activity environment detected...");
             try {
                 const discordSdk = new Discord.DiscordSDK(CLIENT_ID);
                 await discordSdk.ready();
@@ -1462,14 +1466,15 @@ init();
                     prompt: "none",
                     scope: ["identify", "guilds.members.read"]
                 });
-                // Activity auth doesn't use redirect_uri
+                // Activities don't use redirect_uri
                 await exchangeCode(activityCode, null);
             } catch (e) {
-                console.error("SDK Auth failed", e);
+                console.warn("Embedded Auth failed, showing button", e);
                 showLoginButton();
             }
-        } else {
-            // Scenario 3: Visiting web directly, no code
+        } 
+        else {
+            // SCENARIO 3: Direct Web Visit (Not logged in)
             showLoginButton();
         }
     }
@@ -1480,32 +1485,39 @@ init();
             if (redirectUri) body.redirect_uri = redirectUri;
 
             const endpoint = apiBase ? `${apiBase}/api/auth/token` : '/api/auth/token';
+            
             const res = await fetch(endpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body)
             });
 
-            if (!res.ok) throw new Error("Token exchange failed");
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Server error: ${errText}`);
+            }
 
             const data = await res.json();
-            // The backend sets a cookie, but we also store user info for UI
+            
+            // Success! Store state
             authState.user = data.user;
             authState.permissions = data.permissions;
 
+            console.log(`Logged in as ${authState.user.username}`);
             updateUIForUser();
-            // Initialize the main app logic (loadSchedule, etc)
-            init(); 
+            init(); // Start the Schedule App
+            
         } catch (e) {
-            console.error(e);
+            console.error("Login Error:", e);
+            // If it fails, show the button again so they can retry
             showLoginButton();
         }
     }
 
     function showLoginButton() {
-        document.getElementById('loading').style.display = 'none';
+        const loading = document.getElementById('loading');
+        if(loading) loading.style.display = 'none';
         
-        // Prevent duplicates
         if (document.getElementById('web-login-overlay')) return;
 
         const div = document.createElement('div');
@@ -1527,15 +1539,15 @@ init();
         `;
         document.body.appendChild(div);
     }
-    // --- UI UPDATES ---
+
     function updateUIForUser() {
-        // Remove login overlay if present
+        // Remove login overlay
         const overlay = document.getElementById('web-login-overlay');
         if (overlay) overlay.remove();
 
         const isOfficer = authState.permissions.is_officer;
         
-        // 1. Update Header
+        // 1. Update Header Profile
         const pDisplay = document.getElementById('profile-display');
         const pIcon = document.getElementById('profile-icon');
         const pName = document.getElementById('profile-name');
@@ -1554,9 +1566,7 @@ init();
             }
         }
 
-        // 2. Toggle Inputs
-        // If officer, they can see/use the inputs to impersonate.
-        // If user, we hide them (backend forces their ID).
+        // 2. Show/Hide Impersonation Controls
         const displayMode = isOfficer ? 'flex' : 'none';
         const subWrapper = document.getElementById('sub-user-wrapper');
         const claimWrapper = document.getElementById('claim-user-wrapper');
@@ -1564,21 +1574,14 @@ init();
         if (subWrapper) subWrapper.style.display = displayMode;
         if (claimWrapper) claimWrapper.style.display = displayMode;
 
-        // 3. Save Button Visibility
+        // 3. Save Button
         const saveBtn = document.getElementById('save-btn');
         if (saveBtn) {
-            // Assuming backend 'can_edit_schedule' aligns with 'is_officer' for now
             saveBtn.style.display = authState.permissions.can_edit_schedule ? 'block' : 'none';
         }
     }
 
-    // --- OVERRIDES FOR EXISTING FUNCTIONS ---
-
-    // Override renderOpenSubs to add Trash Icons
-    // We hook into the existing function logic by redefining it or modify the HTML generation loop.
-    // Since we can't easily "hook" inside the loop of the previous script block, 
-    // you should REPLACE the `renderOpenSubs` function in the main script with this one:
-    
+    // Override renderOpenSubs to support Delete button
     window.renderOpenSubs = function() {
         const isPrev = requestTab === 'previous';
         const wrap = isPrev ? document.getElementById('prev-requests-list') : document.getElementById('open-requests-list');
@@ -1620,7 +1623,6 @@ init();
                 const dayStr = new Date(item.date).toLocaleDateString(undefined, { weekday: 'long', month: 'numeric', day: 'numeric', year: 'numeric' });
                 const requesterName = displayName(item.requester_id, item.requester_name);
                 
-                // Display
                 const line = document.createElement('div');
                 line.innerHTML = `<strong>${item.station}</strong> on ${dayStr} for ${requesterName}`;
                 meta.appendChild(line);
@@ -1651,7 +1653,6 @@ init();
                         const checkbox = document.createElement('input');
                         checkbox.type = 'checkbox';
                         checkbox.value = JSON.stringify(item);
-                        // Prevent clicking checkbox from triggering trash logic if overlaid
                         div.appendChild(checkbox);
                     }
                 }
@@ -1659,7 +1660,7 @@ init();
                 meta.appendChild(status);
                 div.appendChild(meta);
 
-                // --- DELETE ICON LOGIC ---
+                // Delete Logic
                 const isOfficer = authState.permissions.is_officer;
                 const isOwner = String(item.requester_id) === String(authState.user.id) || String(item.assignee_id) === String(authState.user.id);
                 
@@ -1705,7 +1706,7 @@ init();
         }
     }
 
-    // Trigger Init
+    // Kickoff
     initAuth();
 </script>
 </body>

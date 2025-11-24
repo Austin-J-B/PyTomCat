@@ -38,6 +38,9 @@ _ALLOWED_ORIGINS = {
 
 _AUTH_DEBUG = os.getenv("UI_AUTH_DEBUG", "false").lower() == "true"
 
+# Officer role configured for elevated permissions (edit schedule, impersonation)
+OFFICER_ROLE_ID = 845035667661783061
+
 
 def _debug(msg: str) -> None:
     """Print lightweight auth/debug traces when enabled."""
@@ -107,6 +110,73 @@ def _get_session_from_request(request: web.Request) -> Optional[dict]:
             token = auth_header.split(" ", 1)[1]
     _debug(f"session cookie_present={bool(token)}")
     return _verify_session(token) if token else None
+
+
+def _issue_session_response(user_info: dict, permissions: dict, request: web.Request) -> web.Response:
+    """Sign a session payload and return a JSON response with cookie set."""
+    now_ts = int(time.time())
+    session_payload = {
+        "user_id": str(user_info.get("id")),
+        "username": user_info.get("username"),
+        "global_name": user_info.get("global_name"),
+        "permissions": permissions,
+        "iat": now_ts,
+        "exp": now_ts + SESSION_TTL_SECONDS,
+    }
+    session_token = _sign_payload(session_payload)
+
+    resp = web.json_response({
+        "user": {
+            "id": user_info.get("id"),
+            "username": user_info.get("username"),
+            "global_name": user_info.get("global_name"),
+        },
+        "permissions": permissions
+    })
+    resp.set_cookie(
+        "tc_session",
+        session_token,
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=_COOKIE_SECURE,
+        samesite=_COOKIE_SAMESITE,
+    )
+    _debug(f"set-cookie secure={_COOKIE_SECURE} samesite={_COOKIE_SAMESITE}")
+    return _with_cors(resp, request)
+
+
+async def _resolve_member(user_id: int) -> tuple[Optional[discord.Guild], Optional[discord.Member]]:
+    """Find a member in the configured guild or any guild the bot is in."""
+    guild = bot.get_guild(YOUR_GUILD_ID) if "bot" in globals() else None
+    member = guild.get_member(user_id) if guild else None
+    if not member and guild:
+        try:
+            member = await guild.fetch_member(user_id)
+        except Exception:
+            member = None
+
+    if not member and "bot" in globals():
+        for g in bot.guilds:
+            try:
+                candidate = g.get_member(user_id)
+                if not candidate:
+                    candidate = await g.fetch_member(user_id)
+                if candidate:
+                    return g, candidate
+            except Exception:
+                continue
+    return guild, member
+
+
+def _build_permissions(user_roles: list[int]) -> dict:
+    """Calculate permissions based on Discord roles."""
+    is_officer = OFFICER_ROLE_ID in user_roles
+    return {
+        "can_edit_schedule": is_officer,
+        "can_label_photos": ROLES.get("PHOTO_LABELER") in user_roles,
+        "can_view": True,
+        "is_officer": is_officer,
+    }
 
 
 def _require_permissions(
@@ -196,76 +266,42 @@ async def auth_token_exchange(request):
             return _with_cors(web.Response(status=502, text="Failed to fetch user profile"), request)
 
     # CHECK ROLES
-    guild = bot.get_guild(YOUR_GUILD_ID)
-    member = guild.get_member(user_id) if guild else None
-    if not member and guild:
-        try:
-            member = await guild.fetch_member(user_id)
-        except Exception:
-            member = None
-
-    # Fallback: search all guilds the bot is in for this user to avoid hard-coded ID issues
-    if not member:
-        for g in bot.guilds:
-            try:
-                candidate = g.get_member(user_id)
-                if not candidate:
-                    candidate = await g.fetch_member(user_id)
-                if candidate:
-                    guild = g
-                    member = candidate
-                    _debug(f"fallback guild match guild_id={g.id}")
-                    break
-            except Exception:
-                continue
-
+    guild, member = await _resolve_member(user_id)
     if not guild or not member:
         guild_ids = [getattr(g, "id", None) for g in bot.guilds]
         _debug(f"guild/member missing guild={bool(guild)} member={bool(member)} bot_guilds={guild_ids}")
         return _with_cors(web.Response(status=403, text="Unable to validate guild membership"), request)
 
     user_roles = [r.id for r in member.roles] if member else []
+    permissions = _build_permissions(user_roles)
 
-    # Define Officer Role (Make sure this ID is correct)
-    OFFICER_ROLE_ID = 845035667661783061
-    
-    is_officer = OFFICER_ROLE_ID in user_roles
-    permissions = {
-        "can_edit_schedule": is_officer,
-        "can_label_photos": ROLES.get("PHOTO_LABELER") in user_roles,
-        "can_view": True,
-        "is_officer": is_officer
+    return _issue_session_response(user_info, permissions, request)
+
+
+async def get_session(request: web.Request):
+    """Validate an existing session cookie and refresh it."""
+    session = _get_session_from_request(request)
+    if not session:
+        return _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
+
+    try:
+        user_id = int(session.get("user_id"))
+    except Exception:
+        return _with_cors(web.Response(status=400, text="Invalid session payload"), request)
+
+    guild, member = await _resolve_member(user_id)
+    if not guild or not member:
+        return _with_cors(web.Response(status=403, text="Guild membership required"), request)
+
+    user_roles = [r.id for r in member.roles]
+    permissions = _build_permissions(user_roles)
+    user_info = {
+        "id": user_id,
+        "username": session.get("username") or getattr(member, "name", ""),
+        "global_name": session.get("global_name") or getattr(member, "global_name", None),
     }
 
-    now_ts = int(time.time())
-    session_payload = {
-        "user_id": str(user_id),
-        "username": user_info.get("username"),
-        "permissions": permissions,
-        "iat": now_ts,
-        "exp": now_ts + SESSION_TTL_SECONDS,
-    }
-    session_token = _sign_payload(session_payload)
-
-    safe_user = {
-        "id": user_info.get("id"),
-        "username": user_info.get("username"),
-        "global_name": user_info.get("global_name"),
-    }
-    resp = web.json_response({
-        "user": safe_user,
-        "permissions": permissions
-    })
-    resp.set_cookie(
-        "tc_session",
-        session_token,
-        max_age=SESSION_TTL_SECONDS,
-        httponly=True,
-        secure=_COOKIE_SECURE,
-        samesite=_COOKIE_SAMESITE,
-    )
-    _debug(f"set-cookie secure={_COOKIE_SECURE} samesite={_COOKIE_SAMESITE}")
-    return _with_cors(resp, request)
+    return _issue_session_response(user_info, permissions, request)
 
 # --- The Secure Save Endpoint ---
 async def save_schedule(request):
@@ -562,6 +598,9 @@ async def start_web_server(bot):
         return _with_cors(web.Response(status=204), request)
 
     async def options_auth_token(request):
+        return _with_cors(web.Response(status=204), request)
+
+    async def options_auth_session(request):
         return _with_cors(web.Response(status=204), request)
 
     async def options_subrequest(request):
@@ -1003,7 +1042,9 @@ async def start_web_server(bot):
         web.get('/api/members', get_members),
         web.options('/api/members', options_members),
         web.post('/api/auth/token', auth_token_exchange),
+        web.get('/api/auth/session', get_session),
         web.options('/api/auth/token', options_auth_token),
+        web.options('/api/auth/session', options_auth_session),
         web.post('/api/schedule/save', save_schedule),
         web.get('/api/schedule', get_schedule),
         web.options('/api/schedule', options_schedule),

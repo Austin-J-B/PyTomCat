@@ -209,6 +209,7 @@ DUES_PERKS_RE = re.compile(r"\brun\s+dues\s+perks\b", re.I)
 DUES_UPDATE_RE = re.compile(r"\bupdate\s+due[-\s]?pay(?:ing)?\s+members\b", re.I)
 RECACHE_SHOW_RE = re.compile(r"\brecache\s+(?:show|photo|photos|cache|cats?)\b", re.I)
 RECACHE_ONE_RE = re.compile(r"\brecache\s+(.+?)(?:\s+photos?)?\b", re.I)
+RECACHE_ALL_RE = re.compile(r"\brecache\s+all\s+(?:show\s+)?(?:cat\s+)?photos?\b", re.I)
 RECACHE_CATABASE_RE = re.compile(r"\brecache\s+(?:catabase|cat\s*database|names)\b", re.I)
 REMOVE_ROLE_RE = re.compile(r"\b(?:remove|clear|strip)\s+(?:the\s+)?role\s+(\d{5,20})(?:\s+from\s+(?:everyone|all))?\b", re.I)
 FEEDING_SCHEDULE_LINK_RE = re.compile(
@@ -630,14 +631,19 @@ class IntentRouter:
                 )
 
             # Admin-only: recache show-photo cache (all or one cat)
+            m_all = RECACHE_ALL_RE.search(text_wo)
             m_one = RECACHE_ONE_RE.search(text_wo)
-            if m_one or RECACHE_SHOW_RE.search(text_wo):
+            if m_all or RECACHE_SHOW_RE.search(text_wo) or m_one:
                 author = message.author
                 is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
                 if not is_admin:
                     self._traces[row["message_id"]] = trace + ["deny:not_admin"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                name = (m_one.group(1).strip() if m_one else None)
+                # Explicit "recache all photos" or generic "recache show photos" => recache everything
+                if m_all or RECACHE_SHOW_RE.search(text_wo):
+                    name = None
+                else:
+                    name = (m_one.group(1).strip() if m_one else None)
                 return IntentEvent(
                     type="show_cache_recache", confidence=0.99,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],

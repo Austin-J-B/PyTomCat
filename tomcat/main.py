@@ -319,14 +319,17 @@ async def start_web_server(bot):
             return web.Response(text="index.html not found. Please upload it to the bot root.", status=404)
 
     async def get_members(request):
-        """Return JSON list of members with the Feeding Team role."""
+        """Return JSON list of members allowed to be scheduled."""
         FEEDING_TEAM_ROLE_ID = None
         DUE_PAYING_ROLE_ID = 774442956375064606
+        HOLIDAY_FEEDER_ROLE_ID = 1419369282634125384
         found_members = []
         
         for guild in bot.guilds:
-            role = guild.get_role(DUE_PAYING_ROLE_ID) if DUE_PAYING_ROLE_ID else None
-            if role:
+            for role_id in (DUE_PAYING_ROLE_ID, HOLIDAY_FEEDER_ROLE_ID):
+                role = guild.get_role(role_id) if role_id else None
+                if not role:
+                    continue
                 for member in role.members:
                     # Use display_name (nickname) if available, fallback to username
                     name = member.display_name

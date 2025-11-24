@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-import urllib.request
 """One-stop installer for TomCat.
 
 This script provisions the local environment so the bot can run on a fresh
@@ -9,16 +7,12 @@ virtualenv, model weights) are reused when present.
 
 What it does:
   • Creates/updates the project virtual environment
+  • Downloads cloudflared binary (Windows/Linux)
   • Installs Python dependencies, picking GPU or CPU Torch wheels automatically
   • Downloads & converts the DeBERTa model to ONNX (if missing)
+  • Checks for YOLO weights and warns if missing
   • Runs the model smoke test so failures surface immediately
-
-Example:
-    python scripts/install.py            # auto-detect GPU support
-    python scripts/install.py --cpu      # force CPU-only install
-
-The script assumes it is executed from inside the repository root (the same
-directory that contains requirements.txt)."""
+"""
 
 from __future__ import annotations
 
@@ -28,6 +22,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 from typing import Iterable, List
 
@@ -38,6 +33,10 @@ WEIGHTS_DIR = ROOT / "weights"
 ONNX_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.onnx"
 TOKENIZER_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.tokenizer.json"
 
+# Proprietary weights that must be manually copied
+REQUIRED_WEIGHTS = ["NanoModel.pt", "NanoClassifier.pt"]
+
+# PyTorch configuration - ensuring compatibility with Vision + Audio
 TORCH_CPU_SPEC = ["torch==2.3.1", "torchvision==0.18.1"]
 TORCH_GPU_SPEC = [
     "--extra-index-url",
@@ -85,8 +84,38 @@ def _clean_hf_cache() -> None:
 def _ensure_repo() -> None:
     if not (ROOT / "requirements.txt").exists():
         raise InstallError(
-            "requirements.txt not found. Run this script from the repository root."\
+            "requirements.txt not found. Run this script from the repository root."
         )
+
+
+def _ensure_cloudflared() -> None:
+    _print_header("Checking Cloudflare Tunnel Binary")
+    
+    # Determine URL and filename based on OS
+    if os.name == "nt":
+        filename = "cloudflared.exe"
+        url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+    else:
+        filename = "cloudflared"
+        # Assuming AMD64 for standard servers/desktops; ARM would need a different URL
+        url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+
+    target_path = ROOT / filename
+
+    if target_path.exists():
+        print(f"✅ {filename} is already present.")
+        return
+
+    print(f"Downloading {filename} from {url}...")
+    try:
+        urllib.request.urlretrieve(url, target_path)
+        # On Linux/Mac, we must make it executable
+        if os.name != "nt":
+            target_path.chmod(0o755)
+        print(f"✅ Downloaded {filename} to {target_path}")
+    except Exception as exc:
+        print(f"⚠️ Failed to download cloudflared: {exc}")
+        print("You may need to download it manually to run the UI tunnel.")
 
 
 def _create_or_reuse_venv(python_exe: Path) -> None:
@@ -113,6 +142,7 @@ def _install_base_dependencies(force_reinstall: bool = False) -> None:
             if not line or line.startswith("#"):
                 continue
             lower = line.lower()
+            # We handle Torch separately to manage CUDA/CPU variants explicitly
             if "torch" in lower or lower.startswith("--extra-index-url"):
                 continue
             base_packages.append(line)
@@ -126,10 +156,22 @@ def _install_base_dependencies(force_reinstall: bool = False) -> None:
 
 
 def _detect_cuda() -> bool:
+    _print_header("Hardware Detection")
+    # Check for nvidia-smi
     if shutil.which("nvidia-smi"):
-        print("Detected NVIDIA GPU via nvidia-smi")
+        print("✅ NVIDIA GPU detected via nvidia-smi.")
         return True
-    print("No NVIDIA GPU detected – defaulting to CPU wheels")
+    
+    # Fallback check on Windows
+    if os.name == 'nt':
+        try:
+            # Simple check if nvml.dll is loadable might be overkill, 
+            # nvidia-smi is the standard indicator.
+            pass 
+        except Exception:
+            pass
+
+    print("ℹ️ No NVIDIA GPU detected – defaulting to CPU wheels.")
     return False
 
 
@@ -157,22 +199,21 @@ def _install_torch(force: str | None = None) -> None:
 
     spec = TORCH_GPU_SPEC if wants_gpu else TORCH_CPU_SPEC
     cmd = ["install", *spec]
+    
+    _print_header(f"Installing PyTorch ({'GPU/CUDA 12.1' if wants_gpu else 'CPU'})")
     try:
         _pip(cmd)
         return
     except subprocess.CalledProcessError:
         if wants_gpu:
-            print("GPU wheel install failed – retrying with CPU wheels")
+            print("⚠️ GPU wheel install failed – retrying with CPU wheels as fallback...")
             _pip(["install", *TORCH_CPU_SPEC])
             return
         raise
 
 
 def _ensure_extra_models() -> None:
-    # These lightweight packages are not part of requirements to avoid inflating
-    # runtime footprint when the NLP backstop is unused, but we need them for the
-    # ONNX export step.
-    # Pinning to >=0.35.1 avoids the header parsing bug introduced with older 0.33.x releases.
+    # Packages needed for ONNX export but not strictly for runtime inference
     _pip([
         "install",
         "huggingface_hub>=0.35.1,<0.36",
@@ -201,12 +242,28 @@ def _cleanup_tokenizer_artifacts() -> None:
 def _ensure_deberta_model() -> None:
     WEIGHTS_DIR.mkdir(exist_ok=True)
     if ONNX_PATH.exists() and TOKENIZER_PATH.exists():
-        print("DeBERTa ONNX model already present – skipping conversion")
+        print("✅ DeBERTa ONNX model already present.")
         return
     _print_header("Downloading & converting DeBERTa (MNLI) ONNX model")
     _ensure_extra_models()
     _run([str(_venv_python()), "scripts/convert_model.py"], cwd=ROOT)
     _cleanup_tokenizer_artifacts()
+
+
+def _check_yolo_weights() -> None:
+    """Checks for the existence of custom YOLO weights."""
+    missing = []
+    for w in REQUIRED_WEIGHTS:
+        if not (WEIGHTS_DIR / w).exists():
+            missing.append(w)
+    
+    if missing:
+        _print_header("⚠️  MISSING WEIGHTS  ⚠️")
+        print(f"The following model files were not found in {WEIGHTS_DIR}:")
+        for m in missing:
+            print(f"  - {m}")
+        print("\nPlease manually copy these files from your backup or Google Drive.")
+        print("The bot may fail to perform Visual Identification without them.")
 
 
 def _test_model() -> None:
@@ -227,7 +284,7 @@ def _maybe_create_env_template() -> None:
         "# GOOGLE_SERVICE_ACCOUNT_JSON=credentials/service_account.json\n"
     )
     env_path.write_text(template, encoding="utf-8")
-    print("Created placeholder .env – update it with real credentials")
+    print("\n✅ Created placeholder .env – update it with real credentials before starting.")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -238,7 +295,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--python",
         type=Path,
-        help="use a specific Python interpreter to create the virtualenv (defaults to the current interpreter)",
+        help="use a specific Python interpreter to create the virtualenv",
     )
     parser.add_argument(
         "--reinstall",
@@ -253,7 +310,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-model",
         action="store_true",
-        help="provision dependencies but skip the DeBERTa download + test stage",
+        help="skip the DeBERTa download + test stage",
     )
     parser.add_argument(
         "--clean-hf-cache",
@@ -264,28 +321,17 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    # Download cloudflared.exe if missing (Windows only)
-    if os.name == "nt":
-        cloudflared_path = ROOT / "cloudflared.exe"
-        if not cloudflared_path.exists():
-            _print_header("Downloading cloudflared.exe")
-            url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
-            try:
-                print(f"Downloading cloudflared.exe from {url} ...")
-                urllib.request.urlretrieve(url, cloudflared_path)
-                print(f"cloudflared.exe downloaded to {cloudflared_path}")
-            except Exception as exc:
-                print(f"✖ Failed to download cloudflared.exe: {exc}")
-                sys.exit(1)
-        else:
-            print(f"cloudflared.exe already present at {cloudflared_path}")
     args = _parse_args()
     python_exe = args.python.resolve() if args.python else Path(sys.executable)
     _print_header("TomCat Installer")
-    print(f"Repository root: {ROOT}")
-    print(f"Using Python interpreter: {python_exe}")
+    print(f"Root: {ROOT}")
+    print(f"Python: {python_exe}")
 
     _ensure_repo()
+    
+    # 1. Download External Binaries (Cloudflare)
+    _ensure_cloudflared()
+
     if args.resume_model:
         if not _venv_python().exists():
             raise InstallError(".venv not found – run the full installer first.")
@@ -293,14 +339,18 @@ def main() -> None:
             _clean_hf_cache()
         _ensure_deberta_model()
         _test_model()
+        _check_yolo_weights()
         _maybe_create_env_template()
     else:
+        # 2. Setup Venv & Pip
         _create_or_reuse_venv(python_exe)
         _install_base_dependencies(force_reinstall=args.reinstall)
 
+        # 3. Install Torch (Smart Detect)
         torch_force = "gpu" if args.gpu else "cpu" if args.cpu else None
         _install_torch(torch_force)
 
+        # 4. Download/Convert Models
         if not args.skip_model:
             if args.clean_hf_cache:
                 _clean_hf_cache()
@@ -308,9 +358,14 @@ def main() -> None:
             _test_model()
         else:
             print("Skipping DeBERTa download/test as requested")
+
+        # 5. Final Checks
+        _check_yolo_weights()
         _maybe_create_env_template()
 
-    print("\nAll done! Launch the bot with:\n  python scripts/start.py\n")
+    print("\n✨ Installation Complete! ✨")
+    print("1. Update .env with your credentials.")
+    print("2. Launch the bot with: python scripts/start.py\n")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+import urllib.request
 """One-stop installer for TomCat.
 
 This script provisions the local environment so the bot can run on a fresh
@@ -262,6 +264,21 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    # Download cloudflared.exe if missing (Windows only)
+    if os.name == "nt":
+        cloudflared_path = ROOT / "cloudflared.exe"
+        if not cloudflared_path.exists():
+            _print_header("Downloading cloudflared.exe")
+            url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+            try:
+                print(f"Downloading cloudflared.exe from {url} ...")
+                urllib.request.urlretrieve(url, cloudflared_path)
+                print(f"cloudflared.exe downloaded to {cloudflared_path}")
+            except Exception as exc:
+                print(f"✖ Failed to download cloudflared.exe: {exc}")
+                sys.exit(1)
+        else:
+            print(f"cloudflared.exe already present at {cloudflared_path}")
     args = _parse_args()
     python_exe = args.python.resolve() if args.python else Path(sys.executable)
     _print_header("TomCat Installer")

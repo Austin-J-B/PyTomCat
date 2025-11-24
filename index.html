@@ -1432,8 +1432,9 @@ init();
     const CLIENT_ID = "1341667150066225192"; 
     
     // 1. Dynamic Redirect URI: Must match exactly what is in Discord Developer Portal
-    // Removes hash fragments like #schedule so they don't break the auth callback
-    const REDIRECT_URI = window.location.origin + window.location.pathname; 
+    // Preserve query parameters (like ?api=...) so we keep the configured backend
+    // while stripping hash fragments (e.g., #schedule) that aren't sent to the server.
+    const REDIRECT_URI = window.location.origin + window.location.pathname + window.location.search;
     
     const LOGIN_URL = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=identify+guilds.members.read`;
 
@@ -1448,8 +1449,10 @@ init();
             // SCENARIO 1: Returning from Discord Login
             console.log("Web Auth detected, exchanging code...");
             
-            // Clean the URL immediately so we don't reuse the code
-            window.history.replaceState({}, document.title, window.location.pathname);
+            // Clean the URL immediately so we don't reuse the code but keep the api param
+            const cleanedUrl = new URL(window.location.href);
+            cleanedUrl.searchParams.delete('code');
+            window.history.replaceState({}, document.title, cleanedUrl.pathname + cleanedUrl.search);
             
             await exchangeCode(code, REDIRECT_URI);
         } 

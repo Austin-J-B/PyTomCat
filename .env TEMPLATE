@@ -4,46 +4,53 @@ DISCORD_CLIENT_SECRET=#
 COMMAND_PREFIX=! # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago
-#Austin, Megan, Derek, Cel, Kaz, Jesse, McKayla, Bel, and Jacob
-ADMIN_IDS=624440365595754496,499034835562790912,217081575873970178,429741733706989568,1361167705897435229,244678835889635328,607002156247154688,837445695480135691,503377157830082560
 
-# austin: "624440365595754496",
-        #megan: "499034835562790912",
-        #derek: "217081575873970178",
-        #cel: "429741733706989568",
-        #kaz: "1361167705897435229",
-        #jesse: "244678835889635328",
-        #mckayla: "607002156247154688",
-        #bel: "837445695480135691",
-        #jacob: "503377157830082560"
+# Comma-separated admin user IDs who can run privileged commands
+ADMIN_IDS=
 
-# ===== Channels (Discord snowflakes) =====
-# from config.js → channels
-CH_FEEDING_TEAM=643586809166561310
-CH_TOMCAT_SANDBOX=1341696618688286720
-CH_PICTURES_OF_CATS=551084964318543904
-CH_REPORT_NEW_CATS=639882573199441930
-CH_DUE_PORTAL=928060549089087538
-CH_LOGGING=842975801934217276
-CH_CATDOCDUMP=1344745306620694558
+# ===== Channels  =====
+# CH_FEEDING_TEAM: channel where the bot listens for feeding station updates, posts 8pm pings, sub requests, and related notices
+CH_FEEDING_TEAM=
+
+# CH_TOMCAT_SANDBOX: sandbox channel for testing commands/UI safely
+CH_TOMCAT_SANDBOX=
+
+# CH_PICTURES_OF_CATS: channel where cat photos are posted; routed to intake sheet tab below
+CH_PICTURES_OF_CATS=
+
+# CH_REPORT_NEW_CATS: channel for new cat sightings/reports; routed to intake sheet tab below
+CH_REPORT_NEW_CATS=
+
+# CH_DUE_PORTAL: channel for dues/membership intake and status updates
+CH_DUE_PORTAL=
+
+# CH_LOGGING: channel where TomCat posts internal logs, errors, and status updates
+CH_LOGGING=
+
+# CH_CATDOCDUMP: channel where vet bills/receipts are dropped; routed to vet bill sheet tab below
+CH_CATDOCDUMP=
+
+# Map channels to target Sheets tabs for intake (format: CH_NAME:SheetTab, comma separated)
 CHANNEL_SHEET_MAP=CH_PICTURES_OF_CATS:TCBPicsInput, CH_REPORT_NEW_CATS:TCBPicsInput, CH_TOMCAT_SANDBOX:TCBPicsInput, CH_CATDOCDUMP:TCBVetBillInput
+# allowed_feeding_channel_ids: list of channel vars where feeding schedule commands are permitted
 allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
-CH_MEMBER_NAMES=933458020892033084
-                
 
-# Ping target when a spam message is detected
-SPAM_ALERT_USER_ID=624440365595754496
+# CH_MEMBER_NAMES: channel new due-paying-member names are posted.
+CH_MEMBER_NAMES=
+
+# who to ping when a spam message is detected (user ID)
+SPAM_ALERT_USER_ID=
 
 # ===== Google Service Account =====
 GOOGLE_SERVICE_ACCOUNT_JSON=./credentials/service_account.json
 
 # ===== Sheets =====
 # Catabase (cat bios + latest image URL)
-SHEET_CATABASE_ID=15HtHVB4HfOr9e85EgbOGbz9CBwWnXg3pbCytGTA64P4 #Catabase
+SHEET_CATABASE_ID= #Catabase
 # Vision/aux (RecentPics, FeedingStationChecklist, etc.)
-SHEET_VISION_ID=1ypMoqpB0XbiVVhJ1GP_6gVcqMmt-FXRrkoO2D2fC8WE  #TomCatVision
+SHEET_VISION_ID=  #TomCatVision
 # Members/finance megasheet (used later for dues/membership)
-SHEET_MEGASHEET_ID=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA # CCC megasheet
+SHEET_MEGASHEET_ID= # CCC megasheet
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
 NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
@@ -69,8 +76,8 @@ DUES_NLP_ENABLED=true                 # Enable NLP heuristics for intent/donatio
 DUES_MEMBERSHIP_TTL_SEC=300           # Cache TTL for dues membership lookups (seconds)
 DUES_FAST_MAP=1                       # Use fast user map resolver (set 0 to force slower fallback)
 
-# Discord bot identity
-BOT_USER_ID=1341667150066225192       # Bot user ID for mention detection + wake word shortcuts
+# Discord bot identity (bot user ID; used for mention detection + wake word shortcuts)
+BOT_USER_ID=
 
 # Cache expiry settings
 CAT_PROFILE_TTL_SEC=3600              # Seconds before cached cat profiles auto-refresh
@@ -78,4 +85,4 @@ CAT_ALIASES_TTL_SEC=7200              # Seconds before alias table refreshes fro
 
 FINANCE_SHEET_THROTTLE_SEC=0.5        # When finances are requested, it waits this long between queries. 
 
-UITEST_ACTIVITY_APP_ID=1341667150066225192 #For the user interface to work.
+UITEST_ACTIVITY_APP_ID=                # Application ID used by the UI embedded app/tests (Discord activity)

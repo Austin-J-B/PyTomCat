@@ -113,102 +113,109 @@ def _require_permissions(
     return session, None
 
 async def auth_token_exchange(request):
-    """Exchanges the temporary code from frontend for a user access token."""
-    try:
-        data = await request.json()
-    except Exception:
-        return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
-
-    code = data.get("code")
-    code_verifier = data.get("code_verifier")
-    if not code:
-        return _with_cors(web.Response(status=400, text="Missing authorization code"), request)
-    if not CLIENT_SECRET or not CLIENT_ID:
-        return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)
-
-    # Exchange code with Discord API
-    async with aiohttp.ClientSession() as session:
-        token_payload = {
-            'client_id': CLIENT_ID,
-            'client_secret': CLIENT_SECRET,
-            'grant_type': 'authorization_code',
-            'code': code,
-        }
-        if code_verifier:
-            token_payload['code_verifier'] = code_verifier
-
-        async with session.post(
-            'https://discord.com/api/oauth2/token',
-            data=token_payload,
-        ) as resp:
-            if resp.status != 200:
-                return _with_cors(web.Response(status=401, text="Invalid authorization code"), request)
-            token_data = await resp.json()
-            access_token = token_data.get('access_token')
-            if not access_token:
-                return _with_cors(web.Response(status=401, text="Token exchange failed"), request)
-
-        # Get User ID from Discord
-        async with session.get(
-            'https://discord.com/api/users/@me',
-            headers={'Authorization': f'Bearer {access_token}'}
-        ) as user_resp:
-            user_info = await user_resp.json()
-            user_id = int(user_info['id'])
-
-    # CHECK ROLES (The important part)
-    # We use your existing bot instance to check roles in the guild
-    guild = bot.get_guild(YOUR_GUILD_ID)
-    member = guild.get_member(user_id) if guild else None
-    if not member and guild:
-        # Fallback: fetch if not cached
+        """Exchanges the temporary code from frontend for a user access token."""
         try:
-            member = await guild.fetch_member(user_id)
+            data = await request.json()
         except Exception:
-            member = None
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
-    if not guild or not member:
-        return _with_cors(web.Response(status=403, text="Unable to validate guild membership"), request)
+        code = data.get("code")
+        redirect_uri = data.get("redirect_uri")  # <--- Capture redirect_uri from frontend
+        
+        if not code:
+            return _with_cors(web.Response(status=400, text="Missing authorization code"), request)
+        if not CLIENT_SECRET or not CLIENT_ID:
+            return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)
 
-    user_roles = [r.id for r in member.roles] if member else []
+        # Exchange code with Discord API
+        async with aiohttp.ClientSession() as session:
+            token_payload = {
+                'client_id': CLIENT_ID,
+                'client_secret': CLIENT_SECRET,
+                'grant_type': 'authorization_code',
+                'code': code,
+            }
+            # <--- Important: If web flow, we MUST pass the matching redirect_uri
+            if redirect_uri:
+                token_payload['redirect_uri'] = redirect_uri
 
-    # Determine permissions
-    permissions = {
-        "can_edit_schedule": ROLES["FEEDING_MANAGER"] in user_roles,
-        "can_label_photos": ROLES["PHOTO_LABELER"] in user_roles,
-        "can_view": ROLES["VIEWER"] in user_roles
-    }
+            async with session.post(
+                'https://discord.com/api/oauth2/token',
+                data=token_payload,
+            ) as resp:
+                if resp.status != 200:
+                    # Log the response for debugging if needed
+                    txt = await resp.text()
+                    print(f"Auth failed: {txt}")
+                    return _with_cors(web.Response(status=401, text="Invalid authorization code"), request)
+                token_data = await resp.json()
+                access_token = token_data.get('access_token')
 
-    if not permissions["can_view"]:
-         return _with_cors(web.Response(status=403, text="Not authorized to view this app."), request)
+            # Get User ID from Discord
+            async with session.get(
+                'https://discord.com/api/users/@me',
+                headers={'Authorization': f'Bearer {access_token}'}
+            ) as user_resp:
+                user_info = await user_resp.json()
+                user_id = int(user_info['id'])
 
-    now_ts = int(time.time())
-    session_payload = {
-        "user_id": str(user_id),
-        "permissions": permissions,
-        "iat": now_ts,
-        "exp": now_ts + SESSION_TTL_SECONDS,
-    }
-    session_token = _sign_payload(session_payload)
+        # CHECK ROLES
+        guild = bot.get_guild(YOUR_GUILD_ID)
+        member = guild.get_member(user_id) if guild else None
+        if not member and guild:
+            try:
+                member = await guild.fetch_member(user_id)
+            except Exception:
+                member = None
 
-    safe_user = {
-        "id": user_info.get("id"),
-        "username": user_info.get("username"),
-        "global_name": user_info.get("global_name"),
-    }
-    resp = web.json_response({
-        "user": safe_user,
-        "permissions": permissions
-    })
-    resp.set_cookie(
-        "tc_session",
-        session_token,
-        max_age=SESSION_TTL_SECONDS,
-        httponly=True,
-        secure=_COOKIE_SECURE,
-        samesite="Lax",
-    )
-    return _with_cors(resp, request)
+        if not guild or not member:
+            return _with_cors(web.Response(status=403, text="Unable to validate guild membership"), request)
+
+        user_roles = [r.id for r in member.roles] if member else []
+
+        # OFFICER ROLE ID (Update this if it changes)
+        OFFICER_ROLE_ID = 845035667661783061 
+
+        # Determine permissions
+        is_officer = OFFICER_ROLE_ID in user_roles
+        permissions = {
+            "can_edit_schedule": is_officer, # Mapping officer to edit permission
+            "can_label_photos": ROLES["PHOTO_LABELER"] in user_roles,
+            "can_view": True, # Allow all members to view
+            "is_officer": is_officer # Explicit flag for UI
+        }
+
+        now_ts = int(time.time())
+        session_payload = {
+            "user_id": str(user_id),
+            "username": user_info.get("username"), # Store username for logs
+            "permissions": permissions,
+            "iat": now_ts,
+            "exp": now_ts + SESSION_TTL_SECONDS,
+        }
+        session_token = _sign_payload(session_payload)
+
+        safe_user = {
+            "id": user_info.get("id"),
+            "username": user_info.get("username"),
+            "global_name": user_info.get("global_name"),
+        }
+        
+        resp = web.json_response({
+            "user": safe_user,
+            "permissions": permissions
+        })
+        
+        # Set Secure Cookie
+        resp.set_cookie(
+            "tc_session",
+            session_token,
+            max_age=SESSION_TTL_SECONDS,
+            httponly=True,
+            secure=_COOKIE_SECURE,
+            samesite="Lax", # Allow cookie on redirect from OAuth
+        )
+        return _with_cors(resp, request)
 
 # --- The Secure Save Endpoint ---
 async def save_schedule(request):
@@ -508,86 +515,143 @@ async def start_web_server(bot):
         return _with_cors(web.Response(status=204), request)
 
     async def submit_subrequest(request):
-        """Record a manual sub request and notify the feeding team channel."""
+        """Record a manual sub request."""
         session, error = _require_permissions(request, require_view=True)
-        if error:
-            return error
+        if error: return error
+        
         try:
             data = await request.json()
         except Exception:
             return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
-        user_id = data.get("user_id") or session.get("user_id")
-        user_name = data.get("user_name") or ""
+        # --- SECURITY / IMPERSONATION LOGIC ---
+        req_user_id = data.get("user_id")
+        req_user_name = data.get("user_name")
+        
+        # If user is NOT an officer, force them to use their own identity
+        permissions = session.get("permissions", {})
+        if not permissions.get("is_officer"):
+            req_user_id = session.get("user_id")
+            req_user_name = session.get("username") # fallback
+        
+        # If officer didn't provide a specific user (standard submit), default to self
+        if not req_user_id:
+            req_user_id = session.get("user_id")
+
         date_iso = data.get("date")
         stations = data.get("stations") or []
-        if not user_id or not date_iso or not stations:
-            return _with_cors(web.Response(status=400, text="Missing user_id, date, or stations"), request)
+        
+        if not req_user_id or not date_iso or not stations:
+            return _with_cors(web.Response(status=400, text="Missing required fields"), request)
 
         # Append to logs/subs/YYYY/YYYY-MM.jsonl
         try:
             from datetime import datetime
             from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
-            month_key = _sub_month_key_from_date(date_iso)
-            if not month_key:
-                month_key = datetime.now().strftime("%Y-%m")
+            month_key = _sub_month_key_from_date(date_iso) or datetime.now().strftime("%Y-%m")
             path = _sub_log_path_from_key(month_key)
-            import os, json
             os.makedirs(os.path.dirname(path), exist_ok=True)
+            
             record = {
                 "kind": "sub_request",
                 "id": f"sub-{int(datetime.now().timestamp()*1000)}",
                 "station": ", ".join(stations),
                 "stations": stations,
                 "dates": [date_iso],
-                "requester": int(user_id),
-                "requester_name": user_name,
+                "requester": int(req_user_id),
+                "requester_name": req_user_name,
                 "assignee": None,
                 "status": "requested",
-                "channel_id": 0,
-                "message_id": 0,
                 "created_at": datetime.now().isoformat(),
-                "log_month": month_key,
-                "message_preview": "",
                 "trigger_phrase": "ui_sub_request",
             }
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record) + "\n")
         except Exception as e:
-            return _with_cors(web.Response(status=500, text=f"Failed to log sub request: {e}"), request)
+            return _with_cors(web.Response(status=500, text=f"Log error: {e}"), request)
 
-        # Notify feeding team channel (include day-of-week and friendly date)
+        # Notify Discord
         try:
             channel_id = getattr(settings, "ch_feeding_team", None)
             if channel_id:
                 ch = bot.get_channel(int(channel_id))
-                from discord.abc import Messageable
-                if isinstance(ch, Messageable):
-                    # Build station list text
-                    if len(stations) >= 3:
-                        station_text = ", ".join(stations[:-1]) + f", and {stations[-1]}"
-                    elif len(stations) == 2:
-                        station_text = f"{stations[0]} and {stations[1]}"
-                    else:
-                        station_text = stations[0]
-                    try:
-                        from datetime import datetime
-                        dt = datetime.fromisoformat(date_iso)
-                        dow = dt.strftime("%A")
-                        date_pretty = dt.strftime("%m/%d/%Y")
-                    except Exception:
-                        dow = ""
-                        date_pretty = date_iso
-                    msg = f"<@{user_id}> is looking for a substitute feeder for {station_text} on {dow + ', ' if dow else ''}{date_pretty}"
-                    try:
-                        await ch.send(msg)
-                    except Exception:
-                        pass
+                if hasattr(ch, 'send'):
+                    stations_str = ", ".join(stations)
+                    msg = f"<@{req_user_id}> requested a sub for **{stations_str}** on {date_iso}."
+                    await ch.send(msg)
         except Exception:
             pass
 
         return _with_cors(web.json_response({"status": "ok"}), request)
+    
+    async def delete_subrequest(request):
+        """Physically remove a request from the log file."""
+        session, error = _require_permissions(request, require_view=True)
+        if error: return error
 
+        try:
+            data = await request.json()
+        except:
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
+        target_id = data.get("id")
+        date_iso = data.get("date")
+        
+        if not target_id or not date_iso:
+            return _with_cors(web.Response(status=400, text="Missing ID or Date"), request)
+
+        from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
+        month_key = _sub_month_key_from_date(date_iso)
+        path = _sub_log_path_from_key(month_key)
+
+        if not os.path.exists(path):
+            return _with_cors(web.Response(status=404, text="Record not found"), request)
+
+        # Re-write file excluding the item
+        new_lines = []
+        deleted_item = None
+        user_id_str = str(session.get("user_id"))
+        is_officer = session.get("permissions", {}).get("is_officer")
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        rec = json.loads(line)
+                        if rec.get("id") == target_id:
+                            # Permission Check
+                            owner_id = str(rec.get("requester") or rec.get("assignee") or "")
+                            if not is_officer and user_id_str != owner_id:
+                                return _with_cors(web.Response(status=403, text="You can only delete your own items."), request)
+                            deleted_item = rec
+                            continue # Skip this line (Delete)
+                        new_lines.append(line)
+                    except:
+                        new_lines.append(line)
+            
+            if deleted_item:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.writelines(new_lines)
+                
+                # Notify Discord
+                ch_id = getattr(settings, "ch_feeding_team", None)
+                if ch_id:
+                    ch = bot.get_channel(int(ch_id))
+                    if hasattr(ch, 'send'):
+                        actor_name = session.get("username", "Unknown")
+                        kind = "Request" if deleted_item.get("kind") == "sub_request" else "Claim"
+                        st = deleted_item.get("station") or "Unknown"
+                        await ch.send(f"🗑️ **{kind} Deleted**: {actor_name} removed the item for **{st}** on {date_iso}.")
+
+                return _with_cors(web.json_response({"status": "ok"}), request)
+            else:
+                return _with_cors(web.Response(status=404, text="Item ID not found in log"), request)
+
+        except Exception as e:
+            return _with_cors(web.Response(status=500, text=str(e)), request)
+    
+
+    
     async def list_open_subs(request):
         """List sub requests separated into available, upcoming filled, and past (expired/fulfilled)."""
         _, error = _require_permissions(request, require_view=True)
@@ -890,6 +954,8 @@ async def start_web_server(bot):
         web.options('/api/subs/open', options_sub_open),
         web.post('/api/subs/claim', claim_subs),
         web.options('/api/subs/claim', options_sub_claim),
+        web.post('/api/subrequest/delete', delete_subrequest),
+        web.options('/api/subrequest/delete', options_subrequest), 
     ])
 
     runner = web.AppRunner(app)

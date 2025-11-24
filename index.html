@@ -32,6 +32,7 @@
             
             /* Header Height for Sticky Positioning */
             --legend-height: 46px; 
+            --legend-offset-adjust: 18px; /* extra to account for padding/border */
         }
 
         * { box-sizing: border-box; }
@@ -549,7 +550,7 @@
             padding: 15px;
             
             position: sticky;
-            top: calc(var(--legend-height) + 4px); 
+            top: calc(var(--legend-height) + var(--legend-offset-adjust)); 
             z-index: 320; 
             
             background-color: white; 

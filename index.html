@@ -31,7 +31,7 @@
             --focus-ring: #414B3B;
             
             /* Header Height for Sticky Positioning */
-            --legend-height: 40px; 
+            --legend-height: 48px; 
         }
 
         * { box-sizing: border-box; }
@@ -193,10 +193,18 @@
             font-weight: 700;
             cursor: pointer;
             box-shadow: 0 4px 10px rgba(0,0,0,0.12);
-            transition: transform 0.1s ease, box-shadow 0.1s ease;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, padding 0.18s ease;
         }
         .save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
         .save-btn:active { transform: translateY(0); box-shadow: 0 3px 8px rgba(0,0,0,0.12); }
+
+        .save-btn.saving {
+            transform: scale(1.05);
+            padding: 10px 22px;
+        }
+        .save-btn.saved {
+            transform: scale(1.03);
+        }
 
         .save-status {
             font-size: 0.85rem;
@@ -473,9 +481,25 @@
 
         .legend-left {
             display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .legend-lines {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .legend-line {
+            display: flex;
             align-items: center;
             gap: 12px;
             flex-wrap: wrap;
+        }
+
+        .legend-line-compact {
+            gap: 14px;
         }
 
         .key-combo {
@@ -488,6 +512,10 @@
             display: flex;
             align-items: center;
             gap: 12px;
+        }
+
+        .legend-actions .search-container {
+            padding: 3px 0;
         }
 
         table {
@@ -650,11 +678,17 @@
         <div class="sheet-wrapper" id="sheet-container">
             <div class="controls-legend">
                 <div class="legend-left">
-                    <div class="key-combo">"Click" to select</div>
-                    <div class="key-combo">"Ctrl" + "Click" to multi-select</div>
-                    <div class="key-combo">"Shift" + "Click" for range</div>
-                    <div class="key-combo">"Enter" to assign</div>
-                    <div class="key-combo">"Del" to erase</div>
+                    <div class="legend-lines">
+                        <div class="legend-line">
+                            <div class="key-combo">"Click" to select</div>
+                            <div class="key-combo">"Ctrl" + "Click" to multi-select</div>
+                            <div class="key-combo">"Shift" + "Click" for range</div>
+                        </div>
+                        <div class="legend-line legend-line-compact">
+                            <div class="key-combo">"Enter" to assign</div>
+                            <div class="key-combo">"Del" to erase</div>
+                        </div>
+                    </div>
                 </div>
                 <div class="legend-actions">
                     <div class="search-container" style="width: 240px;">
@@ -1029,9 +1063,8 @@ let saveResetTimer = null;
 
 function setSaveStatus(text, tone = "info") {
     if (!statusEl) return;
-    statusEl.textContent = text;
-    if (tone === "ok") statusEl.style.color = "#2b3326";
-    else if (tone === "warn") statusEl.style.color = "#b36b00";
+    statusEl.textContent = text || "";
+    if (tone === "warn") statusEl.style.color = "#b36b00";
     else if (tone === "error") statusEl.style.color = "#b00020";
     else statusEl.style.color = "var(--site-text)";
 }
@@ -1042,13 +1075,20 @@ function setSaveButtonState(state) {
         clearTimeout(saveResetTimer);
         saveResetTimer = null;
     }
+    saveBtn.classList.remove("saving", "saved");
     if (state === "saving") {
         saveBtn.textContent = "Saving...";
+        saveBtn.classList.add("saving");
         saveBtn.disabled = true;
     } else if (state === "saved") {
         saveBtn.textContent = "Saved";
+        saveBtn.classList.add("saved");
         saveBtn.disabled = false;
-        saveResetTimer = setTimeout(() => setSaveButtonState("idle"), 1400);
+        // Fade back to idle state
+        saveResetTimer = setTimeout(() => {
+            saveBtn.textContent = "Save";
+            saveBtn.classList.remove("saved");
+        }, 600);
     } else {
         saveBtn.textContent = "Save";
         saveBtn.disabled = false;
@@ -1255,7 +1295,7 @@ async function saveSchedule() {
             })
         });
         if (!res.ok) throw new Error(await res.text());
-        setSaveStatus("Saved", "ok");
+        setSaveStatus("", "info");
         setSaveButtonState("saved");
     } catch (e) {
         console.error(e);

@@ -479,7 +479,7 @@ async def start_web_server(bot):
                                 except Exception:
                                     pass
                             for st in stations:
-                                accepted_map[(parent_id, st, date_iso)] = assignee
+                                accepted_map[(rec.get("parent_id") or parent_id, st, date_iso)] = assignee
                         elif status == "requested":
                             requester = rec.get("requester")
                             requester_name = rec.get("requester_name") or ""
@@ -495,7 +495,8 @@ async def start_web_server(bot):
                                     "date": date_iso,
                                     "requester_id": requester,
                                     "requester_name": requester_name,
-                                    "assignee_id": accepted_map.get((parent_id, st, date_iso)),
+                                    "assignee_id": None,
+                                    "assignee_name": rec.get("assignee_name") or "",
                                 })
             except Exception:
                 continue
@@ -558,6 +559,23 @@ async def start_web_server(bot):
                     display = ""
                 if display:
                     assignee_name_cache[uid] = display
+
+        # After reading all records, populate requester/assignee names and assignee ids from the accept map
+        for item in requested_items:
+            key = (item.get("id"), item.get("station"), item.get("date"))
+            assignee = accepted_map.get(key)
+            if assignee:
+                item["assignee_id"] = assignee
+                if not item.get("assignee_name"):
+                    try:
+                        item["assignee_name"] = assignee_name_cache.get(int(assignee), "")
+                    except Exception:
+                        item["assignee_name"] = ""
+            if item.get("requester_id") and not item.get("requester_name"):
+                try:
+                    item["requester_name"] = name_cache.get(int(item["requester_id"]), "")
+                except Exception:
+                    item["requester_name"] = ""
 
         available = []
         upcoming_filled = []

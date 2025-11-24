@@ -411,7 +411,7 @@ async def start_web_server(bot):
         except Exception as e:
             return web.Response(status=500, text=f"Failed to log sub request: {e}", headers=_CORS_HEADERS)
 
-        # Notify feeding team channel
+        # Notify feeding team channel (include day-of-week and friendly date)
         try:
             channel_id = getattr(settings, "ch_feeding_team", None)
             if channel_id:
@@ -425,7 +425,15 @@ async def start_web_server(bot):
                         station_text = f"{stations[0]} and {stations[1]}"
                     else:
                         station_text = stations[0]
-                    msg = f"<@{user_id}> is looking for a substitute feeder for {station_text} on {date_iso}"
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(date_iso)
+                        dow = dt.strftime("%A")
+                        date_pretty = dt.strftime("%m/%d/%Y")
+                    except Exception:
+                        dow = ""
+                        date_pretty = date_iso
+                    msg = f"<@{user_id}> is looking for a substitute feeder for {station_text} on {dow + ', ' if dow else ''}{date_pretty}"
                     try:
                         await ch.send(msg)
                     except Exception:
@@ -465,16 +473,17 @@ async def start_web_server(bot):
                             for st in stations:
                                 accepted_map[(parent_id, st, date_iso)] = assignee
                         elif status == "requested":
-                            requester = rec.get("requester")
-                            requester_name = rec.get("requester_name") or ""
-                            for st in stations:
-                                requested_items.append({
-                                    "id": parent_id,
-                                    "station": st,
-                                    "date": date_iso,
-                                    "requester_id": requester,
-                                    "requester_name": requester_name,
-                                })
+                        requester = rec.get("requester")
+                        requester_name = rec.get("requester_name") or ""
+                        for st in stations:
+                            requested_items.append({
+                                "id": parent_id,
+                                "station": st,
+                                "date": date_iso,
+                                "requester_id": requester,
+                                "requester_name": requester_name,
+                                "assignee_id": accepted_map.get((parent_id, st, date_iso)),
+                            })
             except Exception:
                 continue
 
@@ -568,22 +577,40 @@ async def start_web_server(bot):
                 ch = bot.get_channel(int(channel_id))
                 from discord.abc import Messageable
                 if isinstance(ch, Messageable):
-                    for date_iso, items in messages_by_date.items():
-                        stations = [st for st, _ in items]
-                        reqs = [req for _, req in items if req]
-                        stations_text = ""
-                        if len(stations) >= 3:
-                            stations_text = ", ".join(stations[:-1]) + f", and {stations[-1]}"
-                        elif len(stations) == 2:
-                            stations_text = f"{stations[0]} and {stations[1]}"
-                        elif stations:
-                            stations_text = stations[0]
-                        req_mentions = " and ".join(f"<@{r}>" for r in reqs) if reqs else "someone"
-                        msg = f"<@{user_id}> picked up {req_mentions}'s substitute request for {stations_text} on {date_iso}"
-                        try:
-                            await ch.send(msg)
-                        except Exception:
-                            pass
+                    # Build a single aggregated message
+                    try:
+                        req_ids = []
+                        date_bits = []
+                        all_req_ids = set()
+                        for date_iso, items in messages_by_date.items():
+                            stations = [st for st, _ in items]
+                            reqs = [req for _, req in items if req]
+                            all_req_ids.update(reqs)
+                            if len(stations) >= 3:
+                                stations_text = ", ".join(stations[:-1]) + f", and {stations[-1]}"
+                            elif len(stations) == 2:
+                                stations_text = f"{stations[0]} and {stations[1]}"
+                            else:
+                                stations_text = stations[0]
+                            try:
+                                dt = datetime.fromisoformat(date_iso)
+                                dow = dt.strftime("%A")
+                                date_pretty = dt.strftime("%m/%d/%Y")
+                            except Exception:
+                                dow = ""
+                                date_pretty = date_iso
+                            date_bits.append(f"{stations_text} on {dow + ', ' if dow else ''}{date_pretty}")
+                        req_mentions = ""
+                        if len(all_req_ids) >= 2:
+                            req_mentions = " and ".join([f\"<@{rid}>\" for rid in all_req_ids])
+                        elif len(all_req_ids) == 1:
+                            req_mentions = f\"<@{list(all_req_ids)[0]}>"
+                        else:
+                            req_mentions = "someone"
+                        msg = f"<@{user_id}> picked up {req_mentions}'s substitute request for " + " and ".join(date_bits)
+                        await ch.send(msg)
+                    except Exception:
+                        pass
         except Exception:
             pass
 

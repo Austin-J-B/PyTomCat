@@ -473,17 +473,17 @@ async def start_web_server(bot):
                             for st in stations:
                                 accepted_map[(parent_id, st, date_iso)] = assignee
                         elif status == "requested":
-                        requester = rec.get("requester")
-                        requester_name = rec.get("requester_name") or ""
-                        for st in stations:
-                            requested_items.append({
-                                "id": parent_id,
-                                "station": st,
-                                "date": date_iso,
-                                "requester_id": requester,
-                                "requester_name": requester_name,
-                                "assignee_id": accepted_map.get((parent_id, st, date_iso)),
-                            })
+                            requester = rec.get("requester")
+                            requester_name = rec.get("requester_name") or ""
+                            for st in stations:
+                                requested_items.append({
+                                    "id": parent_id,
+                                    "station": st,
+                                    "date": date_iso,
+                                    "requester_id": requester,
+                                    "requester_name": requester_name,
+                                    "assignee_id": accepted_map.get((parent_id, st, date_iso)),
+                                })
             except Exception:
                 continue
 
@@ -602,9 +602,9 @@ async def start_web_server(bot):
                             date_bits.append(f"{stations_text} on {dow + ', ' if dow else ''}{date_pretty}")
                         req_mentions = ""
                         if len(all_req_ids) >= 2:
-                            req_mentions = " and ".join([f\"<@{rid}>\" for rid in all_req_ids])
+                            req_mentions = " and ".join([f"<@{rid}>" for rid in all_req_ids])
                         elif len(all_req_ids) == 1:
-                            req_mentions = f\"<@{list(all_req_ids)[0]}>"
+                            req_mentions = f"<@{list(all_req_ids)[0]}>"
                         else:
                             req_mentions = "someone"
                         msg = f"<@{user_id}> picked up {req_mentions}'s substitute request for " + " and ".join(date_bits)

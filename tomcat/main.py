@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import aiohttp
 from aiohttp import web
+import logging
 # Import settings before first use
 from .config import settings
 # Config specific to your Discord App (from Developer Portal)
@@ -234,7 +235,8 @@ async def save_schedule(request):
         }
         SCHEDULE_PATH.write_text(json.dumps(payload), encoding="utf-8")
     except Exception as e:
-        return _with_cors(web.Response(status=500, text=f"Failed to save schedule: {e}"), request)
+        logging.exception("Unexpected error when saving schedule")
+        return _with_cors(web.Response(status=500, text="Failed to save schedule."), request)
 
     return _with_cors(web.json_response({"status": "ok"}), request)
 

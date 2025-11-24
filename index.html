@@ -1502,16 +1502,17 @@ init();
 
             const endpoint = `${apiBase}/api/auth/token`;
             
-            const res = await fetch(endpoint, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body)
-            });
+        const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(body)
+        });
 
-            if (!res.ok) {
-                const errText = await res.text();
-                throw new Error(`Server error: ${errText}`);
-            }
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Server error (${res.status}): ${errText}`);
+        }
 
             const data = await res.json();
             authState.user = data.user;
@@ -1520,12 +1521,12 @@ init();
             updateUIForUser();
             init(); 
             
-        } catch (e) {
-            console.error("Login Error:", e);
-            alert("Login failed: " + e.message);
-            showLoginButton();
-        }
+    } catch (e) {
+        console.error("Login Error:", e);
+        alert("Login failed: " + (e && e.message ? e.message : e));
+        showLoginButton();
     }
+}
 
     function showLoginButton() {
         const loading = document.getElementById('loading');
@@ -1552,7 +1553,7 @@ init();
             </h1>
             
             <a href="${loginUrl}" style="
-                background: #7289da;
+                background: #5865F2;
                 color: white;
                 padding: 12px 32px;
                 border-radius: 4px;

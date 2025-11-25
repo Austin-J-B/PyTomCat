@@ -547,6 +547,10 @@ function dayOfWeekFromISO(iso) {
     return dt.getDay(); // 0=Sun
 }
 
+function idsMatch(a, b) {
+    return String(a ?? '') === String(b ?? '');
+}
+
 // Selection
 let selectedCells = new Set(); 
 let anchor = null; 
@@ -617,12 +621,16 @@ async function init(force = false) {
 function updateStickyHeights() {
     const root = document.documentElement;
     const header = document.querySelector('header.site-header');
-    const legend = document.querySelector('.controls-legend');
+    const legends = Array.from(document.querySelectorAll('.controls-legend')).filter(el => el.offsetParent !== null);
     const headerH = header ? header.getBoundingClientRect().height : 0;
-    const legendH = legend ? legend.getBoundingClientRect().height : parseFloat(getComputedStyle(root).getPropertyValue('--legend-height')) || 46;
+    const defaultLegendH = parseFloat(getComputedStyle(root).getPropertyValue('--legend-height')) || 46;
+    const legendH = legends.length
+        ? Math.max(...legends.map(el => el.getBoundingClientRect().height || 0))
+        : defaultLegendH;
+    const finalLegendH = Math.max(legendH, defaultLegendH);
     root.style.setProperty('--site-header-height', `${headerH}px`);
-    root.style.setProperty('--legend-height', `${legendH}px`);
-    root.style.setProperty('--legend-total-offset', `${headerH + legendH}px`);
+    root.style.setProperty('--legend-height', `${finalLegendH}px`);
+    root.style.setProperty('--legend-total-offset', `${headerH + finalLegendH}px`);
 }
 
 window.addEventListener('resize', () => {
@@ -1103,7 +1111,10 @@ function setView(view, opts = {}) {
     document.getElementById('sub-container').style.display = nextView === 'sub' ? 'flex' : 'none';
     document.getElementById('claim-container').style.display = nextView === 'claim' ? 'flex' : 'none';
     if (nextView === 'sub') ensureOwnSubUserSelected();
-    if (nextView === 'claim') setRequestTab('available');
+    if (nextView === 'claim') {
+        ensureOwnClaimUser();
+        setRequestTab('available');
+    }
     highlightMenu(nextView);
     if (!opts.skipUrlUpdate) updateUrlForView(nextView);
     const viewTitles = { schedule: "Feeding Schedule", sub: "Request a Substitute", claim: "Substitute Requests" };
@@ -1114,9 +1125,11 @@ function setView(view, opts = {}) {
 function updateSubUserOptions() {
     const scheduledIds = new Set();
     STATIONS.forEach(st => {
-        (scheduleData[st] || []).forEach(uid => { if (uid) scheduledIds.add(uid); });
+        (scheduleData[st] || []).forEach(uid => {
+            if (uid !== undefined && uid !== null && uid !== '') scheduledIds.add(String(uid));
+        });
     });
-    allowedSubMembers = members.filter(m => m.id && scheduledIds.has(m.id));
+    allowedSubMembers = members.filter(m => m.id && scheduledIds.has(String(m.id)));
 }
 
 function ensureOwnSubUserSelected() {
@@ -1134,6 +1147,18 @@ function ensureOwnSubUserSelected() {
     const fallbackName = authState.user.global_name || authState.user.username || "Me";
     const fallbackUser = authState.user.username || authState.user.global_name || "";
     setSubUser(match || { id: String(authState.user.id), name: fallbackName, user: fallbackUser });
+}
+
+function ensureOwnClaimUser() {
+    if (!authState.user || authState.permissions.is_officer) return;
+
+    const alreadySelected = claimUser && idsMatch(claimUser.id, authState.user.id);
+    if (alreadySelected) return;
+
+    const match = (members || []).find(m => idsMatch(m.id, authState.user.id));
+    const fallbackName = authState.user.global_name || authState.user.username || "Me";
+    const fallbackUser = authState.user.username || authState.user.global_name || "";
+    setClaimUser(match || { id: String(authState.user.id), name: fallbackName, user: fallbackUser });
 }
 
 const subUserInput = document.getElementById('sub-user');
@@ -1214,6 +1239,8 @@ function setClaimUser(m) {
     claimUser = m;
     claimUserInput.value = m.name;
     claimUserResults.style.display = 'none';
+    const status = document.getElementById('claim-status');
+    if (status) status.textContent = '';
 }
 
 function applyScheduleAccess(isOfficer, canEditSchedule) {
@@ -1270,7 +1297,7 @@ function computeAllowedDates() {
         const d = new Date(today);
         d.setDate(today.getDate() + i);
         const dow = d.getDay(); // 0=Sun
-        const hasSlot = STATIONS.some(st => (scheduleData[st] || [])[dow] === subSelectedUser.id);
+        const hasSlot = STATIONS.some(st => idsMatch((scheduleData[st] || [])[dow], subSelectedUser.id));
         if (hasSlot) allowedDates.push(d.toISOString().slice(0,10));
     }
     if (selectedDate && !allowedDates.includes(selectedDate)) {
@@ -1366,7 +1393,7 @@ function renderStationsForSelected() {
         return;
     }
     const dow = dayOfWeekFromISO(selectedDate);
-    const stations = STATIONS.filter(st => (scheduleData[st] || [])[dow] === subSelectedUser.id);
+    const stations = STATIONS.filter(st => idsMatch((scheduleData[st] || [])[dow], subSelectedUser.id));
     if (!stations.length) {
         setDateWarning("No stations scheduled for that day.");
         return;
@@ -1827,6 +1854,7 @@ window.addEventListener('hashchange', () => {
     // 4. Refresh stateful UI with the current identity
     if (!isOfficer) {
         ensureOwnSubUserSelected();
+        ensureOwnClaimUser();
     }
     renderOpenSubs();
 }
@@ -1917,7 +1945,7 @@ window.addEventListener('hashchange', () => {
                 if (isOfficer || isOwner) {
                     const trash = document.createElement('button');
                     trash.className = 'trash-btn';
-                    trash.innerHTML = '🗑';
+                    trash.textContent = 'Delete';
                     trash.title = "Delete Request";
                     trash.onclick = (e) => {
                         e.preventDefault();

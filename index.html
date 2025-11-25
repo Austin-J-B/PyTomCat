@@ -705,7 +705,8 @@ function setRequestTab(tab) {
 }
 
 // --- DISTINCT COLOR PALETTE ---
-// Deterministic, high-saturation colors based on a stable hash of the user id.
+
+// Hash-based hues with uniform saturation/lightness to guarantee unique, readable colors per user.
 const colorAssignments = new Map();
 
 function hashId(str) {
@@ -723,9 +724,9 @@ function getVolunteerColor(id) {
     if (colorAssignments.has(id)) return colorAssignments.get(id);
 
     const seed = hashId(String(id));
-    const hue = seed % 360; // spread IDs across hue wheel
-    const lightness = 65 + ((seed >>> 16) % 10); // small variance to avoid collisions on hue
-    const color = `hsl(${hue}, 90%, ${lightness}%)`; // vivid but still legible with dark text
+    const hue = (seed * 131.95) % 360; // spread IDs evenly across the hue wheel
+    const color = `hsl(${hue.toFixed(1)}, 90%, 76%)`; // high saturation, light background for black text legibility
+
     colorAssignments.set(id, color);
     return color;
 }

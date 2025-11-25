@@ -1945,7 +1945,7 @@ window.addEventListener('hashchange', () => {
                 if (isOfficer || isOwner) {
                     const trash = document.createElement('button');
                     trash.className = 'trash-btn';
-                    trash.textContent = 'Delete';
+                    trash.innerHTML = '🗑';
                     trash.title = "Delete Request";
                     trash.onclick = (e) => {
                         e.preventDefault();

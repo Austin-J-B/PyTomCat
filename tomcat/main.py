@@ -738,10 +738,12 @@ async def start_web_server(bot):
                 if ch_id:
                     ch = bot.get_channel(int(ch_id))
                     if hasattr(ch, 'send'):
+                        actor_id = session.get("user_id")
                         actor_name = session.get("username", "Unknown")
+                        actor_label = f"<@{actor_id}>" if actor_id else actor_name
                         kind = "Request" if deleted_item.get("kind") == "sub_request" else "Claim"
                         st = deleted_item.get("station") or "Unknown"
-                        await ch.send(f"🗑️ **{kind} Deleted**: {actor_name} removed the item for **{st}** on {date_iso}.")
+                        await ch.send(f"**{kind} Deleted**: {actor_label} removed the item for **{st}** on {date_iso}.")
 
                 return _with_cors(web.json_response({"status": "ok"}), request)
             else:

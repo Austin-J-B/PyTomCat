@@ -164,3 +164,134 @@
 {"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
 {"event": "health", "component": "feeding_tab", "status": "ok"}
 {"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "message", "author": "mochenoch", "channel": "#yapper-committee", "content": "i can't sleep", "attachments": 0}
+{"event": "message", "author": "mochenoch", "channel": "#yapper-committee", "content": "<:aaaaaaaaaaaa:1412870173634859180>", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "just finished drying my hair 🫩", "attachments": 0}
+{"event": "message", "author": "mochenoch", "channel": "#yapper-committee", "content": "oof", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "and i still have to clean the house and do my hw", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "https://tenor.com/view/vhs-glitch-gif-25891045", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "big fan of this gif expect to see it more", "attachments": 0}
+{"event": "message", "author": "mochenoch", "channel": "#yapper-committee", "content": "https://tenor.com/view/sprout-sprout-dandys-world-sproutseedly-sprout-seedly-dandys-world-gif-14673652995025781193", "attachments": 0}
+{"event": "message", "author": "mochenoch", "channel": "#yapper-committee", "content": "6 assignments", "attachments": 0}
+{"event": "message", "author": "mochenoch", "channel": "#yapper-committee", "content": "wait", "attachments": 0}
+{"event": "message", "author": "mochenoch", "channel": "#yapper-committee", "content": "7", "attachments": 0}
+{"event": "message", "author": "mochenoch", "channel": "#yapper-committee", "content": "https://tenor.com/view/cat-67-scp-67-funyuns-funny-gif-75413186200073602", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "we just have to wait her out", "attachments": 0}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "no way they keep her post holidays", "attachments": 0}
+{"event": "action", "name": "gmail_log_scheduler", "trigger": "found=1", "output": "logged=1"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Axel Torres $24.25 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $47.62 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Isabella Klein $9.70 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Wix $25.98 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Derek Fuentes $25.98 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Py Store Here Pantego $54.00 on 2025-08-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Megan Digiovanni $74.92 on 2025-07-30"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "buffer", "output": "Cassandra Nelson $7.00 on 2025-11-04"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Cynthia griffith $10.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Caleb Moran $4.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Alberto $6.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $2.91 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "tay $5.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maria Olds $10.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Mario Rodriguez $3.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Elisha Taylor $5.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $3.00 on 2025-04-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Isabella Klein $9.70 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Troy Broome $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Div Bits $2.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jacob Sandoval $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Aubrey Cunningham $10.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Maxwell Preston $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $6.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Miguel V $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Nelda Hernandez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Megan Digiovanni $130.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Pedro Savala $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jonathan Mcgeever $5.00 on 2025-08-27"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Axel Torres $24.25 on 2025-08-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "M. Padron $20.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Addison Loera $8.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Jordin Baylee $5.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kathleen Cantu $1.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Amber Thomas $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Rob Jimenez $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Daniel Brantley $3.00 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Cassandra Nelson $6.00 on 2025-11-04"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kristyn Jackson $9.00 on 2025-10-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Victoria Elkins $5.00 on 2025-10-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Alexander  Martinez $3.00 on 2025-10-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Richa  Desai $6.00 on 2025-10-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Emily Lanham $6.00 on 2025-10-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Mariah Hall $3.00 on 2025-10-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Sophia Herrera $5.00 on 2025-10-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=income", "output": "Kylie Crook $5.00 on 2025-09-16"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Py Store Here Pantego $54.00 on 2025-04-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "j s $11.68 on 2025-04-22"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Wix $25.98 on 2025-04-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Wix $25.98 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $25.98 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Py Store Here Pantego $54.00 on 2025-08-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $47.62 on 2025-08-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $74.92 on 2025-07-30"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Py Store Here Pantego $54.00 on 2025-05-20"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $72.45 on 2025-05-23"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Wix $25.98 on 2025-05-26"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $89.91 on 2025-10-05"}
+{"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $20.00 on 2025-09-10"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "probably not", "attachments": 0}
+{"event": "message", "author": "__friend_", "channel": "#bot-spam", "content": "tomcat whats the feeding schedule", "attachments": 0}
+{"event": "intent", "kind": "feeding_schedule_link", "confidence": 0.99, "channel_id": 956398865421074462, "user_id": 1442424373347614830, "message_id": 1442706168295329862, "has_image": false, "slots": {"cat": null, "station": null, "dates": null}, "decision": []}
+{"event": "action", "name": "feeding_schedule_link", "trigger": "user=1442424373347614830; channel=956398865421074462", "output": "message_id=1442706174226075780"}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "she’s the one bad egg in a sea of amazing workers", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "not only is she ass at her job she’s annoying", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "you can’t have a shit personality and suck at your job", "attachments": 0}
+{"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "it has to be one or the other", "attachments": 0}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1442706427218100264, "emoji": "😭", "message_preview": "you can’t have a shit personality and su...", "message_author": "izzyballz"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "so true", "attachments": 0}
+{"event": "reaction_add", "user": "__friend_", "channel": "#yapper-committee", "message_id": 1442706427218100264, "emoji": "🔥", "message_preview": "you can’t have a shit personality and su...", "message_author": "izzyballz"}
+{"event": "message", "author": "__friend_", "channel": "#yapper-committee", "content": "i was a shit burrito roller but they liked me cuz i did the dishes and did little dances", "attachments": 0}
+{"event": "message", "author": "__friend_", "channel": "#yapper-committee", "content": "the jester of 996 Brook Forest Avenue", "attachments": 0}
+{"event": "reaction_add", "user": ".s3j", "channel": "#yapper-committee", "message_id": 1442706619946504222, "emoji": "😭", "message_preview": "i was a shit burrito roller but they lik...", "message_author": "__friend_"}
+{"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1442706718747267082, "emoji": "😆", "message_preview": "the jester of 996 Brook Forest Avenue", "message_author": "__friend_"}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "my mother is my #1 op still", "attachments": 0}
+{"event": "message", "author": "slayc127", "channel": "#yapper-committee", "content": "boo. goodnight again chat", "attachments": 0}
+{"event": "message", "author": "__friend_", "channel": "#yapper-committee", "content": "sun still up", "attachments": 0}

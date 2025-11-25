@@ -493,3 +493,5 @@
 {"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "bro the sku isn’t even in our system", "attachments": 0}
 {"event": "reaction_add", "user": "slayc127", "channel": "#yapper-committee", "message_id": 1442750862265942168, "emoji": "😭", "message_preview": "bro the sku isn’t even in our system", "message_author": "izzyballz"}
 {"event": "reaction_add", "user": "kitadan", "channel": "#yapper-committee", "message_id": 1442750862265942168, "emoji": "😭", "message_preview": "bro the sku isn’t even in our system", "message_author": "izzyballz"}
+{"event": "member_update", "user": "__friend_", "user_id": 1442424373347614830, "guild": "Campus Cat Coalition", "roles_added": ["feeding team"], "roles_removed": []}
+{"event": "member_update", "user": "__friend_", "user_id": 1442424373347614830, "guild": "Campus Cat Coalition", "roles_added": ["due paying members"], "roles_removed": []}

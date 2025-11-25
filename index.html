@@ -705,16 +705,18 @@ function setRequestTab(tab) {
 }
 
 // --- DISTINCT COLOR PALETTE ---
+
 // Hash-based hues with uniform saturation/lightness to guarantee unique, readable colors per user.
 const colorAssignments = new Map();
 
 function hashId(str) {
-    let h = 0;
+    // FNV-1a 32-bit hash for consistent distribution
+    let h = 0x811c9dc5;
     for (let i = 0; i < str.length; i++) {
-        h = (h << 5) - h + str.charCodeAt(i);
-        h |= 0;
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
     }
-    return Math.abs(h);
+    return h >>> 0;
 }
 
 function getVolunteerColor(id) {
@@ -724,6 +726,7 @@ function getVolunteerColor(id) {
     const seed = hashId(String(id));
     const hue = (seed * 131.95) % 360; // spread IDs evenly across the hue wheel
     const color = `hsl(${hue.toFixed(1)}, 90%, 76%)`; // high saturation, light background for black text legibility
+
     colorAssignments.set(id, color);
     return color;
 }
@@ -1820,6 +1823,12 @@ window.addEventListener('hashchange', () => {
 
     // 3. Schedule controls (officers only)
     applyScheduleAccess(isOfficer, canEditSchedule);
+
+    // 4. Refresh stateful UI with the current identity
+    if (!isOfficer) {
+        ensureOwnSubUserSelected();
+    }
+    renderOpenSubs();
 }
 
     // Override renderOpenSubs to support Delete button

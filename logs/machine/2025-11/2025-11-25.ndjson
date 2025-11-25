@@ -1,0 +1,10 @@
+{"event": "message", "author": "austinbaustinb", "channel": "#yapper-committee", "content": "I wonder if it was just a typo then", "attachments": 0}
+{"event": "member_update", "user": "amelinhe", "user_id": 733097621501247589, "guild": "Campus Cat Coalition", "roles_added": ["due paying members"], "roles_removed": []}
+{"event": "message", "author": "austinbaustinb", "channel": "#executive-board", "content": "", "attachments": 0}
+{"event": "online", "user": "Tom Cat#8337", "guild_count": 2}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 551084964318543904, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 639882573199441930, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1341696618688286720, "tab": "TCBPicsInput"}
+{"event": "health", "component": "image_tab", "status": "ok", "channel_id": 1344745306620694558, "tab": "TCBVetBillInput"}
+{"event": "health", "component": "feeding_tab", "status": "ok"}
+{"event": "action", "name": "feeding_scheduler", "trigger": "started", "output": "ok"}

@@ -598,6 +598,7 @@ async function init(force = false) {
     renderGrid();
     renderCalendar();
     updateSubUserOptions();
+    ensureOwnSubUserSelected();
     await loadOpenSubs();
     setRequestTab('available');
     document.getElementById('loading').style.display = 'none';
@@ -1123,6 +1124,23 @@ function updateSubUserOptions() {
         (scheduleData[st] || []).forEach(uid => { if (uid) scheduledIds.add(uid); });
     });
     allowedSubMembers = members.filter(m => m.id && scheduledIds.has(m.id));
+}
+
+function ensureOwnSubUserSelected() {
+    if (!authState.user || authState.permissions.is_officer) return;
+
+    const alreadySelected = subSelectedUser && String(subSelectedUser.id) === String(authState.user.id);
+    if (alreadySelected) {
+        computeAllowedDates();
+        renderCalendar();
+        renderStationsForSelected();
+        return;
+    }
+
+    const match = (members || []).find(m => String(m.id) === String(authState.user.id));
+    const fallbackName = authState.user.global_name || authState.user.username || "Me";
+    const fallbackUser = authState.user.username || authState.user.global_name || "";
+    setSubUser(match || { id: String(authState.user.id), name: fallbackName, user: fallbackUser });
 }
 
 const subUserInput = document.getElementById('sub-user');

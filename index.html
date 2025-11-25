@@ -532,8 +532,10 @@ let scheduleReadOnly = false;
 // --- RESIZE OBSERVER FOR STICKY HEADER ---
 const resizeObserver = new ResizeObserver(entries => {
     for (let entry of entries) {
-        const height = entry.contentRect.height;
-        document.documentElement.style.setProperty('--legend-height', `${height + 4}px`);
+        // Ignore hidden legends so we don't apply stale heights
+        if (!entry.target || entry.target.offsetParent === null) continue;
+        const height = Math.ceil(entry.contentRect.height);
+        document.documentElement.style.setProperty('--legend-height', `${height}px`);
     }
 });
 
@@ -633,12 +635,15 @@ function updateStickyHeights() {
     const root = document.documentElement;
     const header = document.querySelector('header.site-header');
     const legends = Array.from(document.querySelectorAll('.controls-legend')).filter(el => el.offsetParent !== null);
-    const headerH = header ? header.getBoundingClientRect().height : 0;
+    const headerH = header ? Math.ceil(header.getBoundingClientRect().height) : 0;
     
     // Fallback if observer hasn't fired yet
     if (legends.length > 0) {
-        const legendH = legends[0].getBoundingClientRect().height;
+        const legendH = Math.ceil(legends[0].getBoundingClientRect().height);
         root.style.setProperty('--legend-height', `${legendH}px`);
+    } else {
+        // No visible legend (e.g., read-only view) so headers should pin to the top
+        root.style.setProperty('--legend-height', `0px`);
     }
     
     root.style.setProperty('--site-header-height', `${headerH}px`);
@@ -1121,6 +1126,7 @@ function setView(view, opts = {}) {
     if (!opts.skipUrlUpdate) updateUrlForView(nextView);
     const viewTitles = { schedule: "Feeding Schedule", sub: "Request a Substitute", claim: "Substitute Requests" };
     document.title = `${viewTitles[nextView] || "TomCat"} | Campus Cat Coalition`;
+    updateStickyHeights();
 }
 
 // --- SUB REQUEST FORM ---

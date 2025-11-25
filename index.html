@@ -121,14 +121,33 @@
 
         /* User Profile Indicator */
         .profile-indicator {
-            display: flex; align-items: center; gap: 10px;
-            padding: 6px 14px; background: white; border-radius: 50px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            font-size: 0.9rem; font-weight: 700; color: var(--site-text);
-        }
-        .profile-icon { font-size: 1.2rem; }
-        .role-officer { color: #d4a017; } /* Gold Crown */
-        .role-user { color: var(--site-accent); }
+        display: flex; align-items: center; gap: 10px;
+        padding: 6px 14px; background: white; border-radius: 50px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        font-size: 0.9rem; font-weight: 700; color: var(--site-text);
+    }
+
+    .profile-icon { 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        width: 1.25rem;  /* Explicit size for the container */
+        height: 1.25rem;
+    }
+
+/* SVG Styling */
+    .profile-icon svg {
+        width: 100%; 
+        height: 100%;
+        fill: none;
+        stroke: currentColor; /* Inherits .role-officer or .role-user color */
+        stroke-width: 2;
+        stroke-linecap: round; 
+        stroke-linejoin: round;
+    }
+
+    .role-officer { color: #d4a017; } /* Gold Crown */
+    .role-user { color: var(--site-accent); }
 
         /* Trash Can Icon (Hidden by default) */
         .trash-btn {
@@ -1684,45 +1703,61 @@ window.addEventListener('hashchange', () => {
     
     // Paste updateUIForUser here...
     function updateUIForUser() {
-        // Remove login overlay
-        const overlay = document.getElementById('web-login-overlay');
-        if (overlay) overlay.remove();
+    // Remove login overlay
+    const overlay = document.getElementById('web-login-overlay');
+    if (overlay) overlay.remove();
 
-        const isOfficer = authState.permissions.is_officer;
-        
-        // 1. Update Header Profile
-        const pDisplay = document.getElementById('profile-display');
-        const pIcon = document.getElementById('profile-icon');
-        const pName = document.getElementById('profile-name');
-        
-        if (pDisplay) {
-            pDisplay.style.display = 'flex';
-            pName.textContent = authState.user.username;
-            if (isOfficer) {
-                pIcon.textContent = "👑";
-                pIcon.className = "profile-icon role-officer";
-                pDisplay.title = "Officer Account";
-            } else {
-                pIcon.textContent = "👤";
-                pIcon.className = "profile-icon role-user";
-                pDisplay.title = "Volunteer Account";
-            }
-        }
+    // Define Line-Art Icons
+    // 1. Crown: Geometric, sharp lines to match Montserrat
+    const ICON_CROWN = `
+    <svg viewBox="0 0 24 24">
+        <path d="M2 4l3 12h14l3-12-6 7-5-7-5 7-6-7z"></path>
+    </svg>`;
 
-        // 2. Show/Hide Impersonation Controls
-        const displayMode = isOfficer ? 'flex' : 'none';
-        const subWrapper = document.getElementById('sub-user-wrapper');
-        const claimWrapper = document.getElementById('claim-user-wrapper');
-        
-        if (subWrapper) subWrapper.style.display = displayMode;
-        if (claimWrapper) claimWrapper.style.display = displayMode;
+    // 2. User: Simple silhouette, matching stroke weight
+    const ICON_USER = `
+    <svg viewBox="0 0 24 24">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+        <circle cx="12" cy="7" r="4"></circle>
+    </svg>`;
 
-        // 3. Save Button
-        const saveBtn = document.getElementById('save-btn');
-        if (saveBtn) {
-            saveBtn.style.display = authState.permissions.can_edit_schedule ? 'block' : 'none';
+    const isOfficer = authState.permissions.is_officer;
+    
+    // 1. Update Header Profile
+    const pDisplay = document.getElementById('profile-display');
+    const pIcon = document.getElementById('profile-icon');
+    const pName = document.getElementById('profile-name');
+    
+    if (pDisplay) {
+        pDisplay.style.display = 'flex';
+        pName.textContent = authState.user.username;
+        
+        // Use innerHTML to inject SVG instead of textContent for emoji
+        if (isOfficer) {
+            pIcon.innerHTML = ICON_CROWN;
+            pIcon.className = "profile-icon role-officer";
+            pDisplay.title = "Officer Account";
+        } else {
+            pIcon.innerHTML = ICON_USER;
+            pIcon.className = "profile-icon role-user";
+            pDisplay.title = "Volunteer Account";
         }
     }
+
+    // 2. Show/Hide Impersonation Controls
+    const displayMode = isOfficer ? 'flex' : 'none';
+    const subWrapper = document.getElementById('sub-user-wrapper');
+    const claimWrapper = document.getElementById('claim-user-wrapper');
+    
+    if (subWrapper) subWrapper.style.display = displayMode;
+    if (claimWrapper) claimWrapper.style.display = displayMode;
+
+    // 3. Save Button
+    const saveBtn = document.getElementById('save-btn');
+    if (saveBtn) {
+        saveBtn.style.display = authState.permissions.can_edit_schedule ? 'block' : 'none';
+    }
+}
 
     // Override renderOpenSubs to support Delete button
     window.renderOpenSubs = function() {

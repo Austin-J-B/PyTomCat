@@ -718,8 +718,10 @@ async def start_web_server(bot):
                         rec = json.loads(line)
                         if rec.get("id") == target_id:
                             # Permission Check
-                            owner_id = str(rec.get("requester") or rec.get("assignee") or "")
-                            if not is_officer and user_id_str != owner_id:
+                            requester_id = str(rec.get("requester") or "")
+                            assignee_id = str(rec.get("assignee") or "")
+                            is_owner = user_id_str in (requester_id, assignee_id)
+                            if not is_officer and not is_owner:
                                 return _with_cors(web.Response(status=403, text="You can only delete your own items."), request)
                             deleted_item = rec
                             continue # Skip this line (Delete)

@@ -535,7 +535,8 @@ const resizeObserver = new ResizeObserver(entries => {
     for (let entry of entries) {
         // Ignore hidden legends so we don't apply stale heights
         if (!entry.target || entry.target.offsetParent === null) continue;
-        const height = Math.ceil(entry.contentRect.height);
+        // Use full box height (padding + border) so sticky offsets match exactly
+        const height = Math.ceil(entry.target.getBoundingClientRect().height);
         document.documentElement.style.setProperty('--legend-height', `${height}px`);
     }
 });

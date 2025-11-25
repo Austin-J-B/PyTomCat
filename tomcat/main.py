@@ -340,17 +340,36 @@ async def get_schedule(request):
     if error:
         return error
     _debug(f"GET /api/schedule session_ok")
+    
+    # Helper to ensure IDs are strings
+    def stringify_schedule(sched):
+        new_sched = {}
+        for station, row in sched.items():
+            new_sched[station] = [str(uid) if uid else "" for uid in row]
+        return new_sched
+
     if not SCHEDULE_PATH.exists():
         empty = {station: [""] * 7 for station in (getattr(settings, "feeding_schedule", {}) or {}).keys()}
         if not empty:
             empty = {station: [""] * 7 for station in DEFAULT_STATIONS}
-        return _with_cors(web.json_response({"schedule": empty, "meta": {"saved_at": None}}), request)
+        # ADDED: Cache control
+        resp = web.json_response({"schedule": empty, "meta": {"saved_at": None}})
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return _with_cors(resp, request)
 
     try:
         payload = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
         sched = payload.get("schedule", {}) or {}
+        
+        # CRITICAL FIX: Convert all IDs to strings
+        payload["schedule"] = stringify_schedule(sched)
+        
         _debug(f"/api/schedule returning stations={list(sched.keys())} saved_at={payload.get('meta',{}).get('saved_at')}")
-        return _with_cors(web.json_response(payload), request)
+        
+        resp = web.json_response(payload)
+        # ADDED: Cache control
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return _with_cors(resp, request)
     except Exception as e:
         return _with_cors(web.Response(status=500, text=f"Failed to load schedule: {e}"), request)
 
@@ -656,7 +675,7 @@ async def start_web_server(bot):
                 "station": ", ".join(stations),
                 "stations": stations,
                 "dates": [date_iso],
-                "requester": int(req_user_id),
+                "requester": str(req_user_id),  # CHANGED: int() to str()
                 "requester_name": req_user_name,
                 "assignee": None,
                 "status": "requested",
@@ -682,6 +701,7 @@ async def start_web_server(bot):
 
         return _with_cors(web.json_response({"status": "ok"}), request)
     
+
     async def delete_subrequest(request):
         """Physically remove a request from the log file."""
         session, error = _require_permissions(request, require_view=True)
@@ -922,8 +942,25 @@ async def start_web_server(bot):
                         out["assignee_name"] = assignee_name_cache.get(int(assignee), "")
                     except Exception:
                         out["assignee_name"] = ""
-            if requester_id:
-                out["requester_id"] = str(requester_id)
+            # CRITICAL FIX: Ensure IDs are strings to prevent JS precision loss
+            if out.get("requester_id"):
+                out["requester_id"] = str(out["requester_id"])
+            
+            # Ensure the 'requester' field (legacy) is also a string if present
+            if out.get("requester"):
+                out["requester"] = str(out["requester"])
+
+            if assignee:
+                out["assignee_id"] = str(assignee)
+                # Ensure 'assignee' legacy field is string
+                if out.get("assignee"):
+                    out["assignee"] = str(out["assignee"])
+                if not out.get("assignee_name"):
+                    try:
+                        out["assignee_name"] = assignee_name_cache.get(int(assignee), "")
+                    except Exception:
+                        out["assignee_name"] = ""
+            
             target_list.append(out)
 
         return _with_cors(web.json_response({

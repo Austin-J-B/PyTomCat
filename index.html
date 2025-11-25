@@ -9,7 +9,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
 
-    <!-- Discord Embedded App SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk/dist/discord.min.js"></script>
 
     <style>
@@ -32,7 +31,7 @@
             
             /* DIMENSIONS */
             --legend-height: 46px; 
-            /* Note: Header Height is ignored for sticky calc because workspace scrolls independently */
+            --site-header-height: 60px;
         }
 
         * { box-sizing: border-box; }
@@ -149,13 +148,15 @@
     .role-officer { color: #d4a017; } /* Gold Crown */
     .role-user { color: var(--site-accent); }
 
-        /* Trash Can Icon (Hidden by default) */
+        /* Trash Can Icon (Now Always Visible) */
         .trash-btn {
-            opacity: 0; background: none; border: none;
-            cursor: pointer; font-size: 1.1rem; color: #e74c3c;
-            transition: opacity 0.2s; margin-left: auto; padding: 0 8px;
+            opacity: 1; /* CHANGED: Always visible */
+            background: none; border: none;
+            cursor: pointer; font-size: 1.1rem; 
+            color: #ccc; /* Subtle default color */
+            transition: color 0.2s; margin-left: auto; padding: 0 8px;
         }
-        .open-item:hover .trash-btn { opacity: 1; }
+        .trash-btn:hover { color: #e74c3c; }
 
         /* Buttons */
         .save-btn {
@@ -242,19 +243,18 @@
             padding: 0;
             border-radius: 0 0 4px 4px;
             box-shadow: 0 24px 48px -8px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.10);
-            
-            /* REMOVED: transform-origin and transition */
-            /* These properties fight with the 'zoom' property */
-            
             display: flex;
             flex-direction: column;
-            margin-top: 40px; 
+            margin-top: 40px;
+            /* ZOOM FIX: Use transform instead of CSS zoom property */
+            transform-origin: top center;
+            transition: transform 0.1s ease-out; 
         }
 
         /* --- CONTROLS LEGEND (STICKY INSIDE WORKSPACE) --- */
         .controls-legend {
             position: sticky;
-            top: 0; /* Stick to the top of the scrollable workspace */
+            top: 0; 
             z-index: 800;
             min-height: var(--legend-height);
             background: var(--header-tan);
@@ -290,7 +290,7 @@
             font-family: 'Montserrat', sans-serif;
             text-transform: uppercase; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
             position: sticky;
-            /* Stick exactly below the legend */
+            /* Stick exactly below the legend - calculated via JS ResizeObserver now */
             top: var(--legend-height); 
             z-index: 400; 
             background-color: white; 
@@ -529,6 +529,14 @@ let appInitialized = false;
 let oauthNonce = null;
 let scheduleReadOnly = false;
 
+// --- RESIZE OBSERVER FOR STICKY HEADER ---
+const resizeObserver = new ResizeObserver(entries => {
+    for (let entry of entries) {
+        const height = entry.contentRect.height;
+        document.documentElement.style.setProperty('--legend-height', `${height + 4}px`);
+    }
+});
+
 function displayName(id, fallback="") {
     const byId = memberById[id];
     if (byId && byId.name) return byId.name;
@@ -606,6 +614,9 @@ async function init(force = false) {
     apiBase = (urlParams.get('api') || apiBase || '').replace(/\/$/, '');
     scheduleData = makeEmptySchedule();
 
+    // Start observing legends for resize
+    document.querySelectorAll('.controls-legend').forEach(el => resizeObserver.observe(el));
+
     updateStickyHeights();
     await fetchMembers();
     await loadSchedule();
@@ -623,14 +634,14 @@ function updateStickyHeights() {
     const header = document.querySelector('header.site-header');
     const legends = Array.from(document.querySelectorAll('.controls-legend')).filter(el => el.offsetParent !== null);
     const headerH = header ? header.getBoundingClientRect().height : 0;
-    const defaultLegendH = parseFloat(getComputedStyle(root).getPropertyValue('--legend-height')) || 46;
-    const legendH = legends.length
-        ? Math.max(...legends.map(el => el.getBoundingClientRect().height || 0))
-        : defaultLegendH;
-    const finalLegendH = Math.max(legendH, defaultLegendH);
+    
+    // Fallback if observer hasn't fired yet
+    if (legends.length > 0) {
+        const legendH = legends[0].getBoundingClientRect().height;
+        root.style.setProperty('--legend-height', `${legendH}px`);
+    }
+    
     root.style.setProperty('--site-header-height', `${headerH}px`);
-    root.style.setProperty('--legend-height', `${finalLegendH}px`);
-    root.style.setProperty('--legend-total-offset', `${headerH + finalLegendH}px`);
 }
 
 window.addEventListener('resize', () => {
@@ -652,15 +663,7 @@ async function fetchMembers() {
         console.log("Members loaded", members.length);
     } catch (e) {
         console.warn("API unavailable, using mock data.");
-        members = [
-            { name: "Austin B", user: "austin", id: "austin" },
-            { name: "Kitadan", user: "kitadan", id: "kitadan" },
-            { name: "Seja", user: ".s3j", id: "s3j" },
-            { name: "Alex", user: "alex", id: "alex" },
-            { name: "Abbym65", user: "abby", id: "abby" },
-            { name: "Volunteer 1", user: "v1", id: "v1" },
-            { name: "Volunteer 2", user: "v2", id: "v2" }
-        ];
+        members = [];
     }
     memberById = {};
     members.forEach(m => { if (m.id) memberById[m.id] = m; });
@@ -684,7 +687,6 @@ async function loadSchedule() {
         scheduleData = makeEmptySchedule();
         setSaveStatus("No saved data", "warn");
     }
-    console.log("Schedule after load", scheduleData);
 }
 
 async function loadOpenSubs() {
@@ -768,7 +770,7 @@ function renderGrid() {
             if (userId) {
                 td.classList.add('assigned');
                 const member = memberById[userId];
-                const displayName = member ? member.name : userId;
+                const displayName = member ? member.name : "Unknown";
                 const colorKey = member ? member.id : userId;
                 td.style.backgroundColor = getVolunteerColor(colorKey);
 
@@ -1558,10 +1560,10 @@ function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
     const container = document.getElementById('sheet-container');
     
-    // Use CSS 'zoom' instead of 'transform'. 
-    // 'zoom' triggers a layout recalculation, which allows position:sticky 
-    // to understand exactly where the top of the screen is at any scale.
-    container.style.zoom = zoomLevel;
+    // Use CSS 'transform' instead of 'zoom' to avoid sticky issues
+    container.style.transform = `scale(${zoomLevel})`;
+    // Compensate for scale shrinking the layout flow
+    // (optional optimization, but transform doesn't reflow siblings)
 }
 
 const initialView = getViewFromLocation() || 'schedule';
@@ -1575,7 +1577,6 @@ window.addEventListener('hashchange', () => {
 
 </script>
 
-<!-- Discord Auth Integration -->
 <script>
     // --- CONFIGURATION ---
     const CLIENT_ID = "1341667150066225192";
@@ -1940,12 +1941,18 @@ window.addEventListener('hashchange', () => {
 
                 // Delete Logic
                 const isOfficer = authState.permissions.is_officer;
-                const isOwner = String(item.requester_id) === String(authState.user.id) || String(item.assignee_id) === String(authState.user.id);
+                
+                // Fix: Robust string comparison for delete permission
+                const reqId = String(item.requester_id || "");
+                const assId = String(item.assignee_id || "");
+                const myId = String(authState.user?.id || "");
+                
+                const isOwner = (reqId === myId) || (assId === myId);
                 
                 if (isOfficer || isOwner) {
                     const trash = document.createElement('button');
                     trash.className = 'trash-btn';
-                    trash.innerHTML = '🗑';
+                    trash.innerHTML = '🗑'; // Simple trash can
                     trash.title = "Delete Request";
                     trash.onclick = (e) => {
                         e.preventDefault();
@@ -1990,4 +1997,3 @@ window.addEventListener('hashchange', () => {
 </script>
 </body>
 </html>
-

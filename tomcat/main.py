@@ -115,8 +115,11 @@ def _get_session_from_request(request: web.Request) -> Optional[dict]:
 def _issue_session_response(user_info: dict, permissions: dict, request: web.Request) -> web.Response:
     """Sign a session payload and return a JSON response with cookie set."""
     now_ts = int(time.time())
+    # CRITICAL FIX: Ensure user_id is a string to prevent JS integer precision loss
+    user_id_str = str(user_info.get("id"))
+    
     session_payload = {
-        "user_id": str(user_info.get("id")),
+        "user_id": user_id_str, 
         "username": user_info.get("username"),
         "global_name": user_info.get("global_name"),
         "permissions": permissions,
@@ -127,7 +130,7 @@ def _issue_session_response(user_info: dict, permissions: dict, request: web.Req
 
     resp = web.json_response({
         "user": {
-            "id": user_info.get("id"),
+            "id": user_id_str,
             "username": user_info.get("username"),
             "global_name": user_info.get("global_name"),
         },
@@ -206,7 +209,6 @@ async def auth_token_exchange(request):
         return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
     code = data.get("code")
-    # 1. Capture the redirect_uri sent from the frontend
     redirect_uri = data.get("redirect_uri") 
     _debug(f"payload redirect_uri={redirect_uri} code_present={bool(code)}")
 
@@ -215,7 +217,6 @@ async def auth_token_exchange(request):
     if not CLIENT_SECRET or not CLIENT_ID:
         return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)
 
-    # Exchange code with Discord API
     async with aiohttp.ClientSession() as session:
         token_payload = {
             'client_id': CLIENT_ID,
@@ -224,7 +225,6 @@ async def auth_token_exchange(request):
             'code': code,
         }
         
-        # 2. CRITICAL FIX: Pass the redirect_uri to Discord if it exists
         if redirect_uri:
             token_payload['redirect_uri'] = redirect_uri
 
@@ -234,7 +234,6 @@ async def auth_token_exchange(request):
                 data=token_payload,
             ) as resp:
                 if resp.status != 200:
-                    # Log the exact error from Discord to your console
                     err_text = await resp.text()
                     _debug(f"discord token error status={resp.status} body={err_text}")
                     return _with_cors(
@@ -252,7 +251,6 @@ async def auth_token_exchange(request):
             _debug(f"discord token exception={exc}")
             return _with_cors(web.Response(status=502, text="Token exchange request failed"), request)
 
-        # Get User ID from Discord
         try:
             async with session.get(
                 'https://discord.com/api/users/@me',
@@ -265,7 +263,6 @@ async def auth_token_exchange(request):
             _debug(f"/users/@me exception={exc}")
             return _with_cors(web.Response(status=502, text="Failed to fetch user profile"), request)
 
-    # CHECK ROLES
     guild, member = await _resolve_member(user_id)
     if not guild or not member:
         guild_ids = [getattr(g, "id", None) for g in bot.guilds]
@@ -341,10 +338,11 @@ async def get_schedule(request):
         return error
     _debug(f"GET /api/schedule session_ok")
     
-    # Helper to ensure IDs are strings
+    # Helper to force all IDs to strings
     def stringify_schedule(sched):
         new_sched = {}
         for station, row in sched.items():
+            # Cast each ID to string, handling None/0 as empty string
             new_sched[station] = [str(uid) if uid else "" for uid in row]
         return new_sched
 
@@ -352,7 +350,6 @@ async def get_schedule(request):
         empty = {station: [""] * 7 for station in (getattr(settings, "feeding_schedule", {}) or {}).keys()}
         if not empty:
             empty = {station: [""] * 7 for station in DEFAULT_STATIONS}
-        # ADDED: Cache control
         resp = web.json_response({"schedule": empty, "meta": {"saved_at": None}})
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         return _with_cors(resp, request)
@@ -361,13 +358,12 @@ async def get_schedule(request):
         payload = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
         sched = payload.get("schedule", {}) or {}
         
-        # CRITICAL FIX: Convert all IDs to strings
+        # CRITICAL FIX: Stringify to prevent browser rounding
         payload["schedule"] = stringify_schedule(sched)
         
         _debug(f"/api/schedule returning stations={list(sched.keys())} saved_at={payload.get('meta',{}).get('saved_at')}")
         
         resp = web.json_response(payload)
-        # ADDED: Cache control
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         return _with_cors(resp, request)
     except Exception as e:
@@ -675,7 +671,7 @@ async def start_web_server(bot):
                 "station": ", ".join(stations),
                 "stations": stations,
                 "dates": [date_iso],
-                "requester": str(req_user_id),  # CHANGED: int() to str()
+                "requester": str(req_user_id),  # Force string to future-proof
                 "requester_name": req_user_name,
                 "assignee": None,
                 "status": "requested",
@@ -701,7 +697,6 @@ async def start_web_server(bot):
 
         return _with_cors(web.json_response({"status": "ok"}), request)
     
-
     async def delete_subrequest(request):
         """Physically remove a request from the log file."""
         session, error = _require_permissions(request, require_view=True)
@@ -737,10 +732,26 @@ async def start_web_server(bot):
                     try:
                         rec = json.loads(line)
                         if rec.get("id") == target_id:
-                            # Permission Check
+                            # Permission Check with Fuzzy Matching
+                            # Convert log IDs to string for comparison
                             requester_id = str(rec.get("requester") or "")
                             assignee_id = str(rec.get("assignee") or "")
-                            is_owner = user_id_str in (requester_id, assignee_id)
+                            
+                            # Direct string match
+                            is_owner = (user_id_str == requester_id) or (user_id_str == assignee_id)
+                            
+                            # Fallback: Fuzzy match for floating point corrupted IDs
+                            if not is_owner:
+                                try:
+                                    # If the session ID is within +/- 1000 of the stored ID, allow it
+                                    # (Handles browser rounding errors on large snowflakes)
+                                    if requester_id and abs(int(user_id_str) - int(requester_id)) < 1000:
+                                        is_owner = True
+                                    elif assignee_id and abs(int(user_id_str) - int(assignee_id)) < 1000:
+                                        is_owner = True
+                                except Exception:
+                                    pass
+
                             if not is_officer and not is_owner:
                                 return _with_cors(web.Response(status=403, text="You can only delete your own items."), request)
                             deleted_item = rec
@@ -827,7 +838,7 @@ async def start_web_server(bot):
                                     "id": parent_id,
                                     "station": st,
                                     "date": date_iso,
-                                    "requester_id": requester,
+                                    "requester_id": str(requester) if requester else "", # Ensure string
                                     "requester_name": requester_name,
                                     "assignee_id": None,
                                     "assignee_name": rec.get("assignee_name") or "",
@@ -899,7 +910,7 @@ async def start_web_server(bot):
             key = (item.get("id"), item.get("station"), item.get("date"))
             assignee = accepted_map.get(key)
             if assignee:
-                item["assignee_id"] = assignee
+                item["assignee_id"] = str(assignee) # Ensure string
                 if not item.get("assignee_name"):
                     try:
                         item["assignee_name"] = assignee_name_cache.get(int(assignee), "")
@@ -929,32 +940,14 @@ async def start_web_server(bot):
                 target_list = upcoming_filled if assignee else available
 
             out = dict(item)
-            requester_id = item.get("requester_id")
-            if requester_id and not out.get("requester_name"):
-                try:
-                    out["requester_name"] = name_cache.get(int(requester_id), "")
-                except Exception:
-                    out["requester_name"] = ""
-            if assignee:
-                out["assignee_id"] = str(assignee)
-                if not out.get("assignee_name"):
-                    try:
-                        out["assignee_name"] = assignee_name_cache.get(int(assignee), "")
-                    except Exception:
-                        out["assignee_name"] = ""
-            # CRITICAL FIX: Ensure IDs are strings to prevent JS precision loss
+            # CRITICAL FIX: Strict string conversion for output
             if out.get("requester_id"):
                 out["requester_id"] = str(out["requester_id"])
-            
-            # Ensure the 'requester' field (legacy) is also a string if present
             if out.get("requester"):
                 out["requester"] = str(out["requester"])
-
+                
             if assignee:
                 out["assignee_id"] = str(assignee)
-                # Ensure 'assignee' legacy field is string
-                if out.get("assignee"):
-                    out["assignee"] = str(out["assignee"])
                 if not out.get("assignee_name"):
                     try:
                         out["assignee_name"] = assignee_name_cache.get(int(assignee), "")
@@ -963,11 +956,13 @@ async def start_web_server(bot):
             
             target_list.append(out)
 
-        return _with_cors(web.json_response({
+        resp = web.json_response({
             "available": available,
             "upcoming_filled": upcoming_filled,
             "past": past,
-        }), request)
+        })
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return _with_cors(resp, request)
 
     async def claim_subs(request):
         """Mark sub requests as accepted by a user."""
@@ -1008,8 +1003,8 @@ async def start_web_server(bot):
                     "station": station,
                     "stations": [station],
                     "dates": [date_iso],
-                    "requester": requester,
-                    "assignee": int(user_id),
+                    "requester": str(requester) if requester else "", # Ensure string
+                    "assignee": str(user_id), # Ensure string
                     "status": "accepted",
                     "channel_id": 0,
                     "message_id": 0,

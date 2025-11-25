@@ -388,3 +388,6 @@
 {"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Megan Digiovanni $89.91 on 2025-10-05"}
 {"event": "action", "name": "finance_skip_duplicate", "trigger": "kind=expense", "output": "Derek Fuentes $20.00 on 2025-09-10"}
 {"event": "message", "author": "izzyballz", "channel": "#yapper-committee", "content": "i’m the opposite i get away with being mildly aloof by being great at my job", "attachments": 0}
+{"event": "message", "author": "celeryiscelery", "channel": "#purrley-pawsitive-pussy-pals", "content": "oh you’re *impatient* impatient", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "my hands are bloodied and bruised from trying to take apart this lego set", "attachments": 0}
+{"event": "message", "author": "kcreepertux04", "channel": "#yapper-committee", "content": "it has drawn so much blood", "attachments": 0}

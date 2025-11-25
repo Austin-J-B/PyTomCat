@@ -307,6 +307,7 @@
         td.data-cell.focus { outline: 2px solid var(--focus-ring); outline-offset: -2px; z-index: 150; }
         td.data-cell.selected { background-color: var(--selection-highlight) !important; }
         td.data-cell.assigned .cell-name { text-shadow: 0 1px 0 rgba(255,255,255,0.6); }
+        .sheet-wrapper.read-only td.data-cell { cursor: default; }
 
         #loading { position: fixed; inset: 0; background: var(--site-bg); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--site-text); font-family: 'Merriweather', serif; font-size: 1.5rem; }
     </style>
@@ -516,6 +517,7 @@ let prevRequestsByDate = {};
 let requestTab = 'available';
 let appInitialized = false;
 let oauthNonce = null;
+let scheduleReadOnly = false;
 
 function displayName(id, fallback="") {
     const byId = memberById[id];
@@ -861,6 +863,7 @@ function setSaveButtonState(state) {
 }
 
 function handleMouseDown(e, r, c) {
+    if (scheduleReadOnly) return;
     isDragging = true;
     const coord = `${r}|${c}`;
 
@@ -879,6 +882,7 @@ function handleMouseDown(e, r, c) {
 }
 
 function handleMouseOver(e, r, c) {
+    if (scheduleReadOnly) return;
     if (isDragging && anchor) {
         selectedCells.clear();
         selectRange(anchor.r, anchor.c, r, c);
@@ -908,6 +912,7 @@ const selectionBadge = document.getElementById('selection-display');
 let filteredMembers = [];
 
 searchInput.addEventListener('input', (e) => {
+    if (scheduleReadOnly) { resultsBox.style.display = 'none'; return; }
     const q = e.target.value.toLowerCase();
     resultsBox.innerHTML = '';
     currentSearchIndex = -1; 
@@ -938,6 +943,7 @@ searchInput.addEventListener('input', (e) => {
 });
 
 searchInput.addEventListener('keydown', (e) => {
+    if (scheduleReadOnly) return;
     if (!filteredMembers.length) return;
 
     if (e.key === 'ArrowDown') {
@@ -969,6 +975,7 @@ function highlightResult() {
 }
 
 function setVolunteer(m) {
+    if (scheduleReadOnly) return;
     currentVolunteer = m;
     selectionBadge.className = 'current-selection';
     selectionBadge.style.backgroundColor = getVolunteerColor(m.id || m.name);
@@ -991,6 +998,8 @@ document.addEventListener('keydown', (e) => {
         }
         return;
     }
+
+    if (scheduleReadOnly) return;
 
     if (e.key === 'Backspace' || e.key === 'Delete') {
         applyValue("");
@@ -1037,6 +1046,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 function applyValue(val) {
+    if (scheduleReadOnly) return;
     if (selectedCells.size === 0) return;
     
     selectedCells.forEach(coord => {
@@ -1047,6 +1057,7 @@ function applyValue(val) {
 }
 
 async function saveSchedule() {
+    if (scheduleReadOnly) return;
     setSaveStatus("Saving...");
     setSaveButtonState("saving");
     try {
@@ -1192,6 +1203,50 @@ function setClaimUser(m) {
     claimUser = m;
     claimUserInput.value = m.name;
     claimUserResults.style.display = 'none';
+}
+
+function applyScheduleAccess(isOfficer, canEditSchedule) {
+    scheduleReadOnly = !isOfficer;
+
+    const legend = document.querySelector('.controls-legend');
+    if (legend) legend.style.display = scheduleReadOnly ? 'none' : 'flex';
+    const sheetWrapper = document.getElementById('sheet-container');
+    if (sheetWrapper) sheetWrapper.classList.toggle('read-only', scheduleReadOnly);
+
+    if (scheduleReadOnly) {
+        currentVolunteer = null;
+        selectedCells.clear();
+        anchor = null;
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.disabled = true;
+        }
+        if (resultsBox) resultsBox.style.display = 'none';
+        if (selectionBadge) {
+            selectionBadge.className = 'current-selection empty';
+            selectionBadge.textContent = 'Read-only view';
+            selectionBadge.style.backgroundColor = '';
+            selectionBadge.style.color = '';
+        }
+    } else {
+        if (searchInput) searchInput.disabled = false;
+        if (selectionBadge) {
+            selectionBadge.className = 'current-selection empty';
+            selectionBadge.textContent = 'Select User';
+            selectionBadge.style.backgroundColor = '';
+            selectionBadge.style.color = '';
+        }
+    }
+
+    const saveBtnEl = document.getElementById('save-btn');
+    if (saveBtnEl) {
+        const showSave = isOfficer && canEditSchedule;
+        saveBtnEl.style.display = showSave ? 'block' : 'none';
+        saveBtnEl.disabled = !showSave;
+    }
+
+    updateVisualsOnly();
+    updateStickyHeights();
 }
 
 function computeAllowedDates() {
@@ -1722,6 +1777,7 @@ window.addEventListener('hashchange', () => {
     </svg>`;
 
     const isOfficer = authState.permissions.is_officer;
+    const canEditSchedule = !!authState.permissions.can_edit_schedule;
     
     // 1. Update Header Profile
     const pDisplay = document.getElementById('profile-display');
@@ -1752,11 +1808,8 @@ window.addEventListener('hashchange', () => {
     if (subWrapper) subWrapper.style.display = displayMode;
     if (claimWrapper) claimWrapper.style.display = displayMode;
 
-    // 3. Save Button
-    const saveBtn = document.getElementById('save-btn');
-    if (saveBtn) {
-        saveBtn.style.display = authState.permissions.can_edit_schedule ? 'block' : 'none';
-    }
+    // 3. Schedule controls (officers only)
+    applyScheduleAccess(isOfficer, canEditSchedule);
 }
 
     // Override renderOpenSubs to support Delete button

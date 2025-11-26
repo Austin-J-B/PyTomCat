@@ -127,6 +127,24 @@ def _strip_wake_word(text: str) -> str:
         return rest.lstrip(" \t\n,:-")
     return text
 
+
+def _fuzzy_command_present(text: str, targets: List[str], threshold: int = 82) -> bool:
+    """Light fuzzy check for command phrases (e.g., 'show me' typos)."""
+    norm = re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+    if norm:
+        for t in targets:
+            tgt = re.sub(r"[^a-z0-9]+", "", t.lower())
+            if tgt and fuzzy_ratio(norm, tgt) >= threshold:
+                return True
+    toks = [re.sub(r"[^a-z0-9]+", "", t.lower()) for t in (text or "").split() if t]
+    if toks:
+        combo = "".join(toks[:2])
+        for t in targets:
+            tgt = re.sub(r"[^a-z0-9]+", "", t.lower())
+            if tgt and fuzzy_ratio(combo, tgt) >= threshold:
+                return True
+    return False
+
 # ==============================================================================
 # Intent event and router
 # ==============================================================================
@@ -682,7 +700,7 @@ class IntentRouter:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
             # "feeding update" → status listing (requires addressing)
-            if FEEDING_UPDATE_RE.search(text_wo):
+            if FEEDING_UPDATE_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["feeding update"]):
                 ev = IntentEvent(
                     type="feeding_status", confidence=0.95,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
@@ -692,7 +710,7 @@ class IntentRouter:
                 self._traces[row["message_id"]] = trace
                 return ev
 
-            if FEEDING_WHO_TODAY_RE.search(text_wo):
+            if FEEDING_WHO_TODAY_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["who is feeding today", "who feeds today", "who's feeding tonight"]):
                 ev = IntentEvent(
                     type="feeding_today", confidence=0.95,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
@@ -702,7 +720,7 @@ class IntentRouter:
                 self._traces[row["message_id"]] = trace
                 return ev
 
-            if FEEDING_WHO_ANY_RE.search(text_wo):
+            if FEEDING_WHO_ANY_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["who is feeding", "who's feeding", "who feeds"]):
                 target_iso = self._parse_schedule_date(text_wo)
                 if target_iso:
                     ev = IntentEvent(
@@ -716,7 +734,7 @@ class IntentRouter:
                     return ev
 
             # Admin-only manual 8pm preview
-            if MANUAL_8PM_RE.search(text_wo):
+            if MANUAL_8PM_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["manual 8 pm update", "preview 8 pm"]):
                 ev = IntentEvent(
                     type="manual_8pm", confidence=0.99,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
@@ -785,7 +803,7 @@ class IntentRouter:
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
-            if SHOW_PAT.search(text_wo):
+            if SHOW_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["show me", "show"]):
                 cat = self._extract_best_entity(text_wo, want="cat")
                 if cat:
                     ev = IntentEvent(
@@ -802,7 +820,7 @@ class IntentRouter:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
                                    message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
 
-            if WHO_PAT.search(text_wo):
+            if WHO_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["who is", "who's", "who is this", "who is that"]):
                 cat = self._extract_best_entity(text_wo, want="cat")
                 if cat:
                     ev = IntentEvent(
@@ -819,7 +837,7 @@ class IntentRouter:
                                    message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
 
             # cv: identify
-            if IDENT_PAT.search(text_wo):
+            if IDENT_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["identify", "id", "classify"]):
                 # cv identify/detect/crop need an image. Accept if:
                 # - attachment already present
                 # - message is a reply (handler will resolve image from the referenced message)
@@ -863,7 +881,7 @@ class IntentRouter:
                                    message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
             # cv: detect
-            if DETECT_PAT.search(text_wo):
+            if DETECT_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["detect"]):
                 if has_image:
                     ev = IntentEvent(
                         type="cv_detect", confidence=1.0,
@@ -904,7 +922,7 @@ class IntentRouter:
                                    message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
             # cv: crop
-            if CROP_PAT.search(text_wo):
+            if CROP_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["crop"]):
                 if has_image:
                     ev = IntentEvent(
                         type="cv_crop", confidence=1.0,

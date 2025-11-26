@@ -134,6 +134,12 @@ class Settings:
     ch_sandbox: int | None = int(os.getenv("CH_TOMCAT_SANDBOX", "0")) or None
     # Primary guild (server) used for admin tasks (defaults to legacy CCC ID)
     target_guild_id: int | None = int(os.getenv("TARGET_GUILD_ID", "551082419768393729") or "0") or None
+    # UI/Auth: guild + roles used by the web UI permissions
+    ui_guild_id: int | None = int(os.getenv("UI_GUILD_ID", "0") or "0") or None
+    officer_role_id: int | None = int(os.getenv("OFFICER_ROLE_ID", "0") or "0") or None
+    role_feeding_manager_id: int | None = int(os.getenv("ROLE_FEEDING_MANAGER", "0") or "0") or None
+    role_photo_labeler_id: int | None = int(os.getenv("ROLE_PHOTO_LABELER", "0") or "0") or None
+    role_viewer_id: int | None = int(os.getenv("ROLE_VIEWER", "0") or "0") or None
     # Channels allowed to mark feed updates (default empty → no restriction). You set this in .env as
     # allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
     allowed_feeding_channel_ids: list[int] = field(default_factory=lambda: _parse_channel_list_env("allowed_feeding_channel_ids"))
@@ -307,3 +313,6 @@ if not settings.sheet_catabase_id and settings.cat_spreadsheet_id:
     settings.sheet_catabase_id = settings.cat_spreadsheet_id
 if not settings.sheet_vision_id and settings.aux_spreadsheet_id:
     settings.sheet_vision_id = settings.aux_spreadsheet_id
+# UI defaults: fall back to target guild if a UI-specific guild ID is not provided
+if not settings.ui_guild_id and settings.target_guild_id:
+    settings.ui_guild_id = settings.target_guild_id

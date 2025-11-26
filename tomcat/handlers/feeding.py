@@ -183,6 +183,7 @@ def _append_sub_record(record: dict, month_key: Optional[str] = None) -> None:
 
 
 def _normalize_dates(dates: Iterable[str]) -> List[str]:
+    """Normalize incoming date strings; UI should send ISO YYYY-MM-DD."""
     out: List[str] = []
     for raw in dates or []:
         if not raw:

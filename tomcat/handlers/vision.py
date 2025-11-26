@@ -1,6 +1,6 @@
 """Computer-vision Discord commands (identify, crop, detect)."""
 
-# tomcat/handlers/vision.py
+#tomcat/handlers/vision.py
 from __future__ import annotations
 import os
 import io
@@ -14,13 +14,13 @@ from ..config import settings
 from ..logger import log_action
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..intent_router import Intent  # type: ignore
+    from ..intent_router import Intent  #type: ignore
 from ..vision import vision as V
 
-# ---------- helpers ----------
+#---------- helpers ----------
 async def _download_attachment(att: discord.Attachment) -> str:
     """Save a Discord attachment locally and return the temp path."""
-    # Size gate before download
+    #Size gate before download
     if att.size and settings.cv_max_download_mb and (att.size > settings.cv_max_download_mb * 1024 * 1024):
         raise ValueError(f"Attachment too large ({att.size} bytes). Max {settings.cv_max_download_mb} MB.")
     os.makedirs(settings.cv_temp_dir, exist_ok=True)
@@ -35,7 +35,7 @@ async def _download_attachment(att: discord.Attachment) -> str:
 
 def _first_image(message: discord.Message) -> Optional[discord.Attachment]:
     """Pick the first image attachment from a message if any."""
-    # Prefer image attachments in this message; then check referenced message if any
+    #Prefer image attachments in this message; then check referenced message if any
     for a in getattr(message, "attachments", []) or []:
         if (a.content_type or "").startswith("image/"):
             return a
@@ -59,7 +59,7 @@ async def _cleanup(paths: List[str]):
         except Exception:
             pass
 
-# ---------- public handlers ----------
+#---------- public handlers ----------
 async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     """Run object detection on an image and report bounding boxes."""
     message: discord.Message = ctx["message"]
@@ -80,7 +80,7 @@ async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         file = discord.File(io.BytesIO(boxed), filename="detected.jpg")
         emb = discord.Embed(
             title="Detected cat outlined below",
-            color=0x2F3136,  # same slate-gray as the other embeds
+            color=0x2F3136,  #same slate-gray as the other embeds
         )
         emb.set_image(url="attachment://detected.jpg")
         await ch.send(embed=emb, file=file)
@@ -158,7 +158,7 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         data = await _read_bytes(path)
         out = await asyncio.to_thread(V.identify, data)
 
-        # build embed w/ results, keep v5.6 vibe
+        #build embed w/ results, keep v5.6 vibe
         lines = []
         for r in out.results:
             name = r["name"]

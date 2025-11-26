@@ -4,8 +4,8 @@ from __future__ import annotations
 from typing import Optional, Tuple, List, Dict, Any
 import math
 
-# Optional ONNX + Tokenizers wrapper (zero‑shot via MNLI style).
-# If missing, router gracefully falls back to rules and returns None here.
+#Optional ONNX + Tokenizers wrapper (zero‑shot via MNLI style).
+#If missing, router gracefully falls back to rules and returns None here.
 
 _DEFAULT_LABELS = [
     "none",
@@ -33,21 +33,21 @@ class NLPModel:
         if not model_path or not tok_path:
             return None
         try:
-            import onnxruntime as ort  # type: ignore
-            from tokenizers import Tokenizer  # type: ignore
+            import onnxruntime as ort  #type: ignore
+            from tokenizers import Tokenizer  #type: ignore
         except Exception:
             return None
         try:
-            sess = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])  # type: ignore
-            tok = Tokenizer.from_file(tok_path)  # type: ignore
+            sess = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])  #type: ignore
+            tok = Tokenizer.from_file(tok_path)  #type: ignore
             return NLPModel(sess, tok, _DEFAULT_LABELS)
         except Exception:
             return None
 
-    # ---------- public API ----------
+    #---------- public API ----------
     def predict_intent(self, text: str) -> Tuple[str, float]:
         """Score the message against intent hypotheses and return the best match."""
-        # Zero‑shot over our label set using MNLI: score entailment for each label hypothesis.
+        #Zero‑shot over our label set using MNLI: score entailment for each label hypothesis.
         labels = [
             ("show_photo", [
                 "The user asks to show a cat photo.",
@@ -89,20 +89,20 @@ class NLPModel:
                 best, best_p = cand, p
         return best, float(best_p)
 
-    # Basic spam scorer via zero-shot: returns probability that text is spam
+    #Basic spam scorer via zero-shot: returns probability that text is spam
     def predict_spam(self, text: str) -> float:
         """Return the entailment probability that a message is spam."""
         hyp = "This message is spam."
         return float(self._mnli_entailment_prob(text, hyp))
 
-    # ---------- helpers ----------
+    #---------- helpers ----------
     def _mnli_entailment_prob(self, premise: str, hypothesis: str) -> float:
         """Run the MNLI model and return the entailment probability."""
         try:
-            enc = self.tokenizer.encode(premise, hypothesis)  # type: ignore
+            enc = self.tokenizer.encode(premise, hypothesis)  #type: ignore
             ids = enc.ids
             attn = enc.attention_mask if hasattr(enc, "attention_mask") else [1] * len(ids)
-            import numpy as np  # type: ignore
+            import numpy as np  #type: ignore
             ort_inputs: Dict[str, Any] = {}
             for name in [i.name for i in self.session.get_inputs()]:
                 if name.lower().endswith("input_ids"):
@@ -119,7 +119,7 @@ class NLPModel:
                     break
             if logits is None:
                 return 0.0
-            # Softmax over 3-way MNLI: [contradiction, neutral, entailment]
+            #Softmax over 3-way MNLI: [contradiction, neutral, entailment]
             x = logits[0]
             m = float(np.max(x))
             exps = np.exp(x - m)

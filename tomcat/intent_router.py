@@ -1,6 +1,6 @@
 ﻿"""Parse inbound Discord messages into structured intents for handlers."""
 
-# tomcat/intent_router.py
+#tomcat/intent_router.py
 from __future__ import annotations
 import asyncio
 import io
@@ -15,22 +15,22 @@ from typing import Any, Deque, Dict, List, Optional, Tuple
 
 import discord
 
-# ---- config / logging --------------------------------------------------------
+#---- config / logging --------------------------------------------------------
 from .config import settings
 from .logger import log_action, log_intent
 try:
-    # Use the common safe sender that respects silent mode
+    #Use the common safe sender that respects silent mode
     from .utils.sender import safe_send as _safe_send
 except Exception:
     _safe_send = None
 
-# ---- handlers we’ll dispatch to ----------------------------------------------
-# Cats: “show me …” and “who is …”
+#---- handlers we’ll dispatch to ----------------------------------------------
+#Cats: “show me …” and “who is …”
 from .handlers.cats import handle_cat_photo, handle_cat_show
-# Vision CV: detect / crop / identify (we already added these earlier)
+#Vision CV: detect / crop / identify (we already added these earlier)
 from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
-# Feeding: import the handlers module inside this package
-from .handlers import feeding  # type: ignore
+#Feeding: import the handlers module inside this package
+from .handlers import feeding  #type: ignore
 
 from .handlers.misc import (
     handle_profiles_create,
@@ -43,20 +43,20 @@ from .handlers.stations import handle_station_residents as _handle_station_resid
 from UserInterface.feeding_schedule_linker import handle_feeding_schedule_link
 from UserInterface.sub_request_linker import handle_sub_request_link
 
-# ---- Aliases and optional NLP ------------------------------------------------
+#---- Aliases and optional NLP ------------------------------------------------
 from .aliases import resolve_station_or_cat, alias_vocab
 from .utils.fuzzy import fuzzy_ratio, levenshtein_distance
-from .nlp.model import NLPModel  # returns None if not available
+from .nlp.model import NLPModel  #returns None if not available
 
-# ---- Time zone handling (America/Chicago) -----------------------------------
+#---- Time zone handling (America/Chicago) -----------------------------------
 try:
-    from zoneinfo import ZoneInfo  # py>=3.9
+    from zoneinfo import ZoneInfo  #py>=3.9
 except Exception:
-    ZoneInfo = None  # type: ignore
+    ZoneInfo = None  #type: ignore
 
 CENTRAL_TZ = ZoneInfo("America/Chicago") if ZoneInfo else None
 
-# Optional bot mention pattern (uses configured bot_user_id)
+#Optional bot mention pattern (uses configured bot_user_id)
 try:
     _BOT_ID_INT = int(getattr(settings, "bot_user_id", 0) or 0)
 except Exception:
@@ -145,9 +145,9 @@ def _fuzzy_command_present(text: str, targets: List[str], threshold: int = 82) -
                 return True
     return False
 
-# ==============================================================================
-# Intent event and router
-# ==============================================================================
+#==============================================================================
+#Intent event and router
+#==============================================================================
 
 
 class Intent:
@@ -159,7 +159,7 @@ class Intent:
 @dataclass
 class IntentEvent:
     """Internal representation of a message + parsed metadata."""
-    type: str                      # "show_photo" | "who_is" | "cv_identify" | "cv_detect" | "cv_crop" | "feed_update" | "sub_request" | "sub_accept" | "none"
+    type: str                      #"show_photo" | "who_is" | "cv_identify" | "cv_detect" | "cv_crop" | "feed_update" | "sub_request" | "sub_accept" | "none"
     confidence: float
     channel_id: int
     user_id: int
@@ -167,17 +167,17 @@ class IntentEvent:
     text: str
     has_image: bool
     attachment_ids: List[int]
-    # slots:
-    cat_name: Optional[str] = None         # canonical cat or station display name
-    station: Optional[str] = None          # canonical station key (same string space as cat if shared)
-    stations: Optional[List[str]] = None   # optional multi-station list for feed updates
-    dates: Optional[List[str]] = None      # ISO "YYYY-MM-DD"
-    # evidence pointers (message ids) used when pairing
+    #slots:
+    cat_name: Optional[str] = None         #canonical cat or station display name
+    station: Optional[str] = None          #canonical station key (same string space as cat if shared)
+    stations: Optional[List[str]] = None   #optional multi-station list for feed updates
+    dates: Optional[List[str]] = None      #ISO "YYYY-MM-DD"
+    #evidence pointers (message ids) used when pairing
     paired_messages: Optional[List[int]] = None
-    raw_station: Optional[str] = None      # original station query text (for station-specific intents)
-    trigger_phrase: Optional[str] = None   # snippet that matched the routing logic
+    raw_station: Optional[str] = None      #original station query text (for station-specific intents)
+    trigger_phrase: Optional[str] = None   #snippet that matched the routing logic
 
-# Simple ring buffer per (channel_id, user_id)
+#Simple ring buffer per (channel_id, user_id)
 MachineRow = Dict[str, Any]
 
 TOMCAT_PREFIX = re.compile(r"^\s*(tom\s*cat|tomcat|tom-kat|tom\s*kat)[\s,:-]*", re.I)
@@ -190,9 +190,9 @@ CROP_PAT   = re.compile(r"\bcrop\b", re.I)
 FEED_REQUEST_RE = re.compile(r"\b(can|could|would)\s+(?:someone|somebody|anyone|anybody|smb|sb|some1)\s+(?:feed|cover|take)\b", re.I)
 FEED_VERB = re.compile(r"\b(fed|fill(?:ed)?|filled|topped(?:\s*off)?)\b", re.I)
 SUB_VERB  = re.compile(r"\b(sub|cover|cover\s+me|can\s+(?:someone|somebody|anyone|anybody|smb|sb|some1)|anyone\s+able|can\s+u|can\s+ya)\b", re.I)
-# Negative phrasing like "don't feed" should not trigger a feed update
+#Negative phrasing like "don't feed" should not trigger a feed update
 FEED_NEGATION_RE = re.compile(r"\b(?:(?:do(?:n't|\s+not))|(?:did(?:n't|\s+not))|(?:never)|(?:cant|can't|cannot)|(?:won't)|(?:should(?:n't|\s+not))|(?:would(?:n't|\s+not))|(?:haven't)|(?:hasn't)|(?:hadn't))\s+(?:feed|fed)\b", re.I)
-# Accept patterns in feeding channels (broad but channel-gated)
+#Accept patterns in feeding channels (broad but channel-gated)
 ACCEPT_PAT = re.compile(
     r"\b("
     r"sure|"
@@ -262,27 +262,27 @@ MONTH_NAME_MAP = {
 
 
 
-# quick weekday map
+#quick weekday map
 WEEKDAYS = {w.lower(): i for i, w in enumerate(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"])}
 
-# Tight fuzzy thresholds
+#Tight fuzzy thresholds
 FUZZY_ACCEPT = 88
 FUZZY_LEN_BIAS = 82
 FUZZY_LEN_DELTA = 3
 FUZZY_TYPO_MIN = 0.6
 CAT_TYPO_MAX_DISTANCE = 2
 
-# confidence gates
+#confidence gates
 CONF_HIGH = 0.88
 CONF_MID  = 0.75
 
-# optional: rapidfuzz fallback to difflib
+#optional: rapidfuzz fallback to difflib
 try:
-    from rapidfuzz import process as rf_process, fuzz as rf_fuzz  # type: ignore
+    from rapidfuzz import process as rf_process, fuzz as rf_fuzz  #type: ignore
     def _fuzzy_one(q: str, choices: List[str]) -> Tuple[str, float]:
         if not choices:
             return ("", 0.0)
-        name, score, _ = rf_process.extractOne(q, choices, scorer=rf_fuzz.token_set_ratio)  # type: ignore
+        name, score, _ = rf_process.extractOne(q, choices, scorer=rf_fuzz.token_set_ratio)  #type: ignore
         return (name, float(score) / 100.0)
 except Exception:
     import difflib
@@ -292,23 +292,23 @@ except Exception:
         name = difflib.get_close_matches(q, choices, n=1, cutoff=0.0)
         if not name:
             return ("", 0.0)
-        # difflib ratio ~ [0,1]
+        #difflib ratio ~ [0,1]
         return (name[0], difflib.SequenceMatcher(None, q, name[0]).ratio())
 
-# ------------------------------------------------------------------------------
-# Clarification UI: Yes/No that only the original author can click
-# ------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+#Clarification UI: Yes/No that only the original author can click
+#------------------------------------------------------------------------------
 
 class ClarifyView(discord.ui.View):
     def __init__(self, author_id: int, on_yes):
-        super().__init__(timeout=120)  # 2 minutes is plenty; you can set None to keep forever
+        super().__init__(timeout=120)  #2 minutes is plenty; you can set None to keep forever
         self.author_id = author_id
-        self.on_yes = on_yes  # async callback
+        self.on_yes = on_yes  #async callback
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user and interaction.user.id == self.author_id:
             return True
-        # Politely reject others
+        #Politely reject others
         try:
             await interaction.response.send_message("This confirmation is for the original requester.", ephemeral=True)
         except Exception:
@@ -324,46 +324,46 @@ class ClarifyView(discord.ui.View):
 
     @discord.ui.button(label="No", style=discord.ButtonStyle.danger, custom_id="clarify_no")
     async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Just acknowledge and close
+        #Just acknowledge and close
         try:
             await interaction.response.send_message("Okay, ignored.", ephemeral=True)
         except Exception:
             pass
         self.stop()
 
-# ------------------------------------------------------------------------------
-# IntentRouter
-# ------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+#IntentRouter
+#------------------------------------------------------------------------------
 
 class IntentRouter:
     """Route Discord messages through the NLP/alias pipelines to handlers."""
     def __init__(self):
-        # ring buffer: per (channel_id, user_id) last ~100 rows
+        #ring buffer: per (channel_id, user_id) last ~100 rows
         self._buf: Dict[Tuple[int,int], Deque[MachineRow]] = defaultdict(lambda: deque(maxlen=100))
-        self._nlp: Optional[NLPModel] = NLPModel.maybe_load(settings)  # returns None if disabled
-        self._alias_vocab = alias_vocab()  # {"stations":[names...], "cats":[names...], "all":[...]}
-        # ephemeral memory for clarify actions: msg_id -> payload
+        self._nlp: Optional[NLPModel] = NLPModel.maybe_load(settings)  #returns None if disabled
+        self._alias_vocab = alias_vocab()  #{"stations":[names...], "cats":[names...], "all":[...]}
+        #ephemeral memory for clarify actions: msg_id -> payload
         self._pending_clarify: Dict[int, Dict[str, Any]] = {}
-        # pending CV follow-ups: (channel_id,user_id) -> {intent, requested_ts_iso, expires_ts_iso, message_id}
+        #pending CV follow-ups: (channel_id,user_id) -> {intent, requested_ts_iso, expires_ts_iso, message_id}
         self._pending_cv: Dict[Tuple[int,int], Dict[str, Any]] = {}
-        # pending FEED follow-ups: station mention ↔ image pairing
+        #pending FEED follow-ups: station mention ↔ image pairing
         self._pending_feed: Dict[Tuple[int,int], Dict[str, Any]] = {}
-        # decision traces for logging: message_id -> [steps]
+        #decision traces for logging: message_id -> [steps]
         self._traces: Dict[int, List[str]] = {}
 
-    # ---------- public entry ----------
+    #---------- public entry ----------
     async def handle_message(self, message: Any, ctx: Dict[str, Any]) -> None:
 
         """Log -> analyze (possibly with short context) -> dispatch or do nothing."""
         try:
-            # 0) If user just sent an image and has a pending CV request, fulfill it first
+            #0) If user just sent an image and has a pending CV request, fulfill it first
             attachments = getattr(message, "attachments", []) or []
             has_image_now = any((a.content_type or "").startswith("image/") for a in attachments)
             if has_image_now:
                 key = (message.channel.id, message.author.id)
                 pend = self._pending_cv.get(key)
                 if pend:
-                    # Check expiry
+                    #Check expiry
                     try:
                         iso_val = pend.get("expires_ts_iso")
                         expires = datetime.fromisoformat(str(iso_val)) if iso_val else None
@@ -372,7 +372,7 @@ class IntentRouter:
                     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
                     if not expires or now <= expires:
                         itype = pend.get("intent", "cv_identify")
-                        # Dispatch straight to the vision handler
+                        #Dispatch straight to the vision handler
                         if itype == "cv_crop":
                             await handle_cv_crop(_intent("cv_crop", {}), ctx)
                         elif itype == "cv_detect":
@@ -383,11 +383,11 @@ class IntentRouter:
                         self._pending_cv.pop(key, None)
                         return
                     else:
-                        # expired
+                        #expired
                         self._pending_cv.pop(key, None)
                         log_action("cv_pending_expired", f"ch={message.channel.id}; user={message.author.id}", pend.get("intent",""))
 
-                # Feed pending fulfilment in #feeding-team
+                #Feed pending fulfilment in #feeding-team
                 ft_ch = getattr(settings, "ch_feeding_team", None)
                 if ft_ch and int(message.channel.id) == int(ft_ch):
                     fpend = self._pending_feed.get(key)
@@ -416,7 +416,7 @@ class IntentRouter:
                             self._pending_feed.pop(key, None)
                             log_action("feed_pending_expired", f"ch={message.channel.id}; user={message.author.id}", "")
 
-                    # No pending record; try recent station mention (5m) by this user in this channel
+                    #No pending record; try recent station mention (5m) by this user in this channel
                     evs = self._feed_events_from_recent_station_mention(message)
                     if evs:
                         from .handlers import feeding
@@ -425,16 +425,16 @@ class IntentRouter:
                         log_action("feed_pair_recent", f"ch={message.channel.id}; user={message.author.id}", ",".join(e.station or "" for e in evs))
                         return
 
-            # ------- Phase 1: Preprocess & buffer -------
+            #------- Phase 1: Preprocess & buffer -------
             row = self._machine_row_from_message(message)
             self._buf[(row["channel_id"], row["user_id"])].append(row)
 
-            # ------- Phase 2: Analyze (addressing + intent + slots + policy) -------
+            #------- Phase 2: Analyze (addressing + intent + slots + policy) -------
             event = await self._analyze_with_context(row, message)
             if not event or event.type == "none":
                 return
 
-            # ------- Phase 3: Log decision trace -------
+            #------- Phase 3: Log decision trace -------
             trace = self._traces.pop(row["message_id"], [])
             log_intent(event.type, event.confidence,
                        channel_id=event.channel_id, user_id=event.user_id,
@@ -442,13 +442,13 @@ class IntentRouter:
                        slots={"cat": event.cat_name, "station": event.station, "dates": event.dates},
                        decision=trace)
 
-            # ------- Phase 4: Dispatch -------
+            #------- Phase 4: Dispatch -------
             await self._dispatch(event, message, ctx)
 
         except Exception as e:
             log_action("intent_router_error", f"type={type(e).__name__}", str(e))
 
-    # ---------- log shape for buffer ----------
+    #---------- log shape for buffer ----------
     def _machine_row_from_message(self, message: discord.Message) -> MachineRow:
         attachments = getattr(message, "attachments", []) or []
         has_image = any((a.content_type or "").startswith("image/") for a in attachments)
@@ -468,13 +468,13 @@ class IntentRouter:
             "attachment_ids": att_ids,
         }
 
-    # ---------- core analysis pipeline ----------
+    #---------- core analysis pipeline ----------
     async def _analyze_with_context(self, row: MachineRow, message: discord.Message) -> Optional[IntentEvent]:
         trace: List[str] = []
         text = row["text_norm"]
         raw_text = row.get("text", message.content or "")
         has_image = row["has_image"]
-        # Feeding channels: union of ch_feeding_team and allowed_feeding_channel_ids
+        #Feeding channels: union of ch_feeding_team and allowed_feeding_channel_ids
         feed_ids = set(int(x) for x in (getattr(settings, "allowed_feeding_channel_ids", []) or []))
         ft_id = getattr(settings, "ch_feeding_team", None)
         if ft_id:
@@ -484,7 +484,7 @@ class IntentRouter:
                 pass
         in_feeding = int(row["channel_id"]) in feed_ids if feed_ids else False
 
-        # Treat wake signals: mention, wake word, or DM as addressed to the bot
+        #Treat wake signals: mention, wake word, or DM as addressed to the bot
         addressed = bool(_matches_wake_word(raw_text) or self._is_dm(message) or self._is_bot_mentioned(message))
         if self._is_dm(message):
             trace.append("wake:dm")
@@ -493,11 +493,11 @@ class IntentRouter:
         elif self._is_bot_mentioned(message):
             trace.append("wake:mention")
 
-        # 1) TomCat commands first (show / who / identify) when addressed
+        #1) TomCat commands first (show / who / identify) when addressed
         if addressed:
-            # strip wake tokens
+            #strip wake tokens
             text_wo = self._strip_wake_tokens(raw_text, message)
-            # Silent mode command: requires TomCat prefix
+            #Silent mode command: requires TomCat prefix
             m = SILENT_CMD.search(text_wo)
             if m:
                 return IntentEvent(
@@ -506,7 +506,7 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            # Admin-only: "check the last email"
+            #Admin-only: "check the last email"
             if CHECK_LAST_EMAIL_RE.search(text_wo):
                 author = message.author
                 is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
@@ -519,7 +519,7 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            # Admin-only: "log the past N emails"
+            #Admin-only: "log the past N emails"
             m_log = LOG_PAST_EMAILS_RE.search(text_wo)
             if m_log:
                 author = message.author
@@ -533,7 +533,7 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            # Admin-only: "log last N finances"
+            #Admin-only: "log last N finances"
             m_fin = LOG_LAST_FINANCES_RE.search(text_wo)
             if m_fin:
                 author = message.author
@@ -559,10 +559,10 @@ class IntentRouter:
                     type="gmail_auth_code", confidence=0.99,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                    # slot: reuse cat_name to carry code? better: we don't change dataclass, pass via text, we can reparse in handler
+                    #slot: reuse cat_name to carry code? better: we don't change dataclass, pass via text, we can reparse in handler
                 )
 
-            # Admin-only dues check
+            #Admin-only dues check
             if DUE_CHECK_RE.search(text_wo):
                 author = message.author
                 is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
@@ -575,7 +575,7 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            # Dues perks: run perks (emails + usernames)
+            #Dues perks: run perks (emails + usernames)
             if DUES_PERKS_RE.search(text_wo):
                 return IntentEvent(
                     type="dues_perks", confidence=0.99,
@@ -583,7 +583,7 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            # Admin-only: update due paying members (check + auto-verify + perks)
+            #Admin-only: update due paying members (check + auto-verify + perks)
             if DUES_UPDATE_RE.search(text_wo):
                 author = message.author
                 is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
@@ -596,7 +596,7 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            # Admin-only: remove a specific role from everyone
+            #Admin-only: remove a specific role from everyone
             m_role = REMOVE_ROLE_RE.search(text_wo)
             if m_role:
                 author = message.author
@@ -610,7 +610,7 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            # Admin-only: export dues portal (full channel dump)
+            #Admin-only: export dues portal (full channel dump)
             if EXPORT_DUES_RE.search(text_wo):
                 author = message.author
                 is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
@@ -623,7 +623,7 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            # Admin-only: recache catabase profiles/names (check this BEFORE show-photo recache)
+            #Admin-only: recache catabase profiles/names (check this BEFORE show-photo recache)
             if RECACHE_CATABASE_RE.search(text_wo):
                 author = message.author
                 is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
@@ -650,7 +650,7 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            # Admin-only: recache show-photo cache (all or one cat)
+            #Admin-only: recache show-photo cache (all or one cat)
             m_all = RECACHE_ALL_RE.search(text_wo)
             m_one = RECACHE_ONE_RE.search(text_wo)
             if m_all or RECACHE_SHOW_RE.search(text_wo) or m_one:
@@ -659,7 +659,7 @@ class IntentRouter:
                 if not is_admin:
                     self._traces[row["message_id"]] = trace + ["deny:not_admin"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                # Explicit "recache all photos" or generic "recache show photos" => recache everything
+                #Explicit "recache all photos" or generic "recache show photos" => recache everything
                 if m_all or RECACHE_SHOW_RE.search(text_wo):
                     name = None
                 else:
@@ -671,7 +671,7 @@ class IntentRouter:
                     cat_name=name
                 )
 
-            # "who is this?" → prefer attached/reply image; else last 30s; else set pending and stay quiet
+            #"who is this?" → prefer attached/reply image; else last 30s; else set pending and stay quiet
             if WHO_THIS_RE.search(text_wo):
                 if has_image or getattr(message, "reference", None):
                     ev = IntentEvent(
@@ -694,12 +694,12 @@ class IntentRouter:
                     trace.append("rule:who_is_this")
                     self._traces[row["message_id"]] = trace
                     return ev
-                # Set pending and be quiet until an image arrives
+                #Set pending and be quiet until an image arrives
                 self._set_pending_cv(row["channel_id"], row["user_id"], "cv_identify", row["message_id"])
                 self._traces[row["message_id"]] = trace + ["pending:cv_identify"]
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-            # "feeding update" → status listing (requires addressing)
+            #"feeding update" → status listing (requires addressing)
             if FEEDING_UPDATE_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["feeding update"]):
                 ev = IntentEvent(
                     type="feeding_status", confidence=0.95,
@@ -733,7 +733,7 @@ class IntentRouter:
                     self._traces[row["message_id"]] = trace
                     return ev
 
-            # Admin-only manual 8pm preview
+            #Admin-only manual 8pm preview
             if MANUAL_8PM_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["manual 8 pm update", "preview 8 pm"]):
                 ev = IntentEvent(
                     type="manual_8pm", confidence=0.99,
@@ -744,7 +744,7 @@ class IntentRouter:
                 self._traces[row["message_id"]] = trace
                 return ev
 
-            # Profile management (admin-only later in handler)
+            #Profile management (admin-only later in handler)
             m = CREATE_PROFILES_RE.search(text_wo)
             if m:
                 return IntentEvent(
@@ -774,7 +774,7 @@ class IntentRouter:
 
 
 
-            # Feeding inquiry requires addressing (wake/mention/DM)
+            #Feeding inquiry requires addressing (wake/mention/DM)
             m_who_lives = WHO_LIVES_RE.search(text_wo)
             if m_who_lives:
                 target = m_who_lives.group("target").strip()
@@ -816,7 +816,7 @@ class IntentRouter:
                     trace.append("intent:show_photo")
                     self._traces[row["message_id"]] = trace
                     return ev
-                # no cat? low confidence; ignore
+                #no cat? low confidence; ignore
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
                                    message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
 
@@ -836,12 +836,12 @@ class IntentRouter:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
                                    message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
 
-            # cv: identify
+            #cv: identify
             if IDENT_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["identify", "id", "classify"]):
-                # cv identify/detect/crop need an image. Accept if:
-                # - attachment already present
-                # - message is a reply (handler will resolve image from the referenced message)
-                # - last image by same user in the same channel within 30 seconds
+                #cv identify/detect/crop need an image. Accept if:
+                #- attachment already present
+                #- message is a reply (handler will resolve image from the referenced message)
+                #- last image by same user in the same channel within 30 seconds
                 if has_image:
                     ev = IntentEvent(
                         type="cv_identify", confidence=1.0,
@@ -851,14 +851,14 @@ class IntentRouter:
                     trace.append("intent:cv_identify")
                     self._traces[row["message_id"]] = trace
                     return ev
-                # allow replies to other people's images regardless of age (handler enforces image presence)
+                #allow replies to other people's images regardless of age (handler enforces image presence)
                 if getattr(message, "reference", None):
                     return IntentEvent(
                         type="cv_identify", confidence=0.95,
                         channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                         text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                     )
-                # look back for user's own image within the last 30 seconds
+                #look back for user's own image within the last 30 seconds
                 pm = self._last_image_for_user_seconds(
                     row["channel_id"], row["user_id"], within_seconds=int(getattr(settings, "cv_lookback_seconds_before", 30) or 30)
                 )
@@ -873,14 +873,14 @@ class IntentRouter:
                     trace.append("intent:cv_identify")
                     self._traces[row["message_id"]] = trace
                     return ev
-                # otherwise, create a pending CV follow-up (5 minutes window) and stay silent
+                #otherwise, create a pending CV follow-up (5 minutes window) and stay silent
                 self._set_pending_cv(row["channel_id"], row["user_id"], "cv_identify", row["message_id"])
                 trace.append("pending:cv_identify")
                 self._traces[row["message_id"]] = trace
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
                                    message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-            # cv: detect
+            #cv: detect
             if DETECT_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["detect"]):
                 if has_image:
                     ev = IntentEvent(
@@ -921,7 +921,7 @@ class IntentRouter:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
                                    message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-            # cv: crop
+            #cv: crop
             if CROP_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["crop"]):
                 if has_image:
                     ev = IntentEvent(
@@ -962,7 +962,7 @@ class IntentRouter:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
                                    message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-        # 2) Feeding-team flows (high traffic). Sub-requests first.
+        #2) Feeding-team flows (high traffic). Sub-requests first.
         sub_match = SUB_VERB.search(text)
         feed_req_match = FEED_REQUEST_RE.search(text)
         if in_feeding and (sub_match or feed_req_match):
@@ -987,8 +987,8 @@ class IntentRouter:
             self._traces[row["message_id"]] = trace
             return ev
 
-        # Then feed updates
-        # Case A: feed verb with possibly multiple stations
+        #Then feed updates
+        #Case A: feed verb with possibly multiple stations
         if FEED_VERB.search(text):
             if FEED_NEGATION_RE.search(text):
                 trace.append("skip:negated_feed")
@@ -1019,15 +1019,15 @@ class IntentRouter:
                     self._traces[row["message_id"]] = trace
                     return ev
 
-        # Case B: only station name(s), use image context if needed
+        #Case B: only station name(s), use image context if needed
         station_only_list = self._extract_all_entities(text, want="station")
         if not station_only_list:
             best = self._extract_best_entity(text, want="station")
             if best:
                 station_only_list = [best]
         if station_only_list and in_feeding:
-            # If they included "fed" above we already returned. This is the “mike” alone case.
-            # If an image is attached, accept. Else, look back (5m). Else set pending.
+            #If they included "fed" above we already returned. This is the “mike” alone case.
+            #If an image is attached, accept. Else, look back (5m). Else set pending.
             if has_image:
                 return IntentEvent(
                     type="feed_update", confidence=0.9,
@@ -1044,16 +1044,16 @@ class IntentRouter:
                     station=station_only_list[0], stations=station_only_list, dates=[self._today()],
                     paired_messages=[pm["message_id"]]
                 )
-            # Set pending and stay silent
+            #Set pending and stay silent
             self._set_pending_feed(row["channel_id"], row["user_id"], station_only_list, row["message_id"], row["text"])
             trace.append("pending:feed_update")
             self._traces[row["message_id"]] = trace
             return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-        # 3) Sub requests / accepts
+        #3) Sub requests / accepts
         sub_match_simple = SUB_VERB.search(text)
         if sub_match_simple:
-            # Only treat as a sub request in feeding channels
+            #Only treat as a sub request in feeding channels
             if not in_feeding:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]) 
             stations = self._extract_all_entities(text, want="station", allow_stopword_aliases=True)
@@ -1077,7 +1077,7 @@ class IntentRouter:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]) 
             station_hint = self._extract_best_entity(text, want="station", allow_stopword_aliases=True)
             dates_hint = self._extract_dates(text)
-            # Acknowledge only if replying to a sub_request or if the immediately previous sub_request exists in buffer
+            #Acknowledge only if replying to a sub_request or if the immediately previous sub_request exists in buffer
             ref_id = row.get("reply_to_id")
             if ref_id:
                 ev = IntentEvent(
@@ -1092,7 +1092,7 @@ class IntentRouter:
                     trace.append(f"slot:station={station_hint}")
                 self._traces[row["message_id"]] = trace
                 return ev
-            # else try a quick look-back for last sub_request in channel (not just same user)
+            #else try a quick look-back for last sub_request in channel (not just same user)
             if self._recent_sub_request_in_channel(row["channel_id"]):
                 ev = IntentEvent(
                     type="sub_accept", confidence=0.8,
@@ -1107,8 +1107,8 @@ class IntentRouter:
                 self._traces[row["message_id"]] = trace
                 return ev
 
-        # 4) If needed, run NLP fallback (intent + station scorer)
-        # Guard: only consult NLP if addressed OR in feeding-team (to avoid false positives on general chatter).
+        #4) If needed, run NLP fallback (intent + station scorer)
+        #Guard: only consult NLP if addressed OR in feeding-team (to avoid false positives on general chatter).
         if self._nlp and len(text) >= 3 and (addressed or in_feeding):
             nlp_intent, nlp_prob = self._nlp.predict_intent(text)
             if nlp_intent in {"feed_update","sub_request"} and nlp_prob >= CONF_MID:
@@ -1130,32 +1130,32 @@ class IntentRouter:
                         station=(st_list[0] if st_list else None), stations=(st_list or None), dates=dates
                     )
 
-        # Default: none
+        #Default: none
         self._traces[row["message_id"]] = trace
         return IntentEvent(type="none", confidence=0.0,
                            channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                            text=row["text"], has_image=row["has_image"], attachment_ids=row["attachment_ids"])
 
-    # ---------- dispatch ----------
+    #---------- dispatch ----------
     async def _dispatch(self, event: IntentEvent, message: discord.Message, ctx: Dict[str, Any]) -> None:
-        # Confidence gates and clarification
+        #Confidence gates and clarification
 
-        # Commands
+        #Commands
         if event.type == "show_photo" and event.cat_name:
-            # reuse the cats handler
+            #reuse the cats handler
             await handle_cat_photo(_intent("cat_photo", {"name": event.cat_name}), ctx)
             return
 
         if event.type == "who_is" and event.cat_name:
-            # Use profile-rich handler for "who is" so it includes details
+            #Use profile-rich handler for "who is" so it includes details
             from .handlers.cats import handle_cat_profile as _handle_profile
             await _handle_profile(_intent("cat_profile", {"name": event.cat_name}), ctx)
             return
 
         if event.type == "cv_identify":
-            # If event.attachment_ids came from context pairing, we’ll “replay” the other message by forging message.attachments.
-            # Easiest path: just call the existing handler; it already checks current or referenced message.
-            # If this came via a reply, suppress the handler's "attach an image" prompt when empty
+            #If event.attachment_ids came from context pairing, we’ll “replay” the other message by forging message.attachments.
+            #Easiest path: just call the existing handler; it already checks current or referenced message.
+            #If this came via a reply, suppress the handler's "attach an image" prompt when empty
             via_reply = bool(getattr(message, "reference", None))
             await handle_cv_identify(_intent("cv_identify", {}), {**ctx, "message": message, "silent_on_no_image": via_reply})
             return
@@ -1225,7 +1225,7 @@ class IntentRouter:
             return
 
         if event.type == "gmail_auth_code":
-            # Extract the code/url from the original text (preserve case!) after stripping wake tokens
+            #Extract the code/url from the original text (preserve case!) after stripping wake tokens
             text_wo = self._strip_wake_tokens((event.text or ""), message)
             m = AUTH_CODE_RE.search(text_wo)
             auth = m.group(1).strip() if m else ""
@@ -1234,12 +1234,12 @@ class IntentRouter:
             return
 
         if event.type == "gmail_log_recent":
-            # Debug trace for dispatch
+            #Debug trace for dispatch
             try:
                 log_action("intent_dispatch", f"type=gmail_log_recent msg={event.message_id}", "begin")
             except Exception:
                 pass
-            # Parse count from the message; default to 10
+            #Parse count from the message; default to 10
             text_wo = self._strip_wake_tokens((event.text or ""), message)
             m = LOG_PAST_EMAILS_RE.search(text_wo)
             try:
@@ -1312,7 +1312,7 @@ class IntentRouter:
             return
 
         if event.type == "role_remove_all":
-            # Extract role id from message text
+            #Extract role id from message text
             text_wo = self._strip_wake_tokens((event.text or ""), message)
             m = REMOVE_ROLE_RE.search(text_wo)
             role_id = int(m.group(1)) if m else 0
@@ -1322,7 +1322,7 @@ class IntentRouter:
             return
 
         if event.type == "show_cache_recache":
-            # Admin-only handler to recache show photos
+            #Admin-only handler to recache show photos
             from .handlers.admin import handle_recache_show_cache
             args = {}
             if hasattr(event, 'cat_name') and event.cat_name:
@@ -1344,7 +1344,7 @@ class IntentRouter:
             return
 
         if event.type == "silent_mode":
-            # Admin-only; acknowledge with 👍 so the user knows it was applied.
+            #Admin-only; acknowledge with 👍 so the user knows it was applied.
             author = message.author
             is_admin = (int(getattr(author, 'id', 0)) in (getattr(settings, 'admin_ids', []) or [])) or \
                        getattr(getattr(author, "guild_permissions", None), "administrator", False)
@@ -1363,7 +1363,7 @@ class IntentRouter:
             return
 
         if event.type == "manual_8pm":
-            # Admin-only via settings.admin_ids or guild admin
+            #Admin-only via settings.admin_ids or guild admin
             author = message.author
             is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
             if not is_admin:
@@ -1376,7 +1376,7 @@ class IntentRouter:
 
 
 
-    # ---------- clarify feed (author-locked) ----------
+    #---------- clarify feed (author-locked) ----------
     async def _maybe_clarify_feed(self, event: IntentEvent, message: discord.Message) -> None:
         station = event.station or "unknown"
         title = "Did you mean?"
@@ -1384,7 +1384,7 @@ class IntentRouter:
         embed = discord.Embed(title=title, description=desc, color=0x2F3136)
 
         async def on_yes(interaction: discord.Interaction):
-            # call feeding directly with high confidence
+            #call feeding directly with high confidence
             strong = IntentEvent(
                 type="feed_update", confidence=1.0,
                 channel_id=event.channel_id, user_id=event.user_id, message_id=event.message_id,
@@ -1403,13 +1403,13 @@ class IntentRouter:
             await _safe_send(message.channel, "", embed=embed, view=view)
             log_action("clarify", f"user={message.author.name}; station={station}", "clarification message sent or suppressed")
         else:
-            # fallback
+            #fallback
             try:
                 await message.channel.send(embed=embed, view=view)
             finally:
                 log_action("clarify", f"user={message.author.name}; station={station}", "clarification message sent (no safe_send)")
 
-    # ---------- helpers: entity, context, dates ----------
+    #---------- helpers: entity, context, dates ----------
     def _normalize_text(self, s: str) -> str:
         return re.sub(r"\s+", " ", (s or "").strip().lower())
 
@@ -1421,12 +1421,12 @@ class IntentRouter:
         allow_stopword_aliases: bool = False,
     ) -> Optional[str]:
         """want in {'cat','station'}. Try aliases, then fuzzy, then optional NLP scorer."""
-        # 1) alias exact/normalized
+        #1) alias exact/normalized
         found = resolve_station_or_cat(text, want=want, include_stopword_aliases=allow_stopword_aliases)
         if found:
             return found
 
-        # 2) fuzzy over union
+        #2) fuzzy over union
         vocab = self._alias_vocab["cats"] if want == "cat" else self._alias_vocab["stations"]
         
         tokens = [t for t in re.split(r"[^a-z0-9]+", text.lower()) if t]
@@ -1458,7 +1458,7 @@ class IntentRouter:
                     if 0 < dist <= CAT_TYPO_MAX_DISTANCE:
                         return best_name
 
-        # 3) optional model scoring
+        #3) optional model scoring
         if allow_model and self._nlp is not None:
             best, prob = self._nlp.score_entity(text, vocab)
             if prob >= CONF_HIGH:
@@ -1473,12 +1473,12 @@ class IntentRouter:
         *,
         allow_stopword_aliases: bool = False,
     ) -> List[str]:
-        # Stations: use alias resolver so aliases like "west" → "West Hall" work
+        #Stations: use alias resolver so aliases like "west" → "West Hall" work
         if want == "station":
             try:
                 from .aliases import resolve_stations as _resolve_stations
                 stations = _resolve_stations(text, include_stopword_aliases=allow_stopword_aliases) or []
-                # resolve_stations returns display names already; ensure unique preserve order
+                #resolve_stations returns display names already; ensure unique preserve order
                 out: List[str] = []
                 seen = set()
                 for s in stations:
@@ -1487,12 +1487,12 @@ class IntentRouter:
                 return out
             except Exception:
                 pass
-        # Default cat path: match against display-name vocab (catch simple mentions like "Twix")
+        #Default cat path: match against display-name vocab (catch simple mentions like "Twix")
         names: List[str] = []
         for nm in (alias_vocab()[f"{want}s"]):
             if re.search(rf"\b{re.escape(nm.lower())}\b", text.lower()):
                 names.append(nm)
-        # unique, preserve order
+        #unique, preserve order
         seen = set(); out = []
         for n in names:
             if n not in seen:
@@ -1500,7 +1500,7 @@ class IntentRouter:
         return out
 
     def _best_token_for_fuzzy(self, text: str) -> Optional[str]:
-        # pick the longest token-ish word as candidate
+        #pick the longest token-ish word as candidate
         toks = [t for t in re.split(r"[^a-z0-9]+", text.lower()) if t]
         if not toks:
             return None
@@ -1553,7 +1553,7 @@ class IntentRouter:
         return None
 
     def _recent_sub_request_in_channel(self, channel_id: int) -> bool:
-        # naive: scan last few buffers for this channel; cheap and good enough
+        #naive: scan last few buffers for this channel; cheap and good enough
         for (cid, _uid), dq in self._buf.items():
             if cid != channel_id: 
                 continue
@@ -1580,28 +1580,28 @@ class IntentRouter:
         if "yesterday" in text or "last night" in text:
             out.append(today - timedelta(days=1))
 
-        # on <weekday> -> previous occurrence (most recent in past)
+        #on <weekday> -> previous occurrence (most recent in past)
         m_on = re.search(r"\bon\s+(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b", text)
         if m_on:
             word = m_on.group(1)[:3]
             out.append(self._prev_weekday(today, WEEKDAYS[word]))
 
-        # this/next weekday, or bare weekday -> next
+        #this/next weekday, or bare weekday -> next
         m = re.search(r"\b(this|next)?\s*(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b", text)
         if m:
             word = m.group(2)[:3]
             target = self._next_weekday(today, WEEKDAYS[word])
-            # interpret “this friday” as the next occurrence, matching the configured rule
+            #interpret “this friday” as the next occurrence, matching the configured rule
             out.append(target)
 
-        # numeric range “21st to 28th”, “21-28”
+        #numeric range “21st to 28th”, “21-28”
         m2 = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s*(?:to|-)\s*(\d{1,2})(?:st|nd|rd|th)?\b", text)
         if m2:
             d1 = int(m2.group(1)); d2 = int(m2.group(2))
-            # if today ≤ 20 assume this month; if today ≥ 22 assume next month; 21/22 edge okay
+            #if today ≤ 20 assume this month; if today ≥ 22 assume next month; 21/22 edge okay
             base = today
             if today.day >= 22:
-                # roll to next month
+                #roll to next month
                 year = today.year + (1 if today.month == 12 else 0)
                 month = 1 if today.month == 12 else today.month + 1
                 base = date(year, month, 1)
@@ -1611,12 +1611,12 @@ class IntentRouter:
                 except Exception:
                     continue
 
-        # If someone says “I fed microwave saturday before I left vacation”
+        #If someone says “I fed microwave saturday before I left vacation”
         if "saturday" in text and "fed" in text:
-            # interpret as last Saturday
+            #interpret as last Saturday
             out.append(self._prev_weekday(today, WEEKDAYS["sat"]))
 
-        # dedupe and sort
+        #dedupe and sort
         iso = sorted({d.isoformat() for d in out})
         return iso
 
@@ -1634,7 +1634,7 @@ class IntentRouter:
         if not fragment:
             return None
 
-        # Helpful reductions
+        #Helpful reductions
         def _strip_prefixes(frag: str) -> str:
             changed = True
             frag = frag.strip()
@@ -1652,7 +1652,7 @@ class IntentRouter:
         if not fragment:
             return None
 
-        # Specific keywords
+        #Specific keywords
         if "day after tomorrow" in fragment:
             return (today + timedelta(days=2)).isoformat()
         if "tomorrow" in fragment:
@@ -1660,7 +1660,7 @@ class IntentRouter:
         if fragment in {"today", "tonight"}:
             return today.isoformat()
 
-        # Relative days/weeks
+        #Relative days/weeks
         m_rel = re.search(r"in\s+(a|one|\d+)\s+day(?:s)?", fragment)
         if m_rel:
             count = m_rel.group(1)
@@ -1672,7 +1672,7 @@ class IntentRouter:
             weeks = 1 if count in {"a", "one"} else int(count)
             return (today + timedelta(days=weeks * 7)).isoformat()
 
-        # ISO date yyyy-mm-dd
+        #ISO date yyyy-mm-dd
         match_iso = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", text_low)
         if match_iso:
             try:
@@ -1680,7 +1680,7 @@ class IntentRouter:
             except Exception:
                 pass
 
-        # Month/day[/year]
+        #Month/day[/year]
         match_md = re.search(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b", fragment)
         if match_md:
             month = int(match_md.group(1))
@@ -1698,7 +1698,7 @@ class IntentRouter:
                     candidate = date(year + 1, month, day)
                 return candidate.isoformat()
 
-        # Month name with ordinal/day
+        #Month name with ordinal/day
         match_month = re.search(r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,\s*(\d{4}))?\b", text_low)
         if match_month:
             month_token = match_month.group(1)
@@ -1716,13 +1716,13 @@ class IntentRouter:
                     candidate = date(year + 1, month, day)
                 return candidate.isoformat()
 
-        # Ordinal day like "15th"
+        #Ordinal day like "15th"
         match_ord = re.search(r"\b(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b", fragment)
         if match_ord:
             day = int(match_ord.group(1))
             year = today.year
             month = today.month
-            for _ in range(24):  # cap iterations
+            for _ in range(24):  #cap iterations
                 try:
                     candidate = date(year, month, day)
                 except ValueError:
@@ -1733,7 +1733,7 @@ class IntentRouter:
                     continue
                 return candidate.isoformat()
 
-        # Weekday names
+        #Weekday names
         match_wd = re.search(r"\b((?:this|next)\s+)?(mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b", fragment)
         if match_wd:
             modifier = (match_wd.group(1) or '').strip()
@@ -1754,7 +1754,7 @@ class IntentRouter:
             return stations
         target_dates = dates or [self._today()]
         try:
-            from .handlers import feeding as _feeding  # lazy import to avoid cycles
+            from .handlers import feeding as _feeding  #lazy import to avoid cycles
         except Exception:
             return stations
         for iso in target_dates:
@@ -1764,7 +1764,7 @@ class IntentRouter:
                 continue
             weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dt.weekday()]
             try:
-                sched = _feeding._read_schedule_for_weekday(weekday)  # type: ignore[attr-defined]
+                sched = _feeding._read_schedule_for_weekday(weekday)  #type: ignore[attr-defined]
             except Exception:
                 sched = {}
             for station_name, assignees in (sched or {}).items():
@@ -1778,7 +1778,7 @@ class IntentRouter:
 
     def _next_weekday(self, today: date, tgt: int) -> date:
         days_ahead = (tgt - today.weekday() + 7) % 7
-        days_ahead = 7 if days_ahead == 0 else days_ahead  # always next occurrence
+        days_ahead = 7 if days_ahead == 0 else days_ahead  #always next occurrence
         return today + timedelta(days=days_ahead)
 
     def _prev_weekday(self, today: date, tgt: int) -> date:
@@ -1793,7 +1793,7 @@ class IntentRouter:
             year += 1
         return year, month
 
-    # ---------- pending FEED helpers ----------
+    #---------- pending FEED helpers ----------
     def _set_pending_feed(self, channel_id: int, user_id: int, stations: List[str], message_id: int, message_text: str = "") -> None:
         now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
         expires = now + timedelta(minutes=int(getattr(settings, "feed_pending_minutes_after", 5) or 5))
@@ -1846,7 +1846,7 @@ class IntentRouter:
             ))
         return evs
 
-    # ---------- pending CV helpers ----------
+    #---------- pending CV helpers ----------
     def _set_pending_cv(self, channel_id: int, user_id: int, intent: str, message_id: int) -> None:
         now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
         after_min = int(getattr(settings, "cv_pending_minutes_after", 5) or 5)
@@ -1860,7 +1860,7 @@ class IntentRouter:
         self._pending_cv[(channel_id, user_id)] = payload
         log_action("cv_pending_set", f"ch={channel_id}; user={user_id}", intent)
 
-    # ---------- addressing helpers ----------
+    #---------- addressing helpers ----------
     def _is_dm(self, message: discord.Message) -> bool:
         ch = getattr(message, "channel", None)
         real_ch = getattr(ch, "_real", ch)
@@ -1874,7 +1874,7 @@ class IntentRouter:
                         return True
             except Exception:
                 pass
-            # fallback string pattern
+            #fallback string pattern
             try:
                 if BOT_MENTION_RE and BOT_MENTION_RE.search(message.content or ""):
                     return True

@@ -1,4 +1,4 @@
-# tomcat/aliases.py
+#tomcat/aliases.py
 """Centralized alias + fuzzy matching helpers for cats and feeding stations."""
 
 from __future__ import annotations
@@ -9,22 +9,22 @@ import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 try:
-    # Sheets + config available in this runtime; used for dynamic aliases
-    from .config import settings  # type: ignore
-    from .services.sheets_client import sheets_client  # type: ignore
+    #Sheets + config available in this runtime; used for dynamic aliases
+    from .config import settings  #type: ignore
+    from .services.sheets_client import sheets_client  #type: ignore
 except Exception:
-    settings = None  # type: ignore
-    sheets_client = None  # type: ignore
+    settings = None  #type: ignore
+    sheets_client = None  #type: ignore
 
 from .utils.fuzzy import best_match, fuzzy_ratio
 
-# Module-level caches keep nickname lookups inexpensive across handler calls.
+#Module-level caches keep nickname lookups inexpensive across handler calls.
 
-# One canonical place for both cat and station aliases.
-# Populate these with data pulled from v5.6 config.js.
-# All keys must be lowercase; values are canonical display strings.
+#One canonical place for both cat and station aliases.
+#Populate these with data pulled from v5.6 config.js.
+#All keys must be lowercase; values are canonical display strings.
 
-# Canonical cat names; keep aliases minimal (self name plus normalized variants).
+#Canonical cat names; keep aliases minimal (self name plus normalized variants).
 CAT_NAMES: List[str] = [
     "Microwave", "Twix", "Ford F-150", "Eggs", "Eraser", "Snickers", "Hershey", "Pencil", "Melvin", "Alaska",
     "Laufey", "Faye", "Lionel", "Pencil 2", "Snowball", "Marley", "Bobbie", "Porkchop", "Rolo", "Citlali",
@@ -38,7 +38,7 @@ CAT_NAMES: List[str] = [
     "Pallas", "Honda", "Bandit", "Vincente", "Petal", "Chimichanga", "Butter", "Cloudy", "Meatball", "Itztli",
 ]
 
-# Optional nickname map you can extend over time (display names as keys)
+#Optional nickname map you can extend over time (display names as keys)
 CAT_NICKNAMES: Dict[str, List[str]] = {
     "Microwave": ["Professor Sprinkles", "Buddy", "Apollo", "Mike", "Michael", "Micro"],
     "Eraser": ["Bacon", "Tuxedo"],
@@ -69,16 +69,16 @@ def _build_cat_aliases() -> Dict[str, List[str]]:
     for disp in CAT_NAMES:
         key = disp.lower()
         vals: List[str] = []
-        # canonical name variants
+        #canonical name variants
         vals.extend(_alias_variants(disp))
-        # nicknames and their token variants
+        #nicknames and their token variants
         for nick in CAT_NICKNAMES.get(disp, []):
             vals.extend(_alias_variants(nick))
-            # also split multi-words to allow partial tokens (e.g., "tito" from "Tito FluffyButt")
+            #also split multi-words to allow partial tokens (e.g., "tito" from "Tito FluffyButt")
             for tok in re.split(r"[^a-z0-9]+", nick.lower()):
                 if tok:
                     vals.extend(_alias_variants(tok))
-        # unique preserve order
+        #unique preserve order
         seen = set(); out: List[str] = []
         for v in vals:
             if v not in seen:
@@ -88,14 +88,14 @@ def _build_cat_aliases() -> Dict[str, List[str]]:
 
 _CAT_ALIASES: Dict[str, List[str]] = _build_cat_aliases()
 
-# ---- Dynamic aliases from Catabase (primary source), TTL-backed ----
+#---- Dynamic aliases from Catabase (primary source), TTL-backed ----
 _DYN_CAT_ALIASES: Dict[str, List[str]] = {}
 _DYN_DISPLAY: Dict[str, str] = {}
 _DYN_LAST_TS: float = 0.0
 try:
     _DYN_TTL_SEC = int(getattr(settings, 'cat_aliases_ttl_sec', 60*60*2) or 7200)
 except Exception:
-    _DYN_TTL_SEC = 60 * 60 * 2  # default 2 hours
+    _DYN_TTL_SEC = 60 * 60 * 2  #default 2 hours
 
 _FALLBACK_CAT_ALIAS_MAP: Dict[str, str] = {}
 _FALLBACK_CAT_ALIAS_PAIRS: List[Tuple[str, str]] = []
@@ -105,7 +105,7 @@ _FALLBACK_CSV_PATHS: List[Path] = [Path("Catabase - CatDatabase.csv")]
 def _parse_full_name_to_display(full: str) -> Optional[str]:
     if not full:
         return None
-    # Expected like "115. Toothless" => "Toothless"
+    #Expected like "115. Toothless" => "Toothless"
     m = re.match(r"\s*\d+[\.|\s]+(.+)$", str(full).strip())
     if m:
         return m.group(1).strip()
@@ -118,7 +118,7 @@ def _refresh_dyn_aliases(force: bool = False) -> None:
         return
     new_aliases: Dict[str, List[str]] = {}
     new_display: Dict[str, str] = {}
-    # Try Sheets first
+    #Try Sheets first
     try:
         sid = getattr(settings, 'sheet_catabase_id', None) if settings else None
         if sid and sheets_client:
@@ -133,7 +133,7 @@ def _refresh_dyn_aliases(force: bool = False) -> None:
                 key = disp.lower()
                 vals: List[str] = []
                 vals.extend(_alias_variants(disp))
-                # include nickname variants from the sheet if present (column index 14 in our mapping)
+                #include nickname variants from the sheet if present (column index 14 in our mapping)
                 try:
                     nicks = (r[14] if len(r) > 14 else '').strip()
                 except Exception:
@@ -147,7 +147,7 @@ def _refresh_dyn_aliases(force: bool = False) -> None:
                         for tok in re.split(r"[^a-z0-9]+", nick.lower()):
                             if tok:
                                 vals.extend(_alias_variants(tok))
-                # unique preserve order
+                #unique preserve order
                 seen = set(); out: List[str] = []
                 for v in vals:
                     if v and v not in seen:
@@ -157,23 +157,23 @@ def _refresh_dyn_aliases(force: bool = False) -> None:
             _DYN_CAT_ALIASES = new_aliases
             _DYN_DISPLAY = new_display
             _DYN_LAST_TS = now
-            # Persist a lightweight CSV snapshot for offline fallback
+            #Persist a lightweight CSV snapshot for offline fallback
             try:
                 import csv as _csv
                 with open("Catabase - CatDatabase.csv", "w", encoding="utf-8", newline="") as f:
                     w = _csv.writer(f)
-                    # Write just Full Name + Common Nicknames if we have headers
+                    #Write just Full Name + Common Nicknames if we have headers
                     w.writerow(["Full Name", "Common Nicknames"])
                     for key, disp in new_display.items():
-                        # Rebuild nicknames approximation from aliases (not perfect but useful)
-                        # Prefer original sheet nicks if we had them in r[14]; above we didn't keep per-row, so write blank.
+                        #Rebuild nicknames approximation from aliases (not perfect but useful)
+                        #Prefer original sheet nicks if we had them in r[14]; above we didn't keep per-row, so write blank.
                         w.writerow([disp, ""])
             except Exception:
                 pass
             return
     except Exception:
         pass
-    # Fallback: local CSV in repo if Sheets unavailable
+    #Fallback: local CSV in repo if Sheets unavailable
     try:
         import csv
         path = "Catabase - CatDatabase.csv"
@@ -188,7 +188,7 @@ def _refresh_dyn_aliases(force: bool = False) -> None:
                 key = disp.lower()
                 vals: List[str] = []
                 vals.extend(_alias_variants(disp))
-                # Guess nicknames column by header if present
+                #Guess nicknames column by header if present
                 nicks = ''
                 if header:
                     try:
@@ -215,7 +215,7 @@ def _refresh_dyn_aliases(force: bool = False) -> None:
         _DYN_DISPLAY = new_display
         _DYN_LAST_TS = now
     except Exception:
-        # leave dynamic empty on failure
+        #leave dynamic empty on failure
         _DYN_CAT_ALIASES = {}
         _DYN_DISPLAY = {}
         _DYN_LAST_TS = now
@@ -253,7 +253,7 @@ def _ensure_fallback_cat_aliases() -> None:
             _FALLBACK_CAT_ALIAS_PAIRS = [(alias, name) for alias, name in alias_map.items()]
             _FALLBACK_CAT_MTIME = mtime
             return
-    # No CSV available; clear cache so future attempts retry
+    #No CSV available; clear cache so future attempts retry
     _FALLBACK_CAT_ALIAS_MAP = {}
     _FALLBACK_CAT_ALIAS_PAIRS = []
     _FALLBACK_CAT_MTIME = -1.0
@@ -304,11 +304,11 @@ _STATION_ALIASES = {
     "kc hall": ["kc hall", "kc", "kalpana chawla", "kalpana chawla hall"],
 }
 
-# Canonical display names (capitalization as you want to show)
+#Canonical display names (capitalization as you want to show)
 _DISPLAY = {
-    # Cats (subset will be overridden by alias_vocab() aggregation anyway)
+    #Cats (subset will be overridden by alias_vocab() aggregation anyway)
     **{name.lower(): name for name in CAT_NAMES},
-    # Stations
+    #Stations
     "west hall": "West Hall",
     "maintenance": "Maintenance",
     "business": "Business",

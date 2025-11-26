@@ -1,6 +1,6 @@
 """Feeding log handlers: subs, checklist updates, and reminder workflow."""
 
-# tomcat/feeding.py
+#tomcat/feeding.py
 from __future__ import annotations
 
 import asyncio
@@ -21,25 +21,25 @@ from ..services.sheets_client import sheets_client
 from ..aliases import resolve_station_or_cat
 from ..utils.sender import safe_send
 
-# Optional TZ support
+#Optional TZ support
 try:
-    from zoneinfo import ZoneInfo  # py>=3.9
+    from zoneinfo import ZoneInfo  #py>=3.9
 except Exception:
-    ZoneInfo = None  # type: ignore
+    ZoneInfo = None  #type: ignore
 
 CENTRAL_TZ = ZoneInfo("America/Chicago") if ZoneInfo else None
 
-# ------------- subs log -------------
-# Monthly JSONL files under logs/subs/<year>/<year-month>.jsonl
+#------------- subs log -------------
+#Monthly JSONL files under logs/subs/<year>/<year-month>.jsonl
 SUBS_ROOT = os.path.join("logs", "subs")
 os.makedirs(SUBS_ROOT, exist_ok=True)
 SUBS_LEGACY_FILE = os.path.join(SUBS_ROOT, "subs.jsonl")
 _SUBS_LOCK = asyncio.Lock()
 
-# UI-provided schedule cache
+#UI-provided schedule cache
 UI_SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
 
-# ------------- simple data types ----------------
+#------------- simple data types ----------------
 @dataclass
 class SubRecord:
     id: str
@@ -47,12 +47,12 @@ class SubRecord:
     dates: List[str]
     requester: int
     assignee: Optional[int]
-    status: str  # "requested" | "accepted" | "declined"
+    status: str  #"requested" | "accepted" | "declined"
     channel_id: int
     message_id: int
     created_at: str
 
-# ------------- helpers: time/date ---------------
+#------------- helpers: time/date ---------------
 def _today_iso() -> str:
     """Return today's date string using the configured timezone."""
     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
@@ -63,7 +63,7 @@ def _now_iso() -> str:
     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
     return now.isoformat()
 
-# ------------- helpers: files/json --------------
+#------------- helpers: files/json --------------
 def _load_json(path: str, default):
     """Read a JSON file, returning default on error."""
     try:
@@ -321,7 +321,7 @@ def _load_sub_files(month_keys: Optional[List[str]] = None, include_legacy: bool
             seen.add(path)
     return files
 
-# ------------- helpers: schedule/users ----------
+#------------- helpers: schedule/users ----------
 def _resolve_user_ids(names: List[str]) -> List[int]:
     """Resolve a list of display names to Discord user IDs via settings.user_id_map.
     Accepts either names or numeric strings.
@@ -331,7 +331,7 @@ def _resolve_user_ids(names: List[str]) -> List[int]:
         cfg_map = getattr(settings, "user_id_map", {}) or {}
     except Exception:
         cfg_map = {}
-    # normalize keys to simple form
+    #normalize keys to simple form
     norm_map: Dict[str, int] = {}
     for k, v in cfg_map.items():
         try:
@@ -408,7 +408,7 @@ def _coerce_uid(val) -> Optional[int | str]:
     try:
         return int(s)
     except Exception:
-        return s  # allow non-numeric IDs
+        return s  #allow non-numeric IDs
 
 
 def _load_ui_schedule() -> Dict[str, List[str]]:
@@ -466,13 +466,13 @@ def _canonical_station(station: Optional[str]) -> Optional[str]:
         return resolved
     return text
 
-# ------------- Google Sheets glue (safe stubs) ---
+#------------- Google Sheets glue (safe stubs) ---
 def _get_feeding_checklist_sheet_id() -> Optional[str]:
-    # We store the checklist in the Vision sheet under tab "FeedingStationChecklist"
+    #We store the checklist in the Vision sheet under tab "FeedingStationChecklist"
     return getattr(settings, "sheet_vision_id", None) or getattr(settings, "aux_spreadsheet_id", None)
 
 _FEED_WS_CACHE: Tuple[Any, float] | None = None
-_FEED_WS_TTL_SEC = 55.0  # refresh roughly every minute
+_FEED_WS_TTL_SEC = 55.0  #refresh roughly every minute
 
 def _open_feeding_ws():
     """Open the FeedingStationChecklist worksheet with short TTL caching and 429 backoff."""
@@ -505,7 +505,7 @@ def _open_feeding_ws():
                 time.sleep(delay)
                 continue
             break
-        except Exception as e:  # pragma: no cover - defensive
+        except Exception as e:  #pragma: no cover - defensive
             last_err = e
             break
     log_action("feeding_sheet", "open_error", str(last_err))
@@ -528,12 +528,12 @@ def _station_header_map(ws) -> Dict[str, int]:
 def _parse_date_str(s: str) -> Optional[str]:
     """Parse common date formats to ISO YYYY-MM-DD."""
     try:
-        # YYYY-MM-DD
+        #YYYY-MM-DD
         if s and len(s) >= 8 and s[4] == '-' and s[7] == '-':
             return str(datetime.fromisoformat(s).date())
     except Exception:
         pass
-    # M/D/YYYY or MM/DD/YYYY
+    #M/D/YYYY or MM/DD/YYYY
     try:
         parts = [p for p in str(s).replace(" ", "").split("/") if p]
         if len(parts) == 3 and len(parts[2]) == 4:
@@ -546,11 +546,11 @@ def _parse_date_str(s: str) -> Optional[str]:
 def _find_date_row(ws, date_iso: str) -> Optional[int]:
     """Find row index (1-based) where Column A equals date_iso (ISO)."""
     try:
-        col = ws.col_values(1)  # date column
+        col = ws.col_values(1)  #date column
     except Exception as e:
         log_action("feeding_sheet", "date_col_error", str(e))
         return None
-    for idx, val in enumerate(col[1:], start=2):  # skip header cell A1
+    for idx, val in enumerate(col[1:], start=2):  #skip header cell A1
         if _parse_date_str(val or "") == date_iso:
             return idx
     return None
@@ -634,12 +634,12 @@ async def _list_unfed_stations_today() -> List[str]:
         if not row:
             log_action("unfed_list", f"date={today_iso}", "date_row_not_found")
             return []
-        # Read entire row values once
+        #Read entire row values once
         vals = ws.row_values(row)
         unfed: List[str] = []
         for name, col in header.items():
             if col == 1:
-                continue  # date column
+                continue  #date column
             v = vals[col-1] if col-1 < len(vals) else ""
             fed = False
             if isinstance(v, bool):
@@ -658,16 +658,16 @@ async def _list_unfed_stations_today() -> List[str]:
 async def handle_feeding_inquiry(intent, ctx: Dict[str, Any]) -> None:
     """Respond with today's feeding completions and outstanding stations."""
     ch = ctx["channel"]
-    # Get today’s stations from the configured schedule (fallback to keys union if needed)
+    #Get today’s stations from the configured schedule (fallback to keys union if needed)
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
     weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
-    today_sched = _read_schedule_for_weekday(weekday)  # {station: [user_ids]}
+    today_sched = _read_schedule_for_weekday(weekday)  #{station: [user_ids]}
     stations = sorted(today_sched.keys())
 
-    unfed = await _list_unfed_stations_today()  # TODO: wire to Sheets
-    # If we don’t know all stations from Sheets yet, assume schedule defines the universe
+    unfed = await _list_unfed_stations_today()  #TODO: wire to Sheets
+    #If we don’t know all stations from Sheets yet, assume schedule defines the universe
     if not stations:
-        stations = sorted(set(_sheet_station_names() or unfed))  # fallback to sheet header or unfed list
+        stations = sorted(set(_sheet_station_names() or unfed))  #fallback to sheet header or unfed list
     fed = [s for s in stations if s not in set(unfed)]
 
     lines = []
@@ -677,7 +677,7 @@ async def handle_feeding_inquiry(intent, ctx: Dict[str, Any]) -> None:
     await safe_send(ch, "\n".join(lines))
 
 
-# ------------- public handler entry points -------
+#------------- public handler entry points -------
 async def handle_feed_update_event(event, ctx: Dict[str, Any]) -> None:
     """
     Event carries: station, dates[], has_image, attachment_ids.
@@ -690,7 +690,7 @@ async def handle_feed_update_event(event, ctx: Dict[str, Any]) -> None:
     if not dates:
         dates = [_today_iso()]
 
-    # Channel gating: only accept in allowed feeding channels if configured
+    #Channel gating: only accept in allowed feeding channels if configured
     explicit_allowed: List[int] = getattr(settings, "allowed_feeding_channel_ids", []) or getattr(settings, "allowed_feeding_channels", [])
     allowed = _resolve_allowed_feeding_channels(
         explicit_allowed,
@@ -776,7 +776,7 @@ async def handle_sub_request_event(event, ctx: Dict[str, Any]) -> None:
             f"status=logged; trigger={trigger_phrase}; text={snippet}",
         )
 
-    # No UI; subs are fully silent by design
+    #No UI; subs are fully silent by design
 
 async def handle_sub_accept_event(event, ctx: Dict[str, Any]) -> None:
     """
@@ -820,7 +820,7 @@ async def handle_sub_accept_event(event, ctx: Dict[str, Any]) -> None:
             f"no_open_request; text={preview}",
         )
 
-# ------------- persistence for subs ------------
+#------------- persistence for subs ------------
 async def _accept_latest_open_sub_in_channel(
     channel_id: int,
     assignee_id: int,
@@ -844,7 +844,7 @@ async def _accept_latest_open_sub_in_channel(
         )
         if accepted:
             return accepted
-        # Fallback to full history if not found in recent months
+        #Fallback to full history if not found in recent months
         files = _load_sub_files(_all_sub_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
         return _accept_sub_in_files(
             files,
@@ -941,7 +941,7 @@ def _update_existing_sub_request(
             return True
     return False
 
-# ------------- scheduler: 8:00 pm ping ----------
+#------------- scheduler: 8:00 pm ping ----------
 
 _FEEDING_SCHEDULER_LOCK = asyncio.Lock()
 _FEEDING_SCHEDULER_STARTED = False
@@ -960,7 +960,7 @@ async def start_feeding_scheduler(bot: discord.Client) -> None:
         async def _runner():
             while True:
                 try:
-                    # sleep until next 20:00 America/Chicago
+                    #sleep until next 20:00 America/Chicago
                     await _sleep_until_local_time(20, 0)
                     await _run_8pm_check(bot)
                 except Exception as e:
@@ -994,7 +994,7 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> None:
 
     sent_or_logged = False
 
-    # Use feeding team channel for alerts
+    #Use feeding team channel for alerts
     channel_id = getattr(settings, "ch_feeding_team", None)
     if not channel_id:
         log_action("feeding_8pm", "channel=None", "skipped (no alert channel configured)")
@@ -1036,17 +1036,17 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> None:
                     _LAST_FEEDING_ALERT_TS = None
         return
 
-    # choose who to ping: subs first, else default schedule
+    #choose who to ping: subs first, else default schedule
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
     weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
     sched = _read_schedule_for_weekday(weekday)
 
-    # Build a message that pings the right people
+    #Build a message that pings the right people
     lines = await build_8pm_lines(bot, unfed=unfed, sched=sched, mention=True)
 
     try:
         if isinstance(ch, Messageable):
-            await safe_send(ch, lines)  # silent mode respected here
+            await safe_send(ch, lines)  #silent mode respected here
             log_action("feeding_8pm", f"unfed={len(unfed)}", "sent")
             sent_or_logged = True
         else:

@@ -15,13 +15,13 @@ from typing import Any
 TZ = ZoneInfo("America/Chicago")
 
 _COLW = {"event": 8, "col1": 25, "col2": 45}
-_TAILW = 80  # soft cap for optional trailing text (not padded)
+_TAILW = 80  #soft cap for optional trailing text (not padded)
 
 def _pad(s: str, width: int) -> str:
     """Fit content to a fixed-width column: truncate with '...' if too long, pad spaces if short."""
     s = str(s or "")
     if width <= 3:
-        # Degenerate case: just hard cut
+        #Degenerate case: just hard cut
         return (s[:width]) if len(s) > width else s + (" " * (width - len(s)))
     if len(s) > width:
         s = s[: max(0, width - 3)] + "..."
@@ -36,7 +36,7 @@ def _human_line(ts_ct: str, event: str, col1: str = "", col2: str = "", tail: st
         _pad(col2, _COLW["col2"]),
     ])
     if tail:
-        # Truncate tail as well so long URLs/JSON don't blow up alignment
+        #Truncate tail as well so long URLs/JSON don't blow up alignment
         t = str(tail or "")
         if len(t) > _TAILW:
             t = t[: max(0, _TAILW - 3)] + "..."
@@ -46,7 +46,7 @@ def _human_line(ts_ct: str, event: str, col1: str = "", col2: str = "", tail: st
 
 def log_event(event_data: dict) -> str:
     """Write to machine (ndjson) and human-readable log files."""
-    # Write machine log (raw NDJSON) under monthly folder
+    #Write machine log (raw NDJSON) under monthly folder
     now_dt = datetime.now(TZ)
     month_dir_m = LOG_DIR_MACHINE / f"{now_dt:%Y-%m}"
     month_dir_h = LOG_DIR_HUMAN / f"{now_dt:%Y-%m}"
@@ -60,7 +60,7 @@ def log_event(event_data: dict) -> str:
 
     kind = str(event_data.get("event", "event")).lower()
 
-    # Suppress verbose dues debug in human logs; still written to machine NDJSON above
+    #Suppress verbose dues debug in human logs; still written to machine NDJSON above
     if kind == "dues_debug":
         return ""
     if kind == "show_photo_page":
@@ -94,7 +94,7 @@ def log_event(event_data: dict) -> str:
             "",
         )
     elif kind == "intent":
-        # Human-friendly intent summary (keep concise; omit confidence)
+        #Human-friendly intent summary (keep concise; omit confidence)
         kind2 = str(event_data.get("kind","?"))
         slots = event_data.get("slots") or {}
         cat = slots.get("cat")
@@ -117,7 +117,7 @@ def log_event(event_data: dict) -> str:
             tail = f"channel_id={event_data['channel_id']} tab={event_data.get('tab','')}"
         human_line = _human_line(ts_ct, "Health", c1, c2, tail)
     elif kind == "gmail_last_email":
-        # Pretty Gmail summary for human logs, with content snippet (50 chars)
+        #Pretty Gmail summary for human logs, with content snippet (50 chars)
         subject = event_data.get("subject", "(no subject)")
         sender = event_data.get("from", "(unknown sender)")
         snippet_src = (

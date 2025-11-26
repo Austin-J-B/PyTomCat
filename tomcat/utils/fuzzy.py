@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Iterable, Optional, Sequence, Tuple
 
 try:
-    from rapidfuzz import fuzz as _rf_fuzz  # type: ignore
-except Exception:  # pragma: no cover - rapidfuzz optional
+    from rapidfuzz import fuzz as _rf_fuzz  #type: ignore
+except Exception:  #pragma: no cover - rapidfuzz optional
     _rf_fuzz = None
 
 import difflib
@@ -82,8 +82,8 @@ def levenshtein_distance(a: str, b: str) -> int:
             cb = b_norm[j - 1]
             cost = 0 if ca == cb else 1
             dp[i][j] = min(
-                dp[i - 1][j] + 1,      # deletion
-                dp[i][j - 1] + 1,      # insertion
-                dp[i - 1][j - 1] + cost,  # substitution
+                dp[i - 1][j] + 1,      #deletion
+                dp[i][j - 1] + 1,      #insertion
+                dp[i - 1][j - 1] + cost,  #substitution
             )
     return dp[-1][-1]

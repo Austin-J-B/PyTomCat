@@ -565,7 +565,14 @@ def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResp
 @web.middleware
 async def rate_limit_middleware(request: web.Request, handler):
     """Limit requests per client to reduce abuse of the web API."""
-    client_id = request.headers.get("X-Forwarded-For") or request.remote or "unknown"
+    client_ip = request.remote
+    if not client_ip:
+        peername = request.transport.get_extra_info("peername") if request.transport else None
+        if isinstance(peername, (tuple, list)) and peername:
+            client_ip = peername[0]
+        elif isinstance(peername, str):
+            client_ip = peername
+    client_id = client_ip or "unknown"
     now = time.time()
     bucket = _rate_limit_counters.setdefault(client_id, deque())
     while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:

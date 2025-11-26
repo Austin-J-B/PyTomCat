@@ -41,37 +41,72 @@ TORCH_GPU_SPEC = [
 ENV_TEMPLATE_CONTENT = """#=====Discord=====
 DISCORD_TOKEN=#
 DISCORD_CLIENT_SECRET=#
-COMMAND_PREFIX=! #Command prefix used by commands.Bot
+# Required: secret for signing UI session cookies
+UI_SESSION_SECRET=
+UI_ALLOWED_ORIGINS=                  #Should match the Discord OAuth2 dev portal
+UI_AUTH_DEBUG=false                  # Enable verbose auth/CORS logging when true
+UI_GUILD_ID=                         # Optional: override guild ID to validate membership for UI auth
+UI_COOKIE_SECURE=true                # Use secure cookies (SameSite=None) so cross-site pages send session
+OFFICER_ROLE_ID=                     # Required: officer role for UI/admin actions
+ROLE_FEEDING_MANAGER=                # Feeding manager role ID
+ROLE_PHOTO_LABELER=                  # Photo labeler role ID
+ROLE_VIEWER=                         # Basic viewer role ID
+ROLE_DUE_PAYING=                     # Due-paying member role ID (UI roster)
+ROLE_HOLIDAY_FEEDER=                # Holiday feeder role ID (UI roster)
+ROLE_DUES_PERKS=                     # Role granted by dues perks workflow
+COMMAND_PREFIX=! # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago
-#Austin, Megan, Derek, Cel, Kaz, Jesse, McKayla, Bel, and Jacob
-ADMIN_IDS=624440365595754496,499034835562790912,217081575873970178,429741733706989568,1361167705897435229,244678835889635328,607002156247154688,837445695480135691,503377157830082560
 
-#=====Channels (Discord snowflakes)=====
-CH_FEEDING_TEAM=643586809166561310
-CH_TOMCAT_SANDBOX=1341696618688286720
-CH_PICTURES_OF_CATS=551084964318543904
-CH_REPORT_NEW_CATS=639882573199441930
-CH_DUE_PORTAL=928060549089087538
-CH_LOGGING=842975801934217276
-CH_CATDOCDUMP=1344745306620694558
+# Comma-separated admin user IDs who can run privileged commands
+ADMIN_IDS=
+
+# ===== Channels  =====
+# CH_FEEDING_TEAM: channel where the bot listens for feeding station updates, posts 8pm pings, sub requests, and related notices
+CH_FEEDING_TEAM=
+
+# CH_TOMCAT_SANDBOX: sandbox channel for testing commands/UI safely
+CH_TOMCAT_SANDBOX=
+
+# CH_PICTURES_OF_CATS: channel where cat photos are posted; routed to intake sheet tab below
+CH_PICTURES_OF_CATS=
+
+# CH_REPORT_NEW_CATS: channel for new cat sightings/reports; routed to intake sheet tab below
+CH_REPORT_NEW_CATS=
+
+# CH_DUE_PORTAL: channel for dues/membership intake and status updates
+CH_DUE_PORTAL=
+
+# CH_LOGGING: channel where TomCat posts internal logs, errors, and status updates
+CH_LOGGING=
+
+# CH_CATDOCDUMP: channel where vet bills/receipts are dropped; routed to vet bill sheet tab below
+CH_CATDOCDUMP=
+
+# TARGET_GUILD_ID: primary guild/server ID used for admin tasks (role removals, etc.)
+TARGET_GUILD_ID=
+
+# Map channels to target Sheets tabs for intake (format: CH_NAME:SheetTab, comma separated)
 CHANNEL_SHEET_MAP=CH_PICTURES_OF_CATS:TCBPicsInput, CH_REPORT_NEW_CATS:TCBPicsInput, CH_TOMCAT_SANDBOX:TCBPicsInput, CH_CATDOCDUMP:TCBVetBillInput
+# allowed_feeding_channel_ids: list of channel vars where feeding schedule commands are permitted
 allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
-CH_MEMBER_NAMES=933458020892033084
 
-#Spam alert target when a flagged message appears
-SPAM_ALERT_USER_ID=624440365595754496
+# CH_MEMBER_NAMES: channel new due-paying-member names are posted.
+CH_MEMBER_NAMES=
 
-#=====Google Service Account=====
+# who to ping when a spam message is detected (user ID)
+SPAM_ALERT_USER_ID=
+
+# ===== Google Service Account =====
 GOOGLE_SERVICE_ACCOUNT_JSON=./credentials/service_account.json
 
-#=====Sheets=====
-#Catabase (cat bios + latest image URL)
-SHEET_CATABASE_ID=15HtHVB4HfOr9e85EgbOGbz9CBwWnXg3pbCytGTA64P4 #Catabase
-#Vision/aux (RecentPics, FeedingStationChecklist, etc.)
-SHEET_VISION_ID=1ypMoqpB0XbiVVhJ1GP_6gVcqMmt-FXRrkoO2D2fC8WE  #TomCatVision
-#Members/finance megasheet (used later for dues/membership)
-SHEET_MEGASHEET_ID=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA #CCC megasheet
+# ===== Sheets =====
+# Catabase (cat bios + latest image URL)
+SHEET_CATABASE_ID= #Catabase
+# Vision/aux (RecentPics, FeedingStationChecklist, etc.)
+SHEET_VISION_ID=  #TomCatVision
+# Members/finance megasheet (used later for dues/membership)
+SHEET_MEGASHEET_ID= # CCC megasheet
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
 NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
@@ -79,34 +114,36 @@ NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
 CV_DETECT_WEIGHTS=weights/NanoModel.pt
 CV_CLASSIFY_WEIGHTS=weights/NanoClassifier.pt
 
-CV_MAX_DOWNLOAD_MB=0 #Set to 0 to lift the max file size limit
+CV_MAX_DOWNLOAD_MB=0 # Set to 0 to lift the max file size limit
 
-#Gmail ingestion
-GMAIL_ENABLED=true                    #Toggle Gmail integration; disable to skip email polling entirely
-GMAIL_CREDENTIALS_PATH=credentials/gmail_oauth_client.json  #OAuth client secrets downloaded from Google Cloud
-GMAIL_TOKEN_PATH=credentials/gmail_token.json              #Stored refresh/access token generated after auth
-GMAIL_LOCAL_PORT=8765                                      #Local redirect port the OAuth helper spins up
+# Gmail ingestion
+GMAIL_ENABLED=true                    # Toggle Gmail integration; disable to skip email polling entirely
+GMAIL_CREDENTIALS_PATH=credentials/gmail_oauth_client.json  # OAuth client secrets downloaded from Google Cloud
+GMAIL_TOKEN_PATH=credentials/gmail_token.json              # Stored refresh/access token generated after auth
+GMAIL_LOCAL_PORT=8765                                      # Local redirect port the OAuth helper spins up
 
-#Dues processing knobs
-DUES_ENABLED=true                     #Master switch for dues automation
-DUES_ALLOWED_AMOUNTS=15               #Base dues amount (comma-list if multiples allowed)
-DUES_EMAIL_WINDOW_DAYS=5              #Only consider payment emails this many days back
-DUES_SCAN_SKIP_OLDEST=3               #Skip this many oldest sheet rows when scanning in batches
-DUES_SCAN_LIMIT=500                   #Cap rows reviewed per pass to limit Sheets API usage
-DUES_NLP_ENABLED=true                 #Enable NLP heuristics for intent/donation parsing
-DUES_MEMBERSHIP_TTL_SEC=300           #Cache TTL for dues membership lookups (seconds)
-DUES_FAST_MAP=1                       #Use fast user map resolver (set 0 to force slower fallback)
+# Dues processing knobs
+DUES_ENABLED=true                     # Master switch for dues automation
+DUES_ALLOWED_AMOUNTS=15               # Base dues amount (comma-list if multiples allowed)
+DUES_EMAIL_WINDOW_DAYS=5              # Only consider payment emails this many days back
+DUES_SCAN_SKIP_OLDEST=3               # Skip this many oldest sheet rows when scanning in batches
+DUES_SCAN_LIMIT=500                   # Cap rows reviewed per pass to limit Sheets API usage
+DUES_NLP_ENABLED=true                 # Enable NLP heuristics for intent/donation parsing
+DUES_MEMBERSHIP_TTL_SEC=300           # Cache TTL for dues membership lookups (seconds)
+DUES_FAST_MAP=1                       # Use fast user map resolver (set 0 to force slower fallback)
 
-#Discord bot identity
-BOT_USER_ID=1341667150066225192       #Bot user ID for mention detection + wake word shortcuts
+# Discord bot identity (bot user ID; used for mention detection + wake word shortcuts)
+BOT_USER_ID=
 
-#Cache expiry settings
-CAT_PROFILE_TTL_SEC=3600              #Seconds before cached cat profiles auto-refresh
-CAT_ALIASES_TTL_SEC=7200              #Seconds before alias table refreshes from Sheets
+# Cache expiry settings
+CAT_PROFILE_TTL_SEC=3600              # Seconds before cached cat profiles auto-refresh
+CAT_ALIASES_TTL_SEC=7200              # Seconds before alias table refreshes from Sheets
 
-FINANCE_SHEET_THROTTLE_SEC=0.5        #When finances are requested, it waits this long between queries.
-UITEST_ACTIVITY_APP_ID=1341667150066225192 #For the user interface to work.
+FINANCE_SHEET_THROTTLE_SEC=0.5        # When finances are requested, it waits this long between queries. 
+
+UITEST_ACTIVITY_APP_ID=                # Application ID used by the UI embedded app/tests (Discord activity)
 """
+ENV_TEMPLATE_PATH = ROOT / ".env TEMPLATE"
 
 
 class InstallError(RuntimeError):
@@ -156,7 +193,7 @@ def _ensure_cloudflared() -> Path:
 
     target_path = ROOT / filename
     if target_path.exists():
-        print(f"✅ {filename} is already present.")
+        print(f"{filename} is already present.")
         return target_path
 
     print(f"Downloading {filename} from {url}...")
@@ -164,10 +201,10 @@ def _ensure_cloudflared() -> Path:
         urllib.request.urlretrieve(url, target_path)
         if os.name != "nt":
             target_path.chmod(0o755)
-        print(f"✅ Downloaded {filename} to {target_path}")
+        print(f"Downloaded {filename} to {target_path}")
         return target_path
     except Exception as exc:
-        print(f"⚠️ Failed to download cloudflared: {exc}")
+        print(f"Failed to download cloudflared: {exc}")
         print("You may need to download it manually to run the UI tunnel.")
         return target_path
 
@@ -184,15 +221,15 @@ def _ensure_cloudflared_auth(bin_path: Path) -> None:
         return
 
     _print_header("Authenticating Cloudflare Tunnel")
-    print("⚠️  No existing Cloudflare login found.")
-    print("👉 A browser window will open shortly. Please log in to Cloudflare and select your domain.")
+    print("No existing Cloudflare login found.")
+    print("A browser window will open shortly. Please log in to Cloudflare and select your domain.")
     print("   (Wait for the process to complete in the browser...)")
 
     try:
         subprocess.run([str(bin_path), "tunnel", "login"], check=True)
-        print("\n✅ Cloudflare login successful!")
+        print("\nCloudflare login successful!")
     except subprocess.CalledProcessError:
-        print("\n❌ Cloudflare login failed or was cancelled.")
+        print("\nCloudflare login failed or was cancelled.")
         print("   You may need to run `cloudflared.exe tunnel login` manually.")
 
 def _create_or_reuse_venv(python_exe: Path) -> None:
@@ -235,9 +272,9 @@ def _install_base_dependencies(force_reinstall: bool = False) -> None:
 def _detect_cuda() -> bool:
     _print_header("Hardware Detection")
     if shutil.which("nvidia-smi"):
-        print("✅ NVIDIA GPU detected via nvidia-smi.")
+        print("NVIDIA GPU detected via nvidia-smi.")
         return True
-    print("ℹ️ No NVIDIA GPU detected – defaulting to CPU wheels.")
+    print("ℹNo NVIDIA GPU detected – defaulting to CPU wheels.")
     return False
 
 def _install_torch(force: str | None = None) -> None:
@@ -290,7 +327,7 @@ def _cleanup_tokenizer_artifacts() -> None:
 def _ensure_deberta_model() -> None:
     WEIGHTS_DIR.mkdir(exist_ok=True)
     if ONNX_PATH.exists() and TOKENIZER_PATH.exists():
-        print("✅ DeBERTa ONNX model already present.")
+        print("DeBERTa ONNX model already present.")
         return
     _print_header("Downloading & converting DeBERTa (MNLI) ONNX model")
     _ensure_extra_models()
@@ -304,7 +341,7 @@ def _check_yolo_weights() -> None:
             missing.append(w)
     
     if missing:
-        _print_header("⚠️  MISSING WEIGHTS  ⚠️")
+        _print_header("MISSING WEIGHTS")
         print(f"The following model files were not found in {WEIGHTS_DIR}:")
         for m in missing:
             print(f"  - {m}")
@@ -317,13 +354,17 @@ def _test_model() -> None:
 def _maybe_create_env_template() -> None:
     env_path = ROOT / ".env"
     if env_path.exists():
-        print(f"ℹ️  {env_path.name} already exists. Skipping creation.")
+        print(f"[info] {env_path.name} already exists. Skipping creation.")
         return
-    
-    #Use the detailed template provided by the user
-    env_path.write_text(ENV_TEMPLATE_CONTENT, encoding="utf-8")
-    print(f"\n✅ Created {env_path.name} from template.")
-    print("   👉 ACTION REQUIRED: Open .env and add your DISCORD_TOKEN and CLIENT_SECRET.")
+
+    if ENV_TEMPLATE_PATH.exists():
+        content = ENV_TEMPLATE_PATH.read_text(encoding="utf-8")
+    else:
+        content = ENV_TEMPLATE_CONTENT
+
+    env_path.write_text(content, encoding="utf-8")
+    print(f"\n[ok] Created {env_path.name} from template.")
+    print("   ACTION REQUIRED: Open .env and add your DISCORD_TOKEN and DISCORD_CLIENT_SECRET.")
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Provision TomCat locally")
@@ -346,7 +387,7 @@ def main() -> None:
     print(f"Python: {python_exe}")
 
     if sys.version_info >= (3, 13):
-        print(f"\n❌ CRITICAL ERROR: You are using Python {sys.version_info.major}.{sys.version_info.minor}.")
+        print(f"\nCRITICAL ERROR: You are using Python {sys.version_info.major}.{sys.version_info.minor}.")
         print("   Please UNINSTALL Python 3.13 and install Python 3.11.")
         import time
         time.sleep(3) 
@@ -377,7 +418,7 @@ def main() -> None:
         try:
             _install_base_dependencies(force_reinstall=args.reinstall)
         except subprocess.CalledProcessError:
-            print("\n⚠️  Dependency install failed. Recreating .venv...")
+            print("\nDependency install failed. Recreating .venv...")
             if VENV_DIR.exists():
                 shutil.rmtree(VENV_DIR)
             _create_or_reuse_venv(python_exe)
@@ -395,7 +436,7 @@ def main() -> None:
         _check_yolo_weights()
         _maybe_create_env_template()
 
-    print("\n✨ Installation Complete! ✨")
+    print("\nInstallation Complete!")
     print("1. Open '.env' and fill in DISCORD_TOKEN and DISCORD_CLIENT_SECRET.")
     print("2. Launch the bot with: python scripts/start.py\n")
 
@@ -403,8 +444,8 @@ if __name__ == "__main__":
     try:
         main()
     except InstallError as exc:
-        print(f"✖ {exc}")
+        print(f"{exc}")
         sys.exit(1)
     except subprocess.CalledProcessError as exc:
-        print(f"✖ Command failed with exit code {exc.returncode}: {' '.join(exc.cmd)}")
+        print(f"Command failed with exit code {exc.returncode}: {' '.join(exc.cmd)}")
         sys.exit(exc.returncode)

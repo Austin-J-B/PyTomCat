@@ -159,7 +159,7 @@ class Intent:
 @dataclass
 class IntentEvent:
     """Internal representation of a message + parsed metadata."""
-    type: str                      #"show_photo" | "who_is" | "cv_identify" | "cv_detect" | "cv_crop" | "feed_update" | "sub_request" | "sub_accept" | "none"
+    type: str                      #"show_photo" | "who_is" | "cv_identify" | "cv_detect" | "cv_crop" | "feed_update" | "feeding_status" | "feeding_today" | "feeding_schedule" | "station_residents" | "sub_request_link" | "none"
     confidence: float
     channel_id: int
     user_id: int
@@ -182,27 +182,15 @@ MachineRow = Dict[str, Any]
 
 TOMCAT_PREFIX = re.compile(r"^\s*(tom\s*cat|tomcat|tom-kat|tom\s*kat)[\s,:-]*", re.I)
 SHOW_PAT = re.compile(r"\b(show\s*me|show)\b", re.I)
-WHO_PAT  = re.compile(r"\b(who\s+is|who\s*’s|who\s*s|whois)\b", re.I)
+WHO_PAT  = re.compile(r"\b(who\s+is|who\s*'s|who\s*s|whois)\b", re.I)
 IDENT_PAT= re.compile(r"\b(identify|id|classify|classification)\b", re.I)
 DETECT_PAT = re.compile(r"\bdetect\b", re.I)
 CROP_PAT   = re.compile(r"\bcrop\b", re.I)
 
-FEED_REQUEST_RE = re.compile(r"\b(can|could|would)\s+(?:someone|somebody|anyone|anybody|smb|sb|some1)\s+(?:feed|cover|take)\b", re.I)
 FEED_VERB = re.compile(r"\b(fed|fill(?:ed)?|filled|topped(?:\s*off)?)\b", re.I)
-SUB_VERB  = re.compile(r"\b(sub|cover|cover\s+me|can\s+(?:someone|somebody|anyone|anybody|smb|sb|some1)|anyone\s+able|can\s+u|can\s+ya)\b", re.I)
 #Negative phrasing like "don't feed" should not trigger a feed update
 FEED_NEGATION_RE = re.compile(r"\b(?:(?:do(?:n't|\s+not))|(?:did(?:n't|\s+not))|(?:never)|(?:cant|can't|cannot)|(?:won't)|(?:should(?:n't|\s+not))|(?:would(?:n't|\s+not))|(?:haven't)|(?:hasn't)|(?:hadn't))\s+(?:feed|fed)\b", re.I)
 #Accept patterns in feeding channels (broad but channel-gated)
-ACCEPT_PAT = re.compile(
-    r"\b("
-    r"sure|"
-    r"i(?:’|')?ll\s+(?:cover|take(?:\s+(?:it|this|[a-z]+))?|do\s+it)|"
-    r"i\s+can\s+(?:cover|take(?:\s+(?:it|this|[a-z]+))?|do\s+it)|"
-    r"i\s*'?ve?\s*got\s+(?:it|this)|"
-    r"i\s+got\s+it"
-    r")\b",
-    re.I,
-)
 FEEDING_CHECK_RE = re.compile(
     r"^(?:(?:who(?:['’]s|\s+is|\s+has|\s+have|\s+hasn?['’]?t|\s+haven?['’]?t)\s*(?:been\s+)?fed(?:\s+today)?)|(?: (?:which|what) \s+ stations? \s+ (?:have|has|haven?['’]?t|hasn?['’]?t) \s*(?:been\s+)?fed(?:\s+today)?))\s*[?.!]*$",
     re.I | re.X,
@@ -962,32 +950,7 @@ class IntentRouter:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
                                    message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-        #2) Feeding-team flows (high traffic). Sub-requests first.
-        sub_match = SUB_VERB.search(text)
-        feed_req_match = FEED_REQUEST_RE.search(text)
-        if in_feeding and (sub_match or feed_req_match):
-            stations = self._extract_all_entities(text, want="station", allow_stopword_aliases=True)
-            dates = self._extract_dates(text)
-            if not stations:
-                stations = self._stations_from_schedule(row["user_id"], dates)
-            conf = 0.9 if stations and dates else 0.75
-            trigger_phrase = (sub_match.group(0) if sub_match else (feed_req_match.group(0) if feed_req_match else None))
-            ev = IntentEvent(
-                type="sub_request", confidence=conf,
-                channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                station=(stations[0] if stations else None), stations=(stations or None), dates=dates or None,
-                trigger_phrase=trigger_phrase,
-            )
-            trace.append("intent:sub_request")
-            if sub_match:
-                trace.append(f"match:subverb={sub_match.group(0)}")
-            if feed_req_match:
-                trace.append(f"match:request={feed_req_match.group(0)}")
-            self._traces[row["message_id"]] = trace
-            return ev
-
-        #Then feed updates
+        #2) Feeding-team flows (high traffic). Feed updates only; subs are UI-only.
         #Case A: feed verb with possibly multiple stations
         if FEED_VERB.search(text):
             if FEED_NEGATION_RE.search(text):
@@ -1050,68 +1013,11 @@ class IntentRouter:
             self._traces[row["message_id"]] = trace
             return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-        #3) Sub requests / accepts
-        sub_match_simple = SUB_VERB.search(text)
-        if sub_match_simple:
-            #Only treat as a sub request in feeding channels
-            if not in_feeding:
-                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]) 
-            stations = self._extract_all_entities(text, want="station", allow_stopword_aliases=True)
-            dates = self._extract_dates(text)
-            conf = 0.9 if stations and dates else 0.75
-            ev = IntentEvent(
-                type="sub_request", confidence=conf,
-                channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                station=stations[0] if stations else None, dates=dates or None,
-                trigger_phrase=sub_match_simple.group(0),
-            )
-            trace.append("intent:sub_request")
-            trace.append(f"match:subverb={sub_match_simple.group(0)}")
-            self._traces[row["message_id"]] = trace
-            return ev
-
-        accept_match = ACCEPT_PAT.search(text)
-        if accept_match:
-            if not in_feeding:
-                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]) 
-            station_hint = self._extract_best_entity(text, want="station", allow_stopword_aliases=True)
-            dates_hint = self._extract_dates(text)
-            #Acknowledge only if replying to a sub_request or if the immediately previous sub_request exists in buffer
-            ref_id = row.get("reply_to_id")
-            if ref_id:
-                ev = IntentEvent(
-                    type="sub_accept", confidence=0.9,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                    station=station_hint, dates=dates_hint or None, trigger_phrase=accept_match.group(0),
-                )
-                trace.append("intent:sub_accept")
-                trace.append(f"match:accept={accept_match.group(0)}")
-                if station_hint:
-                    trace.append(f"slot:station={station_hint}")
-                self._traces[row["message_id"]] = trace
-                return ev
-            #else try a quick look-back for last sub_request in channel (not just same user)
-            if self._recent_sub_request_in_channel(row["channel_id"]):
-                ev = IntentEvent(
-                    type="sub_accept", confidence=0.8,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                    station=station_hint, dates=dates_hint or None, trigger_phrase=accept_match.group(0),
-                )
-                trace.append("intent:sub_accept")
-                trace.append(f"match:accept={accept_match.group(0)}")
-                if station_hint:
-                    trace.append(f"slot:station={station_hint}")
-                self._traces[row["message_id"]] = trace
-                return ev
-
-        #4) If needed, run NLP fallback (intent + station scorer)
+        #3) If needed, run NLP fallback (intent + station scorer)
         #Guard: only consult NLP if addressed OR in feeding-team (to avoid false positives on general chatter).
         if self._nlp and len(text) >= 3 and (addressed or in_feeding):
             nlp_intent, nlp_prob = self._nlp.predict_intent(text)
-            if nlp_intent in {"feed_update","sub_request"} and nlp_prob >= CONF_MID:
+            if nlp_intent in {"feed_update"} and nlp_prob >= CONF_MID:
                 station = self._extract_best_entity(text, want="station", allow_model=True, allow_stopword_aliases=True)
                 if nlp_intent == "feed_update" and station:
                     return IntentEvent(
@@ -1119,15 +1025,6 @@ class IntentRouter:
                         channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                         text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
                         station=station, dates=[self._today()]
-                    )
-                if nlp_intent == "sub_request" and in_feeding:
-                    dates = self._extract_dates(text) or None
-                    st_list = [station] if station else self._stations_from_schedule(row["user_id"], dates)
-                    return IntentEvent(
-                        type="sub_request", confidence=max(nlp_prob, 0.8),
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        station=(st_list[0] if st_list else None), stations=(st_list or None), dates=dates
                     )
 
         #Default: none
@@ -1158,24 +1055,6 @@ class IntentRouter:
             #If this came via a reply, suppress the handler's "attach an image" prompt when empty
             via_reply = bool(getattr(message, "reference", None))
             await handle_cv_identify(_intent("cv_identify", {}), {**ctx, "message": message, "silent_on_no_image": via_reply})
-            return
-
-        if event.type == "sub_request":
-            if getattr(event, 'stations', None) and len(event.stations) > 1:
-                for st in event.stations:
-                    e2 = IntentEvent(
-                        type="sub_request", confidence=event.confidence,
-                        channel_id=event.channel_id, user_id=event.user_id, message_id=event.message_id,
-                        text=event.text, has_image=event.has_image, attachment_ids=event.attachment_ids,
-                        station=st, dates=event.dates
-                    )
-                    await feeding.handle_sub_request_event(e2, ctx)
-            else:
-                await feeding.handle_sub_request_event(event, ctx)
-            return
-
-        if event.type == "sub_accept":
-            await feeding.handle_sub_accept_event(event, ctx)
             return
 
         if event.type == "feed_update":
@@ -1552,16 +1431,6 @@ class IntentRouter:
                         return row
         return None
 
-    def _recent_sub_request_in_channel(self, channel_id: int) -> bool:
-        #naive: scan last few buffers for this channel; cheap and good enough
-        for (cid, _uid), dq in self._buf.items():
-            if cid != channel_id: 
-                continue
-            for row in reversed(dq):
-                if SUB_VERB.search(row["text_norm"]):
-                    return True
-        return False
-
     def _today(self) -> str:
         dt = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
         return dt.date().isoformat()
@@ -1824,8 +1693,6 @@ class IntentRouter:
             if ts < cutoff:
                 break
             text = row.get("text_norm") or ""
-            if SUB_VERB.search(text) or FEED_REQUEST_RE.search(text):
-                continue
             if FEED_VERB.search(text):
                 continue
             sts = self._extract_all_entities(text, want="station")

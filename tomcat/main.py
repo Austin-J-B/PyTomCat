@@ -573,8 +573,8 @@ async def start_web_server(bot):
         if error:
             return error
         FEEDING_TEAM_ROLE_ID = None
-        DUE_PAYING_ROLE_ID = 774442956375064606
-        HOLIDAY_FEEDER_ROLE_ID = 1419369282634125384
+        DUE_PAYING_ROLE_ID = int(getattr(settings, "role_due_paying_id", 0) or 0)
+        HOLIDAY_FEEDER_ROLE_ID = int(getattr(settings, "role_holiday_feeder_id", 0) or 0)
         found_members = []
         
         for guild in bot.guilds:

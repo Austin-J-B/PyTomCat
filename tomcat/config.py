@@ -132,14 +132,17 @@ class Settings:
     ch_member_names: int | None = int(os.getenv("CH_MEMBER_NAMES", "0")) or None
     ch_logging: int | None = int(os.getenv("CH_LOGGING", "0")) or None
     ch_sandbox: int | None = int(os.getenv("CH_TOMCAT_SANDBOX", "0")) or None
-    # Primary guild (server) used for admin tasks (defaults to legacy CCC ID)
-    target_guild_id: int | None = int(os.getenv("TARGET_GUILD_ID", "551082419768393729") or "0") or None
+    # Primary guild (server) used for admin tasks
+    target_guild_id: int | None = int(os.getenv("TARGET_GUILD_ID", "0") or "0") or None
     # UI/Auth: guild + roles used by the web UI permissions
     ui_guild_id: int | None = int(os.getenv("UI_GUILD_ID", "0") or "0") or None
     officer_role_id: int | None = int(os.getenv("OFFICER_ROLE_ID", "0") or "0") or None
     role_feeding_manager_id: int | None = int(os.getenv("ROLE_FEEDING_MANAGER", "0") or "0") or None
     role_photo_labeler_id: int | None = int(os.getenv("ROLE_PHOTO_LABELER", "0") or "0") or None
     role_viewer_id: int | None = int(os.getenv("ROLE_VIEWER", "0") or "0") or None
+    role_due_paying_id: int | None = int(os.getenv("ROLE_DUE_PAYING", "0") or "0") or None
+    role_holiday_feeder_id: int | None = int(os.getenv("ROLE_HOLIDAY_FEEDER", "0") or "0") or None
+    role_dues_perks_id: int | None = int(os.getenv("ROLE_DUES_PERKS", "0") or "0") or None
     # Channels allowed to mark feed updates (default empty → no restriction). You set this in .env as
     # allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
     allowed_feeding_channel_ids: list[int] = field(default_factory=lambda: _parse_channel_list_env("allowed_feeding_channel_ids"))

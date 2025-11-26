@@ -6,6 +6,13 @@ UI_ALLOWED_ORIGINS=                  #Should match the Discord OAuth2 dev portal
 UI_AUTH_DEBUG=false                  # Enable verbose auth/CORS logging when true
 UI_GUILD_ID=                         # Optional: override guild ID to validate membership for UI auth
 UI_COOKIE_SECURE=true                # Use secure cookies (SameSite=None) so cross-site pages send session
+OFFICER_ROLE_ID=                     # Required: officer role for UI/admin actions
+ROLE_FEEDING_MANAGER=                # Feeding manager role ID
+ROLE_PHOTO_LABELER=                  # Photo labeler role ID
+ROLE_VIEWER=                         # Basic viewer role ID
+ROLE_DUE_PAYING=                     # Due-paying member role ID (UI roster)
+ROLE_HOLIDAY_FEEDER=                # Holiday feeder role ID (UI roster)
+ROLE_DUES_PERKS=                     # Role granted by dues perks workflow
 COMMAND_PREFIX=! # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago

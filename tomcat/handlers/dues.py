@@ -1514,7 +1514,7 @@ def _compute_duplicates(rows: list[dict]) -> dict:
     return dups
 
 async def _guild_and_members(bot):
-    guild_id = 551082419768393729
+    guild_id = getattr(settings, "target_guild_id", None) or getattr(settings, "ui_guild_id", None) or 0
     guild = None
     try:
         guild = bot.get_guild(int(guild_id))
@@ -1874,7 +1874,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         dest = sandbox or ch
 
     # Role to grant to verified/matched members
-    ROLE_DUES_ID = 774442956375064606
+    ROLE_DUES_ID = int(getattr(settings, "role_dues_perks_id", 0) or 0)
     role_obj = None
     try:
         role_obj = guild.get_role(int(ROLE_DUES_ID)) if guild else None

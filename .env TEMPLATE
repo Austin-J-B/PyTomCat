@@ -35,6 +35,9 @@ CH_LOGGING=
 # CH_CATDOCDUMP: channel where vet bills/receipts are dropped; routed to vet bill sheet tab below
 CH_CATDOCDUMP=
 
+# TARGET_GUILD_ID: primary guild/server ID used for admin tasks (role removals, etc.)
+TARGET_GUILD_ID=
+
 # Map channels to target Sheets tabs for intake (format: CH_NAME:SheetTab, comma separated)
 CHANNEL_SHEET_MAP=CH_PICTURES_OF_CATS:TCBPicsInput, CH_REPORT_NEW_CATS:TCBPicsInput, CH_TOMCAT_SANDBOX:TCBPicsInput, CH_CATDOCDUMP:TCBVetBillInput
 # allowed_feeding_channel_ids: list of channel vars where feeding schedule commands are permitted

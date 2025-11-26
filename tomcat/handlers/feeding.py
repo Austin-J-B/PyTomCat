@@ -372,7 +372,7 @@ def _resolve_user_ids(names: List[str]) -> List[int]:
     return ids
 
 
-def _format_user(bot: Optional[discord.Client], uid: int, mention: bool) -> str:
+def _format_user(bot: Optional[discord.Client], uid: int | str, mention: bool) -> str:
     if mention:
         return f"<@{uid}>"
     name = None
@@ -398,7 +398,7 @@ def _format_user(bot: Optional[discord.Client], uid: int, mention: bool) -> str:
     return str(name)
 
 
-def _coerce_uid(val) -> Optional[int]:
+def _coerce_uid(val) -> Optional[int | str]:
     if val is None:
         return None
     s = str(val).strip()
@@ -422,7 +422,7 @@ def _load_ui_schedule() -> Dict[str, List[str]]:
     return {}
 
 
-def _read_schedule_for_weekday(weekday_name: str) -> Dict[str, List[int]]:
+def _read_schedule_for_weekday(weekday_name: str) -> Dict[str, List[int | str]]:
     """Read schedule from cache/feeding_schedule.json in station->7-day format."""
     cfg: Dict[str, List[str]] = _load_ui_schedule()
     wk_names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
@@ -432,7 +432,7 @@ def _read_schedule_for_weekday(weekday_name: str) -> Dict[str, List[int]]:
         if low.startswith(w.lower()):
             idx = i
             break
-    out: Dict[str, List[int]] = {}
+    out: Dict[str, List[int | str]] = {}
     for station, seq in cfg.items():
         station_disp = _canonical_station(station) or str(station).strip()
         if not station_disp:
@@ -486,11 +486,12 @@ def _open_feeding_ws():
     if not sid:
         log_action("feeding_sheet", "missing_sheet_id", "")
         return None
+    sid_str = str(sid)
     last_err = None
     for attempt in range(3):
         try:
             gc = sheets_client()
-            sh = gc.open_by_key(sid)
+            sh = gc.open_by_key(sid_str)
             ws = sh.worksheet("FeedingStationChecklist")
             _FEED_WS_CACHE = (ws, now)
             return ws
@@ -1061,10 +1062,10 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> None:
                 _LAST_FEEDING_ALERT_TS = None
 
 async def build_8pm_lines(
-    bot: discord.Client,
+    bot: Optional[discord.Client],
     *,
     unfed: Optional[List[str]] = None,
-    sched: Optional[Dict[str, List[int]]] = None,
+    sched: Optional[Dict[str, List[int | str]]] = None,
     mention: bool = True,
     include_fed: bool = False,
 ) -> str:
@@ -1086,9 +1087,9 @@ async def build_8pm_lines(
 
     sched = sched or {}
 
-    def _assignees_for(station: str) -> List[int]:
+    def _assignees_for(station: str) -> List[int | str]:
         key = _canonical_station(station) or station
-        assignees: List[int] = []
+        assignees: List[int | str] = []
         for r in reversed(subs):
             rec_station = _canonical_station(r.get("station")) or r.get("station")
             if rec_station == key and r.get("status") == "accepted" and today_iso in (r.get("dates") or []):

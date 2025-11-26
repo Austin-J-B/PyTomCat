@@ -28,8 +28,7 @@ async def handle_silent_mode(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
         pass
 
 
-# Guild-scoped admin actions target the primary CCC server.
-TARGET_GUILD_ID = 551082419768393729
+# Guild-scoped admin actions target the primary CCC server (configurable via TARGET_GUILD_ID).
 
 async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
     """Admin-only: remove a specific role from all guild members.
@@ -49,14 +48,15 @@ async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any])
 
     # Always operate on the target main guild, regardless of where the command is invoked
     bot = ctx.get("bot")
+    target_gid = getattr(settings, "target_guild_id", None)
     guild = None
     try:
-        guild = bot.get_guild(int(TARGET_GUILD_ID)) if bot else None
+        guild = bot.get_guild(int(target_gid)) if bot and target_gid else None
     except Exception:
         guild = None
     if not guild:
         try:
-            await message.channel.send("Could not access the main server to remove roles.")
+            await message.channel.send("Could not access the main server to remove roles (missing TARGET_GUILD_ID?).")
         except Exception:
             pass
         return
@@ -126,8 +126,16 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
     names: list[str] = []
     name_arg = str(args.get("name") or "").strip()
     try:
+        sheet_id = getattr(settings, "sheet_vision_id", None)
+        if not sheet_id:
+            try:
+                await message.channel.send("Sheet ID is not configured.")
+            except Exception:
+                pass
+            log_action("recache_error", "sheet", "missing sheet_vision_id")
+            return
         gc = sheets_client()
-        ws = gc.open_by_key(settings.sheet_vision_id).worksheet("RecentPics")
+        ws = gc.open_by_key(str(sheet_id)).worksheet("RecentPics")
         rows = ws.get_all_values()
         if name_arg:
             if name_arg.lower() in {"all", "*", "photos", "cache", "profiles"}:

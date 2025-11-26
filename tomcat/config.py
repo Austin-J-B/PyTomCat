@@ -132,6 +132,8 @@ class Settings:
     ch_member_names: int | None = int(os.getenv("CH_MEMBER_NAMES", "0")) or None
     ch_logging: int | None = int(os.getenv("CH_LOGGING", "0")) or None
     ch_sandbox: int | None = int(os.getenv("CH_TOMCAT_SANDBOX", "0")) or None
+    # Primary guild (server) used for admin tasks (defaults to legacy CCC ID)
+    target_guild_id: int | None = int(os.getenv("TARGET_GUILD_ID", "551082419768393729") or "0") or None
     # Channels allowed to mark feed updates (default empty → no restriction). You set this in .env as
     # allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
     allowed_feeding_channel_ids: list[int] = field(default_factory=lambda: _parse_channel_list_env("allowed_feeding_channel_ids"))

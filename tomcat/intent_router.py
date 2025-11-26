@@ -347,7 +347,8 @@ class IntentRouter:
                 if pend:
                     # Check expiry
                     try:
-                        expires = datetime.fromisoformat(pend.get("expires_ts_iso"))
+                        iso_val = pend.get("expires_ts_iso")
+                        expires = datetime.fromisoformat(str(iso_val)) if iso_val else None
                     except Exception:
                         expires = None
                     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
@@ -375,7 +376,8 @@ class IntentRouter:
                     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
                     if fpend:
                         try:
-                            expires = datetime.fromisoformat(fpend.get("expires_ts_iso"))
+                            iso_val = fpend.get("expires_ts_iso")
+                            expires = datetime.fromisoformat(str(iso_val)) if iso_val else None
                         except Exception:
                             expires = None
                         if not expires or now <= expires:
@@ -1457,7 +1459,7 @@ class IntentRouter:
         if want == "station":
             try:
                 from .aliases import resolve_stations as _resolve_stations
-                stations = _resolve_stations(text, include_stopword_aliases=allow_stopword_aliases)
+                stations = _resolve_stations(text, include_stopword_aliases=allow_stopword_aliases) or []
                 # resolve_stations returns display names already; ensure unique preserve order
                 out: List[str] = []
                 seen = set()
@@ -1727,6 +1729,35 @@ class IntentRouter:
 
         return None
 
+    def _stations_from_schedule(self, user_id: int, dates: Optional[List[str]]) -> List[str]:
+        """Best-effort guess of stations a user is scheduled for on given dates."""
+        stations: List[str] = []
+        if not user_id:
+            return stations
+        target_dates = dates or [self._today()]
+        try:
+            from .handlers import feeding as _feeding  # lazy import to avoid cycles
+        except Exception:
+            return stations
+        for iso in target_dates:
+            try:
+                dt = datetime.fromisoformat(str(iso)).date()
+            except Exception:
+                continue
+            weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dt.weekday()]
+            try:
+                sched = _feeding._read_schedule_for_weekday(weekday)  # type: ignore[attr-defined]
+            except Exception:
+                sched = {}
+            for station_name, assignees in (sched or {}).items():
+                try:
+                    assignee_ids = [int(a) for a in assignees if a is not None]
+                except Exception:
+                    assignee_ids = []
+                if assignee_ids and int(user_id) in assignee_ids and station_name not in stations:
+                    stations.append(station_name)
+        return stations
+
     def _next_weekday(self, today: date, tgt: int) -> date:
         days_ahead = (tgt - today.weekday() + 7) % 7
         days_ahead = 7 if days_ahead == 0 else days_ahead  # always next occurrence
@@ -1768,7 +1799,8 @@ class IntentRouter:
         stations: List[str] = []
         for row in reversed(dq):
             try:
-                ts = datetime.fromisoformat(row.get("ts"))
+                ts_raw = row.get("ts")
+                ts = datetime.fromisoformat(str(ts_raw)) if ts_raw else datetime.now()
             except Exception:
                 ts = datetime.now()
             if ts < cutoff:

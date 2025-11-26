@@ -9,9 +9,9 @@ import json
 import discord
 from datetime import datetime, timezone, timedelta
 try:
-    from zoneinfo import ZoneInfo  # py>=3.9
+    from zoneinfo import ZoneInfo  #py>=3.9
 except Exception:
-    ZoneInfo = None  # type: ignore
+    ZoneInfo = None  #type: ignore
 from typing import Any, Dict, Optional, List, Tuple
 
 from ..logger import log_event, log_action
@@ -20,14 +20,14 @@ from ..utils.payments import detect_provider
 from . import finance
 
 try:
-    from ..utils.sender import safe_send  # (channel, content, **kwargs)
+    from ..utils.sender import safe_send  #(channel, content, **kwargs)
 except Exception:
     async def safe_send(ch, text, **kwargs):
         await ch.send(text, **kwargs)
 
-# ============================
-# Gmail auth helpers (unchanged)
-# ============================
+#============================
+#Gmail auth helpers (unchanged)
+#============================
 
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -68,7 +68,7 @@ async def _build_gmail_service(channel) -> Any:
 
     cred_path, token_path = _paths()
     token_path = _maybe_migrate_token(token_path)
-    creds: Optional[Credentials] = None  # type: ignore
+    creds: Optional[Credentials] = None  #type: ignore
 
     if os.path.exists(token_path):
         try:
@@ -102,9 +102,9 @@ async def _build_gmail_service(channel) -> Any:
 
     return await asyncio.to_thread(lambda: build("gmail", "v1", credentials=creds))
 
-# ============================
-# Time helpers
-# ============================
+#============================
+#Time helpers
+#============================
 
 def _now_iso() -> str:
     tz = None
@@ -116,9 +116,9 @@ def _now_iso() -> str:
     now = datetime.now(tz) if tz else datetime.now()
     return now.isoformat()
 
-# ============================
-# Email check handlers (unchanged)
-# ============================
+#============================
+#Email check handlers (unchanged)
+#============================
 
 async def handle_check_last_email(intent, ctx) -> None:
     """Admin command: echo the newest Gmail inbox message."""
@@ -177,7 +177,7 @@ async def handle_gmail_auth_code(intent, ctx) -> None:
         if not flow:
             flow = _new_flow()
         port = int(os.getenv("GAIL_LOCAL_PORT", "8765") or "8765")
-        # Maintain compatibility with env var spelled GAIL_LOCAL_PORT
+        #Maintain compatibility with env var spelled GAIL_LOCAL_PORT
         port = int(os.getenv("GMAIL_LOCAL_PORT", str(port)) or str(port))
         flow.redirect_uri = f"http://localhost:{port}/"
         await asyncio.to_thread(flow.fetch_token, code=code)
@@ -203,26 +203,26 @@ async def handle_gmail_auth_code(intent, ctx) -> None:
         await safe_send(ch, f"Auth error: {e}")
         log_action("gmail_auth_error", type(e).__name__, str(e))
 
-# ============================
-# Email logging (unchanged)
-# ============================
+#============================
+#Email logging (unchanged)
+#============================
 
 import base64
-from bs4 import BeautifulSoup  # type: ignore
+from bs4 import BeautifulSoup  #type: ignore
 
 EMAILS_DIR = "logs/emails"
 INDEX_FILE = f"{EMAILS_DIR}/index.jsonl"
 _EMAIL_LOG_LOCK = asyncio.Lock()
 
-# ============================
-# Dues analysis refactor (new algorithm)
-# ============================
+#============================
+#Dues analysis refactor (new algorithm)
+#============================
 
 DUES_DIR = os.path.join("logs", "dues")
 os.makedirs(DUES_DIR, exist_ok=True)
 DUES_INDEX = os.path.join(DUES_DIR, "index.jsonl")
 
-# ----------- Normalization & Regexes -----------
+#----------- Normalization & Regexes -----------
 _PROVIDER_RE = re.compile(
     r"\b(paypal|venmo(?:ed)?|cash\s?app(?:ed|d)?|cashapp(?:ed|d)?|cash-app(?:ed|d)?|zelle(?:d|'d)?|in\s*person|cash|irl)\b",
     re.I,
@@ -264,7 +264,7 @@ def _simplify_name(s: str) -> str:
 def _name_match(a: str, b: str) -> int:
     return _ratio(_simplify_name(a), _simplify_name(b))
 
-# --- Jaccard for token overlap ---
+#--- Jaccard for token overlap ---
 def _jaccard_tokens(a: str, b: str) -> float:
     a = (a or "").lower().strip()
     b = (b or "").lower().strip()
@@ -276,7 +276,7 @@ def _jaccard_tokens(a: str, b: str) -> float:
         return 0.0
     return len(A & B) / max(1, len(A | B))
 
-# --- Provider normalize ---
+#--- Provider normalize ---
 _DEF_PROVIDER_MAP = {
     "cash app": "cashapp",
     "cashapp": "cashapp",
@@ -362,7 +362,7 @@ def _amount_candidates(text: str) -> list[float]:
                 k += 1
             if k < len(text):
                 next_char = text[k]
-            # Skip numbers that are part of URL segments or alphanumeric ids
+            #Skip numbers that are part of URL segments or alphanumeric ids
             if prev_char and prev_char.isalpha():
                 continue
             if next_char and next_char.isalpha():
@@ -376,7 +376,7 @@ def _amount_candidates(text: str) -> list[float]:
             vals.append(val)
         except Exception:
             continue
-    # De-duplicate while preserving order
+    #De-duplicate while preserving order
     seen = set()
     ordered: list[float] = []
     for v in vals:
@@ -385,7 +385,7 @@ def _amount_candidates(text: str) -> list[float]:
             ordered.append(v)
     return ordered
 
-# --- Portal parsing & filter ---
+#--- Portal parsing & filter ---
 
 def _handles_from_text(text: str) -> list[str]:
     ven = _VENMO_HANDLE_RE.findall(text or '')
@@ -415,7 +415,7 @@ def _parse_portal_message(msg) -> Dict[str, Any]:
     venmo_handles = _VENMO_HANDLE_RE.findall(text)
     cash_handles = _CASHAPP_RE.findall(text)
 
-    # name extraction: try parentheses first; otherwise leading name or after paid-phrase
+    #name extraction: try parentheses first; otherwise leading name or after paid-phrase
     name = None
     paren = re.search(r"\(([^(]{1,60})\)", text)
     if paren:
@@ -464,21 +464,21 @@ def _is_explicit_payment_message(text: str) -> bool:
     ])
     if not provider:
         return False
-    # Strong signals
+    #Strong signals
     if any(p in t for p in [" paid ", " paid,", " paid.", " paid!", " sent ", " sent.", " sent,", " donated "]):
         return True
-    # Common phrasings seen in payment emails, e.g., "used cashapp"
+    #Common phrasings seen in payment emails, e.g., "used cashapp"
     if " used " in t:
         return True
-    # Provider-verbed variants: "venmoed", "cashapped", "zelle'd"
+    #Provider-verbed variants: "venmoed", "cashapped", "zelle'd"
     if any(v in t for v in ["venmoed", "cashapped", "cashapp'd", "zelle'd", "zelled"]):
         return True
-    # "via/through <provider>"
+    #"via/through <provider>"
     if (" via " in t or " through " in t):
         return True
     return False
 
-# --- Sheet ingress (via Sheets API) ---
+#--- Sheet ingress (via Sheets API) ---
 
 _MEMBERSHIP_ROWS_CACHE: Optional[list[dict]] = None
 _MEMBERSHIP_ROWS_TS: float = 0.0
@@ -491,7 +491,7 @@ def _load_membership_rows():
         from ..services.sheets_client import sheets_client as _sc
         ws_name = getattr(settings,'membership_ws_title','Membership Application List')
         log_action('dues_membership_open', f'sheet={sid}', f'ws={ws_name}')
-        # Use a small TTL to avoid 429s when the command is run back-to-back
+        #Use a small TTL to avoid 429s when the command is run back-to-back
         global _MEMBERSHIP_ROWS_CACHE, _MEMBERSHIP_ROWS_TS
         import time as _time
         ttl = max(1, int(getattr(settings, 'dues_membership_ttl_sec', 300) or 300))
@@ -577,7 +577,7 @@ def _load_membership_rows():
         log_action('dues_membership_error', 'read', str(e))
         return []
 
-# --- Semester helpers ---
+#--- Semester helpers ---
 def _current_semester_label() -> str:
     try:
         from datetime import datetime
@@ -592,7 +592,7 @@ def _current_semester_label() -> str:
         sem = 'Spring' if now.month <= 6 else 'Fall'
         return f"{sem} {year}"
     except Exception:
-        # safe fallback
+        #safe fallback
         return ""
 
 def _norm_sem_label(s: str) -> str:
@@ -646,7 +646,7 @@ def _dedupe_by_oldest(rows: list[dict]) -> tuple[list[dict], list[str], Dict[str
     for key, items in groups.items():
         items_sorted = sorted(items, key=lambda t: (t[1] or datetime.max, t[2]))
         keep_row, keep_dt, _ = items_sorted[0]
-        # Aggregate handles across all grouped rows
+        #Aggregate handles across all grouped rows
         agg_handles: list[str] = []
         group_rows: list[dict] = []
         for r0, _, _ in items_sorted:
@@ -667,12 +667,12 @@ def _dedupe_by_oldest(rows: list[dict]) -> tuple[list[dict], list[str], Dict[str
 
 def _simplify_username(s: str) -> str:
     t = (s or '').strip()
-    # Drop leading '@' and discriminator suffix
+    #Drop leading '@' and discriminator suffix
     t = t.lstrip('@')
     if '#' in t:
         t = t.split('#', 1)[0]
-    # Normalize whitespace and lowercase
-    t = re.sub(r"\s+", "", t)  # collapse and remove spaces entirely for display-name patterns like "e l u s i v e"
+    #Normalize whitespace and lowercase
+    t = re.sub(r"\s+", "", t)  #collapse and remove spaces entirely for display-name patterns like "e l u s i v e"
     return t.lower()
 
 def _norm_user_key(s: str) -> str:
@@ -696,13 +696,13 @@ def _edit_distance(a: str, b: str) -> int:
     return dp[m]
 
 
-# ============================
-# MavOrgs invite confirmation + sheet update
-# ============================
+#============================
+#MavOrgs invite confirmation + sheet update
+#============================
 
 class InvitesConfirmView(discord.ui.View):
     def __init__(self, author_id: int, emails: list[str]):
-        super().__init__(timeout=300)  # 5 min
+        super().__init__(timeout=300)  #5 min
         self.author_id = int(author_id) if author_id else 0
         self.emails = [e.strip().lower() for e in emails if e]
 
@@ -764,7 +764,7 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
             return re.sub(r"[^a-z]+", "", (s or '').lower())
         header_idx = 0
         header = rows[0]
-        # Try to locate a better header row within first 30
+        #Try to locate a better header row within first 30
         target_keys = {'email','mavorgsinvite'}
         best_hits = -1
         for i in range(min(30, len(rows))):
@@ -779,22 +779,22 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
         i_inv   = idx.get('mavorgsinvite', -1)
         if i_email < 0 or i_inv < 0:
             return False, "Could not find Email or Mavorgs Invite columns."
-        # Batch updates: collect cells to update
+        #Batch updates: collect cells to update
         updates = []
-        for ri, row in enumerate(rows[header_idx+1:], start=header_idx+2):  # 1-based rows
+        for ri, row in enumerate(rows[header_idx+1:], start=header_idx+2):  #1-based rows
             email_val = str(row[i_email] if i_email < len(row) else '').strip().lower()
             if email_val and email_val in emails_set:
-                # Only set if different/not already 'TRUE'
+                #Only set if different/not already 'TRUE'
                 cur = (row[i_inv] if i_inv < len(row) else '').strip().upper()
                 if cur not in {'TRUE','✅','YES','Y','1','X'}:
                     updates.append((ri, i_inv+1, 'TRUE'))
         if not updates:
             return True, "All selected rows already marked invited."
-        # Prefer a batched update to avoid write quota errors
+        #Prefer a batched update to avoid write quota errors
         try:
-            from gspread.cell import Cell  # type: ignore
+            from gspread.cell import Cell  #type: ignore
             cells = [Cell(row=r, col=c, value=v) for r, c, v in updates]
-            # Chunk large updates to be gentle with API quotas
+            #Chunk large updates to be gentle with API quotas
             BATCH = 200
             total = 0
             for i in range(0, len(cells), BATCH):
@@ -804,7 +804,7 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
                     total += len(chunk)
                 except Exception as e2:
                     log_action('mavorgs_invite_update_error', f"batch={i}//{BATCH}", str(e2))
-                    # Fallback to per-cell with exponential backoff on quota
+                    #Fallback to per-cell with exponential backoff on quota
                     delay = 1.0
                     for cell in chunk:
                         for attempt in range(5):
@@ -819,11 +819,11 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
                                     continue
                                 log_action('mavorgs_invite_update_error', f"r={cell.row} c={cell.col}", str(e3))
                                 break
-                # Small pause between chunks
+                #Small pause between chunks
                 await asyncio.sleep(0.8)
             return True, f"Marked invites for {len(updates)} member(s)."
         except Exception as e:
-            # If we couldn't batch, fall back to per-cell updates with backoff
+            #If we couldn't batch, fall back to per-cell updates with backoff
             log_action('mavorgs_invite_update_error', 'batch_setup', str(e))
             delay = 1.0
             done = 0
@@ -891,7 +891,7 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
         def hkey(s: str) -> str:
             return re.sub(r"[^a-z]+", "", (s or '').lower())
         header_idx = 0
-        # Try to locate a better header row within first 30
+        #Try to locate a better header row within first 30
         target_keys = {'email','verified','semester'}
         best_hits = -1
         for i in range(min(30, len(rows))):
@@ -907,14 +907,14 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
         i_sem   = idx.get('semester', -1)
         if i_email < 0 or i_ver < 0:
             return False, "Could not find Email or Verified columns."
-        # Build lookup set
+        #Build lookup set
         lookup: dict[str, set[str]] = {}
         for e, s in emails_with_sem:
             if not e:
                 continue
             lookup.setdefault(e, set()).add(str(s or '').strip())
-        # Prepare Cell updates similar to _mark_mavorg_invites
-        from gspread.cell import Cell  # type: ignore
+        #Prepare Cell updates similar to _mark_mavorg_invites
+        from gspread.cell import Cell  #type: ignore
         cells: list[Cell] = []
         marked = 0
         for ri, row in enumerate(rows[header_idx+1:], start=header_idx+2):
@@ -933,7 +933,7 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
             marked += 1
         if not cells:
             return True, "No rows needed marking as Verified."
-        # Chunked updates with backoff like invites
+        #Chunked updates with backoff like invites
         BATCH = 200
         done = 0
         for i in range(0, len(cells), BATCH):
@@ -986,7 +986,7 @@ async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float
     if not cleaned:
         return False, "No donation updates required."
 
-    # Deduplicate by (email, semester)
+    #Deduplicate by (email, semester)
     desired: Dict[tuple[str, str], float] = {}
     for email_norm, sem_norm, amt in cleaned:
         key = (email_norm, sem_norm or '')
@@ -1031,7 +1031,7 @@ async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float
         if i_email < 0 or i_don < 0:
             return False, "Could not find Email or Donation columns."
 
-        from gspread.cell import Cell  # type: ignore
+        from gspread.cell import Cell  #type: ignore
 
         cells: list[Cell] = []
         applied: set[tuple[str, str]] = set()
@@ -1143,7 +1143,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
     if not ch or not bot:
         return
     global _MEMBERSHIP_ROWS_CACHE, _MEMBERSHIP_ROWS_TS
-    # 1) Analyze and post the same summary as handle_check_dues
+    #1) Analyze and post the same summary as handle_check_dues
     placeholder = None
     try:
         placeholder = await ch.send('Analyzing dues…')
@@ -1178,7 +1178,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
     else:
         await safe_send(ch, header + ("\n".join(lines[:15]) if lines else ""))
 
-    # 2) Auto-verify high-confidence entries and delete their portal messages
+    #2) Auto-verify high-confidence entries and delete their portal messages
     eligible: list[dict] = []
     donation_updates: list[tuple[str, Optional[str], float]] = []
     base_due = float(getattr(settings, 'dues_base_amount', 15.0) or 15.0)
@@ -1196,7 +1196,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
         prov = ((_provider_from_email((E.get('from') or ''), (E.get('subject') or ''), (E.get('content') or ''))) or '').lower()
         if prov not in {'venmo','cashapp','paypal'}:
             continue
-        # Enforce email time window relative to the discord message timestamp
+        #Enforce email time window relative to the discord message timestamp
         try:
             from datetime import datetime
             msg_ts = datetime.fromisoformat(str(rec.get('ts')).replace('Z','+00:00'))
@@ -1215,7 +1215,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
                     pass
                 else:
                     continue
-        # Require amount == 15 or email mentions dues/due in subject/body
+        #Require amount == 15 or email mentions dues/due in subject/body
         subj = (E.get('subject') or '')
         body = (E.get('content') or '')
         text = f"{subj} {body}"
@@ -1237,7 +1237,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
                 donation_updates.append((email_for_donation, (S.get('semester') or '').strip() or None, donation_extra))
         eligible.append(rec)
 
-    # Mark Verified for eligible emails (email + semester)
+    #Mark Verified for eligible emails (email + semester)
     emails_with_sem: list[tuple[str, str | None]] = []
     for rec in eligible:
         S = rec['primary_member']
@@ -1251,11 +1251,11 @@ async def handle_update_dues_members(intent, ctx) -> None:
             log_action('dues_auto_verify', f"count={len(emails_with_sem)}", msg)
         except Exception:
             pass
-        # Invalidate membership cache so perks sees fresh Verified flags
+        #Invalidate membership cache so perks sees fresh Verified flags
         _MEMBERSHIP_ROWS_CACHE = None
         _MEMBERSHIP_ROWS_TS = 0.0
 
-    # Delete portal messages for eligible
+    #Delete portal messages for eligible
     ids = [int(rec.get('message_id') or 0) for rec in eligible if int(rec.get('message_id') or 0)]
     if ids:
         deleted = await _delete_portal_messages(bot, ids)
@@ -1264,7 +1264,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
         except Exception:
             pass
 
-    # Update donation amounts for high-confidence dues + donation emails
+    #Update donation amounts for high-confidence dues + donation emails
     if donation_updates:
         ok_don, msg_don = await _update_donation_amounts(donation_updates)
         try:
@@ -1275,7 +1275,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
             _MEMBERSHIP_ROWS_CACHE = None
             _MEMBERSHIP_ROWS_TS = 0.0
 
-    # 3) Run the standard dues perks flow (emails list, usernames, roles, invite prompt)
+    #3) Run the standard dues perks flow (emails list, usernames, roles, invite prompt)
     try:
         await handle_run_dues_perks(intent, ctx)
     except Exception as e:
@@ -1284,7 +1284,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
         except Exception:
             pass
 
-    # 4) Report entries left for manual review
+    #4) Report entries left for manual review
     review_lines: list[str] = []
     for rec in rows:
         sc = float(rec.get('score_total') or 0.0)
@@ -1307,7 +1307,7 @@ async def _ensure_guild_members(guild) -> list:
         members = list(getattr(guild, 'members', []) or [])
         if members:
             return members
-        # Try fetching if cache empty
+        #Try fetching if cache empty
         out = []
         async for m in guild.fetch_members(limit=None):
             out.append(m)
@@ -1323,10 +1323,10 @@ def _split_handle_candidates(text: str) -> list[str]:
     t = (text or '').strip()
     if not t:
         return []
-    # Quick bail on common non-answers
+    #Quick bail on common non-answers
     if re.fullmatch(r"(?i)\s*(none|n/?a|na|same|no it is the same|not different)\s*", t):
         return []
-    # Split on common separators and phrases
+    #Split on common separators and phrases
     parts = re.split(r"\s*(?:\bor\b|\band\b|/|\\|,|\||\baka\b|\snow\b|\salso\b|\-\s*now\s*)\s*", t, flags=re.I)
     out: list[str] = []
     seen: set[str] = set()
@@ -1334,7 +1334,7 @@ def _split_handle_candidates(text: str) -> list[str]:
         p = p.strip().lstrip('@')
         if not p or re.fullmatch(r"(?i)(none|n/?a|na)", p):
             continue
-        # If they provided multiple words, keep if it looks like a username (has dot/underscore/number) or short single word
+        #If they provided multiple words, keep if it looks like a username (has dot/underscore/number) or short single word
         keep = False
         if len(p) <= 24 and re.search(r"[._0-9]", p):
             keep = True
@@ -1349,7 +1349,7 @@ def _split_handle_candidates(text: str) -> list[str]:
             continue
         seen.add(key)
         out.append(p)
-    # If nothing parsed, return original trimmed (still useful for fuzzy)
+    #If nothing parsed, return original trimmed (still useful for fuzzy)
     return out or [t]
 
 def _expand_handle_variants(handles: list[str]) -> list[str]:
@@ -1378,12 +1378,12 @@ def _expand_handle_variants(handles: list[str]) -> list[str]:
                         add(f"{base}{n-d}")
             except Exception:
                 pass
-        # spelling variants
+        #spelling variants
         if 'sourcerer' in h.lower():
             add(re.sub(r"(?i)sourcerer", "sorcerer", h))
         if 'sorcerer' in h.lower():
             add(re.sub(r"(?i)sorcerer", "sourcerer", h))
-        # common terminal swap: 'din' <-> 'dan'
+        #common terminal swap: 'din' <-> 'dan'
         if re.search(r"(?i)din$", h):
             add(re.sub(r"(?i)din$", "dan", h))
         if re.search(r"(?i)dan$", h):
@@ -1396,13 +1396,13 @@ def _best_member_match(sheet_name: str, full_name: str, members: list) -> tuple[
     mode in {handle_exact, handle_contain, handle_edit, handle_fuzzy, name_fuzzy, none}.
     Score is 0..100.
     """
-    # Prepare candidate handles from the sheet (can contain multiple options)
+    #Prepare candidate handles from the sheet (can contain multiple options)
     handle_candidates = _split_handle_candidates(sheet_name) or [sheet_name]
     handle_candidates = _expand_handle_variants(handle_candidates)
     q_full_s_base = _simplify_username(full_name)
     q_full_base = _norm_user_key(full_name)
 
-    # If no reasonable query at all, bail
+    #If no reasonable query at all, bail
     if not any(_norm_user_key(h) for h in handle_candidates) and not q_full_base:
         return (None, 0, "", "none")
 
@@ -1417,14 +1417,14 @@ def _best_member_match(sheet_name: str, full_name: str, members: list) -> tuple[
         cands_raw = [c for c in cands_raw if c]
         cands_key = [_norm_user_key(c) for c in cands_raw]
 
-        # 1) Exact alnum equality on handle
+        #1) Exact alnum equality on handle
         if q_handle and q_handle in cands_key:
             return (100, cands_raw[cands_key.index(q_handle)], "handle_exact")
-        # 1b) Exact alnum equality on full name-derived key (handles spaced/stylized display names)
+        #1b) Exact alnum equality on full name-derived key (handles spaced/stylized display names)
         if q_full and q_full in cands_key and len(q_full) >= 4:
             return (96, cands_raw[cands_key.index(q_full)], "handle_contain")
 
-        # 2) Containment for keys >= 4 chars (avoid short accidental hits)
+        #2) Containment for keys >= 4 chars (avoid short accidental hits)
         for i, ck in enumerate(cands_key):
             if q_handle and len(q_handle) >= 4 and (q_handle in ck or ck in q_handle):
                 return (93, cands_raw[i], "handle_contain")
@@ -1432,20 +1432,20 @@ def _best_member_match(sheet_name: str, full_name: str, members: list) -> tuple[
             if q_full and len(q_full) >= 5 and (q_full in ck or ck in q_full):
                 return (90, cands_raw[i], "handle_contain")
 
-        # 2b) One- to two-edits-away on handle for longer keys (e.g., kitadin→kitadan, plink5276→plink5277)
+        #2b) One- to two-edits-away on handle for longer keys (e.g., kitadin→kitadan, plink5276→plink5277)
         if q_handle_s:
             for i, cr in enumerate(cands_raw):
                 ed = _edit_distance(q_handle_s, cr)
                 if ed <= 2 and max(len(q_handle_s), len(cr)) >= 6:
-                    # Slightly reduce score for 2 edits
+                    #Slightly reduce score for 2 edits
                     return (92 if ed == 1 else 88, cr, "handle_edit")
 
-        # 3) Fuzzy on simplified strings (prefer handle vs member.name/display/global)
+        #3) Fuzzy on simplified strings (prefer handle vs member.name/display/global)
         best_local = 0
         best_form = ""
         best_mode = "none"
         for i, cr in enumerate(cands_raw):
-            # Compare sheet handle to candidate raw
+            #Compare sheet handle to candidate raw
             scores = []
             mode_now = "none"
             try:
@@ -1469,7 +1469,7 @@ def _best_member_match(sheet_name: str, full_name: str, members: list) -> tuple[
     best_score = 0
     best_form = ""
     best_mode = "none"
-    # Try each candidate handle; keep the best scoring member across all
+    #Try each candidate handle; keep the best scoring member across all
     for cand in handle_candidates:
         q_handle_s = _simplify_username(cand)
         q_handle = _norm_user_key(cand)
@@ -1488,7 +1488,7 @@ def _best_member_match(sheet_name: str, full_name: str, members: list) -> tuple[
             break
     return (best_member, best_score, best_form, best_mode)
 
-# --- Shared matching helpers for membership ↔ guild ---
+#--- Shared matching helpers for membership ↔ guild ---
 def _norm_human(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (s or '').lower())
 
@@ -1534,7 +1534,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
     matched: list[dict] = []
     possible: list[dict] = []
     unmatched: list[dict] = []
-    # id -> member map
+    #id -> member map
     id_to_member: Dict[int, Any] = {}
     for m in members:
         try:
@@ -1543,7 +1543,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
                 id_to_member[mid] = m
         except Exception:
             pass
-    # Optional alias map from settings.user_id_map (normalized keys -> member)
+    #Optional alias map from settings.user_id_map (normalized keys -> member)
     alias_to_member: Dict[str, Any] = {}
     try:
         uid_map = getattr(settings, 'user_id_map', {}) or {}
@@ -1559,7 +1559,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
         alias_to_member = {}
 
     for r in rows:
-        # Combine all known handles for this person: aggregated from dedupe, or fallback to discord + payment
+        #Combine all known handles for this person: aggregated from dedupe, or fallback to discord + payment
         sheet_handles = (r.get('__agg_handles') or '').strip()
         if not sheet_handles:
             sheet_handles = ", ".join([
@@ -1567,7 +1567,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
                 (r.get('payment_username') or '').strip(),
             ])
         m, sc, _, mode = _best_member_match(sheet_handles, r.get('full_name') or '', members)
-        # Check if we already resolved this sheet username before; prefer that binding
+        #Check if we already resolved this sheet username before; prefer that binding
         key = _norm_user_key(r.get('discord_username') or '')
         if key and key in _RESOLVED_SHEET_USERNAME_TO_UID:
             mid = _RESOLVED_SHEET_USERNAME_TO_UID[key]
@@ -1575,11 +1575,11 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
             if mm is not None:
                 matched.append({'row': r, 'member': mm, 'score': 100, 'mode': 'handle_exact'})
                 continue
-        # Alias fallback (settings.user_id_map)
+        #Alias fallback (settings.user_id_map)
         if key and key in alias_to_member:
             matched.append({'row': r, 'member': alias_to_member[key], 'score': 100, 'mode': 'handle_exact'})
             continue
-        # Alias near-match fallback: allow 1 edit or high token ratio (to catch typos like kitadin -> Kitadan)
+        #Alias near-match fallback: allow 1 edit or high token ratio (to catch typos like kitadin -> Kitadan)
         if key and not m and alias_to_member:
             best_alias = None
             best_alias_score = -1
@@ -1597,7 +1597,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
             if best_alias is not None:
                 matched.append({'row': r, 'member': best_alias, 'score': 95, 'mode': 'alias_near'})
                 continue
-        # Accept only strong handle-based matches; promote strong name-only fuzzy too
+        #Accept only strong handle-based matches; promote strong name-only fuzzy too
         if m and mode.startswith('handle') and (sc >= 85 or (key and sc >= 82)):
             matched.append({'row': r, 'member': m, 'score': sc, 'mode': mode})
         elif m and mode == 'name_fuzzy' and sc >= 90:
@@ -1606,7 +1606,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
             possible.append({'row': r, 'member': m, 'score': sc, 'mode': mode})
         else:
             unmatched.append(r)
-    # Enforce one-person-per-username by keeping highest score per member id
+    #Enforce one-person-per-username by keeping highest score per member id
     best_for_uid: Dict[int, dict] = {}
     def _mode_rank(m: str) -> int:
         return {"handle_exact": 3, "handle_edit": 2, "handle_contain": 1, "handle_fuzzy": 0, "name_fuzzy": -1}.get(m or "", -2)
@@ -1622,7 +1622,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
             best_for_uid[uid] = rec
     matched_unique = list(best_for_uid.values())
 
-    # Any matched records dropped by member de-dup become unmatched candidates for re-try/reporting
+    #Any matched records dropped by member de-dup become unmatched candidates for re-try/reporting
     kept_rows = {id(rec['row']) for rec in matched_unique}
     dropped_rows = [rec['row'] for rec in matched if id(rec['row']) not in kept_rows]
     if dropped_rows:
@@ -1631,10 +1631,10 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
             if id(r) not in row_ids:
                 unmatched.append(r)
 
-    # Second pass: promote high-score possibles to fill unused members/rows
+    #Second pass: promote high-score possibles to fill unused members/rows
     used_uids = {int(getattr(rec['member'], 'id', 0) or 0) for rec in matched_unique if rec.get('member')}
     matched_rows = {id(rec['row']) for rec in matched_unique}
-    # Sort possibles by score desc, prefer handle modes
+    #Sort possibles by score desc, prefer handle modes
     def _pos_rank(rec: dict) -> tuple:
         mode = rec.get('mode') or ''
         mode_boost = 2 if str(mode).startswith('handle') else (1 if mode == 'name_fuzzy' else 0)
@@ -1645,7 +1645,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
             continue
         if id(rec['row']) in matched_rows:
             continue
-        # Promote if reasonably strong
+        #Promote if reasonably strong
         sc = int(rec.get('score') or 0)
         mode = rec.get('mode') or ''
         if (mode.startswith('handle') and sc >= 72) or (mode == 'name_fuzzy' and sc >= 85) or sc >= 88:
@@ -1653,7 +1653,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
             used_uids.add(uid)
             matched_rows.add(id(rec['row']))
 
-    # Third pass: reassign unmatched/dropped rows to unused members (greedy), trying second-best options
+    #Third pass: reassign unmatched/dropped rows to unused members (greedy), trying second-best options
     remaining_members = [m for m in members if int(getattr(m, 'id', 0) or 0) not in used_uids]
     if remaining_members:
         still_unmatched: list[dict] = []
@@ -1700,29 +1700,29 @@ async def handle_run_dues_perks(intent, ctx) -> None:
     if not ch or not bot:
         return
 
-    # Load membership rows
+    #Load membership rows
     rows = _load_membership_rows()
     cur_sem = _current_semester_label()
     cur_sem_norm = _norm_sem_label(cur_sem)
 
-    # Filter by semester + verified
+    #Filter by semester + verified
     use_rows = []
     for r in rows:
         sem = _norm_sem_label(r.get('semester',''))
         if sem and cur_sem_norm and sem != cur_sem_norm:
             continue
         if not r.get('verified', False):
-            # If verified column missing, fallback to keywords in kind/paid_where
+            #If verified column missing, fallback to keywords in kind/paid_where
             pass
         if not r.get('verified', False):
             continue
         use_rows.append(r)
 
-    # Dedupe by person (keep oldest info) and aggregate handles across dupes
+    #Dedupe by person (keep oldest info) and aggregate handles across dupes
     use_rows_dedup, dup_reports, _groups = _dedupe_by_oldest(use_rows)
 
-    # 1) Emails message (to current channel)
-    # Only include valid UTA emails where MavOrgs Invite has NOT been sent (any of their grouped rows)
+    #1) Emails message (to current channel)
+    #Only include valid UTA emails where MavOrgs Invite has NOT been sent (any of their grouped rows)
     def _group_key(r: dict) -> Optional[str]:
         email = (r.get('email') or '').strip().lower()
         dk = _norm_user_key(r.get('discord_username') or '')
@@ -1755,14 +1755,14 @@ async def handle_run_dues_perks(intent, ctx) -> None:
     else:
         await safe_send(ch, "No pending MavOrgs emails for verified members this semester.")
 
-    # 2) Username matching and reporting
+    #2) Username matching and reporting
     guild, members = await _guild_and_members(bot)
     if not guild or not members:
         await safe_send(ch, "Could not access the target guild to match usernames.")
         return
 
     matched, possible, unmatched = _match_membership_rows_to_members(use_rows_dedup, members)
-    # Remember resolved sheet usernames -> member ids for future runs
+    #Remember resolved sheet usernames -> member ids for future runs
     for rec in matched:
         r = rec['row']; mem = rec['member']
         key = _norm_user_key(r.get('discord_username') or '')
@@ -1772,7 +1772,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
             mid = 0
         if key and mid:
             _RESOLVED_SHEET_USERNAME_TO_UID[key] = mid
-    # Prepare summary for current channel (with coverage)
+    #Prepare summary for current channel (with coverage)
     matched_labels = []
     seen_labels: set[str] = set()
     for m in matched:
@@ -1788,7 +1788,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         seen_labels.add(key)
         matched_labels.append(label)
     matched_labels.sort()
-    # For unmatched, show full row context (name, discord, email)
+    #For unmatched, show full row context (name, discord, email)
     def _handles_for_row(r: dict) -> str:
         vals = []
         if r.get('discord_username'): vals.append(str(r.get('discord_username')).strip())
@@ -1805,7 +1805,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
             f"{(r.get('full_name') or '').strip() or '(unknown name)'} — Discord: {(r.get('discord_username') or '').strip() or '(unknown)'} — Pay: {(r.get('payment_username') or '').strip() or '(unknown)'} — Tried: {_handles_for_row(r)} — Email: {(r.get('email') or '').strip()}"
         )
     possible_rows = sorted([(r['row'].get('discord_username') or r['row'].get('full_name') or '(unknown)'), (getattr(r['member'],'name','') or getattr(r['member'],'display_name','') or ''), int(r['score'])] for r in possible)
-    # Prepare labels for sandbox error summary
+    #Prepare labels for sandbox error summary
     unmatched_labels = sorted({
         ((r.get('discord_username') or '').strip() or (r.get('full_name') or '').strip() or '(unknown)')
         for r in unmatched
@@ -1821,7 +1821,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         parts.append("Possible matches: " + poss)
     await safe_send(ch, "\n".join(parts) if parts else "No usernames matched for verified members this semester.")
 
-    # 3) Errors to sandbox (unmatched + possible + duplicates)
+    #3) Errors to sandbox (unmatched + possible + duplicates)
     sandbox = _find_sandbox_channel(bot)
     dups = _compute_duplicates(use_rows)
     if sandbox and hasattr(sandbox, 'send'):
@@ -1846,7 +1846,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         if err_lines:
             await safe_send(sandbox, "Dues Perks Issues\n" + "\n".join(err_lines))
 
-    # 4) Status messages for confident matches (posted to sandbox), 1.1s apart
+    #4) Status messages for confident matches (posted to sandbox), 1.1s apart
     confident = []
     dup_keys = dups
     for rec in matched:
@@ -1859,7 +1859,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
             continue
         confident.append((r, mem))
 
-    # Choose destination for status messages: member-names channel preferred
+    #Choose destination for status messages: member-names channel preferred
     dest = None
     try:
         member_ch_id = int(getattr(settings, 'ch_member_names', None) or 0)
@@ -1873,7 +1873,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
     if not dest:
         dest = sandbox or ch
 
-    # Role to grant to verified/matched members
+    #Role to grant to verified/matched members
     ROLE_DUES_ID = int(getattr(settings, "role_dues_perks_id", 0) or 0)
     role_obj = None
     try:
@@ -1882,13 +1882,13 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         role_obj = None
     sem_label = (_norm_sem_label(cur_sem) or cur_sem).lower()
 
-    # Load existing posts in destination to avoid duplicate semester entries per member
+    #Load existing posts in destination to avoid duplicate semester entries per member
     existing_lines: list[str] = []
     try:
         if hasattr(dest, 'history'):
             async for msg in dest.history(limit=1000):
                 try:
-                    # Prefer filtering to bot-authored messages if bot_user_id configured
+                    #Prefer filtering to bot-authored messages if bot_user_id configured
                     bot_uid = int(getattr(settings, 'bot_user_id', 0) or 0)
                     if bot_uid and int(getattr(msg.author, 'id', 0) or 0) != bot_uid:
                         continue
@@ -1901,7 +1901,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         pass
 
     for r, mem in confident:
-        # Add the dues role to matched member (without altering other roles)
+        #Add the dues role to matched member (without altering other roles)
         if role_obj is not None:
             try:
                 roles = getattr(mem, 'roles', []) or []
@@ -1915,7 +1915,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         real = r.get('full_name') or '(unknown)'
         uname = getattr(mem, 'name', '') or getattr(mem, 'display_name', '') or '(unknown)'
         line = f"{real}, {uname}, {sem_label}"
-        # If we've already posted an entry for this username + semester in the destination, skip posting
+        #If we've already posted an entry for this username + semester in the destination, skip posting
         uname_l = (uname or '').strip().lower()
         already = False
         for t in existing_lines:
@@ -1924,13 +1924,13 @@ async def handle_run_dues_perks(intent, ctx) -> None:
                 break
         if not already:
             await safe_send(dest, line)
-            # Keep a lower-case copy so subsequent entries in this run dedupe too
+            #Keep a lower-case copy so subsequent entries in this run dedupe too
             existing_lines.append(line.lower())
             await asyncio.sleep(1.1)
 
-    # Ask to confirm MavOrgs invites and mark sheet when confirmed
+    #Ask to confirm MavOrgs invites and mark sheet when confirmed
     try:
-        # Only prompt if we actually produced a non-empty email list
+        #Only prompt if we actually produced a non-empty email list
         if emails_unique:
             orig_msg = ctx.get('message')
             requester = ctx.get('author')
@@ -1943,7 +1943,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         except Exception:
             pass
 
-# --- Email logs (existing helpers retained) ---
+#--- Email logs (existing helpers retained) ---
 
 _MONTH_NAMES = {
     1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
@@ -1992,7 +1992,7 @@ def _load_email_logs_between(start_dt: datetime, end_dt: datetime) -> List[dict]
             log_action('dues_email_read_error', p, str(e))
     return out
 
-# --- Provider & payer extraction from emails ---
+#--- Provider & payer extraction from emails ---
 
 def _provider_from_email(frm: str, subj: str, body: str) -> Optional[str]:
     f = (frm or '').lower(); s = (subj or '').lower(); b = (body or '').lower()
@@ -2046,7 +2046,7 @@ def _payment_username_from_email(em: dict) -> str | None:
         m2 = re.search(r"([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,2})", subj)
         if m2:
             return m2.group(1)
-    # Generic fallbacks when provider-specific patterns fail
+    #Generic fallbacks when provider-specific patterns fail
     m = re.search(r"\b([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})\b\s+sent\s+you\s+\$?\d", subj, re.I)
     if m:
         return m.group(1).strip()
@@ -2055,11 +2055,11 @@ def _payment_username_from_email(em: dict) -> str | None:
         return m2.group(1).strip()
     return None
 
-# --- NLP hooks (kept available, but not required for scoring) ---
+#--- NLP hooks (kept available, but not required for scoring) ---
 try:
-    from ..nlp.model import NLPModel  # optional
+    from ..nlp.model import NLPModel  #optional
 except Exception:
-    NLPModel = None  # type: ignore
+    NLPModel = None  #type: ignore
 
 _NLP_CACHE = None
 _RESOLVED_SHEET_USERNAME_TO_UID: Dict[str, int] = {}
@@ -2078,7 +2078,7 @@ def _nlp_dues_bias_sync(text: str) -> int:
     if not _NLP_CACHE:
         return 0
     try:
-        _, p = _NLP_CACHE.score_entity(text, ["dues payment"])  # simple bias
+        _, p = _NLP_CACHE.score_entity(text, ["dues payment"])  #simple bias
         prob = float(p)
         if prob >= float(getattr(settings,'nlp_conf_mid',0.75)):
             return 20
@@ -2086,7 +2086,7 @@ def _nlp_dues_bias_sync(text: str) -> int:
     except Exception:
         return 0
 
-# --- Debug helper ---
+#--- Debug helper ---
 
 def _debug(name: str, trigger: str = "", output: str = ""):
     try:
@@ -2094,7 +2094,7 @@ def _debug(name: str, trigger: str = "", output: str = ""):
     except Exception:
         pass
 
-# --- Officer tokens ---
+#--- Officer tokens ---
 
 def _officer_name_tokens(bot) -> set[str]:
     toks: set[str] = set()
@@ -2116,11 +2116,11 @@ def _officer_name_tokens(bot) -> set[str]:
         pass
     return toks
 
-# ============================
-# Core scoring model (blueprint)
-# ============================
+#============================
+#Core scoring model (blueprint)
+#============================
 
-# Tunable weights (can move to settings later)
+#Tunable weights (can move to settings later)
 _W = {
     'sheet': {
         'discord_handle_overlap': 0.50,
@@ -2195,9 +2195,9 @@ def _score_email(D: dict, S: Optional[dict], E: dict, ets: Optional[datetime]) -
         elif int(round(amt)) in {20,25,30}: s += _W['email']['amount_tiers']
     return s
 
-# ============================
-# Portal fetch & main analysis
-# ============================
+#============================
+#Portal fetch & main analysis
+#============================
 
 async def _fetch_portal_messages(bot) -> list:
     ch_id = getattr(settings, 'ch_due_portal', None)
@@ -2211,10 +2211,10 @@ async def _fetch_portal_messages(bot) -> list:
     msgs = []
     skip = max(0, int(getattr(settings,'dues_scan_skip_oldest',3) or 0))
     conf_limit = int(getattr(settings,'dues_scan_limit',0) or 0)
-    # Bound history read to keep the command snappy. If DUES_SCAN_LIMIT=0, default to 500.
+    #Bound history read to keep the command snappy. If DUES_SCAN_LIMIT=0, default to 500.
     limit = conf_limit if conf_limit > 0 else 500
     try:
-        # Fetch newest-first then reverse to chronological for downstream logic
+        #Fetch newest-first then reverse to chronological for downstream logic
         fetched = []
         async for m in ch.history(limit=limit, oldest_first=False):
             fetched.append(m)
@@ -2227,14 +2227,14 @@ async def _fetch_portal_messages(bot) -> list:
     msgs = msgs[skip:]
     return msgs
 
-# ---- main ----
+#---- main ----
 
 async def _analyze_dues(bot) -> List[dict]:
     _debug('begin')
     msgs = await _fetch_portal_messages(bot)
     members = _load_membership_rows()
 
-    # Filter portal messages to explicit payment statements
+    #Filter portal messages to explicit payment statements
     parsed_msgs: List[Tuple[Any, dict]] = []
     for m in msgs:
         p = _parse_portal_message(m)
@@ -2245,7 +2245,7 @@ async def _analyze_dues(bot) -> List[dict]:
     if not parsed_msgs:
         return []
 
-    # Restrict member rows by earliest message timestamp (with buffer)
+    #Restrict member rows by earliest message timestamp (with buffer)
     oldest_ts = parsed_msgs[0][1]['ts']
     min_date = (oldest_ts.replace(tzinfo=None) - timedelta(days=int(getattr(settings,'dues_email_window_days',3) or 3))).date()
     def _parse_date(s: str):
@@ -2255,12 +2255,12 @@ async def _analyze_dues(bot) -> List[dict]:
             return None
     members = [r for r in members if (not r.get('date')) or (_parse_date(r.get('date')) is None) or (_parse_date(r.get('date')) >= min_date)]
 
-    # Preload emails in the global window
+    #Preload emails in the global window
     start = parsed_msgs[0][1]['ts'].replace(tzinfo=None) - timedelta(days=int(getattr(settings,'dues_email_window_days',5) or 5))
     end = parsed_msgs[-1][1]['ts'].replace(tzinfo=None) + timedelta(days=int(getattr(settings,'dues_email_window_days',5) or 5))
     raw_emails = _load_email_logs_between(start, end)
 
-    # Prepare emails with features
+    #Prepare emails with features
     prepped_emails: List[dict] = []
     for e in raw_emails:
         subj, body, frm = (e.get('subject','') or ''), (e.get('content','') or ''), (e.get('from','') or '')
@@ -2282,7 +2282,7 @@ async def _analyze_dues(bot) -> List[dict]:
             'raw': e,
         })
 
-    # Build member indexes
+    #Build member indexes
     by_discord: Dict[str, dict] = {}
     by_handle: Dict[str, List[dict]] = {}
     names_vocab: List[Tuple[str, dict]] = []
@@ -2303,11 +2303,11 @@ async def _analyze_dues(bot) -> List[dict]:
         if fn:
             names_vocab.append((fn, mm))
 
-    # Candidate store for email uniqueness enforcement
+    #Candidate store for email uniqueness enforcement
     per_msg_candidates: Dict[int, dict] = {}
     email_to_candidates: Dict[str, List[Tuple[float, int]]] = {}
 
-    # Pre-map membership rows to actual guild members (optional heavy step)
+    #Pre-map membership rows to actual guild members (optional heavy step)
     member_to_rows: Dict[int, List[Tuple[dict, int]]] = {}
     if not getattr(settings, 'dues_fast_map', True):
         guild, guild_members = await _guild_and_members(bot)
@@ -2320,15 +2320,15 @@ async def _analyze_dues(bot) -> List[dict]:
                 member_to_rows.setdefault(mid, []).append((rec['row'], int(rec['score'])))
 
     for m, p in parsed_msgs:
-        # Member candidates (membership rows)
+        #Member candidates (membership rows)
         mem_candidates: List[dict] = []
-        # Prefer rows mapped to this Discord author (robust guild-based matching)
+        #Prefer rows mapped to this Discord author (robust guild-based matching)
         try:
             aid = int(getattr(getattr(m, 'author', None), 'id', 0) or 0)
         except Exception:
             aid = 0
         if aid and aid in member_to_rows:
-            # take top few by pre-match score
+            #take top few by pre-match score
             mem_candidates = [r for r,_sc in sorted(member_to_rows[aid], key=lambda x: -x[1])][:10]
         handles_norm = [h.lstrip('@$').lower() for h in (p.get('handles') or [])]
         an = _norm_user(p.get('author_name'))
@@ -2363,7 +2363,7 @@ async def _analyze_dues(bot) -> List[dict]:
         if not mem_candidates:
             mem_candidates = members[:50]
 
-        # Score sheet candidates
+        #Score sheet candidates
         scored_S: List[Tuple[float, dict]] = []
         for S in mem_candidates:
             sc = _score_sheet(p, S)
@@ -2373,13 +2373,13 @@ async def _analyze_dues(bot) -> List[dict]:
         S_best = scored_S[0][1] if scored_S else None
         S_best_score = scored_S[0][0] if scored_S else 0.0
 
-        # Email candidates in time window
+        #Email candidates in time window
         email_cands: List[Tuple[float, dict]] = []
         for E in prepped_emails:
             ets = E['ts_utc']
             if not ets:
                 continue
-            # quick time window prefilter ±5d already applied globally, so accept all
+            #quick time window prefilter ±5d already applied globally, so accept all
             se = _score_email(p, S_best, E, ets)
             if se > 0:
                 email_cands.append((se, E))
@@ -2400,20 +2400,20 @@ async def _analyze_dues(bot) -> List[dict]:
             'email_best': E_best,
             'email_score': E_best_score,
             'total_score': total,
-            'email_cands': email_cands[:8],  # top few for uniqueness pass
+            'email_cands': email_cands[:8],  #top few for uniqueness pass
         }
-        # Collect for uniqueness enforcement
+        #Collect for uniqueness enforcement
         for sc, E in email_cands[:8]:
             if E['id']:
                 email_to_candidates.setdefault(E['id'], []).append((sc, msg_id))
 
-    # Enforce email uniqueness: for each email id, keep the highest-scoring message
+    #Enforce email uniqueness: for each email id, keep the highest-scoring message
     best_msg_for_email: Dict[str, int] = {}
     for eid, lst in email_to_candidates.items():
         lst.sort(key=lambda x: x[0], reverse=True)
         best_msg_for_email[eid] = lst[0][1]
 
-    # Finalize records with uniqueness applied
+    #Finalize records with uniqueness applied
     results: List[dict] = []
     used_emails: set[str] = set()
     for msg_id, rec in per_msg_candidates.items():
@@ -2425,7 +2425,7 @@ async def _analyze_dues(bot) -> List[dict]:
             if best_msg_for_email.get(E['id']) == msg_id and E['id'] not in used_emails:
                 E_final = E
                 used_emails.add(E['id'])
-        # Build reasons
+        #Build reasons
         reasons: List[str] = []
         if S:
             if p.get('name') and S.get('full_name'):
@@ -2450,18 +2450,18 @@ async def _analyze_dues(bot) -> List[dict]:
             if E_final.get('amount') is not None:
                 reasons.append(f"email_amount={E_final['amount']:.2f}")
 
-        # Flags for cash/donation-in-kind (relaxed when we have a matching provider email)
+        #Flags for cash/donation-in-kind (relaxed when we have a matching provider email)
         flag_reason = None
         if S:
             paid_where = (S.get('paid_where') or '').lower()
             kind = (S.get('kind') or '').lower()
-            # Avoid false positives on 'cash app'
+            #Avoid false positives on 'cash app'
             if re.search(r"\bcash\b(?!\s*app)", paid_where) or re.search(r"\bin\s*person\b", paid_where):
                 flag_reason = 'cash'
             elif 'donat' in kind and 'dues' not in kind:
                 if 'verif' not in kind:
                     flag_reason = 'donation'
-        # If we have a solid provider email and typical dues amount, clear flags
+        #If we have a solid provider email and typical dues amount, clear flags
         if rec.get('email_best') or E_final:
             eprov = (E_final or {}).get('provider') if E_final else (rec.get('email_best') or {}).get('provider')
             eamt = (E_final or {}).get('amount') if E_final else (rec.get('email_best') or {}).get('amount')
@@ -2497,9 +2497,9 @@ async def _analyze_dues(bot) -> List[dict]:
 
     return results
 
-# ============================
-# Public command: handle_check_dues (updated presentation, same signature)
-# ============================
+#============================
+#Public command: handle_check_dues (updated presentation, same signature)
+#============================
 
 async def handle_check_dues(intent, ctx) -> None:
     """Show a quick dues status summary for a given member."""
@@ -2535,7 +2535,7 @@ async def handle_check_dues(intent, ctx) -> None:
             best_email = rec.get('primary_email')
             auth = rec.get('author') or ''
             disp = rec.get('author_display') or auth
-            # Only hard-flag if we have no corroborating provider email attached
+            #Only hard-flag if we have no corroborating provider email attached
             if rec.get('flag_reason') in {'cash','donation'} and not best_email:
                 fn = best_mem.get('full_name') or 'No associated form entry found'
                 lines.append(f"- Discord: {auth} ({disp}), Real Name: {fn}, Payment App Username: —, Score = FLAGGED FOR REVIEW")
@@ -2582,9 +2582,9 @@ async def handle_check_dues(intent, ctx) -> None:
             await safe_send(ctx['channel'], f"Dues error: {e}")
         log_action('dues_check_error', '', str(e))
 
-# ============================
-# Dues scheduler (unchanged shell; uses _analyze_dues above)
-# ============================
+#============================
+#Dues scheduler (unchanged shell; uses _analyze_dues above)
+#============================
 
 async def start_dues_scheduler(bot) -> None:
     """Kick off the periodic dues reconciliation job."""
@@ -2603,9 +2603,9 @@ async def start_dues_scheduler(bot) -> None:
         except Exception as e:
             log_action('dues_scheduler_error', '', str(e))
 
-# ============================
-# Email logging (kept from original)
-# ============================
+#============================
+#Email logging (kept from original)
+#============================
 
 def _ensure_email_dirs():
     try:
@@ -2649,7 +2649,7 @@ def _append_index(mid: str, seen: set[str] | None = None):
 
 def _decode_part(data: str) -> str:
     try:
-        # Gmail uses base64url
+        #Gmail uses base64url
         raw = base64.urlsafe_b64decode(data.encode("utf-8"))
         return raw.decode("utf-8", errors="replace")
     except Exception:
@@ -2657,7 +2657,7 @@ def _decode_part(data: str) -> str:
 
 
 def _extract_text_content(msg: Dict[str, Any]) -> str:
-    # Prefer text/plain; fallback to text/html stripped; else snippet
+    #Prefer text/plain; fallback to text/html stripped; else snippet
     payload = msg.get("payload") or {}
 
     def _walk(p) -> List[Dict[str, Any]]:
@@ -2671,7 +2671,7 @@ def _extract_text_content(msg: Dict[str, Any]) -> str:
         return out
 
     parts = _walk(payload)
-    # Single-part messages may put body directly on payload
+    #Single-part messages may put body directly on payload
     if not parts:
         parts = [payload]
 
@@ -2707,9 +2707,9 @@ def _sanitize_for_ndjson(s: str) -> str:
     if not isinstance(s, str):
         s = str(s) if s is not None else ""
     s = s.replace("\r\n", "\n").replace("\r", "\n")
-    # Replace Unicode separators with LF so json.dumps shows \n
+    #Replace Unicode separators with LF so json.dumps shows \n
     s = s.replace("\u2028", "\n").replace("\u2029", "\n").replace("\u0085", "\n")
-    # Strip NULs
+    #Strip NULs
     s = s.replace("\x00", "")
     return s
 
@@ -2744,7 +2744,7 @@ async def _append_dues_log(row: dict):
 
         path = _dues_month_path(dt)
         if mid and mid in existing:
-            # If monthly file was deleted but index remains, re-write the row
+            #If monthly file was deleted but index remains, re-write the row
             if not os.path.exists(path):
                 with open(path, 'a', encoding='utf-8') as f:
                     f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -2781,7 +2781,7 @@ async def _log_emails_batch(svc, messages: List[Dict[str, Any]], delay_sec: floa
     logged = _load_logged_ids()
     seen: set[str] = set(logged)
 
-    # De-dup the input list
+    #De-dup the input list
     uniq: List[Dict[str, Any]] = []
     seen_input: set[str] = set()
     for m in messages:
@@ -2791,7 +2791,7 @@ async def _log_emails_batch(svc, messages: List[Dict[str, Any]], delay_sec: floa
         uniq.append(m)
         seen_input.add(mid)
 
-    # Only fetch those not yet logged
+    #Only fetch those not yet logged
     todo = [m for m in uniq if str(m.get("id")) not in seen]
     count = 0
     total = len(todo)
@@ -2831,7 +2831,7 @@ async def _log_emails_batch(svc, messages: List[Dict[str, Any]], delay_sec: floa
                 await asyncio.sleep(delay_sec)
         except Exception as e:
             log_action("gmail_log_message_error", str(m.get("id", "")), str(e))
-            # continue with the rest
+            #continue with the rest
             continue
 
     return count
@@ -2842,7 +2842,7 @@ async def start_gmail_logging_scheduler(bot) -> None:
     """Every ~4 hours, log any newly received emails in the last 4 hours."""
     while True:
         try:
-            # Try to acquire briefly; if busy (manual run), skip this cycle
+            #Try to acquire briefly; if busy (manual run), skip this cycle
             try:
                 await asyncio.wait_for(_EMAIL_LOG_LOCK.acquire(), timeout=0.25)
                 locked = True
@@ -2853,7 +2853,7 @@ async def start_gmail_logging_scheduler(bot) -> None:
                 log_action("gmail_log_scheduler", "skip", "busy")
             else:
                 try:
-                    # Prefer sandbox channel for auth prompts; fallback to logging
+                    #Prefer sandbox channel for auth prompts; fallback to logging
                     ch = None
                     try:
                         from ..config import settings as _settings
@@ -2867,7 +2867,7 @@ async def start_gmail_logging_scheduler(bot) -> None:
                         ch = None
 
                     svc = await _build_gmail_service(ch or getattr(bot, "user", None))
-                    # 4h window; exclude sent mail
+                    #4h window; exclude sent mail
                     q = "in:inbox -from:me newer_than:4h"
                     res = await asyncio.to_thread(
                         lambda: svc.users().messages().list(userId="me", q=q, maxResults=100, includeSpamTrash=False).execute()
@@ -2888,12 +2888,12 @@ async def start_gmail_logging_scheduler(bot) -> None:
                     except Exception:
                         pass
         except RuntimeError:
-            # likely gmail_auth_pending; do nothing until authorized
+            #likely gmail_auth_pending; do nothing until authorized
             log_action("gmail_log_scheduler", "auth", "pending")
         except Exception as e:
             log_action("gmail_log_scheduler_error", "", str(e))
 
-        # Sleep ~4 hours
+        #Sleep ~4 hours
         await asyncio.sleep(4 * 60 * 60)
 
 
@@ -2905,7 +2905,7 @@ async def handle_log_recent_emails(intent, ctx) -> None:
         n = int((intent.data or {}).get("count") or 10)
         log_action("gmail_log_manual_begin", f"req={n}", f"ch={getattr(ch,'id',None)}")
 
-        # Visual cue: start with thumbs up on the triggering message
+        #Visual cue: start with thumbs up on the triggering message
         msg = ctx.get("message")
         try:
             if msg:
@@ -2937,7 +2937,7 @@ async def handle_log_recent_emails(intent, ctx) -> None:
                 log_action("gmail_log_manual", f"req={n}", "logged=0; skipped=0")
                 return
 
-            # Compute how many of these are already logged
+            #Compute how many of these are already logged
             existing = _load_logged_ids()
             candidates = [m for m in msgs if str(m.get("id")) and str(m.get("id")) not in existing]
             from ..config import settings as _settings
@@ -2955,7 +2955,7 @@ async def handle_log_recent_emails(intent, ctx) -> None:
         except Exception as e:
             log_action('finance_process_error', 'manual', str(e))
 
-        # Flip the reaction from 👍 to ✅ (best-effort)
+        #Flip the reaction from 👍 to ✅ (best-effort)
         try:
             if msg:
                 await msg.add_reaction("✅")
@@ -3003,7 +3003,7 @@ async def handle_export_dues_portal(intent, ctx) -> None:
         async for m in channel.history(limit=None, oldest_first=True):
             try:
                 parsed = _parse_portal_message(m)
-                # Ensure JSON-serializable ts
+                #Ensure JSON-serializable ts
                 if isinstance(parsed.get('ts'), datetime):
                     parsed['ts'] = parsed['ts'].astimezone(timezone.utc).isoformat()
             except Exception:
@@ -3046,7 +3046,7 @@ async def handle_export_dues_portal(intent, ctx) -> None:
         log_action('dues_export_error', f'ch={ch_id}', str(e))
         return
 
-    # Write NDJSON file
+    #Write NDJSON file
     try:
         os.makedirs(DUES_DIR, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')

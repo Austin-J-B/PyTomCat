@@ -1,4 +1,4 @@
-# This script will be used by setup.cmd to test the ONNX model installation
+#Setup helper that validates the ONNX model and tokenizer assets
 import onnxruntime as ort
 from pathlib import Path
 from tokenizers import Tokenizer
@@ -11,7 +11,7 @@ def test_model():
     model_path = weights_dir / "deberta-v3-small-mnli.onnx"
     tokenizer_path = weights_dir / "deberta-v3-small-mnli.tokenizer.json"
     
-    # Test loading the model
+    #Test loading the model
     try:
         session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
         print("✓ Successfully loaded ONNX model")
@@ -19,7 +19,7 @@ def test_model():
         print(f"❌ Failed to load ONNX model: {e}")
         return False
     
-    # Test loading the tokenizer
+    #Test loading the tokenizer
     try:
         tokenizer = Tokenizer.from_file(str(tokenizer_path))
         print("✓ Successfully loaded tokenizer")
@@ -27,7 +27,7 @@ def test_model():
         print(f"❌ Failed to load tokenizer: {e}")
         return False
     
-    # Test basic inference
+    #Test a simple inference pass to confirm outputs
     try:
         text = "This is a test sentence"
         inputs = tokenizer.encode(text)

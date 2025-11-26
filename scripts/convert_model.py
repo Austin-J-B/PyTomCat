@@ -8,7 +8,7 @@ import shutil
 import sys
 from pathlib import Path
 
-# Use PyTorch standard imports
+#Use PyTorch imports to ensure export works across environments
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
@@ -26,7 +26,7 @@ def convert_model() -> None:
 
     print(f"Downloading {MODEL_NAME} model...")
     
-    # 1. Load Model & Tokenizer
+    #Load model and tokenizer so the export has source weights
     try:
         tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
         model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
@@ -36,13 +36,13 @@ def convert_model() -> None:
 
     model.eval()
 
-    # 2. Create Dummy Input
+    #Create a representative input tensor for tracing
     text = "This is a test sentence."
     inputs = tokenizer(text, return_tensors="pt")
     input_ids = inputs["input_ids"]
     attention_mask = inputs["attention_mask"]
 
-    # 3. Export to ONNX
+    #Export the classifier to ONNX for runtime use
     print("Exporting to ONNX (Opset 14)...")
     WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
     
@@ -58,16 +58,16 @@ def convert_model() -> None:
                 "attention_mask": {0: "batch_size", 1: "sequence_length"},
                 "logits": {0: "batch_size"},
             },
-            # Opset 14 is the stability sweet spot for DeBERTa
+            #Opset14 balances compatibility and operator coverage for this model
             opset_version=14, 
             do_constant_folding=True,
         )
 
-    # 4. Save Tokenizer
+    #Save the tokenizer assets alongside the ONNX file
     print("Saving tokenizer...")
     tokenizer.save_pretrained(WEIGHTS_DIR)
     
-    # Copy JSON to the specific path expected by Tomcat
+    #Copy the tokenizer JSON to the path expected by the bot
     src_json = WEIGHTS_DIR / "tokenizer.json"
     if src_json.exists():
         shutil.copy(src_json, TOKENIZER_PATH)

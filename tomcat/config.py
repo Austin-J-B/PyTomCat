@@ -292,6 +292,17 @@ class Settings:
     cat_profile_ttl_sec: int = int(os.getenv("CAT_PROFILE_TTL_SEC", "3600") or "3600")
     dues_member_max_candidates: int = int(os.getenv("DUES_MEMBER_MAX_CANDIDATES", "300"))
 
+    # Roles & Guilds
+    role_officer: int = int(os.getenv("ROLE_OFFICER", "0"))
+    role_dues: int = int(os.getenv("ROLE_DUES", "0"))
+    role_feeding_manager: int = int(os.getenv("ROLE_FEEDING_MANAGER", "0"))
+    role_photo_labeler: int = int(os.getenv("ROLE_PHOTO_LABELER", "0"))
+    role_viewer: int = int(os.getenv("ROLE_VIEWER", "0"))
+    role_holiday: int = int(os.getenv("ROLE_HOLIDAY", "0"))
+    main_guild_id: int = int(os.getenv("MAIN_GUILD_ID", "0"))
+
+
+
     # ======== Feeding scheduler maps (authoritative) ========
     # Provide simple name→user_id mapping and per-station weekly assignments.
     # Station assignments are lists of 7 names ordered Sun..Sat.

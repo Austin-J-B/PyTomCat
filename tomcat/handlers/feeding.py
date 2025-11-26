@@ -6,12 +6,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import discord
+from gspread.exceptions import APIError
 
 from ..config import settings
 from ..logger import log_action
@@ -201,6 +203,32 @@ def _normalize_dates(dates: Iterable[str]) -> List[str]:
         if iso:
             out.append(iso)
     return sorted(set(out))
+
+def _normalize_channel_id(val: Any) -> Optional[int]:
+    """Best-effort cast of a channel identifier into an int."""
+    try:
+        v = int(str(val).strip())
+        return v if v else None
+    except Exception:
+        return None
+
+def _resolve_allowed_feeding_channels(explicit: Iterable[Any], ch_feeding_team: Any, ch_sandbox: Any) -> set[int]:
+    """
+    Normalize the configured allowed feeding channel ids.
+    If any explicit values are configured, always fold in the main feeding channel
+    (and sandbox) so a missing env alias can't silently block the right channel.
+    """
+    allowed: set[int] = set()
+    for v in explicit or []:
+        norm = _normalize_channel_id(v)
+        if norm:
+            allowed.add(norm)
+    if allowed:
+        for extra in (ch_feeding_team, ch_sandbox):
+            norm = _normalize_channel_id(extra)
+            if norm:
+                allowed.add(norm)
+    return allowed
 
 def _weekday_token(date_iso: str) -> Optional[str]:
     try:
@@ -442,18 +470,44 @@ def _get_feeding_checklist_sheet_id() -> Optional[str]:
     # We store the checklist in the Vision sheet under tab "FeedingStationChecklist"
     return getattr(settings, "sheet_vision_id", None) or getattr(settings, "aux_spreadsheet_id", None)
 
+_FEED_WS_CACHE: Tuple[Any, float] | None = None
+_FEED_WS_TTL_SEC = 55.0  # refresh roughly every minute
+
 def _open_feeding_ws():
+    """Open the FeedingStationChecklist worksheet with short TTL caching and 429 backoff."""
+    global _FEED_WS_CACHE
+    now = time.monotonic()
+    if _FEED_WS_CACHE:
+        ws, ts = _FEED_WS_CACHE
+        if now - ts < _FEED_WS_TTL_SEC:
+            return ws
+
     sid = _get_feeding_checklist_sheet_id()
     if not sid:
         log_action("feeding_sheet", "missing_sheet_id", "")
         return None
-    try:
-        gc = sheets_client()
-        sh = gc.open_by_key(sid)
-        return sh.worksheet("FeedingStationChecklist")
-    except Exception as e:
-        log_action("feeding_sheet", "open_error", str(e))
-        return None
+    last_err = None
+    for attempt in range(3):
+        try:
+            gc = sheets_client()
+            sh = gc.open_by_key(sid)
+            ws = sh.worksheet("FeedingStationChecklist")
+            _FEED_WS_CACHE = (ws, now)
+            return ws
+        except APIError as e:
+            last_err = e
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 429 and attempt < 2:
+                delay = 1.5 * (attempt + 1)
+                log_action("feeding_sheet", "open_retry_429", f"sleep={delay}")
+                time.sleep(delay)
+                continue
+            break
+        except Exception as e:  # pragma: no cover - defensive
+            last_err = e
+            break
+    log_action("feeding_sheet", "open_error", str(last_err))
+    return None
 
 def _station_header_map(ws) -> Dict[str, int]:
     """Return {display_name: col_index_1based} from header row (Row 1)."""
@@ -517,6 +571,21 @@ def _ensure_date_row(ws, date_iso: str, header: Optional[Dict[str, int]] = None)
         log_action("feeding_sheet", "add_row_error", str(e))
         return None
     return _find_date_row(ws, date_iso)
+
+def _sheet_station_names() -> List[str]:
+    """Return canonical station names from the FeedingStationChecklist header."""
+    ws = _open_feeding_ws()
+    if ws is None:
+        return []
+    header = _station_header_map(ws)
+    names: List[str] = []
+    for name in header.keys():
+        if not name or name.strip().lower() == "date":
+            continue
+        canon = _canonical_station(name) or name
+        if canon not in names:
+            names.append(canon)
+    return names
 
 async def _mark_checkbox_in_sheet(station: str, date_iso: str) -> bool:
     """Mark the (station, date) cell TRUE in the FeedingStationChecklist tab.
@@ -596,7 +665,7 @@ async def handle_feeding_inquiry(intent, ctx: Dict[str, Any]) -> None:
     unfed = await _list_unfed_stations_today()  # TODO: wire to Sheets
     # If we don’t know all stations from Sheets yet, assume schedule defines the universe
     if not stations:
-        stations = sorted(set(unfed))  # minimal fallback
+        stations = sorted(set(_sheet_station_names() or unfed))  # fallback to sheet header or unfed list
     fed = [s for s in stations if s not in set(unfed)]
 
     lines = []
@@ -620,11 +689,17 @@ async def handle_feed_update_event(event, ctx: Dict[str, Any]) -> None:
         dates = [_today_iso()]
 
     # Channel gating: only accept in allowed feeding channels if configured
-    allowed: List[int] = getattr(settings, "allowed_feeding_channel_ids", []) or getattr(settings, "allowed_feeding_channels", [])
-    if isinstance(allowed, list) and len(allowed) > 0:
-        ch_id = getattr(ch, "id", None)
-        if ch_id not in allowed:
-            log_action("feed_update_ignored", f"station={station}", f"channel_blocked:{ch_id}")
+    explicit_allowed: List[int] = getattr(settings, "allowed_feeding_channel_ids", []) or getattr(settings, "allowed_feeding_channels", [])
+    allowed = _resolve_allowed_feeding_channels(
+        explicit_allowed,
+        getattr(settings, "ch_feeding_team", None),
+        getattr(settings, "ch_sandbox", None),
+    )
+    if allowed:
+        ch_id = _normalize_channel_id(getattr(ch, "id", None))
+        if ch_id is None or ch_id not in allowed:
+            allowed_str = ",".join(str(a) for a in sorted(allowed))
+            log_action("feed_update_ignored", f"station={station}", f"channel_blocked:{getattr(ch, 'id', None)}; allowed={allowed_str}")
             return
 
     ok_all = True
@@ -1012,15 +1087,17 @@ async def build_8pm_lines(
     sched = sched or {}
 
     def _assignees_for(station: str) -> List[int]:
+        key = _canonical_station(station) or station
         assignees: List[int] = []
         for r in reversed(subs):
-            if r.get("station") == station and r.get("status") == "accepted" and today_iso in (r.get("dates") or []):
+            rec_station = _canonical_station(r.get("station")) or r.get("station")
+            if rec_station == key and r.get("status") == "accepted" and today_iso in (r.get("dates") or []):
                 aid = r.get("assignee")
                 if isinstance(aid, int):
                     assignees.append(aid)
                     break
         if not assignees:
-            assignees = sched.get(station, [])
+            assignees = sched.get(key, [])
         return assignees
 
     def _format_station_line(station: str) -> str:

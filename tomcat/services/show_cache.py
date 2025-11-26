@@ -12,7 +12,7 @@ from ..logger import log_action
 from ..vision import vision as V
 from PIL import Image
 from .catsheets import get_most_recent_photo, get_cat_profile
-from .catsheets import sheets_client  # type: ignore
+from .catsheets import sheets_client  #type: ignore
 
 
 def _cache_dir_for(cat_id: int) -> str:
@@ -35,7 +35,7 @@ def latest_cached_bytes(full_name: str) -> Optional[bytes]:
     """Return bytes of the most recent cached JPG for this cat (highest sn), or None if missing."""
     cid = _cat_id_from_full(full_name)
     if cid is None:
-        # Try to resolve via sidecar name index
+        #Try to resolve via sidecar name index
         if not _NAME_INDEX:
             _build_name_index()
         key = _norm(full_name)
@@ -77,7 +77,7 @@ async def _download_bytes(url: str, timeout_sec: float = 6.0) -> Optional[bytes]
 def _maybe_crop_single(raw: bytes) -> Optional[bytes]:
     """Run the vision cropper and return the single crop if available."""
     try:
-        # Temporarily suppress viz_crop logs during bulk cache fills
+        #Temporarily suppress viz_crop logs during bulk cache fills
         from ..config import settings as _settings
         prev = getattr(_settings, 'cv_log_crop', True)
         try:
@@ -111,7 +111,7 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
     """Return cached (url, display) entries for a cat from RecentPics."""
     """Return URL/SERIAL pairs from RecentPics for a given FULL_NAME."""
     try:
-        # Use in-process TTL cache of RecentPics rows
+        #Use in-process TTL cache of RecentPics rows
         rows = None
         now = time.monotonic()
         ttl = max(1, int(getattr(settings, 'show_sheet_recentpics_ttl_sec', 300) or 300))
@@ -119,7 +119,7 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
             rows = _RECENTPICS_ROWS
         if rows is None:
             gc = sheets_client()
-            # Guard against missing configuration which static checkers warn about
+            #Guard against missing configuration which static checkers warn about
             sv_id: str = getattr(settings, 'sheet_vision_id', None) or ""
             if not sv_id:
                 log_action('show_cache_sheet_missing', 'sheet_vision_id', str(getattr(settings, 'sheet_vision_id', None)))
@@ -134,11 +134,11 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
         matches = [r for r in data if re.sub(r"[^a-z0-9]+", "", (r[0] if r else "").lower()) == key]
         if not matches:
             return []
-        # Use the row with the highest TOTAL
+        #Use the row with the highest TOTAL
         pick = max(matches, key=lambda r: int(r[2] or 0) if len(r) > 2 and str(r[2]).isdigit() else 0)
         out: List[Tuple[str, str, int, int]] = []
         i = 3
-        # Build with index; compute reverse_index using TOTAL if present
+        #Build with index; compute reverse_index using TOTAL if present
         idx = 0
         while i < len(pick):
             url = pick[i].strip() if i < len(pick) else ""
@@ -149,7 +149,7 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
                 reverse_index = max(total - idx + 1, 1)
                 out.append((url, serial or "Unknown", reverse_index, total))
             i += 2
-        # Shuffle to encourage variety when filling cache
+        #Shuffle to encourage variety when filling cache
         try:
             import random as _rand
             _rand.shuffle(out)
@@ -189,7 +189,7 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
     if len(existing) >= min_count:
         return len(existing)
     pairs = await list_recent_pairs(full_name)
-    # Try to grab profile once to embed into sidecar metadata (avoid live sheet on send)
+    #Try to grab profile once to embed into sidecar metadata (avoid live sheet on send)
     profile_snapshot: Optional[dict] = None
     try:
         prof = await get_cat_profile(full_name)
@@ -213,7 +213,7 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
     if exclude_serials:
         have_serials = set(have_serials) | {str(s) for s in exclude_serials}
     total = len(existing)
-    # Reuse a single HTTP session for downloads to cut overhead
+    #Reuse a single HTTP session for downloads to cut overhead
     timeout = aiohttp.ClientTimeout(total=8.0)
     headers = {"User-Agent": "TomCatShowCache/1.0 (+https://example.invalid)"}
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as sess:
@@ -223,9 +223,9 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
         sn = re.sub(r"[^0-9]", "", serial or "") or "0"
         if sn in have_serials:
             continue
-        # Download with shared session
+        #Download with shared session
         raw = None
-        # Try a couple of times to download; some hosts are flaky
+        #Try a couple of times to download; some hosts are flaky
         for attempt in range(1, 4):
             try:
                 async with sess.get(url) as resp:
@@ -240,7 +240,7 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
                 await asyncio.sleep(0.15 * attempt)
         if not raw:
             continue
-        # Optional crop during fill
+        #Optional crop during fill
         data = raw
         try:
             if bool(getattr(settings, 'show_cache_crop_on_fill', True)):
@@ -248,7 +248,7 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
                 data = cropped or raw
         except Exception:
             data = raw
-        # Optional: downscale/compress to speed Discord upload
+        #Optional: downscale/compress to speed Discord upload
         try:
             mx = int(getattr(settings, 'show_cache_resize_max_dim', 0) or 0)
             if mx > 0:
@@ -273,7 +273,7 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
         try:
             with open(fn, 'wb') as f:
                 f.write(data)
-            # Write sidecar JSON with metadata
+            #Write sidecar JSON with metadata
             meta = {
                 "serial": serial,
                 "reverse_index": reverse_index,
@@ -369,7 +369,7 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
     files = [os.path.join(cdir, p) for p in os.listdir(cdir) if p.lower().endswith('.jpg')]
     if not files:
         return None, None
-    # Pick a random cached file to improve variety
+    #Pick a random cached file to improve variety
     try:
         import random as _rand
         path = _rand.choice(files)
@@ -380,7 +380,7 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
         data = Path(path).read_bytes()
     except Exception:
         pass
-    # Load sidecar JSON
+    #Load sidecar JSON
     meta: Optional[dict] = None
     try:
         base = os.path.splitext(path)[0]
@@ -392,7 +392,7 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
         meta = None
     try:
         os.remove(path)
-        # Also remove meta sidecar if present
+        #Also remove meta sidecar if present
         try:
             mp = os.path.splitext(path)[0] + ".json"
             if os.path.exists(mp):
@@ -418,7 +418,7 @@ async def warm_cache_on_boot() -> None:
     except Exception as e:
         log_action('show_cache_warm_error', 'sheet', str(e))
         return
-    # Seed row cache so list_recent_pairs doesn't re-hit sheet immediately
+    #Seed row cache so list_recent_pairs doesn't re-hit sheet immediately
     try:
         _set_recentpics_rows(rows)
     except Exception:

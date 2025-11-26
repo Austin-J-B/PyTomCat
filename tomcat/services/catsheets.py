@@ -11,7 +11,7 @@ import datetime as dt
 from .sheets_client import sheets_client
 from ..config import settings
 try:
-    from ..utils.text import norm_alnum_lower  # real helper if you have utils/
+    from ..utils.text import norm_alnum_lower  #real helper if you have utils/
 except Exception:
     import re as _re
     def norm_alnum_lower(s: str) -> str:
@@ -48,7 +48,7 @@ async def get_cat_profile(query: str) -> dict | str:
     if not rows:
         return "Catabase is empty."
 
-    # Build lookup by normalized key: "67. Microwave" → "67microwave" etc
+    #Build lookup by normalized key: "67. Microwave" → "67microwave" etc
     header, *data = rows
     best_row = None
     key = norm_alnum_lower(query)
@@ -60,7 +60,7 @@ async def get_cat_profile(query: str) -> dict | str:
         if norm_alnum_lower(full_name) == key:
             best_row = r
             break
-        # Fallback: try without leading digits and punctuation
+        #Fallback: try without leading digits and punctuation
         name_only = "".join(ch for ch in full_name if not ch.isdigit()).lstrip(". ").strip()
         if norm_alnum_lower(name_only) == key:
             best_row = r
@@ -69,7 +69,7 @@ async def get_cat_profile(query: str) -> dict | str:
     if not best_row:
         return f"No match for '{query}'."
 
-    # Compute approximate age from birthday_estimate if formatted like M/D/YYYY
+    #Compute approximate age from birthday_estimate if formatted like M/D/YYYY
     age = None
     try:
         b = best_row[IDX["birthday_estimate"]] if len(best_row) > IDX["birthday_estimate"] else ""
@@ -120,7 +120,7 @@ async def get_recent_photo(full_name: str) -> dict | str:
     pick = max(matches, key=lambda r: int(r[2] or 0) if len(r) > 2 and str(r[2]).isdigit() else 0)
     total_available = int(pick[2] or 0) if len(pick) > 2 and str(pick[2]).isdigit() else 0
 
-    # Collect URL/SERIAL pairs starting at col 3
+    #Collect URL/SERIAL pairs starting at col 3
     pairs: list[tuple[str, str]] = []
     i = 3
     while i < len(pick):
@@ -161,7 +161,7 @@ async def get_most_recent_photo(full_name: str) -> dict | str:
     if not matches:
         return f"No recent photos for '{full_name}'."
 
-    # Choose the row with max TOTAL (col 2) first, then pick the highest SERIAL among URL/SERIAL pairs
+    #Choose the row with max TOTAL (col 2) first, then pick the highest SERIAL among URL/SERIAL pairs
     pick = max(matches, key=lambda r: int(r[2] or 0) if len(r) > 2 and str(r[2]).isdigit() else 0)
     best = None
     best_serial = -1
@@ -202,9 +202,9 @@ async def build_profile_embed(query: str) -> dict | str:
     """
     prof = await get_cat_profile(query)
     if isinstance(prof, str):
-        return prof  # error string from get_cat_profile
+        return prof  #error string from get_cat_profile
 
-    # Prefer most-recent photo; fall back to CatDatabase image_url
+    #Prefer most-recent photo; fall back to CatDatabase image_url
     recent = await get_most_recent_photo(prof["actual_name"])
     img_url = None
     if isinstance(recent, dict) and recent.get("url"):
@@ -217,7 +217,7 @@ async def build_profile_embed(query: str) -> dict | str:
         if val:
             fields.append({"name": name, "value": str(val), "inline": False})
 
-    # Assemble fields
+    #Assemble fields
     _add("Location", prof.get("location"))
     _add("Behavior", prof.get("behavior"))
     _add("Age", prof.get("age"))

@@ -7,6 +7,8 @@ import hashlib
 import hmac
 import time
 from typing import Any, Dict, Optional, Union
+from collections import deque
+from datetime import datetime
 
 import os
 import json
@@ -14,9 +16,9 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 import logging
-# Import settings before first use
+#Import settings before first use
 from .config import settings
-# Config specific to your Discord App (from Developer Portal)
+#Config specific to your Discord App (from Developer Portal)
 CLIENT_ID = getattr(settings, 'ui_activity_app_id', None) or os.getenv("UITEST_ACTIVITY_APP_ID")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 
@@ -25,9 +27,9 @@ if not SESSION_SECRET:
     raise RuntimeError("UI_SESSION_SECRET is required to issue UI session cookies (set a long random value in .env)")
 
 SESSION_TTL_SECONDS = int(os.getenv("UI_SESSION_TTL_SECONDS", "3600"))
-# Default secure cookies ON so cross-site (e.g., github pages -> your domain) can send them.
+#Default secure cookies ON so cross-site (e.g., github pages -> your domain) can send them.
 _COOKIE_SECURE = os.getenv("UI_COOKIE_SECURE", "true").lower() == "true"
-# If secure, use SameSite=None (required for third-party); otherwise keep Lax for localhost testing.
+#If secure, use SameSite=None (required for third-party); otherwise keep Lax for localhost testing.
 _COOKIE_SAMESITE = "None" if _COOKIE_SECURE else "Lax"
 
 _ALLOWED_ORIGINS = {
@@ -38,7 +40,7 @@ _ALLOWED_ORIGINS = {
 
 _AUTH_DEBUG = os.getenv("UI_AUTH_DEBUG", "false").lower() == "true"
 
-# Officer/guild/role IDs are configured via settings/env only (no code defaults).
+#Officer/guild/role IDs are configured via settings/env only (no code defaults).
 OFFICER_ROLE_ID = int(getattr(settings, "officer_role_id", 0) or 0)
 
 
@@ -47,24 +49,29 @@ def _debug(msg: str) -> None:
     if _AUTH_DEBUG:
         print(f"[UI-AUTH] {msg}")
 
-# Local persistence for the UI schedule
+#Local persistence for the UI schedule
 SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
-# Fallback station list for empty schedules (mirrors UI)
+#Fallback station list for empty schedules (mirrors UI)
 DEFAULT_STATIONS = [
     "Microwave", "Snickers", "Business", "The Greens", "HOP",
     "Lot 50", "Mary Kay & Zen", "West Hall", "Maintenance"
 ]
 
-# Define your Role IDs for permissions
+#Rate limiting constants for the web API
+RATE_LIMIT_MAX_REQUESTS = 10
+RATE_LIMIT_WINDOW_SECONDS = 60
+_rate_limit_counters: dict[str, deque] = {}
+
+#Define your Role IDs for permissions
 ROLES = {
     "FEEDING_MANAGER": int(getattr(settings, "role_feeding_manager_id", 0) or 0),
     "PHOTO_LABELER": int(getattr(settings, "role_photo_labeler_id", 0) or 0),
     "VIEWER": int(getattr(settings, "role_viewer_id", 0) or 0),
 }
 
-# Your main guild ID (replace with your actual guild/server ID)
+#Your main guild ID (replace with your actual guild/server ID)
 YOUR_GUILD_ID = int(getattr(settings, "ui_guild_id", None) or getattr(settings, "target_guild_id", None) or 0)
-# UI can override via env if needed
+#UI can override via env if needed
 UI_GUILD_ID = YOUR_GUILD_ID
 
 
@@ -115,7 +122,7 @@ def _get_session_from_request(request: web.Request) -> Optional[dict]:
 def _issue_session_response(user_info: dict, permissions: dict, request: web.Request) -> web.Response:
     """Sign a session payload and return a JSON response with cookie set."""
     now_ts = int(time.time())
-    # CRITICAL FIX: Ensure user_id is a string to prevent JS integer precision loss
+    #CRITICAL FIX: Ensure user_id is a string to prevent JS integer precision loss
     user_id_str = str(user_info.get("id"))
     
     session_payload = {
@@ -300,7 +307,7 @@ async def get_session(request: web.Request):
 
     return _issue_session_response(user_info, permissions, request)
 
-# --- The Secure Save Endpoint ---
+#--- The Secure Save Endpoint ---
 async def save_schedule(request):
     """Persist the feeding schedule to a local JSON file."""
     _, error = _require_permissions(request, require_view=True, require_edit=True)
@@ -316,7 +323,7 @@ async def save_schedule(request):
     if not isinstance(schedule, dict):
         return _with_cors(web.Response(status=400, text="Schedule must be an object"), request)
 
-    # Persist to disk (cache/feeding_schedule.json)
+    #Persist to disk (cache/feeding_schedule.json)
     try:
         SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -338,11 +345,11 @@ async def get_schedule(request):
         return error
     _debug(f"GET /api/schedule session_ok")
     
-    # Helper to force all IDs to strings
+    #Helper to force all IDs to strings
     def stringify_schedule(sched):
         new_sched = {}
         for station, row in sched.items():
-            # Cast each ID to string, handling None/0 as empty string
+            #Cast each ID to string, handling None/0 as empty string
             new_sched[station] = [str(uid) if uid else "" for uid in row]
         return new_sched
 
@@ -358,7 +365,7 @@ async def get_schedule(request):
         payload = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
         sched = payload.get("schedule", {}) or {}
         
-        # CRITICAL FIX: Stringify to prevent browser rounding
+        #CRITICAL FIX: Stringify to prevent browser rounding
         payload["schedule"] = stringify_schedule(sched)
         
         _debug(f"/api/schedule returning stations={list(sched.keys())} saved_at={payload.get('meta',{}).get('saved_at')}")
@@ -374,7 +381,7 @@ from discord.ext import commands
 from datetime import datetime, timezone
 
 from .config import settings
-from .logger import log_event, log_action  # noqa: F401  # imported for shared use
+from .logger import log_event, log_action  #noqa: F401  #imported for shared use
 from .intent_router import IntentRouter, Intent
 from .handlers.misc import handle_channel_image_intake as _handle_image_intake, start_profile_scheduler
 from .services.show_cache import warm_cache_on_boot
@@ -385,7 +392,7 @@ intent_router = IntentRouter()
 
 SPAM_ALERTS: Dict[int, Dict[str, int]] = {}
 
-# ------- Discord intents & bot -------
+#------- Discord intents & bot -------
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -394,11 +401,11 @@ intents.reactions = True
 
 bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 
-# ------- Import real handlers -------
-# Cats / Feeding and Dues handlers already use the (intent, ctx) signature
+#------- Import real handlers -------
+#Cats / Feeding and Dues handlers already use the (intent, ctx) signature
 from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
 from .handlers.feeding import start_feeding_scheduler, handle_feeding_inquiry as _handle_feeding_status
-# Dues: no background scheduler; admin-only Gmail test is routed directly from the router
+#Dues: no background scheduler; admin-only Gmail test is routed directly from the router
 from .handlers.dues import start_gmail_logging_scheduler, start_dues_scheduler
 
 from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
@@ -407,7 +414,7 @@ from .handlers.misc import handle_misc as _handle_misc_raw
 from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
 
 
-# --- Muted wrappers: run handlers but drop outbound sends ---
+#--- Muted wrappers: run handlers but drop outbound sends ---
 class _MuteChannel:
     """Proxy channel object that logs outbound messages instead of sending."""
     def __init__(self, real, label_fn):
@@ -417,9 +424,9 @@ class _MuteChannel:
         self.name = getattr(real, "name", None)
 
     async def send(self, content=None, **kwargs):
-        # Log what would have been sent; don’t actually send.
-        from .logger import log_action  # local import to avoid cycles
-        # Prefer a short preview of content or note an embed
+        #Log what would have been sent; don’t actually send.
+        from .logger import log_action  #local import to avoid cycles
+        #Prefer a short preview of content or note an embed
         preview = ""
         if content:
             preview = str(content)
@@ -432,20 +439,20 @@ class _MuteChannel:
             f"channel={self._label_fn(self._real)}",
             preview[:120],
         )
-        return None  # mimic coroutine
+        return None  #mimic coroutine
 
     def __getattr__(self, name):
-        # Delegate unknown attributes/methods to the real channel
+        #Delegate unknown attributes/methods to the real channel
         return getattr(self._real, name)
 
 class _MuteMessage:
     """Lightweight message proxy used when silent mode blocks replies."""
     def __init__(self, real_msg, muted_channel):
-        # Keep attributes handlers touch; forward everything else if needed
+        #Keep attributes handlers touch; forward everything else if needed
         self._real = real_msg
         self.channel = muted_channel
         self.author = real_msg.author
-        # Preserve common identifiers used by router/handlers
+        #Preserve common identifiers used by router/handlers
         self.id = getattr(real_msg, "id", None)
         self.guild = getattr(real_msg, "guild", None)
         self.content = real_msg.content
@@ -453,7 +460,7 @@ class _MuteMessage:
         self.attachments = getattr(real_msg, "attachments", [])
 
     def __getattr__(self, name):
-        # Delegate any other attributes to the real discord.Message
+        #Delegate any other attributes to the real discord.Message
         return getattr(self._real, name)
 
 
@@ -471,24 +478,24 @@ def _user_label(u: Union[discord.Member, discord.User]) -> str:
 
 def _channel_label(ch: discord.abc.Messageable) -> str:
     """Pretty-print channels/threads for logs and muted output."""
-    # Guild text channel
+    #Guild text channel
     if isinstance(ch, discord.TextChannel):
         return f"#{ch.name}"
-    # Thread inside a parent channel; parent can be None so guard it
+    #Thread inside a parent channel; parent can be None so guard it
     if isinstance(ch, discord.Thread):
         parent = getattr(ch, "parent", None)
         parent_prefix = f"#{parent.name}/" if parent and getattr(parent, "name", None) else ""
         return f"{parent_prefix}{ch.name}"
-    # 1:1 DM (recipient is Optional[User])
+    #1:1 DM (recipient is Optional[User])
     if isinstance(ch, discord.DMChannel):
         return "DM"
-    # Group DM, Stage, Voice, PartialMessageable, whatever else
+    #Group DM, Stage, Voice, PartialMessageable, whatever else
     name = getattr(ch, "name", None)
     return f"#{name}" if isinstance(name, str) and name else ch.__class__.__name__.lower()
 
 
 
-# ------- Adapters to unify handler signatures -------
+#------- Adapters to unify handler signatures -------
 async def handle_cat_show(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_cat_show(intent, ctx)
 
@@ -496,14 +503,14 @@ async def handle_feeding_status(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_feeding_status(intent, ctx)
 
 async def handle_dues_notice(intent: Intent, ctx: Dict[str, Any]) -> None:
-    # Deprecated placeholder; kept for compatibility if referenced elsewhere
+    #Deprecated placeholder; kept for compatibility if referenced elsewhere
     pass
 
-# Admin handler expects (args, ctx) where args == intent.data
+#Admin handler expects (args, ctx) where args == intent.data
 async def handle_silent_mode(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_silent_mode_raw(intent.data, ctx)
 
-# Misc handler expects (message, *, now_ts, allow_in_channels)
+#Misc handler expects (message, *, now_ts, allow_in_channels)
 async def handle_misc(intent: Intent, ctx: Dict[str, Any]) -> None:
     message: discord.Message = ctx["message"]
     await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
@@ -555,9 +562,30 @@ def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResp
     return resp
 
 
+@web.middleware
+async def rate_limit_middleware(request: web.Request, handler):
+    """Limit requests per client to reduce abuse of the web API."""
+    client_ip = request.remote
+    if not client_ip:
+        peername = request.transport.get_extra_info("peername") if request.transport else None
+        if isinstance(peername, (tuple, list)) and peername:
+            client_ip = peername[0]
+        elif isinstance(peername, str):
+            client_ip = peername
+    client_id = client_ip or "unknown"
+    now = time.time()
+    bucket = _rate_limit_counters.setdefault(client_id, deque())
+    while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
+        bucket.popleft()
+    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        return _with_cors(web.Response(status=429, text="Too many requests"), request)
+    bucket.append(now)
+    return await handler(request)
+
+
 async def start_web_server(bot):
     """Simple web server to serve the UI and API."""
-    app = web.Application()
+    app = web.Application(middlewares=[rate_limit_middleware])
 
     async def get_index(request):
         """Serve the index.html file."""
@@ -583,7 +611,7 @@ async def start_web_server(bot):
                 if not role:
                     continue
                 for member in role.members:
-                    # Use display_name (nickname) if available, fallback to username
+                    #Use display_name (nickname) if available, fallback to username
                     name = member.display_name
                     found_members.append({
                         "name": name,
@@ -592,9 +620,9 @@ async def start_web_server(bot):
                         "color": str(member.color) if member.color else "#000000"
                     })
 
-        # Deduplicate by ID in case multiple guilds are involved
+        #Deduplicate by ID in case multiple guilds are involved
         unique_members = {m['id']: m for m in found_members}.values()
-        # Sort alphabetically
+        #Sort alphabetically
         sorted_members = sorted(unique_members, key=lambda x: x['name'].lower())
 
         _debug(f"/api/members count={len(sorted_members)} roles={[DUE_PAYING_ROLE_ID, HOLIDAY_FEEDER_ROLE_ID]}")
@@ -637,27 +665,33 @@ async def start_web_server(bot):
         except Exception:
             return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
-        # --- SECURITY / IMPERSONATION LOGIC ---
+        #--- SECURITY / IMPERSONATION LOGIC ---
         req_user_id = data.get("user_id")
         req_user_name = data.get("user_name")
         
-        # If user is NOT an officer, force them to use their own identity
+        #If user is NOT an officer, force them to use their own identity
         permissions = session.get("permissions", {})
         if not permissions.get("is_officer"):
             req_user_id = session.get("user_id")
-            req_user_name = session.get("username") # fallback
+            req_user_name = session.get("username") #fallback
         
-        # If officer didn't provide a specific user (standard submit), default to self
+        #If officer didn't provide a specific user (standard submit), default to self
         if not req_user_id:
             req_user_id = session.get("user_id")
 
         date_iso = data.get("date")
         stations = data.get("stations") or []
-        
+
         if not req_user_id or not date_iso or not stations:
             return _with_cors(web.Response(status=400, text="Missing required fields"), request)
 
-        # Append to logs/subs/YYYY/YYYY-MM.jsonl
+        try:
+            date_obj = datetime.fromisoformat(str(date_iso))
+            date_iso = date_obj.date().isoformat()
+        except ValueError:
+            return _with_cors(web.Response(status=400, text="Invalid date format"), request)
+
+        #Append to logs/subs/YYYY/YYYY-MM.jsonl
         try:
             from datetime import datetime
             from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
@@ -671,7 +705,7 @@ async def start_web_server(bot):
                 "station": ", ".join(stations),
                 "stations": stations,
                 "dates": [date_iso],
-                "requester": str(req_user_id),  # Force string to future-proof
+                "requester": str(req_user_id),  #Force string to future-proof
                 "requester_name": req_user_name,
                 "assignee": None,
                 "status": "requested",
@@ -683,7 +717,7 @@ async def start_web_server(bot):
         except Exception as e:
             return _with_cors(web.Response(status=500, text=f"Log error: {e}"), request)
 
-        # Notify Discord
+        #Notify Discord
         try:
             channel_id = getattr(settings, "ch_feeding_team", None)
             if channel_id:
@@ -709,9 +743,15 @@ async def start_web_server(bot):
 
         target_id = data.get("id")
         date_iso = data.get("date")
-        
+
         if not target_id or not date_iso:
             return _with_cors(web.Response(status=400, text="Missing ID or Date"), request)
+
+        try:
+            date_obj = datetime.fromisoformat(str(date_iso))
+            date_iso = date_obj.date().isoformat()
+        except ValueError:
+            return _with_cors(web.Response(status=400, text="Invalid date format"), request)
 
         from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
         month_key = _sub_month_key_from_date(date_iso)
@@ -720,7 +760,7 @@ async def start_web_server(bot):
         if not os.path.exists(path):
             return _with_cors(web.Response(status=404, text="Record not found"), request)
 
-        # Re-write file excluding the item
+        #Re-write file excluding the item
         new_lines = []
         deleted_item = None
         user_id_str = str(session.get("user_id"))
@@ -732,30 +772,15 @@ async def start_web_server(bot):
                     try:
                         rec = json.loads(line)
                         if rec.get("id") == target_id:
-                            # Permission Check with Fuzzy Matching
-                            # Convert log IDs to string for comparison
+                            #Permission check with strict ID comparison
                             requester_id = str(rec.get("requester") or "")
                             assignee_id = str(rec.get("assignee") or "")
-                            
-                            # Direct string match
                             is_owner = (user_id_str == requester_id) or (user_id_str == assignee_id)
-                            
-                            # Fallback: Fuzzy match for floating point corrupted IDs
-                            if not is_owner:
-                                try:
-                                    # If the session ID is within +/- 1000 of the stored ID, allow it
-                                    # (Handles browser rounding errors on large snowflakes)
-                                    if requester_id and abs(int(user_id_str) - int(requester_id)) < 1000:
-                                        is_owner = True
-                                    elif assignee_id and abs(int(user_id_str) - int(assignee_id)) < 1000:
-                                        is_owner = True
-                                except Exception:
-                                    pass
 
                             if not is_officer and not is_owner:
                                 return _with_cors(web.Response(status=403, text="You can only delete your own items."), request)
                             deleted_item = rec
-                            continue # Skip this line (Delete)
+                            continue #Skip this line (Delete)
                         new_lines.append(line)
                     except:
                         new_lines.append(line)
@@ -764,7 +789,7 @@ async def start_web_server(bot):
                 with open(path, "w", encoding="utf-8") as f:
                     f.writelines(new_lines)
                 
-                # Notify Discord
+                #Notify Discord
                 ch_id = getattr(settings, "ch_feeding_team", None)
                 if ch_id:
                     ch = bot.get_channel(int(ch_id))
@@ -794,8 +819,8 @@ async def start_web_server(bot):
         from datetime import datetime
         today = datetime.now().date()
 
-        accepted_map = {}  # (parent_id, station, date_iso) -> assignee_id
-        accepted_meta = {}  # (parent_id, station, date_iso) -> requester_name
+        accepted_map = {}  #(parent_id, station, date_iso) -> assignee_id
+        accepted_meta = {}  #(parent_id, station, date_iso) -> requester_name
         requested_items = []
         missing_requester_ids = set()
         missing_assignee_ids = set()
@@ -838,7 +863,7 @@ async def start_web_server(bot):
                                     "id": parent_id,
                                     "station": st,
                                     "date": date_iso,
-                                    "requester_id": str(requester) if requester else "", # Ensure string
+                                    "requester_id": str(requester) if requester else "", #Ensure string
                                     "requester_name": requester_name,
                                     "assignee_id": None,
                                     "assignee_name": rec.get("assignee_name") or "",
@@ -846,7 +871,7 @@ async def start_web_server(bot):
             except Exception:
                 continue
 
-        # Resolve display names for any requester IDs that were missing names in the log.
+        #Resolve display names for any requester IDs that were missing names in the log.
         name_cache: Dict[int, str] = {}
         if missing_requester_ids:
             guild = bot.get_guild(YOUR_GUILD_ID) if "bot" in globals() else None
@@ -863,10 +888,10 @@ async def start_web_server(bot):
                         if member:
                             display = getattr(member, "display_name", None) or getattr(member, "global_name", None) or member.name
                     if not display and "bot" in globals():
-                        user = bot.get_user(uid)  # type: ignore[name-defined]
+                        user = bot.get_user(uid)  #type: ignore[name-defined]
                         if not user and hasattr(bot, "fetch_user"):
                             try:
-                                user = await bot.fetch_user(uid)  # type: ignore[attr-defined]
+                                user = await bot.fetch_user(uid)  #type: ignore[attr-defined]
                             except Exception:
                                 user = None
                         if user:
@@ -892,10 +917,10 @@ async def start_web_server(bot):
                         if member:
                             display = getattr(member, "display_name", None) or getattr(member, "global_name", None) or member.name
                     if not display and "bot" in globals():
-                        user = bot.get_user(uid)  # type: ignore[name-defined]
+                        user = bot.get_user(uid)  #type: ignore[name-defined]
                         if not user and hasattr(bot, "fetch_user"):
                             try:
-                                user = await bot.fetch_user(uid)  # type: ignore[attr-defined]
+                                user = await bot.fetch_user(uid)  #type: ignore[attr-defined]
                             except Exception:
                                 user = None
                         if user:
@@ -905,12 +930,12 @@ async def start_web_server(bot):
                 if display:
                     assignee_name_cache[uid] = display
 
-        # After reading all records, populate requester/assignee names and assignee ids from the accept map
+        #After reading all records, populate requester/assignee names and assignee ids from the accept map
         for item in requested_items:
             key = (item.get("id"), item.get("station"), item.get("date"))
             assignee = accepted_map.get(key)
             if assignee:
-                item["assignee_id"] = str(assignee) # Ensure string
+                item["assignee_id"] = str(assignee) #Ensure string
                 if not item.get("assignee_name"):
                     try:
                         item["assignee_name"] = assignee_name_cache.get(int(assignee), "")
@@ -940,7 +965,7 @@ async def start_web_server(bot):
                 target_list = upcoming_filled if assignee else available
 
             out = dict(item)
-            # CRITICAL FIX: Strict string conversion for output
+            #CRITICAL FIX: Strict string conversion for output
             if out.get("requester_id"):
                 out["requester_id"] = str(out["requester_id"])
             if out.get("requester"):
@@ -980,7 +1005,7 @@ async def start_web_server(bot):
 
         from datetime import datetime
         now_iso = datetime.now().isoformat()
-        messages_by_date = {}  # date_iso -> list of (station, requester_id, requester_name)
+        messages_by_date = {}  #date_iso -> list of (station, requester_id, requester_name)
 
         for pick in picks:
             parent_id = pick.get("id")
@@ -991,7 +1016,7 @@ async def start_web_server(bot):
             if not parent_id or not station or not date_iso:
                 continue
             try:
-                # Locate log file by month
+                #Locate log file by month
                 from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
                 key = _sub_month_key_from_date(date_iso) or datetime.now().strftime("%Y-%m")
                 path = _sub_log_path_from_key(key)
@@ -1003,8 +1028,8 @@ async def start_web_server(bot):
                     "station": station,
                     "stations": [station],
                     "dates": [date_iso],
-                    "requester": str(requester) if requester else "", # Ensure string
-                    "assignee": str(user_id), # Ensure string
+                    "requester": str(requester) if requester else "", #Ensure string
+                    "assignee": str(user_id), #Ensure string
                     "status": "accepted",
                     "channel_id": 0,
                     "message_id": 0,
@@ -1020,14 +1045,14 @@ async def start_web_server(bot):
             except Exception:
                 continue
 
-        # Notify feeding team channel
+        #Notify feeding team channel
         try:
             channel_id = getattr(settings, "ch_feeding_team", None)
             if channel_id and messages_by_date:
                 ch = bot.get_channel(int(channel_id))
                 from discord.abc import Messageable
                 if isinstance(ch, Messageable):
-                    # Build a single aggregated message
+                    #Build a single aggregated message
                     try:
                         req_mentions_set = set()
                         date_bits = []
@@ -1097,28 +1122,28 @@ async def start_web_server(bot):
 
     runner = web.AppRunner(app)
     await runner.setup()
-    # Listen on localhost to avoid exposing the UI externally by default
+    #Listen on localhost to avoid exposing the UI externally by default
     site = web.TCPSite(runner, '127.0.0.1', 8080)
     print("[TomCat-UI] Web server starting on http://localhost:8080")
     await site.start()
 
 
-# ------- Lifecycle -------
+#------- Lifecycle -------
 @bot.event
 async def on_ready():
     """Discord callback fired once the bot connects."""
     print(f"[TomCat] Logged in as {bot.user} in {len(bot.guilds)} guild(s).")
-    # Machine + human “ONLINE” handled by logger.log_event
+    #Machine + human “ONLINE” handled by logger.log_event
     log_event({
         "event": "online",
         "user": str(bot.user),
         "guild_count": len(bot.guilds),
     })
 
-    # Startup health checks (file logs only)
+    #Startup health checks (file logs only)
     async def _health_checks():
         try:
-            # Check image intake tabs
+            #Check image intake tabs
             from .handlers.misc import _open_ws as _open_ws_misc
             for ch_id, tab in (settings.channel_sheet_map or {}).items():
                 try:
@@ -1132,7 +1157,7 @@ async def on_ready():
         except Exception as e:
             log_event({"event":"health","component":"image_tab","status":"error","error": str(e)})
         try:
-            # Check feeding checklist tab
+            #Check feeding checklist tab
             from .handlers.feeding import _open_feeding_ws
             ws = _open_feeding_ws()
             if ws:
@@ -1144,7 +1169,7 @@ async def on_ready():
 
     asyncio.create_task(_health_checks())
 
-    # Seed invite caches for all guilds (for join attribution)
+    #Seed invite caches for all guilds (for join attribution)
     try:
         for g in bot.guilds:
             try:
@@ -1155,14 +1180,14 @@ async def on_ready():
         pass
     asyncio.create_task(start_web_server(bot))
     asyncio.create_task(start_profile_scheduler(bot))
-    # Warm the show-photo cache in background
+    #Warm the show-photo cache in background
     try:
         asyncio.create_task(warm_cache_on_boot())
     except Exception:
         pass
-    # start feeding scheduler after the bot is ready and loop is running
+    #start feeding scheduler after the bot is ready and loop is running
     asyncio.create_task(start_feeding_scheduler(bot))
-    # Start Gmail logging scheduler if enabled
+    #Start Gmail logging scheduler if enabled
     try:
         if getattr(settings, "gmail_enabled", False):
             asyncio.create_task(start_gmail_logging_scheduler(bot))
@@ -1170,14 +1195,14 @@ async def on_ready():
             asyncio.create_task(start_dues_scheduler(bot))
     except Exception:
         pass
-    # Start catabase profile cache scheduler
+    #Start catabase profile cache scheduler
     try:
         asyncio.create_task(start_profile_cache_scheduler())
     except Exception:
         pass
 
 
-# ------- Message entrypoint -------
+#------- Message entrypoint -------
 @bot.event
 async def on_message(message: discord.Message):
     """Main message hook: run anti-spam and route intents."""
@@ -1185,7 +1210,7 @@ async def on_message(message: discord.Message):
         return
 
 
-    # Human + machine log of the incoming message
+    #Human + machine log of the incoming message
     log_event({
         "event": "message",
         "author": _user_label(message.author),
@@ -1194,20 +1219,20 @@ async def on_message(message: discord.Message):
         "attachments": len(message.attachments) if hasattr(message, "attachments") else 0,
     })
 
-    # Spam protection (text + heuristics + NLP backstop for new/untrusted accounts)
+    #Spam protection (text + heuristics + NLP backstop for new/untrusted accounts)
     from .spam import check_spam
     spam_flag, reason = check_spam(message, settings)
     if spam_flag:
-        # Log and notify in logging channel, then delete the message
+        #Log and notify in logging channel, then delete the message
         try:
-            # Delete spam message (best-effort)
+            #Delete spam message (best-effort)
             try:
                 await message.delete()
                 decision = "deleted"
             except Exception:
                 decision = "kept"
 
-            # Write log line
+            #Write log line
             log_event({
                 "event": "spam",
                 "user": _user_label(message.author),
@@ -1217,7 +1242,7 @@ async def on_message(message: discord.Message):
                 "reason": reason,
             })
 
-            # Notify moderators in CH_LOGGING
+            #Notify moderators in CH_LOGGING
             log_ch_id = getattr(settings, 'ch_logging', None)
             if log_ch_id:
                 ch = message.guild.get_channel(int(log_ch_id)) if message.guild else None
@@ -1256,7 +1281,7 @@ async def on_message(message: discord.Message):
         except Exception:
             pass
         return
-    # Channel/DM → Sheet image intake
+    #Channel/DM → Sheet image intake
     try:
         if getattr(message, "attachments", None):
             in_map = settings.channel_sheet_map and int(getattr(message.channel, "id", 0) or 0) in settings.channel_sheet_map
@@ -1266,13 +1291,13 @@ async def on_message(message: discord.Message):
     except Exception as e:
         log_action("image_intake_error", f"channel={getattr(message.channel,'id','?')}", str(e))
 
-    # Lightweight fun triggers (e.g., "meow") anywhere; safe_send respects silent mode
+    #Lightweight fun triggers (e.g., "meow") anywhere; safe_send respects silent mode
     try:
         await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
     except Exception:
         pass
 
-    # Build ctx once
+    #Build ctx once
     ctx: Dict[str, Any] = {
         "bot": bot,
         "message": message,
@@ -1280,7 +1305,7 @@ async def on_message(message: discord.Message):
         "author": message.author,
     }
 
-    # Global mute: while silent_mode is ON, route everything through a MuteChannel/Message
+    #Global mute: while silent_mode is ON, route everything through a MuteChannel/Message
     if settings.silent_mode:
         muted_ch = _MuteChannel(message.channel, _channel_label)
         muted_msg = _MuteMessage(message, muted_ch)
@@ -1307,7 +1332,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     guild = bot.get_guild(guild_id) if guild_id else None
     if not guild:
         return
-    # Prevent the accused user from banning themselves via reaction
+    #Prevent the accused user from banning themselves via reaction
     if payload.user_id == data.get('user_id'):
         return
     try:
@@ -1347,7 +1372,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         log_action('spam_ban_error', f"guild={guild_id}", str(ban_exc))
 
 
-# ------- Edit/Delete logging -------
+#------- Edit/Delete logging -------
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
     """Re-run router when users edit messages."""
@@ -1380,13 +1405,13 @@ async def on_message_delete(message: discord.Message):
         pass
 
 
-# ------- Member join/leave + invite tracking -------
+#------- Member join/leave + invite tracking -------
 @bot.event
 async def on_member_join(member: discord.Member):
     """Track invite usage and log onboarding events."""
     try:
         guild = member.guild
-        # Compute account age in days
+        #Compute account age in days
         created = getattr(member, 'created_at', None)
         from datetime import timezone
         age_days = None
@@ -1397,7 +1422,7 @@ async def on_member_join(member: discord.Member):
             except Exception:
                 age_days = None
 
-        # Detect which invite increased
+        #Detect which invite increased
         code_used = None
         inviter_id = None
         try:
@@ -1463,11 +1488,11 @@ async def on_invite_delete(invite: discord.Invite):
         pass
 
 
-# ------- Reactions and role changes logging -------
+#------- Reactions and role changes logging -------
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     try:
-        # Ignore bot reactions
+        #Ignore bot reactions
         if payload.user_id == getattr(bot.user, 'id', None):
             return
         ch = bot.get_channel(int(payload.channel_id))
@@ -1525,7 +1550,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
     try:
-        # Compare role IDs
+        #Compare role IDs
         before_ids = {int(r.id) for r in getattr(before, 'roles', [])}
         after_ids = {int(r.id) for r in getattr(after, 'roles', [])}
         added_ids = list(after_ids - before_ids)
@@ -1549,7 +1574,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     except Exception:
         pass
 
-# Optional: parity command (kept tiny)
+#Optional: parity command (kept tiny)
 @bot.command(name="members")
 async def members(ctx: commands.Context):
     log_event({

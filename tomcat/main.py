@@ -22,7 +22,7 @@ CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 
 SESSION_SECRET = os.getenv("UI_SESSION_SECRET")
 if not SESSION_SECRET:
-    raise RuntimeError("UI_SESSION_SECRET is required to issue UI session cookies")
+    raise RuntimeError("UI_SESSION_SECRET is required to issue UI session cookies (set a long random value in .env)")
 
 SESSION_TTL_SECONDS = int(os.getenv("UI_SESSION_TTL_SECONDS", "3600"))
 # Default secure cookies ON so cross-site (e.g., github pages -> your domain) can send them.
@@ -38,8 +38,8 @@ _ALLOWED_ORIGINS = {
 
 _AUTH_DEBUG = os.getenv("UI_AUTH_DEBUG", "false").lower() == "true"
 
-# Officer role configured for elevated permissions (edit schedule, impersonation)
-OFFICER_ROLE_ID = 845035667661783061
+# Officer/guild/role IDs are configured via settings/env only (no code defaults).
+OFFICER_ROLE_ID = int(getattr(settings, "officer_role_id", 0) or 0)
 
 
 def _debug(msg: str) -> None:
@@ -57,15 +57,15 @@ DEFAULT_STATIONS = [
 
 # Define your Role IDs for permissions
 ROLES = {
-    "FEEDING_MANAGER": 643587274797481988, # Example ID
-    "PHOTO_LABELER": 798371895434149940,   # Example ID
-    "VIEWER": 551082419768393729           # Example ID
+    "FEEDING_MANAGER": int(getattr(settings, "role_feeding_manager_id", 0) or 0),
+    "PHOTO_LABELER": int(getattr(settings, "role_photo_labeler_id", 0) or 0),
+    "VIEWER": int(getattr(settings, "role_viewer_id", 0) or 0),
 }
 
 # Your main guild ID (replace with your actual guild/server ID)
-YOUR_GUILD_ID = 643586809166561310
+YOUR_GUILD_ID = int(getattr(settings, "ui_guild_id", None) or getattr(settings, "target_guild_id", None) or 0)
 # UI can override via env if needed
-UI_GUILD_ID = int(os.getenv("UI_GUILD_ID", str(YOUR_GUILD_ID or 0)) or 0)
+UI_GUILD_ID = YOUR_GUILD_ID
 
 
 def _b64_encode(data: str) -> str:

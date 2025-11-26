@@ -1,7 +1,5 @@
 ## Runtime log output captured per subsystem.
 #logs/*
-!logs/human/.gitkeep
-!logs/machine/.gitkeep
 ## Secrets and OAuth material live outside of version control.
 .env
 credentials/*
@@ -54,3 +52,9 @@ temp_images/
 cloudflared.exe
 config.yml
 cloudflared
+
+
+logs/emails/
+logs/finance/
+logs/human/
+logs/machine/

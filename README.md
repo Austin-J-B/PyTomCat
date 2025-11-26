@@ -1,76 +1,39 @@
 # TomCat VI
 
-TomCat is the Campus Cat Coalition’s Discord automation. The bot checks feeding,
+TomCat is the Campus Cat Coalition’s Discord automation bot. The bot checks feeding,
 documents dues and finances, runs computer vision tasks, and keeps large amounts
 of data stored and organized for each of the campus cats.
-The codebase is built around our 'Intent_router' to give some amount of 
-intelligence.
+The codebase is built around our 'Intent_router' to keep things 'modular', which
+builds off of the problems with the previous 'TomCat v5.6' javascript bot.
+Beyond that, part of what the 'TomCat VI' update relies on is utilizing logs and
+memory, which gives it the ability to keep track of previous messages and better
+fit around normal human language quirks such as sending a picture and text in 
+separate messages. This gives extra contextual understanding that creates the 
+desired feeling of 'intelligence'.
 
 ---
 
-## What TomCat Does
+## Main Funcitons
 
-- **Intent-driven conversations** – every message is normalized, evaluated for
-  wake words/mentions, matched through aliases/fuzzy/NLP, and routed to a handler.
-- **Feeding coordination** – logs “fed” updates in the checklist sheet, tracks
-  substitution requests, posts nightly 8 PM reminders, and keeps a monthly subs log.
+- **Intent-driven sorting** – every message is normalized, evaluated for
+  wake words/mentions, matched through aliases/fuzzy/NLP, and routed to the
+  appropriate handler.
+- **Feeding coordination** – logs stations as fed in the CCC's google sheet,
+  tracks volunteer substitution requests, posts nightly 8 PM feeding reminders,
+  and keeps uses the github page website as a user interface.
 - **Finance automation** – harvests Gmail payment notifications, separates dues
-  from other income/expenses, writes rows to Google Sheets, and posts sandbox
-  summaries for ambiguous donations.
-- **Cat profiles & photos** – serves profile embeds, random photos, and optional
-  YOLO-backed crops; maintains a local cache so follow-up requests stay fast.
-- **Computer vision** – detect/crop/identify workflows using Ultralytics YOLO and
-  a lightweight classifier, with pending attachments handled automatically.
+  from other income/expenses, inputs financial data to Google Sheets, and uses
+  the logs as a way to understand what type of income or expense any given
+  payment is.
+- **Cat profiles & photos** – serves profile embeds, random photos, and uses
+  the computer vision capability to auto-crop 'Show me' images. On top of that,
+  the bot maintains a local cache of images so follow-up requests get quick responses.
+- **Computer vision** – detect/crop/identify workflows using Ultralytics YOLOv8 and
+  a lightweight classifier. Currently still in development.
 - **Spam mitigation** – regex heuristics, fuzzy phrase matching, and an optional
   DeBERTa MNLI model; moderators can ban straight from the alert reaction.
 - **Audit trail** – human-readable daily logs plus machine NDJSON for every
   message, edit, reaction, role change, health check, and financial event.
-
----
-
-## Architecture at a Glance
-
-```
-Discord -> intent_router -> handler modules -> services/utils -> external APIs
-```
-
-- **`tomcat/main.py`** – bootstraps the Discord client, installs event hooks,
-  runs startup health checks, and kicks off background schedulers (feeding,
-  Gmail logging, profile cache warmers). A safe `safe_send` wrapper enforces the
-  global silent mode when needed.
-- **`tomcat/intent_router.py`** – the brain. Detects addressing, keeps short-term
-  context (pending CV/sub events), applies alias/fuzzy matching, optionally calls
-  the ONNX NLP backstop, and dispatches to slim handlers.
-- **Handlers** (`tomcat/handlers/`) – self-contained workflows:
-  - `cats.py` (profiles & show-photo UI), `feeding.py` (checklist, subs, 8 PM),
-    `finance.py` (non-dues intake), `dues.py` (membership pipeline & Gmail logger),
-    `vision.py` (Discord-side CV), `misc.py` (image intake + utility triggers),
-    `admin.py` (silent mode, cache rebuilds), `spam.py` (alert flow).
-- **Services** (`tomcat/services/`) – Google Sheets client, profile cache,
-  show-photo cache, and CatDatabase readers.
-- **Utilities** (`tomcat/utils/`) – fuzzy matching, payment provider detection,
-  datetime helpers, Discord-safe send wrapper.
-
-Schedulers run inside long-lived locks to avoid duplicate work. Gmail logging and
-finance ingestion share the same email index so a message is never processed
-twice. Feeding, duties, and finance actions all write to the `logs/` tree so the
-bot remains stateless beyond files.
-
----
-
-## Repository Layout
-
-| Path                         | Purpose |
-|------------------------------|---------|
-| `tomcat/main.py`             | Discord entrypoint and lifecycle management |
-| `tomcat/intent_router.py`    | Intent parsing, context windows, dispatch |
-| `tomcat/handlers/`           | Individual features (feeding, dues, finance, CV, etc.) |
-| `tomcat/services/`           | Google Sheets helpers, profile/show caches |
-| `tomcat/utils/`              | Shared helpers (fuzzy, payments, datetime, sender) |
-| `tomcat/vision/`             | Ultralytics YOLO + classifier inference utilities |
-| `logs/`                      | Human/Machine logs plus monthly subs ledgers |
-| `weights/`                   | YOLO classifier/detector weights (ignored by git) |
-| `.env`                       | Runtime configuration (see below) |
 
 ---
 
@@ -220,7 +183,4 @@ commands such as `TomCat, log the past 5 emails` or `TomCat, manual 8pm update`.
 
 ---
 
-TomCat VI is production-ready but still human-friendly. All automation leaves a
-paper trail; most state is file-based, so restoring from backup is as easy as
-copying the `logs/` and `weights/` folders alongside your `.env` and credentials.
-Happy herding! 🐈
+

@@ -17,7 +17,9 @@ import urllib.request
 from pathlib import Path
 from typing import Iterable, List
 
-# --- CONFIGURATION ---
+#======================
+#Installation configuration
+#======================
 ROOT = Path(__file__).resolve().parent.parent
 VENV_DIR = ROOT / ".venv"
 WEIGHTS_DIR = ROOT / "weights"
@@ -26,7 +28,7 @@ TOKENIZER_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.tokenizer.json"
 
 REQUIRED_WEIGHTS = ["NanoModel.pt", "NanoClassifier.pt"]
 
-# PyTorch configuration
+#PyTorch configuration
 TORCH_CPU_SPEC = ["torch==2.3.1", "torchvision==0.18.1"]
 TORCH_GPU_SPEC = [
     "--extra-index-url",
@@ -35,17 +37,17 @@ TORCH_GPU_SPEC = [
     "torchvision==0.18.1+cu121",
 ]
 
-# The template provided by the user
-ENV_TEMPLATE_CONTENT = """# ===== Discord =====
+#Environment template used to scaffold a fresh .env file
+ENV_TEMPLATE_CONTENT = """#=====Discord=====
 DISCORD_TOKEN=#
 DISCORD_CLIENT_SECRET=#
-COMMAND_PREFIX=! # Command prefix used by commands.Bot
+COMMAND_PREFIX=! #Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago
 #Austin, Megan, Derek, Cel, Kaz, Jesse, McKayla, Bel, and Jacob
 ADMIN_IDS=624440365595754496,499034835562790912,217081575873970178,429741733706989568,1361167705897435229,244678835889635328,607002156247154688,837445695480135691,503377157830082560
 
-# ===== Channels (Discord snowflakes) =====
+#=====Channels (Discord snowflakes)=====
 CH_FEEDING_TEAM=643586809166561310
 CH_TOMCAT_SANDBOX=1341696618688286720
 CH_PICTURES_OF_CATS=551084964318543904
@@ -57,19 +59,19 @@ CHANNEL_SHEET_MAP=CH_PICTURES_OF_CATS:TCBPicsInput, CH_REPORT_NEW_CATS:TCBPicsIn
 allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
 CH_MEMBER_NAMES=933458020892033084
 
-# Ping target when a spam message is detected
+#Spam alert target when a flagged message appears
 SPAM_ALERT_USER_ID=624440365595754496
 
-# ===== Google Service Account =====
+#=====Google Service Account=====
 GOOGLE_SERVICE_ACCOUNT_JSON=./credentials/service_account.json
 
-# ===== Sheets =====
-# Catabase (cat bios + latest image URL)
+#=====Sheets=====
+#Catabase (cat bios + latest image URL)
 SHEET_CATABASE_ID=15HtHVB4HfOr9e85EgbOGbz9CBwWnXg3pbCytGTA64P4 #Catabase
-# Vision/aux (RecentPics, FeedingStationChecklist, etc.)
+#Vision/aux (RecentPics, FeedingStationChecklist, etc.)
 SHEET_VISION_ID=1ypMoqpB0XbiVVhJ1GP_6gVcqMmt-FXRrkoO2D2fC8WE  #TomCatVision
-# Members/finance megasheet (used later for dues/membership)
-SHEET_MEGASHEET_ID=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA # CCC megasheet
+#Members/finance megasheet (used later for dues/membership)
+SHEET_MEGASHEET_ID=1PBvCd6gTwc1_aqlCtn93xPW7XJOHclseY2tlxDk9whA #CCC megasheet
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
 NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
@@ -77,34 +79,35 @@ NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
 CV_DETECT_WEIGHTS=weights/NanoModel.pt
 CV_CLASSIFY_WEIGHTS=weights/NanoClassifier.pt
 
-CV_MAX_DOWNLOAD_MB=0 # Set to 0 to lift the max file size limit
+CV_MAX_DOWNLOAD_MB=0 #Set to 0 to lift the max file size limit
 
-# Gmail ingestion
-GMAIL_ENABLED=true                    # Toggle Gmail integration; disable to skip email polling entirely
-GMAIL_CREDENTIALS_PATH=credentials/gmail_oauth_client.json  # OAuth client secrets downloaded from Google Cloud
-GMAIL_TOKEN_PATH=credentials/gmail_token.json              # Stored refresh/access token generated after auth
-GMAIL_LOCAL_PORT=8765                                      # Local redirect port the OAuth helper spins up
+#Gmail ingestion
+GMAIL_ENABLED=true                    #Toggle Gmail integration; disable to skip email polling entirely
+GMAIL_CREDENTIALS_PATH=credentials/gmail_oauth_client.json  #OAuth client secrets downloaded from Google Cloud
+GMAIL_TOKEN_PATH=credentials/gmail_token.json              #Stored refresh/access token generated after auth
+GMAIL_LOCAL_PORT=8765                                      #Local redirect port the OAuth helper spins up
 
-# Dues processing knobs
-DUES_ENABLED=true                     # Master switch for dues automation
-DUES_ALLOWED_AMOUNTS=15               # Base dues amount (comma-list if multiples allowed)
-DUES_EMAIL_WINDOW_DAYS=5              # Only consider payment emails this many days back
-DUES_SCAN_SKIP_OLDEST=3               # Skip this many oldest sheet rows when scanning in batches
-DUES_SCAN_LIMIT=500                   # Cap rows reviewed per pass to limit Sheets API usage
-DUES_NLP_ENABLED=true                 # Enable NLP heuristics for intent/donation parsing
-DUES_MEMBERSHIP_TTL_SEC=300           # Cache TTL for dues membership lookups (seconds)
-DUES_FAST_MAP=1                       # Use fast user map resolver (set 0 to force slower fallback)
+#Dues processing knobs
+DUES_ENABLED=true                     #Master switch for dues automation
+DUES_ALLOWED_AMOUNTS=15               #Base dues amount (comma-list if multiples allowed)
+DUES_EMAIL_WINDOW_DAYS=5              #Only consider payment emails this many days back
+DUES_SCAN_SKIP_OLDEST=3               #Skip this many oldest sheet rows when scanning in batches
+DUES_SCAN_LIMIT=500                   #Cap rows reviewed per pass to limit Sheets API usage
+DUES_NLP_ENABLED=true                 #Enable NLP heuristics for intent/donation parsing
+DUES_MEMBERSHIP_TTL_SEC=300           #Cache TTL for dues membership lookups (seconds)
+DUES_FAST_MAP=1                       #Use fast user map resolver (set 0 to force slower fallback)
 
-# Discord bot identity
-BOT_USER_ID=1341667150066225192       # Bot user ID for mention detection + wake word shortcuts
+#Discord bot identity
+BOT_USER_ID=1341667150066225192       #Bot user ID for mention detection + wake word shortcuts
 
-# Cache expiry settings
-CAT_PROFILE_TTL_SEC=3600              # Seconds before cached cat profiles auto-refresh
-CAT_ALIASES_TTL_SEC=7200              # Seconds before alias table refreshes from Sheets
+#Cache expiry settings
+CAT_PROFILE_TTL_SEC=3600              #Seconds before cached cat profiles auto-refresh
+CAT_ALIASES_TTL_SEC=7200              #Seconds before alias table refreshes from Sheets
 
-FINANCE_SHEET_THROTTLE_SEC=0.5        # When finances are requested, it waits this long between queries.
+FINANCE_SHEET_THROTTLE_SEC=0.5        #When finances are requested, it waits this long between queries.
 UITEST_ACTIVITY_APP_ID=1341667150066225192 #For the user interface to work.
 """
+
 
 class InstallError(RuntimeError):
     """Raised when a provisioning step cannot be recovered automatically."""
@@ -172,7 +175,7 @@ def _ensure_cloudflared_auth(bin_path: Path) -> None:
     if not bin_path.exists():
         return
 
-    # Typical location for Cloudflare cert on Windows/Linux
+    #Typical location for Cloudflare cert on Windows/Linux
     user_home = Path.home()
     cert_path = user_home / ".cloudflared" / "cert.pem"
     
@@ -200,14 +203,14 @@ def _create_or_reuse_venv(python_exe: Path) -> None:
     _run([str(python_exe), "-m", "venv", str(VENV_DIR)])
 
 def _pip(args: Iterable[str]) -> None:
-    # We add --no-cache-dir to prevent "Permission denied" errors on corrupted cache files
+    #We add --no-cache-dir to prevent "Permission denied" errors on corrupted cache files
     base_cmd = [str(_venv_python()), "-m", "pip", "install", "--no-cache-dir"]
     clean_args = [a for a in args if a != "install"]
     _run(base_cmd + clean_args)
 
 def _install_base_dependencies(force_reinstall: bool = False) -> None:
     _print_header("Installing Python dependencies")
-    # Upgrade pip first
+    #Upgrade pip first
     _pip(["--upgrade", "pip", "setuptools", "wheel"])
 
     req_path = ROOT / "requirements.txt"
@@ -260,7 +263,7 @@ def _install_torch(force: str | None = None) -> None:
         raise
 
 def _ensure_extra_models() -> None:
-    # Added 'onnxscript' here to fix the ModuleNotFoundError
+    #Added 'onnxscript' here to fix the ModuleNotFoundError
     _pip([
         "huggingface_hub>=0.35.1,<0.36",
         "transformers==4.43.3",
@@ -317,7 +320,7 @@ def _maybe_create_env_template() -> None:
         print(f"ℹ️  {env_path.name} already exists. Skipping creation.")
         return
     
-    # Use the detailed template provided by the user
+    #Use the detailed template provided by the user
     env_path.write_text(ENV_TEMPLATE_CONTENT, encoding="utf-8")
     print(f"\n✅ Created {env_path.name} from template.")
     print("   👉 ACTION REQUIRED: Open .env and add your DISCORD_TOKEN and CLIENT_SECRET.")
@@ -350,7 +353,7 @@ def main() -> None:
 
     _ensure_repo()
     
-    # 1. Cloudflare Binary & Auth
+    #1. Cloudflare Binary & Auth
     cf_path = _ensure_cloudflared()
     _ensure_cloudflared_auth(cf_path)
 
@@ -366,11 +369,11 @@ def main() -> None:
     else:
         _create_or_reuse_venv(python_exe)
         
-        # 2. Install Torch FIRST (Critical fix for the hang issue)
+        #2. Install Torch FIRST (Critical fix for the hang issue)
         torch_force = "gpu" if args.gpu else "cpu" if args.cpu else None
         _install_torch(torch_force)
 
-        # 3. Then install everything else
+        #3. Then install everything else
         try:
             _install_base_dependencies(force_reinstall=args.reinstall)
         except subprocess.CalledProcessError:

@@ -13,13 +13,13 @@ import datetime as dt
 from discord.abc import Messageable
 
 try:
-    from ..utils.sender import safe_send  # canonical signature (ch, text) -> Awaitable[None]
+    from ..utils.sender import safe_send  #canonical signature (ch, text) -> Awaitable[None]
 except Exception:
     async def safe_send(ch, text):
         await ch.send(text)
 
 
-# Precompile once
+#Precompile once
 MEOWS = [
     "meow!", "MEOW!", "meeeoowww", "meow meow", "mrow!", "mrrp?",
     "meow? :3", "MEOW MEOW!", "*stretches*"
@@ -54,7 +54,7 @@ async def _profiles_channel(message: discord.Message, ctx: Dict[str, Any]) -> Me
         bot = ctx.get("bot")
         ch = bot.get_channel(ch_id) if bot else None
         if not ch and bot:
-            # Fallback: walk guild cache to resolve the channel by ID
+            #Fallback: walk guild cache to resolve the channel by ID
             for g in getattr(bot, "guilds", []):
                 candidate = g.get_channel(ch_id)
                 if candidate:
@@ -93,7 +93,7 @@ async def handle_profiles_create(intent, ctx):
     msg: discord.Message = ctx["message"]
     author = ctx["author"]
     if not getattr(getattr(author, "guild_permissions", None), "administrator", False):
-        return  # admin-only, quiet
+        return  #admin-only, quiet
 
     start_id = int(intent.data.get("start_id"))
     end_id = int(intent.data.get("end_id") or start_id)
@@ -108,7 +108,7 @@ async def handle_profiles_create(intent, ctx):
     except Exception:
         pass
 
-    # Load CatDatabase once
+    #Load CatDatabase once
     try:
         gc = sheets_client()
         sheet_id = settings.sheet_catabase_id or settings.cat_spreadsheet_id
@@ -133,7 +133,7 @@ async def handle_profiles_create(intent, ctx):
     header, *data = rows if rows else ([], [])
     made, failed = 0, []
 
-    # Column 0: "67. Microwave", Column 1: numeric ID as string
+    #Column 0: "67. Microwave", Column 1: numeric ID as string
     for cid in range(start_id, end_id + 1):
         id_str = str(cid)
         r = next((r for r in data if len(r) > 1 and r[1] == id_str), None)
@@ -148,7 +148,7 @@ async def handle_profiles_create(intent, ctx):
             embed = discord.Embed.from_dict(embed_dict)
             sent = await ch.send(embed=embed)
             made += 1
-            # Log mapping so you can copy back into config if you want
+            #Log mapping so you can copy back into config if you want
             log_action("profile_created", f"id={id_str}", f"msg={sent.id}")
         except Exception as e:
             failed.append(id_str)
@@ -197,7 +197,7 @@ async def handle_profile_update_one(intent, ctx):
             pass
         return
 
-    # Find name by ID
+    #Find name by ID
     try:
         gc = sheets_client()
         sheet_id = settings.sheet_catabase_id or settings.cat_spreadsheet_id
@@ -243,7 +243,7 @@ async def handle_profiles_update_all(intent, ctx):
     except Exception:
         pass
 
-    # Preload CatDatabase for speed
+    #Preload CatDatabase for speed
     try:
         gc = sheets_client()
         sheet_id = settings.sheet_catabase_id or settings.cat_spreadsheet_id
@@ -286,7 +286,7 @@ async def handle_profiles_update_all(intent, ctx):
 
 async def start_profile_scheduler(bot):
     """Kick off background tasks that sync the profile cache."""
-    # run daily at ~02:10 local
+    #run daily at ~02:10 local
     target_h, target_m = 2, 10
     while True:
         now = dt.datetime.now()
@@ -295,7 +295,7 @@ async def start_profile_scheduler(bot):
             nxt += dt.timedelta(days=1)
         await asyncio.sleep((nxt - now).total_seconds())
         try:
-            # fabricate a tiny ctx using the bot and a dummy author; channel is resolved inside
+            #fabricate a tiny ctx using the bot and a dummy author; channel is resolved inside
             dummy_ctx = {"bot": bot, "message": type("X", (), {"add_reaction": lambda *_: None})(), "author": type("Y", (), {"guild_permissions": type("Z", (), {"administrator": True})()})()}
             await handle_profiles_update_all(type("Intent", (), {"data": {}}), dummy_ctx)
             log_action("profiles_scheduler", "update_all", "ran")
@@ -336,11 +336,11 @@ async def handle_channel_image_intake(message: discord.Message) -> None:
                 meta += f" sheet={sheet_override}"
             log_action("image_intake_error", f"channel={ch_id or 'dm'}", meta)
             return
-        # Per spec: Column A = direct media link, B = username (the @name), C = timestamp (UTC Z)
+        #Per spec: Column A = direct media link, B = username (the @name), C = timestamp (UTC Z)
         username = getattr(message.author, 'name', 'user')
         tsz = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00","Z")
         rows = [[att.url, username, tsz] for att in images]
-        # Force append into columns A:C so values do not drift to F:H when prior columns have formatting
+        #Force append into columns A:C so values do not drift to F:H when prior columns have formatting
         ws.append_rows(
             rows,
             value_input_option=cast(Any, "USER_ENTERED"),
@@ -361,7 +361,7 @@ async def handle_misc(message: discord.Message, *, now_ts: float, allow_in_chann
     if allow_in_channels and message.channel.id not in allow_in_channels:
         return
     content = message.content
-    # Skip code blocks to avoid false positives
+    #Skip code blocks to avoid false positives
     if "```" in content or "`" in content:
         return
     for rx, fn in TRIGGERS:

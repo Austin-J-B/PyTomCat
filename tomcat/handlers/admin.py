@@ -7,7 +7,7 @@ from typing import Dict, Any
 from ..config import settings
 from ..logger import log_action
 from ..services.show_cache import ensure_cat_cache
-from ..services.catsheets import sheets_client  # type: ignore
+from ..services.catsheets import sheets_client  #type: ignore
 from ..services import profile_cache as PC
 from .. import aliases as ALIAS
 
@@ -18,7 +18,7 @@ async def handle_silent_mode(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
         log_action("silent_mode_denied", f"user={author.id}", "unauthorized")
         return
 
-    # Expect args like {"on": True} or {"on": False}
+    #Expect args like {"on": True} or {"on": False}
     on = bool(args.get("on", False))
     settings.silent_mode = on
     log_action("silent_mode_set", f"user={getattr(author,'name',author.id)}", "on" if on else "off")
@@ -28,7 +28,7 @@ async def handle_silent_mode(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
         pass
 
 
-# Guild-scoped admin actions target the primary CCC server (configurable via TARGET_GUILD_ID).
+#Guild-scoped admin actions target the primary CCC server (configurable via TARGET_GUILD_ID).
 
 async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
     """Admin-only: remove a specific role from all guild members.
@@ -39,14 +39,14 @@ async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any])
     author = ctx["author"]
     role_id = int(args.get("role_id") or 0)
 
-    # Admin guard
+    #Admin guard
     is_admin = int(getattr(author, 'id', 0)) in (getattr(settings, 'admin_ids', []) or []) or \
                getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
     if not is_admin:
         log_action("role_remove_all_denied", f"user={author.id}", "unauthorized")
         return
 
-    # Always operate on the target main guild, regardless of where the command is invoked
+    #Always operate on the target main guild, regardless of where the command is invoked
     bot = ctx.get("bot")
     target_gid = getattr(settings, "target_guild_id", None)
     guild = None
@@ -69,7 +69,7 @@ async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any])
             pass
         return
 
-    # Confirm and run
+    #Confirm and run
     try:
         await message.channel.send(f"Starting role removal: removing <@&{role_id}> from all members who have it…")
     except Exception:
@@ -97,7 +97,7 @@ async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any])
                 await asyncio.sleep(0.3)
         except Exception:
             continue
-        # Reduce chatter: rely on logs; no periodic progress messages
+        #Reduce chatter: rely on logs; no periodic progress messages
 
     try:
         await message.channel.send(f"Done. Removed <@&{role_id}> from {removed} member(s).")
@@ -141,13 +141,13 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
             if name_arg.lower() in {"all", "*", "photos", "cache", "profiles"}:
                 names = []
             else:
-                # Resolve one cat to actual FULL_NAME from CatDatabase if possible
+                #Resolve one cat to actual FULL_NAME from CatDatabase if possible
                 from ..services.catsheets import get_cat_profile
                 prof = await get_cat_profile(name_arg)
                 if isinstance(prof, dict) and prof.get("actual_name"):
                     names = [prof["actual_name"]]
                 else:
-                    # fallback: try to match first column loosely
+                    #fallback: try to match first column loosely
                     q = name_arg.lower()
                     for r in rows[1:]:
                         full = (r[0] if r else '').strip()
@@ -169,7 +169,7 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
             pass
         return
 
-    # Fallback to profile cache if we failed to collect names from RecentPics
+    #Fallback to profile cache if we failed to collect names from RecentPics
     if not names:
         try:
             from ..services import profile_cache as PC
@@ -180,16 +180,16 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
             log_action("recache_error", "fallback_profiles", str(e))
             names = names or []
 
-    # Wipe and refill per cat with gentle concurrency
+    #Wipe and refill per cat with gentle concurrency
     base = settings.show_cache_dir
     os.makedirs(base, exist_ok=True)
     sem = asyncio.Semaphore(max(1, settings.show_cache_warm_concurrency))
     total = 0
 
-    # One-time wipe of cached files for selected cats only
+    #One-time wipe of cached files for selected cats only
     try:
         targets = set()
-        # Build id set from names by parsing leading number
+        #Build id set from names by parsing leading number
         import re as _re
         for nm in names:
             m = _re.match(r"\s*(\d+)[\.|\s]", nm or "")
@@ -207,7 +207,7 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
     except Exception:
         pass
 
-    # Deduplicate while preserving order
+    #Deduplicate while preserving order
     seen_names = set()
     unique_names = []
     for nm in names:
@@ -260,7 +260,7 @@ async def handle_recache_catabase(args: Dict[str, Any], ctx: Dict[str, Any]) -> 
         pass
     try:
         n = await PC.refresh_async()
-        # Force-refresh dynamic aliases so router sees new names immediately
+        #Force-refresh dynamic aliases so router sees new names immediately
         try:
             ALIAS.refresh_aliases_now()
         except Exception:

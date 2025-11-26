@@ -38,18 +38,22 @@ def _check_tunnel_creds() -> None:
             has_creds = True
             
     if not has_creds:
-        print("\n❌ CRITICAL ERROR: Cloudflare Tunnel Credentials Not Found!")
+        print("\n CRITICAL ERROR: Cloudflare Tunnel Credentials Not Found!")
         print(f"   Checked in: {cf_dir}")
         print("   The bot cannot launch the website without the tunnel key.")
-        print("\n👉 TROUBLESHOOTING: Have you copied the .json tunnel secret to this machine when first installed?")
+        print("\n TROUBLESHOOTING: Have you copied the .json tunnel secret to this machine when first installed?")
         print("   (Copy the *.json file from your old computer's .cloudflared folder to this one)\n")
         sys.exit(1)
 
 
 def main() -> None:
+    yolo_dir = ROOT / ".config" / "ultralytics"
+    yolo_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["YOLO_CONFIG_DIR"] = str(yolo_dir)
+    print(f"Enforcing local YOLO config: {yolo_dir}")
     python_path = _venv_python()
     if not python_path.exists():
-        print("❌ Virtual environment not found. Run `python scripts/install.py` first.")
+        print("Virtual environment not found. Run `python scripts/install.py` first.")
         sys.exit(1)
 
     #--- PRE-FLIGHT CHECKS ---
@@ -66,12 +70,12 @@ def main() -> None:
         cloudflared_path = ROOT / "cloudflared"
 
     if not cloudflared_path.exists():
-        print(f"⚠️  {cloudflared_path.name} not found in root. UI Tunnel will not start.")
+        print(f"{cloudflared_path.name} not found in root. UI Tunnel will not start.")
         tunnel_cmd = None
     else:
         #Check for config.yml
         if not CONFIG_PATH.exists():
-            print("⚠️  config.yml not found in root. Tunnel will likely fail to route traffic.")
+            print("config.yml not found in root. Tunnel will likely fail to route traffic.")
             #We try to run anyway, but warn the user
             tunnel_cmd = [str(cloudflared_path), "tunnel", "run", "tomcat-ui"]
         else:
@@ -99,16 +103,16 @@ def main() -> None:
             tunnel_proc = subprocess.Popen(tunnel_cmd, cwd=ROOT)
             processes.append(tunnel_proc)
         
-        print("\n✅ TomCat is running. Press Ctrl+C to stop.\n")
+        print("\nTomCat is running. Press Ctrl+C to stop.\n")
 
         #Wait for bot to exit (or crash)
         exit_code = bot_proc.wait()
         
         if exit_code != 0:
-            print(f"⚠️ Bot exited with code {exit_code}")
+            print(f"Bot exited with code {exit_code}")
 
     except KeyboardInterrupt:
-        print("\n🛑 Shutting down...")
+        print("\nShutting down...")
     finally:
         #Kill everything on exit
         for p in processes:

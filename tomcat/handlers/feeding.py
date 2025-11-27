@@ -686,8 +686,14 @@ async def handle_feed_update_event(event, ctx: Dict[str, Any]) -> None:
     We mark all given dates as fed in the Sheet (stubbed) and log.
     """
     ch: discord.abc.MessageableChannel = ctx["channel"]
-    station_raw = event.station or ""
-    station = _canonical_station(station_raw) or (station_raw or "Unknown")
+    stations_raw = event.stations if getattr(event, "stations", None) else [event.station]
+    stations: List[str] = []
+    for s in stations_raw or []:
+        canon = _canonical_station(s) or (s or "")
+        if canon:
+            stations.append(canon)
+    if not stations:
+        stations = ["Unknown"]
     dates = _normalize_dates(event.dates or [])
     if not dates:
         dates = [_today_iso()]
@@ -703,16 +709,20 @@ async def handle_feed_update_event(event, ctx: Dict[str, Any]) -> None:
         ch_id = _normalize_channel_id(getattr(ch, "id", None))
         if ch_id is None or ch_id not in allowed:
             allowed_str = ",".join(str(a) for a in sorted(allowed))
-            log_action("feed_update_ignored", f"station={station}", f"channel_blocked:{getattr(ch, 'id', None)}; allowed={allowed_str}")
+            log_action("feed_update_ignored", f"station={','.join(stations)}", f"channel_blocked:{getattr(ch, 'id', None)}; allowed={allowed_str}")
             return
 
-    ok_all = True
-    for d in dates:
-        ok = await _mark_checkbox_in_sheet(station, d)
-        ok_all = ok_all and ok
-
-    status = "ok" if ok_all else "partial"
-    log_action("feed_update", f"station={station}; dates={','.join(dates)}", status)
+    ok_any = False
+    for st in stations:
+        ok_all_dates = True
+        for d in dates:
+            ok = await _mark_checkbox_in_sheet(st, d)
+            ok_all_dates = ok_all_dates and ok
+        ok_any = ok_any or ok_all_dates
+        status = "ok" if ok_all_dates else "partial"
+        log_action("feed_update", f"station={st}; dates={','.join(dates)}", status)
+    if not ok_any:
+        log_action("feed_update", f"station={','.join(stations)}; dates={','.join(dates)}", "none_marked")
 
 async def handle_sub_request_event(event, ctx: Dict[str, Any]) -> None:
     """

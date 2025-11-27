@@ -16,6 +16,89 @@ except Exception:
     import re as _re
     def norm_alnum_lower(s: str) -> str:
         return _re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+import re # Ensure this is imported at the top of the file
+
+# Configuration for "TCB Pics Formatted" columns (0-based index)
+COL_LABEL = 0   # Officer ID / Name
+COL_URL = 6     # Picture Link
+COL_SERIAL = 7  # Serial number
+
+async def _get_all_photos_long_format():
+    """Helper to fetch the master photo list from Catabase."""
+    sid = settings.sheet_catabase_id 
+    if not sid:
+        return []
+    gc = sheets_client()
+    # reading the "Long" format directly
+    ws = gc.open_by_key(sid).worksheet("TCB Pics Formatted")
+    return ws.get_all_values()[1:] # Skip header
+
+async def get_most_recent_photo(full_name: str) -> dict | str:
+    """Fetch the most recent photo row for a cat from the long-format list."""
+    try:
+        rows = await _get_all_photos_long_format()
+    except Exception as e:
+        return f"Sheet error: {e}"
+
+    key = norm_alnum_lower(full_name)
+    matches = []
+    
+    for r in rows:
+        # Safety check for row length
+        if len(r) <= COL_SERIAL: continue
+        
+        if norm_alnum_lower(r[COL_LABEL]) == key:
+            if r[COL_URL].startswith("http"):
+                matches.append(r)
+
+    if not matches:
+        return f"No photos found for {full_name}."
+
+    # Sort by Serial Number (descending)
+    def parse_serial(row):
+        try:
+            # Remove non-digits (e.g. "sn123" -> 123)
+            val = row[COL_SERIAL]
+            return int(re.sub(r"\D", "", val) or 0)
+        except:
+            return 0
+
+    best_row = max(matches, key=parse_serial)
+    
+    return {
+        "actual_name": best_row[COL_LABEL],
+        "url": best_row[COL_URL],
+        "serial": best_row[COL_SERIAL],
+        "total_available": len(matches)
+    }
+
+# Optional: Update get_recent_photo to use the new source too
+async def get_recent_photo(full_name: str) -> dict | str:
+    """Pick a random recent photo from the full history."""
+    try:
+        rows = await _get_all_photos_long_format()
+    except Exception as e:
+        return f"Sheet error: {e}"
+
+    key = norm_alnum_lower(full_name)
+    matches = [r for r in rows if len(r) > COL_SERIAL and norm_alnum_lower(r[COL_LABEL]) == key and r[COL_URL].startswith("http")]
+
+    if not matches:
+        return f"No recent photos for '{full_name}'."
+
+    import random
+    pick = random.choice(matches)
+    
+    return {
+        "actual_name": pick[COL_LABEL],
+        "url": pick[COL_URL],
+        "serial": pick[COL_SERIAL],
+        "total_available": len(matches),
+        "reverse_index": 0 # Not easily calculated in random fetch, simplified
+    }
+
+
+
 
 IDX = {
     "full_name": 0,
@@ -99,96 +182,7 @@ async def get_cat_profile(query: str) -> dict | str:
         "comments": best_row[IDX["comments"]] if len(best_row) > IDX["comments"] else None,
     }
 
-async def get_recent_photo(full_name: str) -> dict | str:
-    """Fetch the most recent photo row for a given cat."""
-    """Pick one recent photo for a given FULL_NAME from RecentPics tab."""
-    if not settings.sheet_vision_id:
-        return "Aux sheet ID not configured. Set SHEET_VISION_ID in .env."
-    gc = sheets_client()
-    ws = gc.open_by_key(settings.sheet_vision_id).worksheet("RecentPics")
 
-    rows = ws.get_all_values()
-    key = norm_alnum_lower(full_name)
-    if not rows or not key:
-        return "No data."
-
-    header, *data = rows
-    matches = [r for r in data if norm_alnum_lower(r[0] if r else "") == key]
-    if not matches:
-        return f"No recent photos for '{full_name}'."
-
-    pick = max(matches, key=lambda r: int(r[2] or 0) if len(r) > 2 and str(r[2]).isdigit() else 0)
-    total_available = int(pick[2] or 0) if len(pick) > 2 and str(pick[2]).isdigit() else 0
-
-    #Collect URL/SERIAL pairs starting at col 3
-    pairs: list[tuple[str, str]] = []
-    i = 3
-    while i < len(pick):
-        url = pick[i].strip() if i < len(pick) else ""
-        serial = pick[i + 1].strip() if i + 1 < len(pick) else ""
-        if url:
-            pairs.append((url, serial or "Unknown"))
-        i += 2
-    if not pairs:
-        return f"No accessible photos found for {full_name}."
-
-    import random
-    url, serial = random.choice(pairs)
-    reverse_index = max(total_available - pairs.index((url, serial)), 1)
-    return {
-        "actual_name": full_name,
-        "url": url,
-        "serial": serial,
-        "total_available": total_available,
-        "reverse_index": reverse_index,
-    }
-
-async def get_most_recent_photo(full_name: str) -> dict | str:
-    """Shortcut for retrieving the single latest photo entry."""
-    """Return the most recent photo for a FULL_NAME using the highest SERIAL value."""
-    if not settings.sheet_vision_id:
-        return "Aux sheet ID not configured. Set SHEET_VISION_ID in .env."
-    gc = sheets_client()
-    ws = gc.open_by_key(settings.sheet_vision_id).worksheet("RecentPics")
-
-    rows = ws.get_all_values()
-    key = norm_alnum_lower(full_name)
-    if not rows or not key:
-        return "No data."
-
-    header, *data = rows
-    matches = [r for r in data if norm_alnum_lower(r[0] if r else "") == key]
-    if not matches:
-        return f"No recent photos for '{full_name}'."
-
-    #Choose the row with max TOTAL (col 2) first, then pick the highest SERIAL among URL/SERIAL pairs
-    pick = max(matches, key=lambda r: int(r[2] or 0) if len(r) > 2 and str(r[2]).isdigit() else 0)
-    best = None
-    best_serial = -1
-    i = 3
-    while i < len(pick):
-        url = pick[i].strip() if i < len(pick) else ""
-        serial = pick[i + 1].strip() if i + 1 < len(pick) else ""
-        try:
-            s_val = int(serial) if serial else -1
-        except Exception:
-            s_val = -1
-        if url and s_val > best_serial:
-            best_serial = s_val
-            best = (url, serial or "Unknown")
-        i += 2
-
-    if not best:
-        return f"No accessible photos found for {full_name}."
-
-    url, serial = best
-    total_available = int(pick[2] or 0) if len(pick) > 2 and str(pick[2]).isdigit() else 0
-    return {
-        "actual_name": full_name,
-        "url": url,
-        "serial": serial,
-        "total_available": total_available,
-    }
 
 async def get_random_photo(full_name: str):
     """Pick a random photo record for variety in responses."""

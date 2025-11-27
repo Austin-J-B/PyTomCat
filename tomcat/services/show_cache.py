@@ -107,56 +107,78 @@ def reset_recentpics_cache() -> None:
     _RECENTPICS_ROWS = None
     _RECENTPICS_TS = 0.0
 
+# --- INSERT IN tomcat/services/show_cache.py ---
+
 async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
-    """Return cached (url, display) entries for a cat from RecentPics."""
-    """Return URL/SERIAL pairs from RecentPics for a given FULL_NAME."""
+    """Return URL/SERIAL pairs from TCB Pics Formatted for a given FULL_NAME."""
     try:
-        #Use in-process TTL cache of RecentPics rows
+        # Reuse the existing row caching mechanism, but fetch from the new sheet
         rows = None
         now = time.monotonic()
         ttl = max(1, int(getattr(settings, 'show_sheet_recentpics_ttl_sec', 300) or 300))
+        
         if _RECENTPICS_ROWS is not None and (now - _RECENTPICS_TS) < ttl:
             rows = _RECENTPICS_ROWS
+        
         if rows is None:
             gc = sheets_client()
-            #Guard against missing configuration which static checkers warn about
-            sv_id: str = getattr(settings, 'sheet_vision_id', None) or ""
-            if not sv_id:
-                log_action('show_cache_sheet_missing', 'sheet_vision_id', str(getattr(settings, 'sheet_vision_id', None)))
+            # CHANGE: Use Catabase ID instead of Vision ID
+            sid = getattr(settings, 'sheet_catabase_id', None) or ""
+            if not sid:
                 return []
-            ws = gc.open_by_key(sv_id).worksheet("RecentPics")
+            # CHANGE: Target the formatted tab
+            ws = gc.open_by_key(sid).worksheet("TCB Pics Formatted")
             rows = ws.get_all_values()
             _set_recentpics_rows(rows)
+
         if not rows:
             return []
+
+        # Normalize query
         key = re.sub(r"[^a-z0-9]+", "", (full_name or "").lower())
-        data = rows[1:]
-        matches = [r for r in data if re.sub(r"[^a-z0-9]+", "", (r[0] if r else "").lower()) == key]
+        
+        # Columns in TCB Pics Formatted
+        COL_LABEL = 0
+        COL_URL = 6
+        COL_SERIAL = 7
+
+        matches = []
+        # Skip header row (rows[1:])
+        for r in rows[1:]:
+            if len(r) > COL_SERIAL:
+                # Check name match
+                if re.sub(r"[^a-z0-9]+", "", (r[COL_LABEL] or "").lower()) == key:
+                    if (r[COL_URL] or "").startswith("http"):
+                        matches.append(r)
+
         if not matches:
             return []
-        #Use the row with the highest TOTAL
-        pick = max(matches, key=lambda r: int(r[2] or 0) if len(r) > 2 and str(r[2]).isdigit() else 0)
+
+        # Sort by serial to calculate reverse_index (1 = newest)
+        def parse_serial(row):
+            try:
+                return int(re.sub(r"\D", "", row[COL_SERIAL]) or 0)
+            except:
+                return 0
+        
+        matches.sort(key=parse_serial, reverse=True)
+        
+        total = len(matches)
         out: List[Tuple[str, str, int, int]] = []
-        i = 3
-        #Build with index; compute reverse_index using TOTAL if present
-        idx = 0
-        while i < len(pick):
-            url = pick[i].strip() if i < len(pick) else ""
-            serial = pick[i + 1].strip() if i + 1 < len(pick) else ""
-            if url:
-                idx += 1
-                total = int(pick[2] or 0) if len(pick) > 2 and str(pick[2]).isdigit() else idx
-                reverse_index = max(total - idx + 1, 1)
-                out.append((url, serial or "Unknown", reverse_index, total))
-            i += 2
-        #Shuffle to encourage variety when filling cache
-        try:
-            import random as _rand
-            _rand.shuffle(out)
-        except Exception:
-            pass
+        
+        for idx, r in enumerate(matches):
+            # (URL, Serial, Reverse Index, Total)
+            out.append((
+                r[COL_URL], 
+                r[COL_SERIAL] or "0", 
+                idx + 1, 
+                total
+            ))
+            
         return out
-    except Exception:
+
+    except Exception as e:
+        log_action('show_cache_list_error', full_name, str(e))
         return []
 
 def _existing_serials(cat_dir: str) -> set[str]:

@@ -1229,8 +1229,9 @@ async def on_message(message: discord.Message):
             try:
                 await message.delete()
                 decision = "deleted"
-            except Exception:
+            except Exception as delete_exc:
                 decision = "kept"
+                log_action("spam_delete_error", f"ch={_channel_label(message.channel)}", str(delete_exc))
 
             #Write log line
             log_event({
@@ -1324,6 +1325,10 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         return
     data = SPAM_ALERTS.get(payload.message_id)
     if not data:
+        try:
+            log_action("spam_alert_miss", f"msg={payload.message_id}", f"user={payload.user_id}; emoji={payload.emoji}")
+        except Exception:
+            pass
         return
     emoji_str = str(payload.emoji)
     if emoji_str not in {'❌', '✖', '✖️'}:
@@ -1347,12 +1352,19 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         can_ban = True
     else:
         ban_role_tokens = [s.lower() for s in (getattr(settings, 'spam_ban_role_names', []) or [])]
+        ban_role_ids = set(getattr(settings, 'spam_ban_role_ids', []) or [])
+        officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
         for role in getattr(member, 'roles', []) or []:
+            try:
+                rid = int(getattr(role, "id", 0) or 0)
+            except Exception:
+                rid = 0
             rname = str(getattr(role, 'name', '')).lower()
-            if any(tok in rname for tok in ban_role_tokens):
+            if any(tok in rname for tok in ban_role_tokens) or (rid and (rid in ban_role_ids or rid == officer_role_id)):
                 can_ban = True
                 break
     if not can_ban:
+        log_action("spam_ban_denied", f"user={payload.user_id}", f"emoji={emoji_str}")
         return
     target_id = data.get('user_id')
     if not target_id:

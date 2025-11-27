@@ -31,13 +31,14 @@ CENTRAL_TZ = ZoneInfo("America/Chicago") if ZoneInfo else None
 
 #------------- subs log -------------
 #Monthly JSONL files under logs/subs/<year>/<year-month>.jsonl
-SUBS_ROOT = os.path.join("logs", "subs")
-os.makedirs(SUBS_ROOT, exist_ok=True)
-SUBS_LEGACY_FILE = os.path.join(SUBS_ROOT, "subs.jsonl")
+_PACKAGE_ROOT = Path(__file__).resolve().parent.parent.parent
+SUBS_ROOT = _PACKAGE_ROOT / "logs" / "subs"
+SUBS_ROOT.mkdir(parents=True, exist_ok=True)
+SUBS_LEGACY_FILE = SUBS_ROOT / "subs.jsonl"
 _SUBS_LOCK = asyncio.Lock()
 
 #UI-provided schedule cache
-UI_SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
+UI_SCHEDULE_PATH = _PACKAGE_ROOT / "cache" / "feeding_schedule.json"
 
 #------------- simple data types ----------------
 @dataclass
@@ -94,9 +95,9 @@ def _sub_log_path_from_key(key: str) -> str:
         month = int(month_str)
     except Exception:
         raise ValueError(f"Invalid sub log month key: {key}")
-    folder = os.path.join(SUBS_ROOT, f"{year}")
-    os.makedirs(folder, exist_ok=True)
-    return os.path.join(folder, f"{year}-{month:02d}.jsonl")
+    folder = SUBS_ROOT / f"{year}"
+    folder.mkdir(parents=True, exist_ok=True)
+    return str(folder / f"{year}-{month:02d}.jsonl")
 
 
 def _recent_month_keys(span: int = 2) -> List[str]:
@@ -117,14 +118,15 @@ def _recent_month_keys(span: int = 2) -> List[str]:
 def _all_sub_month_keys() -> List[str]:
     """List every month that currently has a subs log."""
     keys: set[str] = set()
-    if os.path.exists(SUBS_ROOT):
-        for entry in os.listdir(SUBS_ROOT):
-            year_path = os.path.join(SUBS_ROOT, entry)
-            if not os.path.isdir(year_path):
+    if SUBS_ROOT.exists():
+        for year_path in SUBS_ROOT.iterdir():
+            if not year_path.is_dir():
                 continue
-            for fname in os.listdir(year_path):
-                if fname.endswith(".jsonl"):
-                    keys.add(fname[:-6])
+            for fname in year_path.iterdir():
+                if fname.suffix == ".jsonl":
+                    keys.add(fname.stem)
+    if SUBS_LEGACY_FILE.exists():
+        keys.add("legacy")
     return sorted(keys)
 
 
@@ -306,19 +308,19 @@ def _load_sub_files(month_keys: Optional[List[str]] = None, include_legacy: bool
             continue
         rows = _read_sub_file(path, key)
         files.append((path, rows))
-        seen.add(path)
+        seen.add(str(path))
     if include_legacy and os.path.exists(SUBS_LEGACY_FILE):
         rows = _read_sub_file(SUBS_LEGACY_FILE, None)
         files.append((SUBS_LEGACY_FILE, rows))
-        seen.add(SUBS_LEGACY_FILE)
+        seen.add(str(SUBS_LEGACY_FILE))
     if month_keys is None:
         for extra in _all_sub_month_keys():
             path = _sub_log_path_from_key(extra)
-            if path in seen:
+            if str(path) in seen:
                 continue
             rows = _read_sub_file(path, extra)
             files.append((path, rows))
-            seen.add(path)
+            seen.add(str(path))
     return files
 
 #------------- helpers: schedule/users ----------

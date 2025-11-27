@@ -11,7 +11,7 @@ from ..config import settings
 from ..logger import log_action
 from ..vision import vision as V
 from PIL import Image
-from .catsheets import get_most_recent_photo, get_cat_profile
+from .catsheets import get_most_recent_photo, get_cat_profile, get_tcb_pics_rows
 from .catsheets import sheets_client  #type: ignore
 
 
@@ -121,16 +121,9 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
             rows = _RECENTPICS_ROWS
         
         if rows is None:
-            gc = sheets_client()
-            # CHANGE: Use Catabase ID instead of Vision ID
-            sid = getattr(settings, 'sheet_catabase_id', None) or ""
-            if not sid:
-                return []
-            # CHANGE: Target the formatted tab
-            ws = gc.open_by_key(sid).worksheet("TCB Pics Formatted")
-            rows = ws.get_all_values()
-            _set_recentpics_rows(rows)
-
+            rows = get_tcb_pics_rows(ttl)
+            if rows:
+                _set_recentpics_rows(rows)
         if not rows:
             return []
 
@@ -154,7 +147,7 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
         if not matches:
             return []
 
-        # Sort by serial to calculate reverse_index (1 = newest)
+        # Sort by serial; report reverse_index from the bottom so higher serials show larger numbers
         def parse_serial(row):
             try:
                 return int(re.sub(r"\D", "", row[COL_SERIAL]) or 0)
@@ -171,7 +164,7 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
             out.append((
                 r[COL_URL], 
                 r[COL_SERIAL] or "0", 
-                idx + 1, 
+                total - idx,
                 total
             ))
             
@@ -191,10 +184,95 @@ def _existing_serials(cat_dir: str) -> set[str]:
             serials.add(m.group(1))
     return serials
 
-async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, exclude_serials: Optional[set[str]] = None) -> int:
+def _cached_jpgs(cat_dir: str) -> list[str]:
+    """Return cached JPG filenames for the given cat directory."""
+    if not os.path.isdir(cat_dir):
+        return []
+    return [p for p in os.listdir(cat_dir) if p.lower().endswith('.jpg')]
+
+def _serial_from_name(name: str) -> int:
+    """Parse the numeric serial from a cache filename."""
+    m = re.search(r"sn(\d+)", name or "", flags=re.IGNORECASE)
+    if not m:
+        return -1
+    try:
+        return int(m.group(1))
+    except Exception:
+        return -1
+
+def _normalize_cached_names(cat_dir: str) -> None:
+    """Rename legacy catId_sn#### files to sn#### to mirror sheet naming."""
+    if not os.path.isdir(cat_dir):
+        return
+    for fn in list(os.listdir(cat_dir)):
+        renamed = False
+        src = os.path.join(cat_dir, fn)
+
+        # Case 1: legacy catId_sn1234.jpg -> sn1234.jpg
+        m = re.match(r"(\d+)_sn(\d+)(\.[a-z0-9]+)$", fn, flags=re.IGNORECASE)
+        if m:
+            serial = m.group(2)
+            ext = m.group(3).lower()
+            new_fn = f"sn{serial.zfill(4)}{ext}"
+            renamed = True
+        else:
+            # Case 2: sn30.jpg -> sn0030.jpg (pad to 4 digits)
+            m2 = re.match(r"sn(\d+)(\.[a-z0-9]+)$", fn, flags=re.IGNORECASE)
+            if m2 and len(m2.group(1)) < 4:
+                serial = m2.group(1)
+                ext = m2.group(2).lower()
+                new_fn = f"sn{serial.zfill(4)}{ext}"
+                renamed = True
+
+        if not renamed:
+            continue
+
+        dst = os.path.join(cat_dir, new_fn)
+        try:
+            if os.path.exists(dst):
+                os.remove(src)
+            else:
+                os.rename(src, dst)
+        except Exception:
+            continue
+        #Rename sidecar JSON if present
+        try:
+            side_src = os.path.splitext(src)[0] + ".json"
+            side_dst = os.path.splitext(dst)[0] + ".json"
+            if os.path.exists(side_src):
+                if os.path.exists(side_dst):
+                    os.remove(side_src)
+                else:
+                    os.rename(side_src, side_dst)
+        except Exception:
+            pass
+
+def _prune_cache(cat_dir: str, keep: int) -> int:
+    """Cap the cache to at most `keep` JPGs, preferring highest serials."""
+    keep = max(0, int(keep))
+    files = _cached_jpgs(cat_dir)
+    if len(files) <= keep:
+        return len(files)
+    paths = [os.path.join(cat_dir, f) for f in files]
+    paths.sort(key=lambda p: (_serial_from_name(os.path.basename(p)), os.path.getmtime(p) if os.path.exists(p) else 0), reverse=True)
+    to_remove = paths[keep:]
+    for p in to_remove:
+        try:
+            os.remove(p)
+        except Exception:
+            pass
+        try:
+            mp = os.path.splitext(p)[0] + ".json"
+            if os.path.exists(mp):
+                os.remove(mp)
+        except Exception:
+            pass
+    return min(keep, len(paths[:keep]))
+
+async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, exclude_serials: Optional[set[str]] = None, *, prefer_random: bool = False) -> int:
     """Guarantee at least min_count cached photos for a cat, downloading as needed."""
     """Ensure at least min_count images exist for the cat; returns total count after fill."""
-    min_count = int(min_count or settings.show_cache_per_cat)
+    min_count = max(0, int(min_count or settings.show_cache_per_cat))
     cid = _cat_id_from_full(full_name)
     display_name = None
     if cid is None:
@@ -207,10 +285,20 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
         return 0
     cdir = _cache_dir_for(cid)
     os.makedirs(cdir, exist_ok=True)
-    existing = [p for p in os.listdir(cdir) if p.lower().endswith('.jpg')]
+    _normalize_cached_names(cdir)
+    existing = _cached_jpgs(cdir)
+    if len(existing) > min_count:
+        _prune_cache(cdir, min_count)
+        existing = _cached_jpgs(cdir)
     if len(existing) >= min_count:
         return len(existing)
     pairs = await list_recent_pairs(full_name)
+    #Always shuffle so new cache entries vary across the full history
+    try:
+        import random as _rand
+        _rand.shuffle(pairs)
+    except Exception:
+        pass
     #Try to grab profile once to embed into sidecar metadata (avoid live sheet on send)
     profile_snapshot: Optional[dict] = None
     try:
@@ -287,10 +375,10 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
                 buf = io.BytesIO()
                 q = int(getattr(settings, 'show_cache_jpeg_quality', 88) or 88)
                 im.save(buf, format='JPEG', quality=q, optimize=True)
-                data = buf.getvalue()
+            data = buf.getvalue()
         except Exception:
             pass
-        base = f"{cid}_sn{sn}"
+        base = f"sn{str(sn).zfill(4)}"
         fn = os.path.join(cdir, f"{base}.jpg")
         try:
             with open(fn, 'wb') as f:
@@ -316,7 +404,10 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
             have_serials.add(sn)
         except Exception as e:
             log_action('show_cache_write_error', fn, str(e))
-    return total
+    final = len(_cached_jpgs(cdir))
+    if final > min_count:
+        final = _prune_cache(cdir, min_count)
+    return final
 
 _NAME_INDEX: dict[str, int] = {}
 
@@ -355,6 +446,21 @@ def _build_name_index() -> None:
 def rebuild_name_index() -> None:
     """Expose a public hook to refresh the cached name index."""
     _build_name_index()
+
+def _fix_cached_reverse_index(meta: Optional[dict]) -> Optional[dict]:
+    """Translate legacy reverse_index (newest=1) to newest=total ordering for display."""
+    if not isinstance(meta, dict):
+        return meta
+    try:
+        ri_raw = meta.get("reverse_index")
+        tot_raw = meta.get("total_available")
+        ri = int(re.sub(r"[^0-9]", "", str(ri_raw))) if ri_raw is not None else 0
+        tot = int(re.sub(r"[^0-9]", "", str(tot_raw))) if tot_raw is not None else 0
+        if ri > 0 and tot > 0:
+            meta["reverse_index"] = max(1, tot - ri + 1)
+    except Exception:
+        pass
+    return meta
 
 def _resolve_cat_id(query: str) -> Optional[int]:
     """Resolve a fuzzy cat query into an ID using the alias index."""
@@ -409,7 +515,7 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
         mp = base + ".json"
         if os.path.exists(mp):
             import json as _json
-            meta = _json.loads(Path(mp).read_text(encoding='utf-8'))
+            meta = _fix_cached_reverse_index(_json.loads(Path(mp).read_text(encoding='utf-8')))
     except Exception:
         meta = None
     try:
@@ -430,13 +536,10 @@ async def warm_cache_on_boot() -> None:
     if not settings.show_cache_prefill_on_boot:
         return
     try:
-        gc = sheets_client()
-        sv_id: str = getattr(settings, 'sheet_vision_id', None) or ""
-        if not sv_id:
-            log_action('show_cache_warm_error', 'sheet_missing', str(getattr(settings, 'sheet_vision_id', None)))
+        rows = get_tcb_pics_rows(getattr(settings, 'show_sheet_recentpics_ttl_sec', 300))
+        if not rows:
+            log_action('show_cache_warm_error', 'sheet', 'no rows fetched')
             return
-        ws = gc.open_by_key(sv_id).worksheet("RecentPics")
-        rows = ws.get_all_values()
     except Exception as e:
         log_action('show_cache_warm_error', 'sheet', str(e))
         return
@@ -462,7 +565,7 @@ async def warm_cache_on_boot() -> None:
             target = int(settings.show_cache_per_cat)
             if cnt < target:
                 try:
-                    await ensure_cat_cache(nm, target)
+                    await ensure_cat_cache(nm, target, prefer_random=True)
                 except Exception as e:
                     log_action('show_cache_warm_error', nm, str(e))
             await asyncio.sleep(0.25)

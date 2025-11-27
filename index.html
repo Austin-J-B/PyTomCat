@@ -553,6 +553,13 @@ function parseISODate(iso) {
     return new Date(y, m-1, d);
 }
 
+function parseISODateLocal(iso) {
+    if (!iso) return null;
+    const [y,m,d] = iso.split('-').map(Number);
+    if (!y || !m || !d) return null;
+    return new Date(y, m-1, d, 0, 0, 0, 0); //local midnight, avoids UTC->local shift
+}
+
 function dayOfWeekFromISO(iso) {
     const [y,m,d] = iso.split('-').map(Number);
     const dt = new Date(y, m-1, d);
@@ -1452,9 +1459,8 @@ function renderOpenSubs() {
     wrap.innerHTML = '';
     const source = isPrev ? prevRequests : openRequests.filter(item => {
         if (!item.date) return false;
-        const d = new Date(item.date);
+        const d = parseISODateLocal(item.date) || new Date(item.date);
         const today = new Date(); today.setHours(0,0,0,0);
-        d.setHours(0,0,0,0);
         return d >= today;
     });
     if (!source.length) {
@@ -1467,17 +1473,17 @@ function renderOpenSubs() {
         grouped[date] = grouped[date] || [];
         grouped[date].push(item);
     });
-    const dateKeys = Object.keys(grouped).sort((a,b) => {
-        const da = new Date(a); const db = new Date(b);
-        return requestTab === 'previous' ? db - da : da - db;
-    });
-    dateKeys.forEach(date => {
-        grouped[date].forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'open-item';
-            const meta = document.createElement('div');
-            meta.className = 'open-meta';
-            const dayStr = new Date(item.date).toLocaleDateString(undefined, { weekday: 'long', month: 'numeric', day: 'numeric', year: 'numeric' });
+        const dateKeys = Object.keys(grouped).sort((a,b) => {
+            const da = new Date(a); const db = new Date(b);
+            return requestTab === 'previous' ? db - da : da - db;
+        });
+        dateKeys.forEach(date => {
+            grouped[date].forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'open-item';
+                const meta = document.createElement('div');
+                meta.className = 'open-meta';
+                const dayStr = (parseISODateLocal(item.date) || new Date(item.date)).toLocaleDateString(undefined, { weekday: 'long', month: 'numeric', day: 'numeric', year: 'numeric' });
             const requesterName = displayName(item.requester_id, item.requester_name);
             const line = document.createElement('div');
             line.innerHTML = `<strong>${item.station}</strong> on ${dayStr} for ${requesterName}`;

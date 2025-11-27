@@ -814,8 +814,9 @@ async def start_web_server(bot):
         _, error = _require_permissions(request, require_view=True)
         if error:
             return error
-        import glob, json
+        import json
         from datetime import datetime
+        from .handlers import feeding as _feed
         today = datetime.now().date()
 
         accepted_map = {}  #(parent_id, station, date_iso) -> assignee_id
@@ -824,49 +825,46 @@ async def start_web_server(bot):
         missing_requester_ids = set()
         missing_assignee_ids = set()
 
-        for path in glob.glob(os.path.join("logs", "subs", "*", "*.jsonl")):
+        #Load using the shared feeding helpers so paths are consistent with the bot
+        files = _feed._load_sub_files(
+            month_keys=None,
+            include_legacy=_feed.SUBS_LEGACY_FILE.exists(),
+        )
+        for path, rows in files:
             try:
-                with open(path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            rec = json.loads(line)
-                        except Exception:
-                            continue
-                        status = rec.get("status")
-                        stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
-                        dates = rec.get("dates") or []
-                        date_iso = dates[0] if dates else None
-                        parent_id = rec.get("id")
-                        if status == "accepted":
-                            assignee = rec.get("assignee")
-                            if assignee:
-                                try:
-                                    missing_assignee_ids.add(int(assignee))
-                                except Exception:
-                                    pass
-                            for st in stations:
-                                accepted_map[(rec.get("parent_id") or parent_id, st, date_iso)] = assignee
-                        elif status == "requested":
-                            requester = rec.get("requester")
-                            requester_name = rec.get("requester_name") or ""
-                            if requester and not requester_name:
-                                try:
-                                    missing_requester_ids.add(int(requester))
-                                except Exception:
-                                    pass
-                            for st in stations:
-                                requested_items.append({
-                                    "id": parent_id,
-                                    "station": st,
-                                    "date": date_iso,
-                                    "requester_id": str(requester) if requester else "", #Ensure string
-                                    "requester_name": requester_name,
-                                    "assignee_id": None,
-                                    "assignee_name": rec.get("assignee_name") or "",
-                                })
+                for rec in rows:
+                    status = rec.get("status")
+                    stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
+                    dates = rec.get("dates") or []
+                    date_iso = dates[0] if dates else None
+                    parent_id = rec.get("id")
+                    if status == "accepted":
+                        assignee = rec.get("assignee")
+                        if assignee:
+                            try:
+                                missing_assignee_ids.add(int(assignee))
+                            except Exception:
+                                pass
+                        for st in stations:
+                            accepted_map[(rec.get("parent_id") or parent_id, st, date_iso)] = assignee
+                    elif status == "requested":
+                        requester = rec.get("requester")
+                        requester_name = rec.get("requester_name") or ""
+                        if requester and not requester_name:
+                            try:
+                                missing_requester_ids.add(int(requester))
+                            except Exception:
+                                pass
+                        for st in stations:
+                            requested_items.append({
+                                "id": parent_id,
+                                "station": st,
+                                "date": date_iso,
+                                "requester_id": str(requester) if requester else "", #Ensure string
+                                "requester_name": requester_name,
+                                "assignee_id": None,
+                                "assignee_name": rec.get("assignee_name") or "",
+                            })
             except Exception:
                 continue
 
@@ -963,7 +961,14 @@ async def start_web_server(bot):
             else:
                 target_list = upcoming_filled if assignee else available
 
+            #Avoid timezone-induced date shifting in browsers: anchor date to noon
+            safe_date = date_iso
+            if date_iso and len(str(date_iso)) == 10 and "T" not in str(date_iso):
+                safe_date = f"{date_iso}T12:00:00"
+
             out = dict(item)
+            out["date_raw"] = date_iso
+            out["date"] = safe_date
             #CRITICAL FIX: Strict string conversion for output
             if out.get("requester_id"):
                 out["requester_id"] = str(out["requester_id"])

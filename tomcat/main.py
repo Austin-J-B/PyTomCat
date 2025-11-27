@@ -693,7 +693,6 @@ async def start_web_server(bot):
 
         #Append to logs/subs/YYYY/YYYY-MM.jsonl
         try:
-            from datetime import datetime
             from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
             month_key = _sub_month_key_from_date(date_iso) or datetime.now().strftime("%Y-%m")
             path = _sub_log_path_from_key(month_key)
@@ -1323,6 +1322,31 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     """Handle reaction-based workflows (feeding + spam ban)."""
     if payload.user_id == getattr(bot.user, 'id', None):
         return
+    #General reaction logging (keeps legacy behavior)
+    try:
+        ch = bot.get_channel(int(payload.channel_id))
+        msg = None
+        preview = ""
+        author_name = ""
+        if ch and hasattr(ch, 'fetch_message'):
+            try:
+                msg = await ch.fetch_message(int(payload.message_id))
+                content = msg.clean_content if isinstance(getattr(msg, 'content', None), str) else ""
+                preview = content[:40] + ("..." if len(content) > 40 else "")
+                author_name = _user_label(getattr(msg, 'author', None))
+            except Exception:
+                pass
+        log_event({
+            "event": "reaction_add",
+            "user": _user_label(getattr(payload, 'member', None)) or str(payload.user_id),
+            "channel": _channel_label(ch) if ch else str(payload.channel_id),
+            "message_id": int(payload.message_id),
+            "emoji": str(payload.emoji),
+            "message_preview": preview,
+            "message_author": author_name,
+        })
+    except Exception:
+        pass
     data = SPAM_ALERTS.get(payload.message_id)
     if not data:
         try:
@@ -1499,37 +1523,6 @@ async def on_invite_delete(invite: discord.Invite):
     except Exception:
         pass
 
-
-#------- Reactions and role changes logging -------
-@bot.event
-async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    try:
-        #Ignore bot reactions
-        if payload.user_id == getattr(bot.user, 'id', None):
-            return
-        ch = bot.get_channel(int(payload.channel_id))
-        msg = None
-        preview = ""
-        author_name = ""
-        if ch and hasattr(ch, 'fetch_message'):
-            try:
-                msg = await ch.fetch_message(int(payload.message_id))
-                content = msg.clean_content if isinstance(getattr(msg, 'content', None), str) else ""
-                preview = content[:40] + ("..." if len(content) > 40 else "")
-                author_name = _user_label(getattr(msg, 'author', None))
-            except Exception:
-                pass
-        log_event({
-            "event": "reaction_add",
-            "user": _user_label(getattr(payload, 'member', None)) or str(payload.user_id),
-            "channel": _channel_label(ch) if ch else str(payload.channel_id),
-            "message_id": int(payload.message_id),
-            "emoji": str(payload.emoji),
-            "message_preview": preview,
-            "message_author": author_name,
-        })
-    except Exception:
-        pass
 
 @bot.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):

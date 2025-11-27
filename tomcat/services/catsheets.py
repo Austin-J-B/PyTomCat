@@ -8,6 +8,7 @@ Expected headers (by column index) based on the current sheet:
 from __future__ import annotations
 from typing import Any
 import datetime as dt
+import json, time
 from .sheets_client import sheets_client
 from ..config import settings
 try:
@@ -17,21 +18,71 @@ except Exception:
     def norm_alnum_lower(s: str) -> str:
         return _re.sub(r"[^a-z0-9]+", "", (s or "").lower())
 import re # Ensure this is imported at the top of the file
+from pathlib import Path
 
 # Configuration for "TCB Pics Formatted" columns (0-based index)
 COL_LABEL = 0   # Officer ID / Name
 COL_URL = 6     # Picture Link
 COL_SERIAL = 7  # Serial number
 
+_TCB_ROWS: list[list[str]] | None = None
+_TCB_TS: float = 0.0
+_TCB_SNAPSHOT = Path("cache") / "sheets" / "tcb_pics_formatted.json"
+
+def _load_tcb_snapshot() -> tuple[list[list[str]] | None, float]:
+    try:
+        data = json.loads(_TCB_SNAPSHOT.read_text(encoding="utf-8"))
+        rows = data.get("rows")
+        ts = float(data.get("ts") or 0.0)
+        if isinstance(rows, list):
+            return rows, ts
+    except Exception:
+        pass
+    return None, 0.0
+
+def _write_tcb_snapshot(rows: list[list[str]], ts: float) -> None:
+    try:
+        _TCB_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+        _TCB_SNAPSHOT.write_text(json.dumps({"ts": ts, "rows": rows}), encoding="utf-8")
+    except Exception:
+        pass
+
+def get_tcb_pics_rows(ttl_sec: int | None = None) -> list[list[str]]:
+    """Fetch TCB Pics Formatted rows with in-memory + on-disk caching to reduce API reads."""
+    global _TCB_ROWS, _TCB_TS
+    ttl = int(ttl_sec if ttl_sec is not None else getattr(settings, "show_sheet_recentpics_ttl_sec", 300) or 300)
+    ttl = max(1, ttl)
+    now = time.monotonic()
+    #In-memory cache
+    if _TCB_ROWS is not None and (now - _TCB_TS) < ttl:
+        return _TCB_ROWS
+    #On-disk snapshot
+    snap_rows, snap_ts = _load_tcb_snapshot()
+    if snap_rows is not None and (now - snap_ts) < ttl:
+        _TCB_ROWS, _TCB_TS = snap_rows, snap_ts
+        return snap_rows
+    #Fetch live sheet
+    try:
+        sid = settings.sheet_catabase_id
+        if not sid:
+            return snap_rows or []
+        gc = sheets_client()
+        ws = gc.open_by_key(sid).worksheet("TCB Pics Formatted")
+        rows = ws.get_all_values()
+        _TCB_ROWS, _TCB_TS = rows, now
+        _write_tcb_snapshot(rows, now)
+        return rows
+    except Exception:
+        #Fallback to whatever snapshot we have
+        if snap_rows is not None:
+            _TCB_ROWS, _TCB_TS = snap_rows, snap_ts
+            return snap_rows
+        return []
+
 async def _get_all_photos_long_format():
     """Helper to fetch the master photo list from Catabase."""
-    sid = settings.sheet_catabase_id 
-    if not sid:
-        return []
-    gc = sheets_client()
-    # reading the "Long" format directly
-    ws = gc.open_by_key(sid).worksheet("TCB Pics Formatted")
-    return ws.get_all_values()[1:] # Skip header
+    rows = get_tcb_pics_rows()
+    return rows[1:] if rows else []  # Skip header
 
 async def get_most_recent_photo(full_name: str) -> dict | str:
     """Fetch the most recent photo row for a cat from the long-format list."""

@@ -126,16 +126,17 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
     names: list[str] = []
     name_arg = str(args.get("name") or "").strip()
     try:
-        sheet_id = getattr(settings, "sheet_vision_id", None)
+        sheet_id = getattr(settings, "sheet_catabase_id", None)
         if not sheet_id:
             try:
                 await message.channel.send("Sheet ID is not configured.")
             except Exception:
                 pass
-            log_action("recache_error", "sheet", "missing sheet_vision_id")
+            log_action("recache_error", "sheet", "missing sheet_catabase_id")
             return
         gc = sheets_client()
-        ws = gc.open_by_key(str(sheet_id)).worksheet("RecentPics")
+        #Use the same formatted tab the cache now relies on
+        ws = gc.open_by_key(str(sheet_id)).worksheet("TCB Pics Formatted")
         rows = ws.get_all_values()
         if name_arg:
             if name_arg.lower() in {"all", "*", "photos", "cache", "profiles"}:
@@ -157,10 +158,19 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
                     if not names:
                         names = [name_arg]
         else:
-            for r in rows[1:]:
-                full = (r[0] if r else '').strip()
-                if full:
-                    names.append(full)
+            #Prefer the authoritative CatDatabase list so counts reflect real cats
+            try:
+                cd_ws = gc.open_by_key(str(sheet_id)).worksheet("CatDatabase")
+                cd_rows = cd_ws.get_all_values()
+                for r in cd_rows[1:]:
+                    full = (r[0] if r else '').strip()
+                    if full:
+                        names.append(full)
+            except Exception:
+                for r in rows[1:]:
+                    full = (r[0] if r else '').strip()
+                    if full:
+                        names.append(full)
     except Exception as e:
         log_action("recache_error", "sheet", str(e))
         try:
@@ -186,11 +196,23 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
     sem = asyncio.Semaphore(max(1, settings.show_cache_warm_concurrency))
     total = 0
 
+    #Limit to rows that look like real cats (numeric prefix, non-zero)
+    import re as _re
+    filtered_names = []
+    for nm in names:
+        key = (nm or "").strip()
+        if not key:
+            continue
+        m = _re.match(r"\s*(\d+)[\.|\s]", key)
+        if not m or m.group(1) == "0":
+            continue
+        filtered_names.append(key)
+    names = filtered_names or ([name_arg.strip()] if name_arg else [])
+
     #One-time wipe of cached files for selected cats only
     try:
         targets = set()
         #Build id set from names by parsing leading number
-        import re as _re
         for nm in names:
             m = _re.match(r"\s*(\d+)[\.|\s]", nm or "")
             if m:
@@ -207,23 +229,27 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
     except Exception:
         pass
 
-    #Deduplicate while preserving order
+    #Filter to valid cat rows (numeric prefix, non-zero), then deduplicate while preserving order
     seen_names = set()
     unique_names = []
     for nm in names:
         key = nm.strip()
         if not key:
             continue
+        m = _re.match(r"\s*(\d+)[\.|\s]", key)
+        if not m or m.group(1) == "0":
+            continue
         if key in seen_names:
             continue
         seen_names.add(key)
         unique_names.append(key)
+    target_count = len(unique_names)
 
     async def _one(nm: str):
         nonlocal total
         async with sem:
             try:
-                await ensure_cat_cache(nm, settings.show_cache_per_cat)
+                await ensure_cat_cache(nm, settings.show_cache_per_cat, prefer_random=True)
                 total += 1
             except Exception as e:
                 log_action("recache_error", nm, str(e))
@@ -238,7 +264,7 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
     except Exception:
         pass
     try:
-        await message.channel.send(f"Recache complete for {total} cat(s).")
+        await message.channel.send(f"Recache complete for {total}/{target_count} cat(s).")
     except Exception:
         pass
 

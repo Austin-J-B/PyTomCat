@@ -378,40 +378,45 @@ class IntentRouter:
                 #Feed pending fulfilment in #feeding-team
                 ft_ch = getattr(settings, "ch_feeding_team", None)
                 if ft_ch and int(message.channel.id) == int(ft_ch):
-                    fpend = self._pending_feed.get(key)
-                    now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
-                    if fpend:
-                        try:
-                            iso_val = fpend.get("expires_ts_iso")
-                            expires = datetime.fromisoformat(str(iso_val)) if iso_val else None
-                        except Exception:
-                            expires = None
-                        if not expires or now <= expires:
-                            stations = fpend.get("stations") or ([fpend.get("station")] if fpend.get("station") else [])
-                            from .handlers import feeding
-                            for st in stations:
-                                ev = IntentEvent(
-                                    type="feed_update", confidence=0.95,
-                                    channel_id=message.channel.id, user_id=message.author.id, message_id=message.id,
-                                    text=message.content or "", has_image=True, attachment_ids=[a.id for a in attachments],
-                                    station=st, dates=[self._today()]
-                                )
-                                await feeding.handle_feed_update_event(ev, ctx)
-                            log_action("feed_pending_fulfilled", f"ch={message.channel.id}; user={message.author.id}", ",".join(stations))
-                            self._pending_feed.pop(key, None)
-                            return
-                        else:
-                            self._pending_feed.pop(key, None)
-                            log_action("feed_pending_expired", f"ch={message.channel.id}; user={message.author.id}", "")
+                    has_station_inline = bool(
+                        self._extract_all_entities(message.content or "", want="station")
+                        or self._extract_best_entity(message.content or "", want="station")
+                    )
+                    if not has_station_inline:
+                        fpend = self._pending_feed.get(key)
+                        now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+                        if fpend:
+                            try:
+                                iso_val = fpend.get("expires_ts_iso")
+                                expires = datetime.fromisoformat(str(iso_val)) if iso_val else None
+                            except Exception:
+                                expires = None
+                            if not expires or now <= expires:
+                                stations = fpend.get("stations") or ([fpend.get("station")] if fpend.get("station") else [])
+                                from .handlers import feeding
+                                for st in stations:
+                                    ev = IntentEvent(
+                                        type="feed_update", confidence=0.95,
+                                        channel_id=message.channel.id, user_id=message.author.id, message_id=message.id,
+                                        text=message.content or "", has_image=True, attachment_ids=[a.id for a in attachments],
+                                        station=st, dates=[self._today()]
+                                    )
+                                    await feeding.handle_feed_update_event(ev, ctx)
+                                log_action("feed_pending_fulfilled", f"ch={message.channel.id}; user={message.author.id}", ",".join(stations))
+                                self._pending_feed.pop(key, None)
+                                return
+                            else:
+                                self._pending_feed.pop(key, None)
+                                log_action("feed_pending_expired", f"ch={message.channel.id}; user={message.author.id}", "")
 
-                    #No pending record; try recent station mention (5m) by this user in this channel
-                    evs = self._feed_events_from_recent_station_mention(message)
-                    if evs:
-                        from .handlers import feeding
-                        for ev in evs:
-                            await feeding.handle_feed_update_event(ev, ctx)
-                        log_action("feed_pair_recent", f"ch={message.channel.id}; user={message.author.id}", ",".join(e.station or "" for e in evs))
-                        return
+                        #No pending record; try recent station mention (5m) by this user in this channel
+                        evs = self._feed_events_from_recent_station_mention(message)
+                        if evs:
+                            from .handlers import feeding
+                            for ev in evs:
+                                await feeding.handle_feed_update_event(ev, ctx)
+                            log_action("feed_pair_recent", f"ch={message.channel.id}; user={message.author.id}", ",".join(e.station or "" for e in evs))
+                            return
 
             #------- Phase 1: Preprocess & buffer -------
             row = self._machine_row_from_message(message)
@@ -1058,6 +1063,8 @@ class IntentRouter:
             return
 
         if event.type == "feed_update":
+            #Once a feed update is processed, clear any stale pending feed cache for this user/channel
+            self._pending_feed.pop((event.channel_id, event.user_id), None)
             if event.stations and len(event.stations) > 1:
                 for st in event.stations:
                     e2 = IntentEvent(

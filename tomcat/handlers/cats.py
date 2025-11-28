@@ -33,6 +33,25 @@ def _display_name(full: str) -> str:
     return re.sub(r"^\s*\d+\.\s*", "", str(full or "")).strip()
 
 
+def _single_display_name(label: str, requested: str | None = None) -> str:
+    """
+    When a photo label lists multiple cats (e.g., '46. Princess, 45. Boots'),
+    return just the requested cat's display name if present; otherwise the first.
+    """
+    def _norm(s: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", s.lower())
+
+    req_clean = _norm(_display_name(requested or "") or "")
+    parts = [p.strip() for p in str(label or "").split(",") if p.strip()]
+    for p in parts:
+        disp = _display_name(p)
+        if req_clean and _norm(disp) == req_clean:
+            return disp
+    if parts:
+        return _display_name(parts[0])
+    return _display_name(label or requested or "")
+
+
 def _format_age_value(raw) -> str:
     """Convert various birthday/age representations into friendly text.
 
@@ -167,7 +186,7 @@ class PhotoView(discord.ui.View):
             except Exception:
                 pass
             asyncio.create_task(ensure_cat_cache(self.cat_name, settings.show_cache_per_cat, exclude_serials=ex))
-            display = _display_name(self.cat_name)
+            display = _single_display_name(self.cat_name, self.cat_name)
             title = f"__**Random Photo of {display}**__"
             serial = meta.get('serial','Unknown') if isinstance(meta, dict) else 'Unknown'
             rev = meta.get('reverse_index','?') if isinstance(meta, dict) else '?'
@@ -219,7 +238,7 @@ class PhotoView(discord.ui.View):
             })
             return
         full = self.cat_name
-        display = _display_name(full)
+        display = _single_display_name(full, self.cat_name)
         title = f"__**Random Photo of {display}**__"
         desc = (
             f"**Here's a random photo of {display}**\n"
@@ -304,7 +323,7 @@ async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
     cached_bytes, cached_meta = await pop_one_cached(name, use_sheet=False)
     if cached_bytes:
         #Send immediate embed; enrich from cached sidecar profile if available (no live sheet)
-        display = _display_name(cached_meta.get('display_name') or name) if isinstance(cached_meta, dict) else _display_name(name)
+        display = _single_display_name(cached_meta.get('display_name') or name, name) if isinstance(cached_meta, dict) else _single_display_name(name, name)
         title = f"__**Random Photo of {display}**__"
         desc = f"**Here's a random photo of {display}**\n(Photo {cached_meta.get('reverse_index','?')} out of {cached_meta.get('total_available','?')})\nImage: {cached_meta.get('serial','Unknown')}" if isinstance(cached_meta, dict) else None
         embed = discord.Embed(title=title, description=desc or "", color=0x2F3136)
@@ -339,7 +358,7 @@ async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
         if isinstance(pick, str):
             await ch.send(pick)
             return
-    display = _display_name(pick.get('actual_name') or name)
+    display = _single_display_name(pick.get('actual_name') or name, name)
     title = f"__**Random Photo of {display}**__"
     desc = (
         f"**Here's a random photo of {display}**\n"
@@ -419,7 +438,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
         total_avail = cached_meta2.get('total_available','?') if isinstance(cached_meta2, dict) else '?'
         reverse_idx = cached_meta2.get('reverse_index','?') if isinstance(cached_meta2, dict) else '?'
         serial = cached_meta2.get('serial','cached') if isinstance(cached_meta2, dict) else 'cached'
-        display = _display_name(cached_meta2.get('display_name') or name) if isinstance(cached_meta2, dict) else _display_name(name)
+        display = _single_display_name(cached_meta2.get('display_name') or name, name) if isinstance(cached_meta2, dict) else _single_display_name(name, name)
     else:
         #Fallback to sheet-backed path
         profile = await get_cat_profile(name)
@@ -427,7 +446,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
             await ch.send(profile)
             return
         actual = profile["actual_name"]
-        display = _display_name(actual)
+        display = _single_display_name(actual, name)
         pick = await get_random_photo(actual)
         if isinstance(pick, str):
             await ch.send(pick)

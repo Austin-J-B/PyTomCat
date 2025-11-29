@@ -986,6 +986,11 @@ class IntentRouter:
                     trace.append("intent:feed_update")
                     self._traces[row["message_id"]] = trace
                     return ev
+                else:
+                    #Feed verb with no identifiable station; avoid false positives from fuzzy token matches
+                    trace.append("skip:feed_no_station")
+                    self._traces[row["message_id"]] = trace
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
 
         #Case B: only station name(s), use image context if needed
         station_only_list = self._extract_all_entities(text, want="station")

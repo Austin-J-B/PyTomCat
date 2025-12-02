@@ -1127,7 +1127,7 @@ async def start_web_server(bot):
     runner = web.AppRunner(app)
     await runner.setup()
     #Listen on localhost to avoid exposing the UI externally by default
-    site = web.TCPSite(runner, '127.0.0.1', 8080)
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
     print("[TomCat-UI] Web server starting on http://localhost:8080")
     await site.start()
 

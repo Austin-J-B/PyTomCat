@@ -518,19 +518,21 @@ def _norm_text(s: str) -> str:
 
 
 def _fingerprint(ev: "FinanceEvent") -> str:
-    event_date = (ev.provider_ts or ev.ts).date()
-    day = event_date.isoformat()
-    #Include cleaned note in fingerprint to differentiate same-day payments
+    #Use specific time to distinguish repeat purchases on the same day
+    ts = ev.provider_ts or ev.ts
+    #Use minute-precision timestamp so 12:00 and 12:05 are distinct
+    time_str = ts.strftime("%Y-%m-%dT%H:%M")
+    
+    #Include cleaned note in fingerprint
     base = "|".join([
         ev.direction,
-        day,
+        time_str,
         f"{ev.amount:.2f}",
         _norm_text(ev.counterparty),
         _norm_text(ev.note),
         ev.provider,
     ])
     return base
-
 
 #--- Venmo-specific parsing of payment notifications ---
 
@@ -1000,6 +1002,12 @@ def _has_refund_word(text: str) -> bool:
 
 def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
     """Heuristic duplicate detection that tolerates close-day repeats."""
+    #Allow small transactions (likely food/goods) to duplicate 
+    #because people often buy multiple items (e.g. cookies) in one day.
+    #We rely on email_id/txn_id checks to catch true system duplicates.
+    if ev.direction == 'income' and ev.amount < 15.0:
+        return False
+
     ev_date = ev.ts.date()
     ev_amt = float(ev.amount)
     ev_counterparty = ev.counterparty or ""
@@ -1021,7 +1029,7 @@ def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
         if abs(float(amt) - ev_amt) > (0.25 if ev_amt < 5 else 1.00):
             continue
         
-        #Provider check (Venmo vs Cashapp)
+        # Provider check (Venmo vs Cashapp)
         provider = (r.get('provider') or '').strip().lower()
         if provider and ev_provider and provider != ev_provider:
             continue
@@ -1044,25 +1052,24 @@ def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
         elif not norm_note_sheet and not norm_note:
             note_match = True
 
-        #Strict same-day match on counterparty or combined text
+        # Strict same-day match on counterparty or combined text
         if day_gap == 0 and (counterparty_match or note_match or combined_match):
             return True
 
-        #Near-day match requires stronger agreement
+        # Near-day match requires stronger agreement
         if day_gap <= 2:
             if counterparty_match and (note_match or not norm_note_sheet or not norm_note or combined_match):
                 return True
             if note_match and counterparty_match:
                 return True
-            #Treat refund/reimbursement adjustments as duplicates even if wording differs
+            # Treat refund/reimbursement adjustments as duplicates even if wording differs
             if counterparty_match and (_has_refund_word(note) or _has_refund_word(ev_note)):
                 return True
 
-        #Fallback: if the full text matches closely within a short window, treat as duplicate
+        # Fallback: if the full text matches closely within a short window, treat as duplicate
         if day_gap <= 3 and combined_match:
             return True
     return False
-
 
 def _events_maybe_duplicate(a: "FinanceEvent", b: "FinanceEvent") -> bool:
     if a.direction != b.direction:

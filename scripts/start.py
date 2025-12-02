@@ -2,8 +2,8 @@
 """Launch TomCat using the project virtual environment.
 
 Starts:
-  1. The Discord Bot (API Server)
-  2. The Cloudflare Tunnel (tomcat-ui) with explicit config
+  1. The Discord Bot (API Server) on port 8080
+  2. The Cloudflare Tunnel pointing to localhost:8080
 """
 
 from __future__ import annotations
@@ -11,117 +11,139 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import json
+import re
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
 VENV_DIR = ROOT / ".venv"
 CONFIG_PATH = ROOT / "config.yml"
-
+ENV_PATH = ROOT / ".env"
 
 def _venv_python() -> Path:
     if os.name == "nt":
         return VENV_DIR / "Scripts" / "python.exe"
     return VENV_DIR / "bin" / "python"
 
+def _get_env_var(key: str, default: str = "") -> str:
+    """Simple parser to grab a value from .env without external deps."""
+    if not ENV_PATH.exists():
+        return default
+    
+    content = ENV_PATH.read_text(encoding="utf-8")
+    # Grab the line, strip comments and quotes
+    pattern = f"^{key}\\s*=\\s*(?:\"([^\"]*)\"|([^#\\n]*))"
+    match = re.search(pattern, content, re.MULTILINE)
+    if match:
+        return (match.group(1) or match.group(2) or "").strip()
+    return default
 
-def _check_tunnel_creds() -> None:
-    """Verify that Cloudflare tunnel credentials exist in the user's home directory."""
-    #Cloudflare stores tunnel credentials in ~/.cloudflared/
+def _configure_tunnel() -> str | None:
+    """
+    Generates a config.yml that maps ALL public domains found in 
+    UI_ALLOWED_ORIGINS to localhost:8080.
+    """
     cf_dir = Path.home() / ".cloudflared"
     
-    #We look for any .json file (which are the tunnel credentials).
-    #If the folder doesn't exist or is empty of JSONs, the tunnel will fail.
-    has_creds = False
-    if cf_dir.exists():
-        if any(cf_dir.glob("*.json")):
-            has_creds = True
+    # 1. Find credentials
+    creds_files = list(cf_dir.glob("*.json"))
+    if not creds_files:
+        print("\n[Tunnel] CRITICAL: No credentials found in ~/.cloudflared/")
+        return None
+    creds_path = creds_files[0]
+    
+    try:
+        data = json.loads(creds_path.read_text(encoding="utf-8"))
+        tunnel_id = data.get("TunnelID")
+        
+        # 2. Parse all domains from .env
+        raw_origins_str = _get_env_var("UI_ALLOWED_ORIGINS", "ui.catsofuta.org")
+        raw_origins = raw_origins_str.split(",")
+        
+        valid_hostnames = []
+        for origin in raw_origins:
+            # Clean up: remove http://, https://, trailing slashes
+            clean = origin.strip().lower().replace("https://", "").replace("http://", "").strip("/")
             
-    if not has_creds:
-        print("\n CRITICAL ERROR: Cloudflare Tunnel Credentials Not Found!")
-        print(f"   Checked in: {cf_dir}")
-        print("   The bot cannot launch the website without the tunnel key.")
-        print("\n TROUBLESHOOTING: Have you copied the .json tunnel secret to this machine when first installed?")
-        print("   (Copy the *.json file from your old computer's .cloudflared folder to this one)\n")
-        sys.exit(1)
+            # Skip empty or local addresses
+            if not clean or "localhost" in clean or "127.0.0.1" in clean:
+                continue
+            
+            valid_hostnames.append(clean)
+            
+        if not valid_hostnames:
+            print("[Tunnel] No public domains found. Defaulting to ui.catsofuta.org")
+            valid_hostnames = ["ui.catsofuta.org"]
+        
+        # 3. Build Ingress Rules for EVERY domain
+        # This covers both austin-j-b.github.io AND ui.catsofuta.org if listed.
+        ingress_rules = ""
+        for host in valid_hostnames:
+            ingress_rules += f"  - hostname: {host}\n    service: http://localhost:8080\n"
 
+        config_content = f"""
+tunnel: {tunnel_id}
+credentials-file: {str(creds_path.absolute()).replace(os.sep, '/')}
+
+ingress:
+{ingress_rules}
+  - service: http_status:404
+"""
+        CONFIG_PATH.write_text(config_content, encoding="utf-8")
+        print(f"[Tunnel] Generated config.yml for: {', '.join(valid_hostnames)}")
+        return tunnel_id
+
+    except Exception as e:
+        print(f"[Tunnel] Config generation failed: {e}")
+        return None
 
 def main() -> None:
     yolo_dir = ROOT / ".config" / "ultralytics"
     yolo_dir.mkdir(parents=True, exist_ok=True)
     os.environ["YOLO_CONFIG_DIR"] = str(yolo_dir)
-    print(f"Enforcing local YOLO config: {yolo_dir}")
+    
     python_path = _venv_python()
     if not python_path.exists():
-        print("Virtual environment not found. Run `python scripts/install.py` first.")
+        print("Virtual environment not found.")
         sys.exit(1)
 
-    #--- PRE-FLIGHT CHECKS ---
-    #Check for tunnel credentials before trying to start
-    _check_tunnel_creds()
+    # --- 1. Configure Tunnel ---
+    tunnel_uuid = _configure_tunnel()
 
-    #1. Prepare Bot Command
+    # --- 2. Commands ---
     bot_cmd = [str(python_path), "-m", "tomcat.main"]
 
-    #2. Prepare Cloudflare Tunnel Command
     if os.name == "nt":
         cloudflared_path = ROOT / "cloudflared.exe"
     else:
         cloudflared_path = ROOT / "cloudflared"
 
-    if not cloudflared_path.exists():
-        print(f"{cloudflared_path.name} not found in root. UI Tunnel will not start.")
-        tunnel_cmd = None
-    else:
-        #Check for config.yml
-        if not CONFIG_PATH.exists():
-            print("config.yml not found in root. Tunnel will likely fail to route traffic.")
-            #We try to run anyway, but warn the user
-            tunnel_cmd = [str(cloudflared_path), "tunnel", "run", "tomcat-ui"]
-        else:
-            #FORCE cloudflared to use our local config.yml
-            tunnel_cmd = [
-                str(cloudflared_path), 
-                "tunnel", 
-                "--config", str(CONFIG_PATH), 
-                "run", "tomcat-ui"
-            ]
+    tunnel_cmd = None
+    if cloudflared_path.exists() and tunnel_uuid:
+        tunnel_cmd = [
+            str(cloudflared_path), "tunnel", 
+            "--config", str(CONFIG_PATH), 
+            "run"
+        ]
 
-    print(f"Starting TomCat ecosystem (cwd={ROOT})...")
-    
+    # --- 3. Start ---
+    print(f"Starting TomCat ecosystem...")
     processes = []
-
     try:
-        #Start API/Bot
         print(f"→ Bot: {' '.join(bot_cmd)}")
-        bot_proc = subprocess.Popen(bot_cmd, cwd=ROOT)
-        processes.append(bot_proc)
+        processes.append(subprocess.Popen(bot_cmd, cwd=ROOT))
 
-        #Start Tunnel (if available)
         if tunnel_cmd:
             print(f"→ Tunnel: {' '.join(tunnel_cmd)}")
-            tunnel_proc = subprocess.Popen(tunnel_cmd, cwd=ROOT)
-            processes.append(tunnel_proc)
+            processes.append(subprocess.Popen(tunnel_cmd, cwd=ROOT))
         
-        print("\nTomCat is running. Press Ctrl+C to stop.\n")
-
-        #Wait for bot to exit (or crash)
-        exit_code = bot_proc.wait()
-        
-        if exit_code != 0:
-            print(f"Bot exited with code {exit_code}")
-
+        processes[0].wait() # Wait for bot
     except KeyboardInterrupt:
         print("\nShutting down...")
     finally:
-        #Kill everything on exit
         for p in processes:
-            if p.poll() is None:
-                p.terminate()
-                try:
-                    p.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    p.kill()
+            p.terminate()
 
 if __name__ == "__main__":
     main()

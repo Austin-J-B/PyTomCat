@@ -8,7 +8,7 @@ import discord
 from tomcat.logger import log_action
 
 
-SUB_REQUEST_URL = "https://austin-j-b.github.io/PyTomCat/?api=https://ui.catsofuta.org#sub"
+SUB_REQUEST_URL = "https://ui.catsofuta.org/#sub"
 
 
 async def handle_sub_request_link(ctx: Dict[str, Any]) -> None:

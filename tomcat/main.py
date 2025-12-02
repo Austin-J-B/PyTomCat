@@ -806,7 +806,8 @@ async def start_web_server(bot):
                 return _with_cors(web.Response(status=404, text="Item ID not found in log"), request)
 
         except Exception as e:
-            return _with_cors(web.Response(status=500, text=str(e)), request)
+            logging.exception("Error deleting subrequest")
+            return _with_cors(web.Response(status=500, text="An internal error has occurred."), request)
     
     async def leave_activity(request):
         """Disconnects the requesting user from their voice channel."""

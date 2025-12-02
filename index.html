@@ -9,7 +9,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
 
-    <script src="https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk/dist/discord.min.js"></script>
+    <script type="module">
+        import { DiscordSDK } from "https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk@1.1.1/+esm";
+        window.Discord = { DiscordSDK }; // Assign to global window so your existing code can find it
+        window.dispatchEvent(new Event('discord-sdk-ready')); // Tell the app we are ready
+    </script>
 
     <style>
         :root {
@@ -1914,7 +1918,7 @@ window.addEventListener('hashchange', () => {
 
 
 
-    
+
     // ... (Keep updateUIForUser, renderOpenSubs, and deleteRequest functions EXACTLY as they were in the previous step) ...
     // You MUST include them here for the script to work.
     
@@ -2113,8 +2117,18 @@ window.addEventListener('hashchange', () => {
         }
     }
 
-    // Kickoff
-    initAuth();
+    if (window.Discord) {
+        initAuth();
+    } else {
+        // Wait for the module to load
+        window.addEventListener('discord-sdk-ready', () => initAuth());
+        // Safety timeout in case it never loads (e.g. strict firewall)
+        setTimeout(() => {
+            if (!window.Discord) {
+                document.getElementById('loading').innerHTML = "<div>Error: SDK Timed Out. Check connection.</div>";
+            }
+        }, 5000);
+    }
 </script>
 </body>
 </html>

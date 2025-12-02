@@ -370,6 +370,12 @@
                 <span id="profile-icon" class="profile-icon"></span>
                 <span id="profile-name"></span>
             </div>
+
+            <button id="leave-activity-btn" class="tool-btn" style="display:none; margin-left:10px; border-color: #d44;" onclick="leaveActivity()" title="Disconnect & Close">
+                <svg viewBox="0 0 24 24" style="fill:#d44;">
+                    <path d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5a2 2 0 0 0-2 2v4h2V5h14v14H5v-4H3v4a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                </svg>
+            </button>
         </div>
     </header>
 
@@ -1639,6 +1645,8 @@ window.addEventListener('hashchange', () => {
     }
 
     // --- AUTH FLOW ---
+    let discordSdk = null;
+
     async function initAuth() {
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
@@ -1662,6 +1670,40 @@ window.addEventListener('hashchange', () => {
         apiBase = (currentApi || DEFAULT_API).replace(/\/$/, '');
         console.log("Using Backend:", apiBase);
 
+        // 1. Check if we are running as a Discord Activity
+        if (document.referrer.includes("discord.com") && window.Discord) {
+            console.log("Discord Activity environment detected...");
+            document.body.classList.add('is-activity');
+            
+            // Show the LEAVE button
+            const leaveBtn = document.getElementById('leave-activity-btn');
+            if(leaveBtn) leaveBtn.style.display = 'flex';
+
+            try {
+                discordSdk = new Discord.DiscordSDK(CLIENT_ID);
+                await discordSdk.ready();
+
+                // Try "Silent" Auth first
+                const { code: activityCode } = await discordSdk.commands.authorize({
+                    client_id: CLIENT_ID,
+                    response_type: "code",
+                    state: "",
+                    prompt: "none",
+                    scope: ["identify", "guilds.members.read"]
+                });
+                
+                // If successful, swap code for token
+                await exchangeCode(activityCode, null);
+
+            } catch (e) {
+                console.warn("Silent auth failed, showing login button", e);
+                // Do NOT redirect. Show the "Manual SDK" button.
+                showActivityLoginButton();
+            }
+            return;
+        }
+
+        // 2. Standard Web Flow
         if (!code) {
             const resumed = await resumeSession();
             if (resumed) return;
@@ -1682,29 +1724,9 @@ window.addEventListener('hashchange', () => {
             await exchangeCode(code, REDIRECT_URI);
             return;
         }
-        else if (document.referrer.includes("discord.com") && window.Discord) {
-            // Embedded App
-            console.log("Discord Activity environment detected...");
-            try {
-                const discordSdk = new Discord.DiscordSDK(CLIENT_ID);
-                await discordSdk.ready();
-                const { code: activityCode } = await discordSdk.commands.authorize({
-                    client_id: CLIENT_ID,
-                    response_type: "code",
-                    state: "",
-                    prompt: "none",
-                    scope: ["identify", "guilds.members.read"]
-                });
-                await exchangeCode(activityCode, null);
-            } catch (e) {
-                console.warn("Embedded Auth failed, showing button", e);
-                showLoginButton();
-            }
-        }
-        else {
-            // Direct Web Visit
-            showLoginButton();
-        }
+        
+        // If we got here, we are on web and not logged in
+        showLoginButton();
     }
 
     async function resumeSession() {
@@ -1754,12 +1776,76 @@ window.addEventListener('hashchange', () => {
             updateUIForUser();
             await init(true);
 
-    } catch (e) {
-        console.error("Login Error:", e);
-        alert("Login failed: " + (e && e.message ? e.message : e));
-        showLoginButton();
+        } catch (e) {
+            console.error("Login Error:", e);
+            alert("Login failed: " + (e && e.message ? e.message : e));
+            // Decide which button to show based on environment
+            if (discordSdk) showActivityLoginButton();
+            else showLoginButton();
+        }
     }
-}
+
+    // NEW: "Seamless" Leave Function
+    async function leaveActivity() {
+        if (!discordSdk) {
+            alert("This only works inside Discord!");
+            return;
+        }
+        
+        // 1. Tell backend to kick us from voice
+        try {
+            // Use apiBase for the request
+            const endpoint = `${apiBase}/api/activity/leave`;
+            await fetch(endpoint, { method: 'POST' });
+        } catch (e) {
+            console.error("Failed to signal leave", e);
+        }
+
+        // 2. Disconnect client-side
+        discordSdk.commands.disconnect(); 
+    }
+
+    // NEW: Manual Button for Activities (Calls SDK, does not navigate)
+    function showActivityLoginButton() {
+        const loading = document.getElementById('loading');
+        if(loading) loading.style.display = 'none';
+
+        if (document.getElementById('web-login-overlay')) return;
+
+        const div = document.createElement('div');
+        div.id = 'web-login-overlay';
+        div.style.cssText = "position:fixed; inset:0; background:var(--site-bg); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:9999; text-align:center;";
+        
+        div.innerHTML = `
+            <h1 style="font-family:'Merriweather', serif; font-weight:900; font-size:2rem; margin: 0 0 20px 0; color:var(--site-text);">
+                TomCat-VI
+            </h1>
+            <button id="manual-auth-btn" style="
+                background: #5865F2; color: white; border: none; padding: 12px 32px;
+                border-radius: 4px; font-weight: 600; font-size: 1.1rem; cursor: pointer;
+                box-shadow: 0 4px 15px rgba(114, 137, 218, 0.4);
+                display: flex; align-items: center; gap: 12px;
+            ">
+                Authorize with Discord
+            </button>
+        `;
+        document.body.appendChild(div);
+
+        document.getElementById('manual-auth-btn').onclick = async () => {
+            try {
+                const { code } = await discordSdk.commands.authorize({
+                    client_id: CLIENT_ID,
+                    response_type: "code",
+                    state: "",
+                    prompt: "consent",
+                    scope: ["identify", "guilds.members.read"]
+                });
+                await exchangeCode(code, null);
+            } catch (e) {
+                alert("Auth failed: " + e.message);
+            }
+        };
+    }
 
     function showLoginButton() {
         const loading = document.getElementById('loading');
@@ -1768,7 +1854,7 @@ window.addEventListener('hashchange', () => {
         if (document.getElementById('web-login-overlay')) return;
 
         const stateStr = buildState();
-
+        // Uses global REDIRECT_URI
         const loginUrl = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=identify+guilds.members.read&state=${stateStr}`;
 
         const div = document.createElement('div');

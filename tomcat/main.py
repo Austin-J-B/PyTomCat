@@ -406,7 +406,8 @@ bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
 from .handlers.feeding import start_feeding_scheduler, handle_feeding_inquiry as _handle_feeding_status
 #Dues: no background scheduler; admin-only Gmail test is routed directly from the router
-from .handlers.dues import start_gmail_logging_scheduler, start_dues_scheduler
+from .handlers.dues import start_dues_scheduler
+from .handlers.gmail import start_gmail_logging_scheduler
 
 from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
@@ -807,7 +808,27 @@ async def start_web_server(bot):
         except Exception as e:
             return _with_cors(web.Response(status=500, text=str(e)), request)
     
+    async def leave_activity(request):
+        """Disconnects the requesting user from their voice channel."""
+        session, error = _require_permissions(request, require_view=True)
+        if error: return error
+        
+        user_id = session.get("user_id")
+        if not user_id:
+            return _with_cors(web.Response(status=400, text="No user"), request)
 
+        # Find the member in the guild
+        guild, member = await _resolve_member(int(user_id))
+        
+        if member and member.voice:
+            try:
+                # This disconnects them from Voice
+                await member.move_to(None)
+                _debug(f"Disconnected user {user_id} from voice.")
+            except Exception as e:
+                print(f"[Activity] Failed to disconnect {user_id}: {e}")
+                
+        return _with_cors(web.json_response({"status": "ok"}), request)
     
     async def list_open_subs(request):
         """List sub requests separated into available, upcoming filled, and past (expired/fulfilled)."""
@@ -1122,6 +1143,8 @@ async def start_web_server(bot):
         web.options('/api/subs/claim', options_sub_claim),
         web.post('/api/subrequest/delete', delete_subrequest),
         web.options('/api/subrequest/delete', options_subrequest), 
+        web.post('/api/activity/leave', leave_activity),
+        web.options('/api/activity/leave', options_subrequest)
     ])
 
     runner = web.AppRunner(app)

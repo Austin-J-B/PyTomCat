@@ -33,6 +33,8 @@ GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
+EMAILS_DIR = "logs/emails"
+
 def _env(key: str, default: Optional[str] = None) -> Optional[str]:
     v = os.getenv(key)
     return v if v is not None else default
@@ -227,7 +229,7 @@ _PROVIDER_RE = re.compile(
     r"\b(paypal|venmo(?:ed)?|cash\s?app(?:ed|d)?|cashapp(?:ed|d)?|cash-app(?:ed|d)?|zelle(?:d|'d)?|in\s*person|cash|irl)\b",
     re.I,
 )
-_AMOUNT_RE = re.compile(r"(?<!\d)\$?\s*(\d{1,4}(?:\.\d{2})?)(?!\d)")
+_AMOUNT_RE = re.compile(r"(?<!\d)\$?\s*(\d{1,6}(?:\.\d{2})?)(?!\d)")
 _MONEY_RE = re.compile(r"-?\d+(?:\.\d+)?")
 _VENMO_HANDLE_RE = re.compile(r"@[A-Za-z0-9._-]{2,32}")
 _CASHAPP_RE = re.compile(r"\$[A-Za-z][A-Za-z0-9_]{0,19}")
@@ -2021,7 +2023,7 @@ def _payment_username_from_email(em: dict) -> str | None:
     subj = em.get('subject') or ''
     body = em.get('content') or ''
     frm = em.get('from') or ''
-    prov = _provider_from_email(frm, subj, body)
+    prov = detect_provider(frm, subj, body)
     if prov == 'venmo':
         m = re.search(r"^\s*([^\n]+?)\s+paid you\b", subj, re.I)
         if m:

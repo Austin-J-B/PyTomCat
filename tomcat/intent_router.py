@@ -37,7 +37,7 @@ from .handlers.misc import (
     handle_profile_update_one,
     handle_profiles_update_all,
 )
-from .handlers.dues import handle_check_last_email
+from .handlers.gmail import handle_check_last_email
 from .handlers.finance import handle_log_recent_finances
 from .handlers.stations import handle_station_residents as _handle_station_residents
 from UserInterface.feeding_schedule_linker import handle_feeding_schedule_link
@@ -402,7 +402,7 @@ class IntentRouter:
                                         station=st, dates=[self._today()]
                                     )
                                     await feeding.handle_feed_update_event(ev, ctx)
-                                log_action("feed_pending_fulfilled", f"ch={message.channel.id}; user={message.author.id}", ",".join(stations))
+                                log_action("feed_pending_fulfilled", f"ch={message.channel.id}; user={message.author.id}", ",".join(str(s) for s in stations if s is not None))
                                 self._pending_feed.pop(key, None)
                                 return
                             else:
@@ -1120,7 +1120,7 @@ class IntentRouter:
             text_wo = self._strip_wake_tokens((event.text or ""), message)
             m = AUTH_CODE_RE.search(text_wo)
             auth = m.group(1).strip() if m else ""
-            from .handlers.dues import handle_gmail_auth_code
+            from .handlers.gmail import handle_gmail_auth_code  # <--- UPDATED
             await handle_gmail_auth_code(_intent("gmail_auth_code", {"auth": auth}), ctx)
             return
 
@@ -1137,7 +1137,7 @@ class IntentRouter:
                 count = int(m.group(1)) if m else 10
             except Exception:
                 count = 10
-            from .handlers.dues import handle_log_recent_emails
+            from .handlers.gmail import handle_log_recent_emails
             await handle_log_recent_emails(_intent("gmail_log_recent", {"count": count}), ctx)
             try:
                 log_action("intent_dispatch", f"type=gmail_log_recent msg={event.message_id}", f"done count={count}")

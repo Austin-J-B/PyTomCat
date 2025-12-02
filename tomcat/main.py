@@ -58,7 +58,7 @@ DEFAULT_STATIONS = [
 ]
 
 #Rate limiting constants for the web API
-RATE_LIMIT_MAX_REQUESTS = 10
+RATE_LIMIT_MAX_REQUESTS = 200
 RATE_LIMIT_WINDOW_SECONDS = 60
 _rate_limit_counters: dict[str, deque] = {}
 

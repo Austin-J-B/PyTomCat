@@ -228,9 +228,13 @@
         .station-row .remove-btn { border: 1px solid #d55; background: #fff5f5; color: #d55; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
         .station-section-label { font-size: 1.12rem; font-weight: 900; margin-bottom: 6px; }
         .station-add-btn { background: #f6f7f4; color: #3e4637; border: 1px solid var(--grid-line); padding: 6px 10px; border-radius: 10px; width: auto; align-self: flex-start; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        .select-input { min-width: 180px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight: 600; background: white; }
+        .select-input { min-width: 180px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight: 500; background: white; }
+        .controls-legend-stack { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 8px; }
+        .top-controls { width: 100%; display: flex; align-items: center; gap: 12px; }
+        .legend-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+        .search-container.compact { width: 240px; }
         .divider { height: 1px; background: var(--grid-line); margin: 14px 0; }
-        .instructions-banner { flex: 1; text-align: center; font-size: 0.8rem; font-weight: 600; color: var(--site-text); padding: 6px 10px; background: rgba(65,75,59,0.06); border-radius: 10px; }
+        .instructions-banner { width: 100%; text-align: left; font-size: 0.85rem; font-weight: 500; color: #6f7568; padding: 10px 16px; background: white; border: 1px solid var(--grid-line); border-radius: 6px 6px 0 0; margin: 6px 0 0 0; letter-spacing: 0.01em; }
         /* ... Keep calendar/tab styles the same ... */
         .date-picker { position: relative; display: inline-block; }
         .date-btn { background: var(--site-text); color: var(--site-bg); border: none; padding: 10px 16px; border-radius: 18px; cursor: pointer; font-weight: 700; }
@@ -433,26 +437,28 @@
 
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
-            <div class="controls-legend" style="flex-direction:column; align-items:stretch;">
-                <div class="legend-actions" style="width:100%; justify-content:space-between; gap:12px;">
+            <div class="controls-legend controls-legend-stack">
+                <div class="legend-actions top-controls">
                     <div class="week-selector">
-                        <select id="week-select" onchange="handleWeekChange(this.value)" style="min-width: 180px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight:600;">
+                        <select id="week-select" class="select-input" onchange="handleWeekChange(this.value)">
                         </select>
                     </div>
-                    <div class="search-container" style="width: 240px;">
-                        <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
-                        <div id="search-results" class="search-results"></div>
-                    </div>
-                    <div class="legend-actions" style="gap:12px;">
-                        <div id="selection-display" class="current-selection empty">
-                            Select User
+                    <div class="legend-right">
+                        <div class="search-container compact">
+                            <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
+                            <div id="search-results" class="search-results"></div>
                         </div>
-                        <button class="save-btn" id="save-btn" onclick="saveSchedule()" title="Save schedule">Save</button>
+                        <div class="legend-actions" style="gap:12px;">
+                            <div id="selection-display" class="current-selection empty">
+                                Select User
+                            </div>
+                            <button class="save-btn" id="save-btn" onclick="saveSchedule()" title="Save schedule">Save</button>
+                        </div>
                     </div>
                 </div>
-                <div class="instructions-banner" style="margin-top:8px;">
-                    "Click" to select • "Ctrl + Click" to multi-select • "Shift + Click" for range • "Enter" to assign • "Del" to erase
-                </div>
+            </div>
+            <div class="instructions-banner">
+                "Click" to select • "Ctrl + Click" to multi-select • "Shift + Click" for range • "Enter" to assign • "Del" to erase
             </div>
 
             <table id="schedule-table">
@@ -555,7 +561,7 @@
                 <div class="form-row">
                     <label class="station-section-label">Station names and aliases</label>
                     <div class="form-row" style="gap:6px; justify-content:center; align-items:center;">
-                        <div style="font-weight:600;">Effective week</div>
+                        <div style="font-weight:500;">Effective week</div>
                         <select id="station-effective-date" class="select-input"></select>
                     </div>
                     <div id="station-manager-list" class="station-manager"></div>
@@ -655,6 +661,17 @@ function parseISODateLocal(iso) {
     return new Date(y, m-1, d, 0, 0, 0, 0); //local midnight, avoids UTC->local shift
 }
 
+function normalizeDateInput(val) {
+    if (val instanceof Date) return new Date(val.getTime());
+    if (typeof val === 'string') {
+        const parsed = parseISODateLocal(val);
+        if (parsed) return parsed;
+    }
+    const dt = new Date(val);
+    if (Number.isNaN(dt.getTime())) return null;
+    return dt;
+}
+
 function dayOfWeekFromISO(iso) {
     const [y,m,d] = iso.split('-').map(Number);
     const dt = new Date(y, m-1, d);
@@ -673,8 +690,9 @@ function stationsForDate(dateIso, userId) {
 
 function generateWeekRange(startIso, endIso) {
     const out = [];
-    const start = new Date(startIso);
-    const end = new Date(endIso);
+    const start = normalizeDateInput(startIso);
+    const end = normalizeDateInput(endIso);
+    if (!start || !end) return out;
     start.setHours(0,0,0,0);
     end.setHours(0,0,0,0);
     // snap start to Sunday
@@ -687,7 +705,7 @@ function generateWeekRange(startIso, endIso) {
 }
 
 function weekStartIso(d = new Date()) {
-    const dt = new Date(d);
+    const dt = normalizeDateInput(d) || new Date();
     dt.setHours(0,0,0,0);
     dt.setDate(dt.getDate() - dt.getDay());
     return dt.toISOString().slice(0,10);
@@ -695,7 +713,9 @@ function weekStartIso(d = new Date()) {
 
 function formatWeekLabel(iso) {
     try {
-        const d = new Date(iso);
+        const d = normalizeDateInput(iso);
+        if (!d) return iso;
+        d.setHours(0,0,0,0);
         d.setDate(d.getDate() - d.getDay()); //snap to Sunday for display
         const opts = { month: 'short', day: 'numeric', year: 'numeric' };
         return `Week of ${d.toLocaleDateString(undefined, opts)}`;

@@ -807,8 +807,11 @@ async function loadSchedule() {
         if (!res.ok) throw new Error("Load failed");
         const data = await res.json();
         if ((data.stations || []).length) {
-            stationDefinitions = data.stations.map(name => ({ name, aliases: [] }));
-            STATIONS = data.stations.slice();
+            const incoming = data.stations.slice();
+            const existingByName = {};
+            stationDefinitions.forEach(item => { if (item?.name) existingByName[item.name] = item; });
+            stationDefinitions = incoming.map(name => existingByName[name] ? existingByName[name] : { name, aliases: [] });
+            STATIONS = incoming.slice();
             checklistStations = STATIONS.slice();
         }
         scheduleData = normalizeSchedule(data.schedule);
@@ -848,8 +851,9 @@ function setRequestTab(tab) {
 
 // --- DISTINCT COLOR PALETTE ---
 
-// Hash-based hues with uniform saturation/lightness to guarantee unique, readable colors per user.
+// Deterministic pastel colors with in-session collision avoidance.
 const colorAssignments = new Map();
+const usedColors = new Set();
 
 function hashId(str) {
     // FNV-1a 32-bit hash for consistent distribution
@@ -866,9 +870,27 @@ function getVolunteerColor(id) {
     if (colorAssignments.has(id)) return colorAssignments.get(id);
 
     const seed = hashId(String(id));
-    const hue = (seed * 131.95) % 360; // spread IDs evenly across the hue wheel
-    const color = `hsl(${hue.toFixed(1)}, 90%, 76%)`; // high saturation, light background for black text legibility
+    // Xorshift PRNG based on seed
+    let x = seed || 1;
+    const rand = () => {
+        x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+        return (x >>> 0) / 4294967295;
+    };
 
+    let hue = rand() * 360;             // full hue wheel
+    let sat = 65 + rand() * 20;         // 65-85%
+    let light = 70 + rand() * 8;        // 70-78% (light enough for dark text)
+
+    // Avoid exact duplicates within this session by nudging hue
+    const golden = 137.508; // golden angle
+    let color = `hsl(${hue.toFixed(3)}, ${sat.toFixed(2)}%, ${light.toFixed(2)}%)`;
+    let tries = 0;
+    while (usedColors.has(color) && tries < 32) {
+        hue = (hue + golden) % 360;
+        color = `hsl(${hue.toFixed(3)}, ${sat.toFixed(2)}%, ${light.toFixed(2)}%)`;
+        tries++;
+    }
+    usedColors.add(color);
     colorAssignments.set(id, color);
     return color;
 }

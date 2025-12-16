@@ -1,0 +1,42 @@
+{
+  "stations": [
+    {
+      "name": "Microwave",
+      "aliases": ["microwave", "mike", "mikey", "miker", "micro", "wave", "old man", "michael", "him", "himb", "chemistry", "chemistry building", "chemistry/planetarium building", "planetarium", "planetarium building", "library", "life science building", "library life science building"]
+    },
+    {
+      "name": "Snickers",
+      "aliases": ["snickers", "snicks"]
+    },
+    {
+      "name": "Business",
+      "aliases": ["business", "coba"]
+    },
+    {
+      "name": "The Greens",
+      "aliases": ["the greens", "greens", "green", "grink", "grinks", "center chase", "center chase apartments", "center chase apartments & the greens"]
+    },
+    {
+      "name": "HOP",
+      "aliases": ["hop", "pecan", "thwop", "thop", "heights", "hops", "heights on pecan"]
+    },
+    {
+      "name": "Lot 50",
+      "aliases": ["lot 50", "lot50", "l50", "lot"]
+    },
+    {
+      "name": "West Hall",
+      "aliases": ["west hall", "west", "hall"]
+    },
+    {
+      "name": "Maintenance",
+      "aliases": ["maintenance", "maint"]
+    }
+
+
+  ],
+  "meta": {
+    "seeded_at": "2025-12-16T02:10:37.497881",
+    "updated_at": "2025-12-16T02:12:02.146162"
+  }
+}

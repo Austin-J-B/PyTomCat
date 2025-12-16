@@ -443,6 +443,11 @@
                     </div>
                 </div>
                 <div class="legend-actions">
+                    <div class="week-selector">
+                        <label for="week-select" style="font-size:0.8rem; font-weight:700;">Week</label>
+                        <select id="week-select" onchange="handleWeekChange(this.value)" style="min-width: 170px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--grid-line);">
+                        </select>
+                    </div>
                     <div class="search-container" style="width: 240px;">
                         <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
                         <div id="search-results" class="search-results"></div>
@@ -555,6 +560,10 @@
             <div class="sub-form">
                 <div class="form-row">
                     <label>Stations</label>
+                    <div class="form-row" style="gap:6px;">
+                        <label for="station-effective-date" style="font-weight:600;">Effective week (Sunday)</label>
+                        <input type="date" id="station-effective-date" />
+                    </div>
                     <div id="station-manager-list" class="station-manager"></div>
                     <button class="save-btn" type="button" onclick="addStationRow()">Add station</button>
                     <div id="station-save-status" class="warn"></div>
@@ -613,6 +622,9 @@ let checklistDate = null;
 let checklistStatus = {};
 let checklistStations = STATIONS.slice();
 let stationDefinitions = [];
+let availableWeeks = [];
+let selectedWeek = null;
+let stationEffectiveDate = null;
 
 // --- RESIZE OBSERVER FOR STICKY HEADER ---
 const resizeObserver = new ResizeObserver(entries => {
@@ -658,6 +670,23 @@ function stationsForDate(dateIso, userId) {
     if (!dateIso || !userId) return [];
     const dow = dayOfWeekFromISO(dateIso);
     return STATIONS.filter(st => idsMatch((scheduleData[st] || [])[dow], userId));
+}
+
+function weekStartIso(d = new Date()) {
+    const dt = new Date(d);
+    dt.setHours(0,0,0,0);
+    dt.setDate(dt.getDate() - dt.getDay());
+    return dt.toISOString().slice(0,10);
+}
+
+function formatWeekLabel(iso) {
+    try {
+        const d = new Date(iso);
+        const opts = { month: 'short', day: 'numeric', year: 'numeric' };
+        return `Week of ${d.toLocaleDateString(undefined, opts)}`;
+    } catch (e) {
+        return iso;
+    }
 }
 
 // Selection
@@ -706,6 +735,9 @@ function resetState() {
     checklistStatus = {};
     checklistStations = [];
     stationDefinitions = [];
+    availableWeeks = [];
+    selectedWeek = weekStartIso();
+    stationEffectiveDate = null;
 }
 
 async function init(force = false) {
@@ -724,7 +756,6 @@ async function init(force = false) {
 
     updateStickyHeights();
     await fetchMembers();
-    await fetchStations();
     await loadSchedule();
     renderGrid();
     renderCalendar();
@@ -779,13 +810,17 @@ async function fetchMembers() {
     members.forEach(m => { if (m.id) memberById[m.id] = m; });
 }
 
-async function fetchStations() {
+async function fetchStations(dateIso = null) {
     try {
-        const endpoint = apiBase ? `${apiBase}/api/stations` : '/api/stations';
+        const qp = dateIso ? `?date=${encodeURIComponent(dateIso)}` : '';
+        const endpoint = apiBase ? `${apiBase}/api/stations${qp}` : `/api/stations${qp}`;
         const res = await fetch(endpoint, { credentials: "include" });
         if (!res.ok) throw new Error("API Failed");
         const data = await res.json();
         stationDefinitions = data.stations || [];
+        stationEffectiveDate = dateIso || stationEffectiveDate || weekStartIso();
+        const inp = document.getElementById('station-effective-date');
+        if (inp && !inp.value) inp.value = stationEffectiveDate;
     } catch (e) {
         console.warn("Failed to load stations, using schedule keys if present.", e);
         if (!stationDefinitions.length && scheduleData && Object.keys(scheduleData).length) {
@@ -798,7 +833,8 @@ async function fetchStations() {
 
 async function loadSchedule() {
     try {
-        const endpoint = apiBase ? `${apiBase}/api/schedule` : '/api/schedule';
+        const qp = selectedWeek ? `?week=${encodeURIComponent(selectedWeek)}` : '';
+        const endpoint = apiBase ? `${apiBase}/api/schedule${qp}` : `/api/schedule${qp}`;
         const res = await fetch(endpoint, { method: 'GET', credentials: "include" });
         if (res.status === 401) {
             setSaveStatus("Login required", "warn");
@@ -808,13 +844,25 @@ async function loadSchedule() {
         const data = await res.json();
         if ((data.stations || []).length) {
             const incoming = data.stations.slice();
-            const existingByName = {};
-            stationDefinitions.forEach(item => { if (item?.name) existingByName[item.name] = item; });
-            stationDefinitions = incoming.map(name => existingByName[name] ? existingByName[name] : { name, aliases: [] });
             STATIONS = incoming.slice();
             checklistStations = STATIONS.slice();
         }
         scheduleData = normalizeSchedule(data.schedule);
+        selectedWeek = data.effective_from || selectedWeek || weekStartIso();
+        const serverWeeks = data.weeks || [];
+        const weekSet = new Set(serverWeeks);
+        // include current and next few weeks
+        const base = new Date(selectedWeek || weekStartIso());
+        base.setHours(0,0,0,0);
+        base.setDate(base.getDate() - base.getDay());
+        for (let i = -1; i < 8; i++) {
+            const d = new Date(base);
+            d.setDate(base.getDate() + i*7);
+            weekSet.add(d.toISOString().slice(0,10));
+        }
+        availableWeeks = Array.from(weekSet).sort().reverse();
+        renderWeekOptions();
+        await fetchStations(selectedWeek);
         console.log("Schedule loaded", Object.keys(scheduleData));
         setSaveStatus("Loaded", "ok");
     } catch (e) {
@@ -847,6 +895,29 @@ function setRequestTab(tab) {
     const actions = document.getElementById('claim-actions');
     if (actions) actions.style.display = tab === 'available' ? 'flex' : 'none';
     renderOpenSubs();
+}
+
+function renderWeekOptions() {
+    const sel = document.getElementById('week-select');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const weeks = availableWeeks.length ? availableWeeks : [selectedWeek || weekStartIso()];
+    weeks.forEach(w => {
+        const opt = document.createElement('option');
+        opt.value = w;
+        opt.textContent = formatWeekLabel(w);
+        sel.appendChild(opt);
+    });
+    if (selectedWeek) sel.value = selectedWeek;
+}
+
+function handleWeekChange(val) {
+    selectedWeek = val || weekStartIso();
+    loadSchedule();
+    stationEffectiveDate = selectedWeek;
+    const stationDateInput = document.getElementById('station-effective-date');
+    if (stationDateInput) stationDateInput.value = selectedWeek;
+    updateDateButtonLabel();
 }
 
 // --- DISTINCT COLOR PALETTE ---
@@ -1225,6 +1296,7 @@ async function saveSchedule() {
             credentials: "include",
             body: JSON.stringify({
                 schedule: scheduleData,
+                effective_from: selectedWeek || weekStartIso(),
                 meta: { source: 'ui' }
             })
         });
@@ -1411,6 +1483,13 @@ checklistDateInput?.addEventListener('change', (e) => {
     loadChecklist(e.target.value);
 });
 
+const stationEffectiveInput = document.getElementById('station-effective-date');
+stationEffectiveInput?.addEventListener('change', (e) => {
+    stationEffectiveDate = e.target.value || weekStartIso();
+    fetchStations(stationEffectiveDate);
+    renderStationManager();
+});
+
 function setClaimUser(m) {
     claimUser = m;
     claimUserInput.value = m.name;
@@ -1513,6 +1592,10 @@ async function saveChecklist() {
 function renderStationManager() {
     const wrap = document.getElementById('station-manager-list');
     const statusEl = document.getElementById('station-save-status');
+    const dateInput = document.getElementById('station-effective-date');
+    if (dateInput && !dateInput.value) {
+        dateInput.value = stationEffectiveDate || selectedWeek || weekStartIso();
+    }
     if (!wrap) return;
     wrap.innerHTML = '';
     if (!authState.permissions?.is_officer) {
@@ -1555,6 +1638,7 @@ async function saveStations() {
         const aliases = aliasesStr.split(',').map(a => a.trim()).filter(a => a);
         if (name) payload.push({ name, aliases });
     });
+    const effective = stationEffectiveDate || weekStartIso();
     if (statusEl) statusEl.textContent = "Saving...";
     try {
         const endpoint = apiBase ? `${apiBase}/api/stations` : '/api/stations';
@@ -1562,7 +1646,7 @@ async function saveStations() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: "include",
-            body: JSON.stringify({ stations: payload })
+            body: JSON.stringify({ stations: payload, effective_from: effective })
         });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();

@@ -51,6 +51,8 @@ def _debug(msg: str) -> None:
 
 #Local persistence for the UI schedule
 SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
+#Versioned schedule helpers
+_DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
 #Rate limiting constants for the web API
 RATE_LIMIT_MAX_REQUESTS = 200
 RATE_LIMIT_WINDOW_SECONDS = 60
@@ -147,6 +149,78 @@ def _issue_session_response(user_info: dict, permissions: dict, request: web.Req
     )
     _debug(f"set-cookie secure={_COOKIE_SECURE} samesite={_COOKIE_SAMESITE}")
     return _with_cors(resp, request)
+
+
+# --- schedule version helpers ---
+def _load_schedule_versions() -> list:
+    if not SCHEDULE_PATH.exists():
+        return []
+    try:
+        data = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "versions" in data:
+            return data.get("versions") or []
+        if isinstance(data, dict) and "schedule" in data:
+            return [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
+        if isinstance(data, list):
+            return data
+    except Exception:
+        return []
+    return []
+
+
+def _save_schedule_versions(versions: list):
+    payload = {"versions": versions, "meta": {"updated_at": int(time.time())}}
+    SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SCHEDULE_PATH.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _resolve_schedule_for_date(target_iso: Optional[str]) -> dict:
+    """Return schedule and effective_from for the given date (YYYY-MM-DD)."""
+    versions = _load_schedule_versions()
+    if not versions:
+        return {"schedule": {}, "effective_from": _DEFAULT_SCHED_EFFECTIVE, "meta": {}}
+    target_date = None
+    if target_iso:
+        try:
+            target_date = datetime.fromisoformat(target_iso).date()
+        except Exception:
+            target_date = None
+    if not target_date:
+        target_date = datetime.now().date()
+
+    best = None
+    for v in versions:
+        try:
+            eff = datetime.fromisoformat(str(v.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date()
+        except Exception:
+            continue
+        if eff <= target_date and (best is None or datetime.fromisoformat(str(best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date() < eff):
+            best = v
+    if not best:
+        best = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[0]
+
+    sched = best.get("schedule") or {}
+    return {"schedule": sched, "effective_from": best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE, "meta": best.get("meta") or {}}
+
+
+def _upsert_schedule_version(schedule: dict, effective_from: str, meta: dict | None = None) -> list:
+    try:
+        eff = datetime.fromisoformat(str(effective_from)).date().isoformat()
+    except Exception:
+        eff = _DEFAULT_SCHED_EFFECTIVE
+    versions = _load_schedule_versions()
+    replaced = False
+    for v in versions:
+        if str(v.get("effective_from")) == eff:
+            v["schedule"] = schedule
+            v["meta"] = meta or v.get("meta") or {}
+            replaced = True
+            break
+    if not replaced:
+        versions.append({"effective_from": eff, "schedule": schedule, "meta": meta or {}})
+    versions = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)
+    _save_schedule_versions(versions)
+    return versions
 
 
 async def _resolve_member(user_id: int) -> tuple[Optional[discord.Guild], Optional[discord.Member]]:
@@ -314,18 +388,16 @@ async def save_schedule(request):
 
     schedule = data.get("schedule", {})
     meta = data.get("meta", {})
+    effective_from = data.get("effective_from") or data.get("week")
     if not isinstance(schedule, dict):
         return _with_cors(web.Response(status=400, text="Schedule must be an object"), request)
+    if not effective_from:
+        return _with_cors(web.Response(status=400, text="effective_from is required"), request)
 
-    #Persist to disk (cache/feeding_schedule.json)
     try:
-        SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "schedule": schedule,
-            "meta": {**meta, "saved_at": int(time.time())}
-        }
-        SCHEDULE_PATH.write_text(json.dumps(payload), encoding="utf-8")
-    except Exception as e:
+        meta_out = {**meta, "saved_at": int(time.time())}
+        _upsert_schedule_version(schedule, effective_from, meta_out)
+    except Exception:
         logging.exception("Unexpected error when saving schedule")
         return _with_cors(web.Response(status=500, text="Failed to save schedule."), request)
 
@@ -347,28 +419,25 @@ async def get_schedule(request):
             new_sched[station] = [str(uid) if uid else "" for uid in row]
         return new_sched
 
-    if not SCHEDULE_PATH.exists():
-        base_stations = station_names()
-        empty = {station: [""] * 7 for station in base_stations}
-        resp = web.json_response({"schedule": empty, "stations": base_stations, "meta": {"saved_at": None}})
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-        return _with_cors(resp, request)
+    week_param = request.query.get("week")
+    resolved = _resolve_schedule_for_date(week_param)
+    sched = stringify_schedule(resolved.get("schedule", {}))
+    stations = station_names(week_param)
+    versions = _load_schedule_versions()
+    weeks = sorted([v.get("effective_from") for v in versions if v.get("effective_from")], reverse=True)
 
-    try:
-        payload = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
-        sched = payload.get("schedule", {}) or {}
-        
-        #CRITICAL FIX: Stringify to prevent browser rounding
-        payload["schedule"] = stringify_schedule(sched)
-        payload["stations"] = station_names()
-        
-        _debug(f"/api/schedule returning stations={list(sched.keys())} saved_at={payload.get('meta',{}).get('saved_at')}")
-        
-        resp = web.json_response(payload)
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-        return _with_cors(resp, request)
-    except Exception as e:
-        return _with_cors(web.Response(status=500, text=f"Failed to load schedule: {e}"), request)
+    payload = {
+        "schedule": sched,
+        "stations": stations,
+        "effective_from": resolved.get("effective_from"),
+        "weeks": weeks,
+        "meta": resolved.get("meta") or {}
+    }
+    _debug(f"/api/schedule returning stations={list(sched.keys())} effective_from={payload.get('effective_from')}")
+
+    resp = web.json_response(payload)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return _with_cors(resp, request)
 
 import discord
 from discord.ext import commands
@@ -381,7 +450,7 @@ from .handlers.misc import handle_channel_image_intake as _handle_image_intake, 
 from .services.show_cache import warm_cache_on_boot
 from .services.profile_cache import start_profile_cache_scheduler
 from .handlers import feeding as _feed
-from .stations import station_names, station_definitions, save_stations
+from .stations import station_names, station_definitions, save_stations_version, station_versions
 from UserInterface.sub_request_linker import build_open_sub_requests_view
 
 
@@ -661,14 +730,19 @@ async def start_web_server(bot):
         return _with_cors(web.Response(status=204), request)
 
     async def get_stations_api(request):
-        """Return current station definitions (names + aliases)."""
+        """Return station definitions for a given date (default: today) plus available versions."""
         _, error = _require_permissions(request, require_view=True)
         if error:
             return error
-        return _with_cors(web.json_response({"stations": station_definitions()}), request)
+        date_param = request.query.get("date")
+        versions = station_versions()
+        return _with_cors(web.json_response({
+            "stations": station_definitions(date_param),
+            "versions": versions
+        }), request)
 
     async def save_stations_api(request):
-        """Replace station definitions; officer only."""
+        """Replace station definitions for an effective date; officer only."""
         _, error = _require_permissions(request, require_view=True, require_edit=True)
         if error:
             return error
@@ -677,17 +751,20 @@ async def start_web_server(bot):
         except Exception:
             return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
         stations_payload = data.get("stations")
+        effective_from = data.get("effective_from") or data.get("date")
         if not isinstance(stations_payload, list):
             return _with_cors(web.Response(status=400, text="Stations must be a list"), request)
+        if not effective_from:
+            return _with_cors(web.Response(status=400, text="effective_from is required"), request)
         try:
-            save_stations(stations_payload, update_meta=True)
+            versions = save_stations_version(stations_payload, effective_from)
         except Exception as e:
             logging.exception("Failed to save stations")  # Logs the full stack trace
             return _with_cors(
                 web.Response(status=500, text="Failed to save stations due to an internal error."), request
             )
         # Reload and return updated list
-        return _with_cors(web.json_response({"stations": station_definitions()}), request)
+        return _with_cors(web.json_response({"stations": station_definitions(effective_from), "versions": versions}), request)
 
     async def options_subrequest(request):
         return _with_cors(web.Response(status=204), request)

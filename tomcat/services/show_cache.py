@@ -328,11 +328,35 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
     headers = {"User-Agent": "TomCatShowCache/1.0 (+https://example.invalid)"}
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as sess:
       for url, serial, reverse_index, total_available in pairs:
-        if total >= min_count:
-            break
+        # CHANGE 1: Do not break early! We need to scan existing files to update totals.
+        # if total >= min_count: break 
+
         sn = re.sub(r"[^0-9]", "", serial or "") or "0"
+        
         if sn in have_serials:
+            # CHANGE 2: "Heal" stale metadata in existing files without re-downloading images
+            try:
+                base = f"sn{str(sn).zfill(4)}"
+                jp = os.path.join(cdir, f"{base}.json")
+                if os.path.exists(jp):
+                    import json as _json
+                    # Read current meta
+                    meta = _json.loads(Path(jp).read_text(encoding='utf-8'))
+                    
+                    # If total count or index has drifted, update the file
+                    if meta.get("total_available") != total_available:
+                        meta["total_available"] = total_available
+                        meta["reverse_index"] = reverse_index
+                        Path(jp).write_text(_json.dumps(meta), encoding='utf-8')
+            except Exception:
+                pass
             continue
+
+        # CHANGE 3: Only apply the limit when considering a NEW download
+        if total >= min_count:
+            continue
+
+        # ... (rest of download logic remains the same) ...
         #Download with shared session
         raw = None
         #Try a couple of times to download; some hosts are flaky

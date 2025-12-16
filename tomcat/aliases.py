@@ -8,6 +8,7 @@ import re
 import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
+from .stations import station_alias_table, station_display_for
 try:
     #Sheets + config available in this runtime; used for dynamic aliases
     from .config import settings  #type: ignore
@@ -286,44 +287,10 @@ def _fallback_lookup_cat(text_norm: str, tokens: Iterable[str]) -> Optional[str]
 
     return None
 
-_STATION_ALIASES = {
-    "west hall": ["west hall", "west", "hall"],
-    "maintenance": ["maintenance", "maint"],
-    "west campus": ["west campus"],
-    "business": ["business", "coba"],
-    "greens": ["the greens", "greens", "green", "grink", "grinks", "center chase", "center chase apartments", "center chase apartments & the greens"],
-    "hop": ["hop", "pecan", "thwop", "thop", "heights", "hops", "heights on pecan"],
-    "lot 50": ["lot 50", "lot50", "l50", "lot"],
-    "mary kay and zen": ["mary kay and zen", "mkz", "zen", "mary kay", "mary", "kay", "zen gardens", "zen apartments", "mary kay apartments"],
-    "mary kay & zen": ["mary kay & zen"],
-    "microwave": ["microwave", "mike", "mikey", "miker", "micro", "wave", "old man", "michael", "him", "himb", "chemistry", "chemistry building", "chemistry/planetarium building", "planetarium", "planetarium building", "library", "life science building", "library life science building"],
-    "snickers": ["snickers", "snicks"],
-    "bookstore": ["First Baptist Church", "church", "first baptist", "bookstore"],
-    "north campus": ["engineering research building", "erb", "north campus"],
-    "centennial courts": ["centennial", "centennial courts"],
-    "kc hall": ["kc hall", "kc", "kalpana chawla", "kalpana chawla hall"],
-}
-
 #Canonical display names (capitalization as you want to show)
 _DISPLAY = {
     #Cats (subset will be overridden by alias_vocab() aggregation anyway)
     **{name.lower(): name for name in CAT_NAMES},
-    #Stations
-    "west hall": "West Hall",
-    "maintenance": "Maintenance",
-    "business": "Business",
-    "greens": "Greens",
-    "hop": "HOP",
-    "lot 50": "Lot 50",
-    "mary kay and zen": "Mary Kay and Zen",
-    "mary kay & zen": "Mary Kay and Zen",
-    "microwave": "Microwave",
-    "snickers": "Snickers",
-    "bookstore": "Bookstore",
-    "north campus": "North Campus",
-    "centennial courts": "Centennial Courts",
-    "west campus": "West Campus",
-    "kc hall": "KC Hall",
 }
 
 STOPWORDS = {
@@ -343,7 +310,7 @@ STOPWORDS = {
 def alias_vocab() -> Dict[str, List[str]]:
     _refresh_dyn_aliases(force=False)
     cat_keys = set(_CAT_ALIASES.keys()) | set(_DYN_CAT_ALIASES.keys())
-    station_keys = set(_STATION_ALIASES.keys())
+    station_keys = set(station_alias_table().keys())
     cats = sorted({ _display_for(k) for k in cat_keys })
     stations = sorted({ _display_for(k) for k in station_keys })
     all_names = sorted({ _display_for(k) for k in (cat_keys | station_keys) })
@@ -371,6 +338,9 @@ def _display_for(key: str) -> str:
     key_norm = (key or "").lower()
     if key_norm in _DYN_DISPLAY:
         return _DYN_DISPLAY[key_norm]
+    station_disp = station_display_for(key_norm)
+    if station_disp:
+        return station_disp
     return _DISPLAY.get(key_norm, key.title())
 
 
@@ -382,7 +352,7 @@ def _merged_cat_aliases() -> Dict[str, List[str]]:
 
 
 def _merged_station_aliases() -> Dict[str, List[str]]:
-    return {k: list(v) for k, v in _STATION_ALIASES.items()}
+    return station_alias_table()
 
 
 def _alias_pairs(table: Dict[str, List[str]], include_stopword_aliases: bool = False) -> List[Tuple[str, str]]:

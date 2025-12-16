@@ -226,6 +226,11 @@
         .station-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: center; }
         .station-row input { width: 100%; padding: 8px 10px; border: 1px solid var(--grid-line); border-radius: 10px; }
         .station-row .remove-btn { border: 1px solid #d55; background: #fff5f5; color: #d55; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+        .station-section-label { font-size: 1.05rem; font-weight: 800; margin-bottom: 6px; }
+        .station-add-btn { background: #f6f7f4; color: #3e4637; border: 1px solid var(--grid-line); padding: 6px 10px; border-radius: 10px; width: auto; align-self: flex-start; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .select-input { min-width: 200px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight: 700; background: white; }
+        .divider { height: 1px; background: var(--grid-line); margin: 14px 0; }
+        .instructions-banner { flex: 1; text-align: center; font-size: 0.8rem; font-weight: 600; color: var(--site-text); padding: 6px 10px; background: rgba(65,75,59,0.06); border-radius: 10px; }
         /* ... Keep calendar/tab styles the same ... */
         .date-picker { position: relative; display: inline-block; }
         .date-btn { background: var(--site-text); color: var(--site-bg); border: none; padding: 10px 16px; border-radius: 18px; cursor: pointer; font-weight: 700; }
@@ -429,23 +434,10 @@
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
             <div class="controls-legend">
-                <div class="legend-left">
-                    <div class="legend-lines">
-                        <div class="legend-line">
-                            <div class="key-combo">"Click" to select</div>
-                            <div class="key-combo">"Ctrl" + "Click" to multi-select</div>
-                            <div class="key-combo">"Shift" + "Click" for range</div>
-                        </div>
-                        <div class="legend-line legend-line-compact">
-                            <div class="key-combo">"Enter" to assign</div>
-                            <div class="key-combo">"Del" to erase</div>
-                        </div>
-                    </div>
-                </div>
+                <div class="legend-left"></div>
                 <div class="legend-actions">
                     <div class="week-selector">
-                        <label for="week-select" style="font-size:0.8rem; font-weight:700;">Week</label>
-                        <select id="week-select" onchange="handleWeekChange(this.value)" style="min-width: 170px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--grid-line);">
+                        <select id="week-select" onchange="handleWeekChange(this.value)" style="min-width: 180px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight:700;">
                         </select>
                     </div>
                     <div class="search-container" style="width: 240px;">
@@ -458,6 +450,9 @@
                     </div>
 
                     <button class="save-btn" id="save-btn" onclick="saveSchedule()" title="Save schedule">Save</button>
+                </div>
+                <div class="instructions-banner">
+                    "Click" to select • "Ctrl + Click" to multi-select • "Shift + Click" for range • "Enter" to assign • "Del" to erase
                 </div>
             </div>
 
@@ -555,25 +550,29 @@
 
         <div class="sheet-wrapper" id="checklist-container" style="display:none; padding: 0 0 20px 0; width: min(960px, 100%); box-sizing: border-box;">
             <div class="controls-legend" style="margin:0; padding: 0 20px; width: 100%; box-sizing: border-box;">
-                <div class="key-combo">Feeding Settings </div>
+                <div class="key-combo" style="width:100%; text-align:center; justify-content:center;">Feeding Settings (Officers)</div>
             </div>
             <div class="sub-form">
                 <div class="form-row">
-                    <label>Stations</label>
-                    <div class="form-row" style="gap:6px;">
-                        <label for="station-effective-date" style="font-weight:600;">Effective week (Sunday)</label>
-                        <input type="date" id="station-effective-date" />
+                    <label class="station-section-label">Station names and aliases</label>
+                    <div class="form-row" style="gap:6px; justify-content:center; align-items:center;">
+                        <div style="font-weight:600;">Effective week</div>
+                        <select id="station-effective-date" class="select-input"></select>
                     </div>
                     <div id="station-manager-list" class="station-manager"></div>
-                    <button class="save-btn" type="button" onclick="addStationRow()">Add station</button>
+                    <button class="station-add-btn" type="button" onclick="addStationRow()">Add station</button>
                     <div id="station-save-status" class="warn"></div>
                 </div>
                 <div class="form-row">
                     <button class="save-btn" type="button" onclick="saveStations()">Save Stations</button>
                 </div>
+                <div class="divider"></div>
                 <div class="form-row">
-                    <label for="checklist-date">Station Status Date</label>
-                    <input type="date" id="checklist-date" />
+                    <label for="checklist-date">Station status date</label>
+                    <div class="date-picker">
+                        <button class="date-btn" type="button" onclick="document.getElementById('checklist-date').showPicker?.()">Select</button>
+                        <input type="date" id="checklist-date" style="position:absolute; opacity:0; pointer-events:none;">
+                    </div>
                     <div id="checklist-load-status" class="warn"></div>
                 </div>
                 <div class="form-row">
@@ -625,6 +624,7 @@ let stationDefinitions = [];
 let availableWeeks = [];
 let selectedWeek = null;
 let stationEffectiveDate = null;
+let stationVersions = [];
 
 // --- RESIZE OBSERVER FOR STICKY HEADER ---
 const resizeObserver = new ResizeObserver(entries => {
@@ -738,6 +738,7 @@ function resetState() {
     availableWeeks = [];
     selectedWeek = weekStartIso();
     stationEffectiveDate = null;
+    stationVersions = [];
 }
 
 async function init(force = false) {
@@ -818,6 +819,7 @@ async function fetchStations(dateIso = null) {
         if (!res.ok) throw new Error("API Failed");
         const data = await res.json();
         stationDefinitions = data.stations || [];
+        stationVersions = data.versions || [];
         stationEffectiveDate = dateIso || stationEffectiveDate || weekStartIso();
         const inp = document.getElementById('station-effective-date');
         if (inp && !inp.value) inp.value = stationEffectiveDate;
@@ -829,6 +831,7 @@ async function fetchStations(dateIso = null) {
     }
     STATIONS = stationDefinitions.map(s => s.name).filter(Boolean);
     checklistStations = STATIONS.slice();
+    renderStationWeekOptions();
 }
 
 async function loadSchedule() {
@@ -901,7 +904,8 @@ function renderWeekOptions() {
     const sel = document.getElementById('week-select');
     if (!sel) return;
     sel.innerHTML = '';
-    const weeks = availableWeeks.length ? availableWeeks : [selectedWeek || weekStartIso()];
+    const filtered = (availableWeeks.length ? availableWeeks : [selectedWeek || weekStartIso()]).filter(w => w && w !== '1970-01-01');
+    const weeks = filtered.length ? filtered : [weekStartIso()];
     weeks.forEach(w => {
         const opt = document.createElement('option');
         opt.value = w;
@@ -915,9 +919,25 @@ function handleWeekChange(val) {
     selectedWeek = val || weekStartIso();
     loadSchedule();
     stationEffectiveDate = selectedWeek;
-    const stationDateInput = document.getElementById('station-effective-date');
-    if (stationDateInput) stationDateInput.value = selectedWeek;
+    renderStationWeekOptions();
     updateDateButtonLabel();
+}
+
+function renderStationWeekOptions() {
+    const sel = document.getElementById('station-effective-date');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const versionDates = (stationVersions || []).map(v => v.effective_from).filter(d => d && d !== '1970-01-01');
+    if (stationEffectiveDate && !versionDates.includes(stationEffectiveDate)) versionDates.push(stationEffectiveDate);
+    if (!versionDates.length) versionDates.push(weekStartIso());
+    const unique = Array.from(new Set(versionDates)).sort().reverse();
+    unique.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = formatWeekLabel(d);
+        sel.appendChild(opt);
+    });
+    sel.value = stationEffectiveDate || unique[0];
 }
 
 // --- DISTINCT COLOR PALETTE ---
@@ -1488,6 +1508,7 @@ stationEffectiveInput?.addEventListener('change', (e) => {
     stationEffectiveDate = e.target.value || weekStartIso();
     fetchStations(stationEffectiveDate);
     renderStationManager();
+    renderStationWeekOptions();
 });
 
 function setClaimUser(m) {

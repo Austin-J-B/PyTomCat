@@ -12,10 +12,18 @@
   ],
   "days": {
     "2025-12-16": {
-      "Maintenance": true
+      "Maintenance": true,
+      "West Hall": false,
+      "Business": false,
+      "HOP": false,
+      "Lot 50": false,
+      "Mary Kay & Zen": false,
+      "Microwave": false,
+      "Snickers": false,
+      "The Greens": false
     }
   },
   "meta": {
-    "updated_at": "2025-12-16T10:28:37.908043-06:00"
+    "updated_at": "2025-12-16T16:30:59.848343-06:00"
   }
 }

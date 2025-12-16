@@ -226,9 +226,9 @@
         .station-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: center; }
         .station-row input { width: 100%; padding: 8px 10px; border: 1px solid var(--grid-line); border-radius: 10px; }
         .station-row .remove-btn { border: 1px solid #d55; background: #fff5f5; color: #d55; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
-        .station-section-label { font-size: 1.05rem; font-weight: 800; margin-bottom: 6px; }
+        .station-section-label { font-size: 1.12rem; font-weight: 900; margin-bottom: 6px; }
         .station-add-btn { background: #f6f7f4; color: #3e4637; border: 1px solid var(--grid-line); padding: 6px 10px; border-radius: 10px; width: auto; align-self: flex-start; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        .select-input { min-width: 200px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight: 700; background: white; }
+        .select-input { min-width: 180px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight: 600; background: white; }
         .divider { height: 1px; background: var(--grid-line); margin: 14px 0; }
         .instructions-banner { flex: 1; text-align: center; font-size: 0.8rem; font-weight: 600; color: var(--site-text); padding: 6px 10px; background: rgba(65,75,59,0.06); border-radius: 10px; }
         /* ... Keep calendar/tab styles the same ... */
@@ -433,25 +433,24 @@
 
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
-            <div class="controls-legend">
-                <div class="legend-left"></div>
-                <div class="legend-actions">
+            <div class="controls-legend" style="flex-direction:column; align-items:stretch;">
+                <div class="legend-actions" style="width:100%; justify-content:space-between; gap:12px;">
                     <div class="week-selector">
-                        <select id="week-select" onchange="handleWeekChange(this.value)" style="min-width: 180px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight:700;">
+                        <select id="week-select" onchange="handleWeekChange(this.value)" style="min-width: 180px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight:600;">
                         </select>
                     </div>
                     <div class="search-container" style="width: 240px;">
                         <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
                         <div id="search-results" class="search-results"></div>
                     </div>
-
-                    <div id="selection-display" class="current-selection empty">
-                        Select User
+                    <div class="legend-actions" style="gap:12px;">
+                        <div id="selection-display" class="current-selection empty">
+                            Select User
+                        </div>
+                        <button class="save-btn" id="save-btn" onclick="saveSchedule()" title="Save schedule">Save</button>
                     </div>
-
-                    <button class="save-btn" id="save-btn" onclick="saveSchedule()" title="Save schedule">Save</button>
                 </div>
-                <div class="instructions-banner">
+                <div class="instructions-banner" style="margin-top:8px;">
                     "Click" to select • "Ctrl + Click" to multi-select • "Shift + Click" for range • "Enter" to assign • "Del" to erase
                 </div>
             </div>
@@ -550,7 +549,7 @@
 
         <div class="sheet-wrapper" id="checklist-container" style="display:none; padding: 0 0 20px 0; width: min(960px, 100%); box-sizing: border-box;">
             <div class="controls-legend" style="margin:0; padding: 0 20px; width: 100%; box-sizing: border-box;">
-                <div class="key-combo" style="width:100%; text-align:center; justify-content:center;">Feeding Settings (Officers)</div>
+                <div class="key-combo">Feeding Settings</div>
             </div>
             <div class="sub-form">
                 <div class="form-row">
@@ -672,6 +671,21 @@ function stationsForDate(dateIso, userId) {
     return STATIONS.filter(st => idsMatch((scheduleData[st] || [])[dow], userId));
 }
 
+function generateWeekRange(startIso, endIso) {
+    const out = [];
+    const start = new Date(startIso);
+    const end = new Date(endIso);
+    start.setHours(0,0,0,0);
+    end.setHours(0,0,0,0);
+    // snap start to Sunday
+    start.setDate(start.getDate() - start.getDay());
+    while (start <= end) {
+        out.push(start.toISOString().slice(0,10));
+        start.setDate(start.getDate() + 7);
+    }
+    return out;
+}
+
 function weekStartIso(d = new Date()) {
     const dt = new Date(d);
     dt.setHours(0,0,0,0);
@@ -682,6 +696,7 @@ function weekStartIso(d = new Date()) {
 function formatWeekLabel(iso) {
     try {
         const d = new Date(iso);
+        d.setDate(d.getDate() - d.getDay()); //snap to Sunday for display
         const opts = { month: 'short', day: 'numeric', year: 'numeric' };
         return `Week of ${d.toLocaleDateString(undefined, opts)}`;
     } catch (e) {
@@ -820,7 +835,7 @@ async function fetchStations(dateIso = null) {
         const data = await res.json();
         stationDefinitions = data.stations || [];
         stationVersions = data.versions || [];
-        stationEffectiveDate = dateIso || stationEffectiveDate || weekStartIso();
+        stationEffectiveDate = dateIso ? weekStartIso(dateIso) : (stationEffectiveDate || weekStartIso());
         const inp = document.getElementById('station-effective-date');
         if (inp && !inp.value) inp.value = stationEffectiveDate;
     } catch (e) {
@@ -851,8 +866,8 @@ async function loadSchedule() {
             checklistStations = STATIONS.slice();
         }
         scheduleData = normalizeSchedule(data.schedule);
-        selectedWeek = data.effective_from || selectedWeek || weekStartIso();
-        const serverWeeks = data.weeks || [];
+        selectedWeek = data.effective_from ? weekStartIso(data.effective_from) : (selectedWeek || weekStartIso());
+        const serverWeeks = (data.weeks || []).map(w => weekStartIso(w));
         const weekSet = new Set(serverWeeks);
         // include current and next few weeks
         const base = new Date(selectedWeek || weekStartIso());
@@ -904,8 +919,10 @@ function renderWeekOptions() {
     const sel = document.getElementById('week-select');
     if (!sel) return;
     sel.innerHTML = '';
+    const baseRange = generateWeekRange("2024-12-29", "2035-12-28");
     const filtered = (availableWeeks.length ? availableWeeks : [selectedWeek || weekStartIso()]).filter(w => w && w !== '1970-01-01');
-    const weeks = filtered.length ? filtered : [weekStartIso()];
+    const weeks = Array.from(new Set([...filtered, ...baseRange])).sort().reverse();
+    const list = weeks.length ? weeks : [weekStartIso()];
     weeks.forEach(w => {
         const opt = document.createElement('option');
         opt.value = w;
@@ -916,7 +933,7 @@ function renderWeekOptions() {
 }
 
 function handleWeekChange(val) {
-    selectedWeek = val || weekStartIso();
+    selectedWeek = val ? weekStartIso(val) : weekStartIso();
     loadSchedule();
     stationEffectiveDate = selectedWeek;
     renderStationWeekOptions();
@@ -927,10 +944,11 @@ function renderStationWeekOptions() {
     const sel = document.getElementById('station-effective-date');
     if (!sel) return;
     sel.innerHTML = '';
-    const versionDates = (stationVersions || []).map(v => v.effective_from).filter(d => d && d !== '1970-01-01');
-    if (stationEffectiveDate && !versionDates.includes(stationEffectiveDate)) versionDates.push(stationEffectiveDate);
-    if (!versionDates.length) versionDates.push(weekStartIso());
-    const unique = Array.from(new Set(versionDates)).sort().reverse();
+    const baseRange = generateWeekRange("2024-12-29", "2035-12-28");
+    const versionDates = (stationVersions || []).map(v => v.effective_from).filter(d => d && d !== '1970-01-01').map(d => weekStartIso(d));
+    const eff = stationEffectiveDate ? weekStartIso(stationEffectiveDate) : null;
+    if (eff && !versionDates.includes(eff)) versionDates.push(eff);
+    const unique = Array.from(new Set([...versionDates, ...baseRange, weekStartIso()])).sort().reverse();
     unique.forEach(d => {
         const opt = document.createElement('option');
         opt.value = d;
@@ -1505,7 +1523,7 @@ checklistDateInput?.addEventListener('change', (e) => {
 
 const stationEffectiveInput = document.getElementById('station-effective-date');
 stationEffectiveInput?.addEventListener('change', (e) => {
-    stationEffectiveDate = e.target.value || weekStartIso();
+    stationEffectiveDate = e.target.value ? weekStartIso(e.target.value) : weekStartIso();
     fetchStations(stationEffectiveDate);
     renderStationManager();
     renderStationWeekOptions();

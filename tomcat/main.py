@@ -53,6 +53,12 @@ def _debug(msg: str) -> None:
 SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
 #Versioned schedule helpers
 _DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
+
+def _week_start_iso(dt: datetime | None = None) -> str:
+    d = (dt or datetime.now()).date()
+    days_to_sunday = (d.weekday() + 1) % 7  # Monday=0 ->1 day back; Sunday=6 ->0
+    sunday = d - timedelta(days=days_to_sunday)
+    return sunday.isoformat()
 #Rate limiting constants for the web API
 RATE_LIMIT_MAX_REQUESTS = 200
 RATE_LIMIT_WINDOW_SECONDS = 60
@@ -424,12 +430,14 @@ async def get_schedule(request):
     sched = stringify_schedule(resolved.get("schedule", {}))
     stations = station_names(week_param)
     versions = _load_schedule_versions()
-    weeks = sorted([v.get("effective_from") for v in versions if v.get("effective_from")], reverse=True)
+    weeks = sorted([v.get("effective_from") for v in versions if v.get("effective_from") and v.get("effective_from") != _DEFAULT_SCHED_EFFECTIVE], reverse=True)
+    if not weeks:
+        weeks = [_week_start_iso()]
 
     payload = {
         "schedule": sched,
         "stations": stations,
-        "effective_from": resolved.get("effective_from"),
+        "effective_from": resolved.get("effective_from") if resolved.get("effective_from") != _DEFAULT_SCHED_EFFECTIVE else (week_param or _week_start_iso()),
         "weeks": weeks,
         "meta": resolved.get("meta") or {}
     }
@@ -441,7 +449,7 @@ async def get_schedule(request):
 
 import discord
 from discord.ext import commands
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from .config import settings
 from .logger import log_event, log_action  #noqa: F401  #imported for shared use

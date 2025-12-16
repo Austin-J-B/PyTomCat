@@ -1,7 +1,7 @@
 # Security Policy
 
 ## Reporting a Vulnerability
-- Email critical or suspected vulnerabilities to [austinbrown6000@gmail.com](mailto:austinbrown6000@gmail.com).
+- Email critical or suspected vulnerabilities to [utacampuscats@gmail.com](mailto:utacampuscats@gmail.com).
 - Please include reproduction steps, logs, and the affected endpoints or commands.
 - Do not open public GitHub issues for security problems.
 

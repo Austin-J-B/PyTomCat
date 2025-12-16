@@ -834,7 +834,8 @@ async def start_web_server(bot):
                     f.write(json.dumps(record) + "\n")
                 records_written.append(record)
         except Exception as e:
-            return _with_cors(web.Response(status=500, text=f"Log error: {e}"), request)
+            logging.exception("Exception occurred while writing sub request log")
+            return _with_cors(web.Response(status=500, text="An internal error occurred"), request)
 
         #Notify Discord once for the batch
         try:

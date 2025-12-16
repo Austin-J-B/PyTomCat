@@ -1004,7 +1004,7 @@ _MORNING_SCHEDULER_STARTED = False
 
 
 async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.View | None]:
-    """Builds the 6:30 AM 'Good Morning' message with the day's feeding schedule."""
+    """Builds the 7:45 AM 'Good Morning' message with the day's feeding schedule."""
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
     today_iso = today.isoformat()
     # This looks odd, but is how the 8pm scheduler gets the weekday name for the schedule lookup.
@@ -1069,7 +1069,7 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
     return "\n".join(lines), view
 
 async def start_morning_scheduler(bot: discord.Client) -> None:
-    """Kick off the daily 6:30am morning message."""
+    """Kick off the daily 7:40am morning message."""
     global _MORNING_SCHEDULER_STARTED
     async with _MORNING_SCHEDULER_LOCK:
         if _MORNING_SCHEDULER_STARTED:
@@ -1078,7 +1078,7 @@ async def start_morning_scheduler(bot: discord.Client) -> None:
         async def _runner():
             while True:
                 try:
-                    await _sleep_until_local_time(6, 30)
+                    await _sleep_until_local_time(7, 40)
                     channel_id = getattr(settings, "ch_feeding_team", None)
                     if not channel_id:
                         log_action("morning_scheduler", "channel=None", "skipped")

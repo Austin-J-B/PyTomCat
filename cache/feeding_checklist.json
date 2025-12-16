@@ -1,0 +1,21 @@
+{
+  "stations": [
+    "Business",
+    "HOP",
+    "Lot 50",
+    "Maintenance",
+    "Mary Kay & Zen",
+    "Microwave",
+    "Snickers",
+    "The Greens",
+    "West Hall"
+  ],
+  "days": {
+    "2025-12-16": {
+      "Maintenance": true
+    }
+  },
+  "meta": {
+    "updated_at": "2025-12-16T10:28:37.908043-06:00"
+  }
+}

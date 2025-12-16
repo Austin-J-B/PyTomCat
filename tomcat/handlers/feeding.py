@@ -40,6 +40,7 @@ _SUBS_LOCK = asyncio.Lock()
 
 #UI-provided schedule cache
 UI_SCHEDULE_PATH = _PACKAGE_ROOT / "cache" / "feeding_schedule.json"
+_DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
 FEEDING_CHECKLIST_PATH = _PACKAGE_ROOT / "cache" / "feeding_checklist.json"
 _FEEDING_CHECKLIST_LOCK = asyncio.Lock()
 
@@ -263,7 +264,11 @@ def _authorized_requesters_for_sub(station: str, dates: Iterable[str], files: Li
         weekday = _weekday_token(iso)
         if not weekday:
             continue
-        sched = _read_schedule_for_weekday(weekday)
+        try:
+            tgt = datetime.fromisoformat(iso).date()
+        except Exception:
+            tgt = None
+        sched = _read_schedule_for_weekday(weekday, tgt)
         allowed.update(sched.get(station_key, []))
 
     for _, rows in files:
@@ -424,21 +429,48 @@ def _coerce_uid(val) -> Optional[int | str]:
         return s  #allow non-numeric IDs
 
 
-def _load_ui_schedule() -> Dict[str, List[str]]:
-    """Load the UI-authored schedule from cache/feeding_schedule.json."""
+def _load_schedule_versions() -> List[dict]:
+    if not UI_SCHEDULE_PATH.exists():
+        return []
     try:
         data = json.loads(UI_SCHEDULE_PATH.read_text(encoding="utf-8"))
-        sched = data.get("schedule", {}) or {}
-        if isinstance(sched, dict):
-            return {k: v if isinstance(v, list) else [] for k, v in sched.items()}
+        if isinstance(data, dict) and "versions" in data:
+            return data.get("versions") or []
+        if isinstance(data, dict) and "schedule" in data:
+            return [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
+        if isinstance(data, list):
+            return data
     except Exception:
-        pass
-    return {}
+        return []
+    return []
 
 
-def _read_schedule_for_weekday(weekday_name: str) -> Dict[str, List[int | str]]:
-    """Read schedule from cache/feeding_schedule.json in station->7-day format."""
-    cfg: Dict[str, List[str]] = _load_ui_schedule()
+def _resolve_schedule_for_date(target_date: Optional[date]) -> Dict[str, Any]:
+    versions = _load_schedule_versions()
+    if not target_date:
+        target_date = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
+    if not versions:
+        return {"schedule": {}, "effective_from": _DEFAULT_SCHED_EFFECTIVE}
+    best = None
+    for v in versions:
+        try:
+            eff = datetime.fromisoformat(str(v.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date()
+        except Exception:
+            continue
+        if eff <= target_date and (best is None or datetime.fromisoformat(str(best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date() < eff):
+            best = v
+    if not best:
+        best = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[0]
+    sched = best.get("schedule") or {}
+    if not isinstance(sched, dict):
+        sched = {}
+    return {"schedule": sched, "effective_from": best.get("effective_from")}
+
+
+def _read_schedule_for_weekday(weekday_name: str, target_date: Optional[date] = None) -> Dict[str, List[int | str]]:
+    """Read schedule in station->7-day format for the version effective on target_date."""
+    resolved = _resolve_schedule_for_date(target_date)
+    cfg: Dict[str, List[str]] = resolved.get("schedule", {}) or {}
     wk_names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
     idx = 0
     low = (weekday_name or "").lower()
@@ -707,7 +739,7 @@ async def handle_feeding_inquiry(intent, ctx: Dict[str, Any]) -> None:
     #Get today’s stations from the configured schedule (fallback to keys union if needed)
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
     weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
-    today_sched = _read_schedule_for_weekday(weekday)  #{station: [user_ids]}
+    today_sched = _read_schedule_for_weekday(weekday, today)  #{station: [user_ids]}
     stations = sorted(today_sched.keys())
 
     unfed = await _list_unfed_stations_today()  #TODO: wire to Sheets
@@ -1012,7 +1044,7 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
     # Sunday (weekday() == 6) becomes "Sun", which is at index 0. It's quirky but consistent.
     weekday_name = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][today.weekday()]
     
-    sched = _read_schedule_for_weekday(weekday_name)
+    sched = _read_schedule_for_weekday(weekday_name, today)
     todays_stations = sorted([s for s in sched.keys() if sched.get(s)])
 
     async with _SUBS_LOCK:
@@ -1201,7 +1233,7 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> None:
     #choose who to ping: subs first, else default schedule
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
     weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
-    sched = _read_schedule_for_weekday(weekday)
+    sched = _read_schedule_for_weekday(weekday, today)
 
     #Build a message that pings the right people
     lines = await build_8pm_lines(bot, unfed=unfed, sched=sched, mention=True)
@@ -1240,7 +1272,7 @@ async def build_8pm_lines(
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
     if sched is None:
         weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
-        sched = _read_schedule_for_weekday(weekday)
+        sched = _read_schedule_for_weekday(weekday, today)
     async with _SUBS_LOCK:
         files = _load_sub_files(_recent_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
         subs: List[dict] = []
@@ -1352,7 +1384,7 @@ async def build_schedule_for_date(
     mention: bool = False,
 ) -> str:
     weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][target_date.weekday()]
-    sched = _read_schedule_for_weekday(weekday) or {}
+    sched = _read_schedule_for_weekday(weekday, target_date) or {}
 
     target_dt = datetime.combine(target_date, datetime.min.time())
     target_key = _sub_month_key_from_datetime(target_dt)

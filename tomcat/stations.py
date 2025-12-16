@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from datetime import datetime
+from datetime import datetime, date
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 STATIONS_PATH = _PACKAGE_ROOT / "cache" / "stations.json"
+_DEFAULT_EFFECTIVE = "1970-01-01"
 
 
 def _now_iso() -> str:
@@ -40,27 +41,7 @@ _SEEDED_STATIONS: List[Dict] = [
 ]
 
 
-def _load_raw() -> dict:
-    if STATIONS_PATH.exists():
-        try:
-            with open(STATIONS_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                data["stations"] = data.get("stations") or []
-                data["meta"] = data.get("meta") or {}
-                return data
-        except Exception:
-            pass
-    # Seed new file
-    seeded = {"stations": _SEEDED_STATIONS, "meta": {"seeded_at": _now_iso()}}
-    STATIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = STATIONS_PATH.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(seeded, f, indent=2)
-    tmp.replace(STATIONS_PATH)
-    return seeded
-
-
-def save_stations(stations: List[Dict], update_meta: bool = True) -> None:
+def _clean_stations(stations: List[Dict]) -> List[Dict]:
     cleaned: List[Dict] = []
     seen = set()
     for item in stations:
@@ -86,16 +67,47 @@ def save_stations(stations: List[Dict], update_meta: bool = True) -> None:
             if na not in aliases:
                 aliases.append(na)
         cleaned.append({"name": name, "aliases": aliases})
+    return cleaned
 
-    try:
-        current_meta = _load_raw().get("meta", {})
-    except Exception:
-        current_meta = {}
 
-    payload = {"stations": cleaned, "meta": current_meta}
+def _load_versions() -> List[Dict]:
+    if STATIONS_PATH.exists():
+        try:
+            with open(STATIONS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and "versions" in data:
+                versions = data.get("versions") or []
+            elif isinstance(data, dict) and "stations" in data:
+                # Legacy single version
+                versions = [{"effective_from": _DEFAULT_EFFECTIVE, "stations": data.get("stations") or []}]
+            elif isinstance(data, list):
+                # Defensive fallback
+                versions = data
+            else:
+                versions = []
+        except Exception:
+            versions = []
+    else:
+        versions = []
+
+    if not versions:
+        versions = [{"effective_from": _DEFAULT_EFFECTIVE, "stations": _SEEDED_STATIONS}]
+        _save_versions(versions, update_meta=False)
+
+    # Normalize/clean
+    for v in versions:
+        v["effective_from"] = v.get("effective_from") or _DEFAULT_EFFECTIVE
+        v["stations"] = _clean_stations(v.get("stations") or [])
+    return versions
+
+
+def _save_versions(versions: List[Dict], update_meta: bool = True) -> None:
+    payload = {
+        "versions": versions,
+        "meta": {}
+    }
     if update_meta:
         payload["meta"]["updated_at"] = _now_iso()
-
     STATIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = STATIONS_PATH.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
@@ -103,17 +115,49 @@ def save_stations(stations: List[Dict], update_meta: bool = True) -> None:
     tmp.replace(STATIONS_PATH)
 
 
-def station_definitions() -> List[Dict]:
-    return _load_raw().get("stations", [])
+def _resolve_version(target: Optional[date]) -> Dict:
+    versions = _load_versions()
+    if not target:
+        target = date.today()
+    # pick latest effective_from <= target
+    best = None
+    for v in versions:
+        try:
+            eff = datetime.fromisoformat(str(v.get("effective_from"))).date()
+        except Exception:
+            continue
+        if eff <= target and (best is None or datetime.fromisoformat(str(best.get("effective_from"))).date() < eff):
+            best = v
+    if best:
+        return best
+    # fallback earliest
+    return sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_EFFECTIVE)[0]
 
 
-def station_names() -> List[str]:
-    return [item.get("name") or "" for item in station_definitions() if item.get("name")]
+def station_versions() -> List[Dict]:
+    return sorted(_load_versions(), key=lambda v: v.get("effective_from") or _DEFAULT_EFFECTIVE, reverse=True)
 
 
-def station_alias_table() -> Dict[str, List[str]]:
+def station_definitions(target: Optional[date | str] = None) -> List[Dict]:
+    dt_obj = None
+    if isinstance(target, str):
+        try:
+            dt_obj = datetime.fromisoformat(target).date()
+        except Exception:
+            dt_obj = None
+    elif isinstance(target, date):
+        dt_obj = target
+    ver = _resolve_version(dt_obj)
+    return ver.get("stations") or []
+
+
+def station_names(target: Optional[date | str] = None) -> List[str]:
+    return [item.get("name") or "" for item in station_definitions(target) if item.get("name")]
+
+
+def station_alias_table(target: Optional[date | str] = None) -> Dict[str, List[str]]:
     table: Dict[str, List[str]] = {}
-    for item in station_definitions():
+    for item in station_definitions(target):
         name = item.get("name") or ""
         key = _norm(name)
         aliases = []
@@ -128,9 +172,30 @@ def station_alias_table() -> Dict[str, List[str]]:
     return table
 
 
-def station_display_for(key: str) -> str:
+def station_display_for(key: str, *, target: Optional[date | str] = None) -> str:
     k = _norm(key)
-    for item in station_definitions():
+    for item in station_definitions(target):
         if _norm(item.get("name") or "") == k:
             return item.get("name") or key
     return key
+
+
+def save_stations_version(stations: List[Dict], effective_from: str) -> List[Dict]:
+    """Upsert a station version and return sorted versions."""
+    cleaned = _clean_stations(stations)
+    try:
+        eff_date = datetime.fromisoformat(str(effective_from)).date().isoformat()
+    except Exception:
+        eff_date = _DEFAULT_EFFECTIVE
+    versions = _load_versions()
+    replaced = False
+    for v in versions:
+        if str(v.get("effective_from")) == eff_date:
+            v["stations"] = cleaned
+            replaced = True
+            break
+    if not replaced:
+        versions.append({"effective_from": eff_date, "stations": cleaned})
+    versions = sorted(versions, key=lambda v: v.get("effective_from") or _DEFAULT_EFFECTIVE)
+    _save_versions(versions, update_meta=True)
+    return versions

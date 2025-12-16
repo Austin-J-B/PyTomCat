@@ -165,9 +165,92 @@
           ]
         }
       ]
+    },
+    {
+      "effective_from": "2025-12-21",
+      "stations": [
+        {
+          "name": "Microwave",
+          "aliases": [
+            "mike",
+            "mikey",
+            "miker",
+            "micro",
+            "wave",
+            "old man",
+            "michael",
+            "him",
+            "himb",
+            "chemistry",
+            "chemistry building",
+            "chemistry/planetarium building",
+            "planetarium",
+            "planetarium building",
+            "library",
+            "life science building",
+            "library life science building"
+          ]
+        },
+        {
+          "name": "Snickers",
+          "aliases": [
+            "snicks"
+          ]
+        },
+        {
+          "name": "Business",
+          "aliases": [
+            "coba"
+          ]
+        },
+        {
+          "name": "The Greens",
+          "aliases": [
+            "greens",
+            "green",
+            "grink",
+            "grinks",
+            "center chase",
+            "center chase apartments",
+            "center chase apartments & the greens"
+          ]
+        },
+        {
+          "name": "HOP",
+          "aliases": [
+            "pecan",
+            "thwop",
+            "thop",
+            "heights",
+            "hops",
+            "heights on pecan"
+          ]
+        },
+        {
+          "name": "Lot 50",
+          "aliases": [
+            "lot50",
+            "l50",
+            "lot"
+          ]
+        },
+        {
+          "name": "West Hall",
+          "aliases": [
+            "west",
+            "hall"
+          ]
+        },
+        {
+          "name": "Maintenance",
+          "aliases": [
+            "maint"
+          ]
+        }
+      ]
     }
   ],
   "meta": {
-    "updated_at": "2025-12-16T16:12:21.934989"
+    "updated_at": "2025-12-16T16:59:41.007980"
   }
 }

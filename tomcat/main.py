@@ -682,7 +682,10 @@ async def start_web_server(bot):
         try:
             save_stations(stations_payload, update_meta=True)
         except Exception as e:
-            return _with_cors(web.Response(status=500, text=f"Failed to save stations: {e}"), request)
+            logging.exception("Failed to save stations")  # Logs the full stack trace
+            return _with_cors(
+                web.Response(status=500, text="Failed to save stations due to an internal error."), request
+            )
         # Reload and return updated list
         return _with_cors(web.json_response({"stations": station_definitions()}), request)
 

@@ -734,7 +734,8 @@ async def start_web_server(bot):
         except ValueError:
             return _with_cors(web.Response(status=400, text="Invalid date format"), request)
         except Exception as e:
-            return _with_cors(web.Response(status=500, text=f"Save failed: {e}"), request)
+            logging.exception("Error saving feeding checklist")
+            return _with_cors(web.Response(status=500, text="Save failed due to an internal error"), request)
 
     async def submit_subrequest(request):
         """Record a manual sub request."""

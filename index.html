@@ -226,15 +226,15 @@
         .station-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: center; }
         .station-row input { width: 100%; padding: 8px 10px; border: 1px solid var(--grid-line); border-radius: 10px; }
         .station-row .remove-btn { border: 1px solid #d55; background: #fff5f5; color: #d55; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
-        .station-section-label { font-size: 1.12rem; font-weight: 900; margin-bottom: 6px; }
+        .station-section-label { font-size: 1.16rem; font-weight: 900; letter-spacing: 0.01em; margin-bottom: 2px; }
         .station-add-btn { background: #f6f7f4; color: #3e4637; border: 1px solid var(--grid-line); padding: 6px 10px; border-radius: 10px; width: auto; align-self: flex-start; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .select-input { min-width: 180px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight: 500; background: white; }
-        .controls-legend-stack { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 8px; }
-        .top-controls { width: 100%; display: flex; align-items: center; gap: 12px; }
-        .legend-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+        .controls-legend-stack { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 4px; border-bottom: 0; }
+        .top-controls { width: 100%; display: flex; align-items: center; gap: 10px; }
+        .legend-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
         .search-container.compact { width: 240px; }
         .divider { height: 1px; background: var(--grid-line); margin: 14px 0; }
-        .instructions-banner { width: 100%; text-align: left; font-size: 0.85rem; font-weight: 500; color: #6f7568; padding: 10px 16px; background: white; border: 1px solid var(--grid-line); border-radius: 6px 6px 0 0; margin: 6px 0 0 0; letter-spacing: 0.01em; }
+        .instructions-banner { width: 100%; text-align: left; font-size: 0.85rem; font-weight: 500; color: #6f7568; padding: 8px 16px; background: transparent; border-top: 1px solid var(--grid-line); border-bottom: 1px solid var(--grid-line); border-radius: 0; margin: 0; letter-spacing: 0.01em; }
         /* ... Keep calendar/tab styles the same ... */
         .date-picker { position: relative; display: inline-block; }
         .date-btn { background: var(--site-text); color: var(--site-bg); border: none; padding: 10px 16px; border-radius: 18px; cursor: pointer; font-weight: 700; }
@@ -315,9 +315,9 @@
             min-height: var(--legend-min-height);
             background: var(--header-tan);
             color: var(--site-text);
-            padding: 8px 16px; 
-            border-bottom: 2px solid var(--site-text);
-            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            padding: 6px 14px; 
+            border-bottom: 1px solid var(--grid-line);
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
             font-family: 'Montserrat', sans-serif; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
         }
 
@@ -337,7 +337,7 @@
         .legend-line-compact { gap: 14px; }
         .key-combo { display: inline-flex; align-items: center; white-space: nowrap; }
         .legend-actions { display: flex; align-items: center; gap: 12px; }
-        .legend-actions .search-container { padding: 6px 0; margin: 4px 0; }
+        .legend-actions .search-container { padding: 2px 0; margin: 0; }
 
         table { border-collapse: collapse; background: white; color: var(--site-text); user-select: none; border-spacing: 0; }
 
@@ -560,7 +560,7 @@
             <div class="sub-form">
                 <div class="form-row">
                     <label class="station-section-label">Station names and aliases</label>
-                    <div class="form-row" style="gap:6px; justify-content:center; align-items:center;">
+                    <div class="form-row" style="gap:4px; justify-content:center; align-items:center;">
                         <div style="font-weight:500;">Effective week</div>
                         <select id="station-effective-date" class="select-input"></select>
                     </div>

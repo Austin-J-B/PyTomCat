@@ -51,12 +51,6 @@ def _debug(msg: str) -> None:
 
 #Local persistence for the UI schedule
 SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
-#Fallback station list for empty schedules (mirrors UI)
-DEFAULT_STATIONS = [
-    "Microwave", "Snickers", "Business", "The Greens", "HOP",
-    "Lot 50", "Mary Kay & Zen", "West Hall", "Maintenance"
-]
-
 #Rate limiting constants for the web API
 RATE_LIMIT_MAX_REQUESTS = 200
 RATE_LIMIT_WINDOW_SECONDS = 60
@@ -354,10 +348,9 @@ async def get_schedule(request):
         return new_sched
 
     if not SCHEDULE_PATH.exists():
-        empty = {station: [""] * 7 for station in (getattr(settings, "feeding_schedule", {}) or {}).keys()}
-        if not empty:
-            empty = {station: [""] * 7 for station in DEFAULT_STATIONS}
-        resp = web.json_response({"schedule": empty, "meta": {"saved_at": None}})
+        base_stations = station_names()
+        empty = {station: [""] * 7 for station in base_stations}
+        resp = web.json_response({"schedule": empty, "stations": base_stations, "meta": {"saved_at": None}})
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         return _with_cors(resp, request)
 
@@ -367,6 +360,7 @@ async def get_schedule(request):
         
         #CRITICAL FIX: Stringify to prevent browser rounding
         payload["schedule"] = stringify_schedule(sched)
+        payload["stations"] = station_names()
         
         _debug(f"/api/schedule returning stations={list(sched.keys())} saved_at={payload.get('meta',{}).get('saved_at')}")
         
@@ -386,6 +380,9 @@ from .intent_router import IntentRouter, Intent
 from .handlers.misc import handle_channel_image_intake as _handle_image_intake, start_profile_scheduler
 from .services.show_cache import warm_cache_on_boot
 from .services.profile_cache import start_profile_cache_scheduler
+from .handlers import feeding as _feed
+from .stations import station_names, station_definitions, save_stations
+from UserInterface.sub_request_linker import build_open_sub_requests_view
 
 
 intent_router = IntentRouter()
@@ -493,6 +490,19 @@ def _channel_label(ch: discord.abc.Messageable) -> str:
     #Group DM, Stage, Voice, PartialMessageable, whatever else
     name = getattr(ch, "name", None)
     return f"#{name}" if isinstance(name, str) and name else ch.__class__.__name__.lower()
+
+
+def _format_date_for_notification(date_iso: str) -> str:
+    """Formats an ISO date string into 'Weekday, MM/DD/YYYY'."""
+    try:
+        # Handles both 'YYYY-MM-DD' and 'YYYY-MM-DDTHH:MM:SS'
+        dt = datetime.fromisoformat(date_iso.split('T')[0])
+        dow = dt.strftime("%A")
+        date_pretty = dt.strftime("%m/%d/%Y")
+        return f"{dow}, {date_pretty}"
+    except (ValueError, TypeError):
+        return date_iso # Fallback to original string if something is wrong
+
 
 
 
@@ -641,11 +651,40 @@ async def start_web_server(bot):
     async def options_schedule_save(request):
         return _with_cors(web.Response(status=204), request)
 
+    async def options_stations(request):
+        return _with_cors(web.Response(status=204), request)
+
     async def options_auth_token(request):
         return _with_cors(web.Response(status=204), request)
 
     async def options_auth_session(request):
         return _with_cors(web.Response(status=204), request)
+
+    async def get_stations_api(request):
+        """Return current station definitions (names + aliases)."""
+        _, error = _require_permissions(request, require_view=True)
+        if error:
+            return error
+        return _with_cors(web.json_response({"stations": station_definitions()}), request)
+
+    async def save_stations_api(request):
+        """Replace station definitions; officer only."""
+        _, error = _require_permissions(request, require_view=True, require_edit=True)
+        if error:
+            return error
+        try:
+            data = await request.json()
+        except Exception:
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+        stations_payload = data.get("stations")
+        if not isinstance(stations_payload, list):
+            return _with_cors(web.Response(status=400, text="Stations must be a list"), request)
+        try:
+            save_stations(stations_payload, update_meta=True)
+        except Exception as e:
+            return _with_cors(web.Response(status=500, text=f"Failed to save stations: {e}"), request)
+        # Reload and return updated list
+        return _with_cors(web.json_response({"stations": station_definitions()}), request)
 
     async def options_subrequest(request):
         return _with_cors(web.Response(status=204), request)
@@ -655,6 +694,44 @@ async def start_web_server(bot):
 
     async def options_sub_claim(request):
         return _with_cors(web.Response(status=204), request)
+
+    async def options_feeding_checklist(request):
+        return _with_cors(web.Response(status=204), request)
+
+    async def get_feeding_checklist(request):
+        """Officer-only: read local feeding checklist within a date range."""
+        _, error = _require_permissions(request, require_edit=True)
+        if error:
+            return error
+        q_from = request.query.get("from")
+        q_to = request.query.get("to")
+        payload = _feed.get_feeding_snapshot(q_from, q_to)
+        return _with_cors(web.json_response(payload), request)
+
+    async def save_feeding_checklist(request):
+        """Officer-only: replace station fed/unfed state for a date."""
+        _, error = _require_permissions(request, require_edit=True)
+        if error:
+            return error
+        try:
+            data = await request.json()
+        except Exception:
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
+        date_iso = data.get("date")
+        status_map = data.get("status") or {}
+        if not date_iso or not isinstance(status_map, dict):
+            return _with_cors(web.Response(status=400, text="Missing required fields"), request)
+
+        try:
+            status_clean = {_feed._canonical_station(k) or k: bool(v) for k, v in status_map.items()}
+            await _feed.set_feeding_day_status(date_iso, status_clean)
+            snap = _feed.get_feeding_snapshot(date_iso, date_iso)
+            return _with_cors(web.json_response(snap), request)
+        except ValueError:
+            return _with_cors(web.Response(status=400, text="Invalid date format"), request)
+        except Exception as e:
+            return _with_cors(web.Response(status=500, text=f"Save failed: {e}"), request)
 
     async def submit_subrequest(request):
         """Record a manual sub request."""
@@ -679,53 +756,96 @@ async def start_web_server(bot):
         #If officer didn't provide a specific user (standard submit), default to self
         if not req_user_id:
             req_user_id = session.get("user_id")
+        if not req_user_name:
+            req_user_name = session.get("username")
 
-        date_iso = data.get("date")
-        stations = data.get("stations") or []
+        raw_requests = data.get("requests")
+        parsed_requests = []
 
-        if not req_user_id or not date_iso or not stations:
+        if isinstance(raw_requests, list) and raw_requests:
+            for entry in raw_requests:
+                date_iso = entry.get("date")
+                stations = entry.get("stations") or []
+                if not date_iso or not stations:
+                    continue
+                try:
+                    date_obj = datetime.fromisoformat(str(date_iso))
+                    date_iso_clean = date_obj.date().isoformat()
+                except ValueError:
+                    continue
+                stations_clean = [s for s in stations if s]
+                if stations_clean:
+                    parsed_requests.append({
+                        "date": date_iso_clean,
+                        "stations": list(dict.fromkeys(stations_clean)),
+                    })
+        else:
+            date_iso = data.get("date")
+            stations = data.get("stations") or []
+            if not req_user_id or not date_iso or not stations:
+                return _with_cors(web.Response(status=400, text="Missing required fields"), request)
+            try:
+                date_obj = datetime.fromisoformat(str(date_iso))
+                date_iso_clean = date_obj.date().isoformat()
+            except ValueError:
+                return _with_cors(web.Response(status=400, text="Invalid date format"), request)
+            stations_clean = [s for s in stations if s]
+            parsed_requests.append({
+                "date": date_iso_clean,
+                "stations": list(dict.fromkeys(stations_clean)),
+            })
+
+        if not req_user_id or not parsed_requests:
             return _with_cors(web.Response(status=400, text="Missing required fields"), request)
 
-        try:
-            date_obj = datetime.fromisoformat(str(date_iso))
-            date_iso = date_obj.date().isoformat()
-        except ValueError:
-            return _with_cors(web.Response(status=400, text="Invalid date format"), request)
+        batch_id = f"sub-{int(datetime.now().timestamp()*1000)}"
+        created_ts = datetime.now().isoformat()
+        records_written = []
 
-        #Append to logs/subs/YYYY/YYYY-MM.jsonl
+        #Append each date as its own record so the claim UI stays simple
         try:
             from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
-            month_key = _sub_month_key_from_date(date_iso) or datetime.now().strftime("%Y-%m")
-            path = _sub_log_path_from_key(month_key)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            
-            record = {
-                "kind": "sub_request",
-                "id": f"sub-{int(datetime.now().timestamp()*1000)}",
-                "station": ", ".join(stations),
-                "stations": stations,
-                "dates": [date_iso],
-                "requester": str(req_user_id),  #Force string to future-proof
-                "requester_name": req_user_name,
-                "assignee": None,
-                "status": "requested",
-                "created_at": datetime.now().isoformat(),
-                "trigger_phrase": "ui_sub_request",
-            }
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record) + "\n")
+            for idx, req in enumerate(parsed_requests, start=1):
+                date_iso = req["date"]
+                stations = req["stations"]
+                month_key = _sub_month_key_from_date(date_iso) or datetime.now().strftime("%Y-%m")
+                path = _sub_log_path_from_key(month_key)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+
+                record = {
+                    "kind": "sub_request",
+                    "id": f"{batch_id}-{idx}",
+                    "parent_id": batch_id,
+                    "station": ", ".join(stations),
+                    "stations": stations,
+                    "dates": [date_iso],
+                    "requester": str(req_user_id),  #Force string to future-proof
+                    "requester_name": req_user_name,
+                    "assignee": None,
+                    "status": "requested",
+                    "created_at": created_ts,
+                    "trigger_phrase": "ui_sub_request",
+                }
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record) + "\n")
+                records_written.append(record)
         except Exception as e:
             return _with_cors(web.Response(status=500, text=f"Log error: {e}"), request)
 
-        #Notify Discord
+        #Notify Discord once for the batch
         try:
             channel_id = getattr(settings, "ch_feeding_team", None)
             if channel_id:
                 ch = bot.get_channel(int(channel_id))
                 if hasattr(ch, 'send'):
-                    stations_str = ", ".join(stations)
-                    msg = f"<@{req_user_id}> requested a sub for **{stations_str}** on {date_iso}."
-                    await ch.send(msg)
+                    lines = [f"<@{req_user_id}> requested substitutes:"]
+                    for rec in records_written:
+                        stations_str = rec.get("station") or ", ".join(rec.get("stations") or [])
+                        date_iso = (rec.get("dates") or [""])[0]
+                        pretty_date = _format_date_for_notification(date_iso)
+                        lines.append(f"- {pretty_date}: **{stations_str}**")
+                    view = build_open_sub_requests_view()
+                    await ch.send("\n".join(lines), view=view)
         except Exception:
             pass
 
@@ -799,7 +919,8 @@ async def start_web_server(bot):
                         actor_label = f"<@{actor_id}>" if actor_id else actor_name
                         kind = "Request" if deleted_item.get("kind") == "sub_request" else "Claim"
                         st = deleted_item.get("station") or "Unknown"
-                        await ch.send(f"**{kind} Deleted**: {actor_label} removed the item for **{st}** on {date_iso}.")
+                        pretty_date = _format_date_for_notification(date_iso)
+                        await ch.send(f"**{kind} Deleted**: {actor_label} removed the item for **{st}** on {pretty_date}.")
 
                 return _with_cors(web.json_response({"status": "ok"}), request)
             else:
@@ -1136,6 +1257,12 @@ async def start_web_server(bot):
         web.get('/api/schedule', get_schedule),
         web.options('/api/schedule', options_schedule),
         web.options('/api/schedule/save', options_schedule_save),
+        web.get('/api/stations', get_stations_api),
+        web.post('/api/stations', save_stations_api),
+        web.options('/api/stations', options_stations),
+        web.get('/api/feeding/checklist', get_feeding_checklist),
+        web.post('/api/feeding/checklist', save_feeding_checklist),
+        web.options('/api/feeding/checklist', options_feeding_checklist),
         web.post('/api/subrequest', submit_subrequest),
         web.options('/api/subrequest', options_subrequest),
         web.get('/api/subs/open', list_open_subs),

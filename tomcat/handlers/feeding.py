@@ -19,6 +19,7 @@ from ..config import settings
 from ..logger import log_action
 from ..services.sheets_client import sheets_client
 from ..aliases import resolve_station_or_cat
+from ..stations import station_names
 from ..utils.sender import safe_send
 
 #Optional TZ support
@@ -39,6 +40,8 @@ _SUBS_LOCK = asyncio.Lock()
 
 #UI-provided schedule cache
 UI_SCHEDULE_PATH = _PACKAGE_ROOT / "cache" / "feeding_schedule.json"
+FEEDING_CHECKLIST_PATH = _PACKAGE_ROOT / "cache" / "feeding_checklist.json"
+_FEEDING_CHECKLIST_LOCK = asyncio.Lock()
 
 #------------- simple data types ----------------
 @dataclass
@@ -72,6 +75,14 @@ def _load_json(path: str, default):
             return json.load(f)
     except Exception:
         return default
+
+
+def _save_json_atomic(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    tmp.replace(path)
 
 def _sub_month_key_from_datetime(dt: datetime) -> str:
     """Convert a datetime into the YYYY-MM month key."""
@@ -527,6 +538,94 @@ def _station_header_map(ws) -> Dict[str, int]:
             out[nm] = i
     return out
 
+
+#------------- Local feeding checklist store -------------
+def _load_feeding_checklist_data() -> dict:
+    data = _load_json(str(FEEDING_CHECKLIST_PATH), {"stations": [], "days": {}, "meta": {}})
+    data["stations"] = data.get("stations") or []
+    data["days"] = data.get("days") or {}
+    data["meta"] = data.get("meta") or {}
+    return data
+
+
+def _station_universe(existing: Optional[dict] = None) -> List[str]:
+    data = existing or _load_feeding_checklist_data()
+    names: set[str] = set()
+    for st in station_names():
+        canon = _canonical_station(st) or st
+        if canon:
+            names.add(canon)
+    for st in data.get("stations", []):
+        canon = _canonical_station(st) or st
+        if canon:
+            names.add(canon)
+    sched_payload = _load_json(str(UI_SCHEDULE_PATH), {})
+    sched = sched_payload.get("schedule", {}) or {}
+    for st in sched.keys():
+        canon = _canonical_station(st) or st
+        if canon:
+            names.add(canon)
+    return sorted(names)
+
+
+def get_feeding_snapshot(date_from: Optional[str] = None, date_to: Optional[str] = None) -> dict:
+    """Return a slice of the checklist for the requested date range."""
+    try:
+        d_from = datetime.fromisoformat(date_from).date() if date_from else None
+    except Exception:
+        d_from = None
+    try:
+        d_to = datetime.fromisoformat(date_to).date() if date_to else None
+    except Exception:
+        d_to = None
+
+    data = _load_feeding_checklist_data()
+    stations = _station_universe(data)
+    days: Dict[str, Dict[str, bool]] = {}
+    for iso, day in data.get("days", {}).items():
+        try:
+            d = datetime.fromisoformat(iso).date()
+        except Exception:
+            continue
+        if d_from and d < d_from:
+            continue
+        if d_to and d > d_to:
+            continue
+        # Normalize day map to known stations
+        days[iso] = {st: bool(day.get(st, False)) for st in stations}
+
+    return {
+        "stations": stations,
+        "days": days,
+        "meta": {"updated_at": data.get("meta", {}).get("updated_at")}
+    }
+
+
+async def set_feeding_day_status(date_iso: str, status: Dict[str, Any]) -> dict:
+    """Persist the given station status map for one date."""
+    try:
+        clean_date = datetime.fromisoformat(date_iso).date().isoformat()
+    except Exception:
+        raise ValueError("Invalid date format")
+
+    async with _FEEDING_CHECKLIST_LOCK:
+        data = _load_feeding_checklist_data()
+        stations = set(_station_universe(data))
+        day: Dict[str, bool] = data.get("days", {}).get(clean_date, {})
+        for st, val in status.items():
+            canon = _canonical_station(st) or st
+            if not canon:
+                continue
+            stations.add(canon)
+            day[canon] = bool(val)
+        data["stations"] = sorted(stations)
+        data["days"][clean_date] = day
+        meta = data.get("meta", {}) or {}
+        meta["updated_at"] = _now_iso()
+        data["meta"] = meta
+        _save_json_atomic(FEEDING_CHECKLIST_PATH, data)
+        return {clean_date: {st: bool(day.get(st, False)) for st in data["stations"]}}
+
 def _parse_date_str(s: str) -> Optional[str]:
     """Parse common date formats to ISO YYYY-MM-DD."""
     try:
@@ -577,82 +676,27 @@ def _ensure_date_row(ws, date_iso: str, header: Optional[Dict[str, int]] = None)
     return _find_date_row(ws, date_iso)
 
 def _sheet_station_names() -> List[str]:
-    """Return canonical station names from the FeedingStationChecklist header."""
-    ws = _open_feeding_ws()
-    if ws is None:
-        return []
-    header = _station_header_map(ws)
-    names: List[str] = []
-    for name in header.keys():
-        if not name or name.strip().lower() == "date":
-            continue
-        canon = _canonical_station(name) or name
-        if canon not in names:
-            names.append(canon)
-    return names
+    """Return canonical station names from the local checklist store or schedule."""
+    return _station_universe()
 
 async def _mark_checkbox_in_sheet(station: str, date_iso: str) -> bool:
-    """Mark the (station, date) cell TRUE in the FeedingStationChecklist tab.
-    Header row (1) has stations; first column (A) has dates; body is checkboxes.
-    """
-    ws = _open_feeding_ws()
-    if ws is None:
-        return False
+    """Mark a station/date as fed in the local checklist store."""
     try:
-        header = _station_header_map(ws)
-        disp = _canonical_station(station) or station
-        col = header.get(disp)
-        if not col:
-            for name in header.keys():
-                if name.lower() == disp.lower():
-                    col = header[name]
-                    disp = name
-                    break
-        if not col:
-            log_action("sheet_mark_error", f"station={station} date={date_iso}", "missing_column")
-            return False
-        row = _ensure_date_row(ws, date_iso, header)
-        if not row:
-            log_action("sheet_mark_error", f"station={station} date={date_iso}", "row_create_failed")
-            return False
-        ws.update_cell(row, col, True)
-        log_action("sheet_mark", f"station={disp} date={date_iso}", "ok")
+        await set_feeding_day_status(date_iso, {station: True})
+        log_action("sheet_mark", f"station={station} date={date_iso}", "ok")
         return True
     except Exception as e:
         log_action("sheet_mark_error", f"station={station} date={date_iso}", str(e))
         return False
 
 async def _list_unfed_stations_today() -> List[str]:
-    """Return station display names that are NOT checked for today's date.
-    Station names come from header row; today row comes from Column A.
-    """
-    ws = _open_feeding_ws()
-    if ws is None:
-        return []
+    """Return station display names that are NOT checked for today's date."""
     try:
         today_iso = _today_iso()
-        header = _station_header_map(ws)
-        row = _ensure_date_row(ws, today_iso, header)
-        if not row:
-            log_action("unfed_list", f"date={today_iso}", "date_row_not_found")
-            return []
-        #Read entire row values once
-        vals = ws.row_values(row)
-        unfed: List[str] = []
-        for name, col in header.items():
-            if col == 1:
-                continue  #date column
-            v = vals[col-1] if col-1 < len(vals) else ""
-            fed = False
-            if isinstance(v, bool):
-                fed = bool(v)
-            else:
-                fed = str(v).strip().upper() == "TRUE"
-            if not fed:
-                disp = _canonical_station(name) or name
-                if disp not in unfed:
-                    unfed.append(disp)
-        return unfed
+        snap = get_feeding_snapshot(today_iso, today_iso)
+        stations = snap.get("stations") or []
+        day = (snap.get("days") or {}).get(today_iso, {}) or {}
+        return [st for st in stations if not bool(day.get(st, False))]
     except Exception as e:
         log_action("unfed_list_error", "read", str(e))
         return []
@@ -953,6 +997,112 @@ def _update_existing_sub_request(
             return True
     return False
 
+#------------- scheduler: 6:30 am ping ----------
+
+_MORNING_SCHEDULER_LOCK = asyncio.Lock()
+_MORNING_SCHEDULER_STARTED = False
+
+
+async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.View | None]:
+    """Builds the 6:30 AM 'Good Morning' message with the day's feeding schedule."""
+    today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
+    today_iso = today.isoformat()
+    # This looks odd, but is how the 8pm scheduler gets the weekday name for the schedule lookup.
+    # Monday (weekday() == 0) becomes "Mon", which _read_schedule_for_weekday finds at index 1.
+    # Sunday (weekday() == 6) becomes "Sun", which is at index 0. It's quirky but consistent.
+    weekday_name = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][today.weekday()]
+    
+    sched = _read_schedule_for_weekday(weekday_name)
+    todays_stations = sorted([s for s in sched.keys() if sched.get(s)])
+
+    async with _SUBS_LOCK:
+        files = _load_sub_files(_all_sub_month_keys(), include_legacy=True)
+        subs = [item for sublist in files for item in sublist[1]]
+
+    # Map accepted request IDs to assignees for today
+    accepted_req_map = {
+        r.get("parent_id"): r.get("assignee") 
+        for r in subs 
+        if r.get("status") == "accepted" 
+        and today_iso in _normalize_dates(r.get("dates") or [])
+        and r.get("parent_id")
+    }
+
+    lines = ["Good Morning!", "Todays currently scheduled feeders are:"]
+    open_request_exists = False
+
+    for station in todays_stations:
+        roster_parts = []
+        original_feeders = sched.get(station, [])
+        
+        for feeder_id in original_feeders:
+            feeder_request_id = None
+            for req in subs:
+                if (req.get("status") == "requested" 
+                    and str(req.get("requester")) == str(feeder_id) 
+                    and _canonical_station(req.get("station")) == station 
+                    and today_iso in _normalize_dates(req.get("dates") or [])):
+                    feeder_request_id = req.get("id")
+                    break
+            
+            if feeder_request_id:
+                sub_assignee_id = accepted_req_map.get(feeder_request_id)
+                if sub_assignee_id:
+                    roster_parts.append(_format_user(bot, sub_assignee_id, False))
+                else:
+                    original_feeder_name = _format_user(bot, feeder_id, False)
+                    roster_parts.append(f"**NEEDS SUB** (for {original_feeder_name})")
+                    open_request_exists = True
+            else:
+                roster_parts.append(_format_user(bot, feeder_id, False))
+        
+        lines.append(f"• **{station}**: {', '.join(roster_parts)}")
+
+    if open_request_exists:
+        lines.append("\nA station is still looking for a substitute feeder.")
+
+    view = None
+    if open_request_exists:
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Open Sub Requests", url="https://ui.catsofuta.org/#sub"))
+    
+    return "\n".join(lines), view
+
+async def start_morning_scheduler(bot: discord.Client) -> None:
+    """Kick off the daily 6:30am morning message."""
+    global _MORNING_SCHEDULER_STARTED
+    async with _MORNING_SCHEDULER_LOCK:
+        if _MORNING_SCHEDULER_STARTED:
+            return
+
+        async def _runner():
+            while True:
+                try:
+                    await _sleep_until_local_time(6, 30)
+                    channel_id = getattr(settings, "ch_feeding_team", None)
+                    if not channel_id:
+                        log_action("morning_scheduler", "channel=None", "skipped")
+                        continue
+                    
+                    ch = bot.get_channel(int(channel_id))
+                    if not isinstance(ch, discord.abc.Messageable):
+                        log_action("morning_scheduler", f"channel={channel_id}", "not_messageable")
+                        continue
+
+                    message_content, view = await build_morning_message(bot)
+                    await ch.send(message_content, view=view)
+                    log_action("morning_scheduler", "sent", f"channel={channel_id}")
+
+                except Exception as e:
+                    log_action("morning_scheduler_error", "loop", str(e))
+                    await asyncio.sleep(60)
+
+        asyncio.create_task(_runner())
+        _MORNING_SCHEDULER_STARTED = True
+        log_action("morning_scheduler", "started", "ok")
+
+
+
 #------------- scheduler: 8:00 pm ping ----------
 
 _FEEDING_SCHEDULER_LOCK = asyncio.Lock()
@@ -1102,17 +1252,57 @@ async def build_8pm_lines(
 
     def _assignees_for(station: str) -> List[int | str]:
         key = _canonical_station(station) or station
-        assignees: List[int | str] = []
+        scheduled_ids = sched.get(key, [])
+        if not scheduled_ids:
+            # Check for subs for unassigned stations
+            for r in reversed(subs):
+                if r.get("status") != "accepted": continue
+                rec_station = _canonical_station(r.get("station")) or r.get("station")
+                if rec_station != key: continue
+                if today_iso not in _normalize_dates(r.get("dates") or []): continue
+                
+                assignee_id = r.get("assignee")
+                if assignee_id:
+                    return [assignee_id] # Return the sub, even if no one was scheduled
+            return []
+
+        final_assignees = list(scheduled_ids)
+
+        request_map: Dict[str, int] = {
+            r.get("id"): r.get("requester")
+            for r in subs
+            if r.get("status") == "requested" and r.get("id") and r.get("requester")
+        }
+
+        processed_requesters = set()
+
         for r in reversed(subs):
+            if r.get("status") != "accepted":
+                continue
+                
             rec_station = _canonical_station(r.get("station")) or r.get("station")
-            if rec_station == key and r.get("status") == "accepted" and today_iso in (r.get("dates") or []):
-                aid = r.get("assignee")
-                if isinstance(aid, int):
-                    assignees.append(aid)
-                    break
-        if not assignees:
-            assignees = sched.get(key, [])
-        return assignees
+            if rec_station != key:
+                continue
+
+            if today_iso not in _normalize_dates(r.get("dates") or []):
+                continue
+            
+            parent_id = r.get("parent_id")
+            requester_id = request_map.get(parent_id)
+            assignee_id = r.get("assignee")
+            
+            if not requester_id and r.get("id"):
+                parent_id = r.get("id")
+                requester_id = request_map.get(parent_id)
+
+            if requester_id and assignee_id and requester_id in final_assignees:
+                if requester_id in processed_requesters:
+                    continue
+                
+                final_assignees = [assignee_id if u == requester_id else u for u in final_assignees]
+                processed_requesters.add(requester_id)
+
+        return list(dict.fromkeys(final_assignees))
 
     def _format_station_line(station: str) -> str:
         assignees = _assignees_for(station)

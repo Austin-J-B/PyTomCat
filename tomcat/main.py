@@ -401,7 +401,7 @@ bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 #------- Import real handlers -------
 #Cats / Feeding and Dues handlers already use the (intent, ctx) signature
 from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
-from .handlers.feeding import start_feeding_scheduler, handle_feeding_inquiry as _handle_feeding_status
+from .handlers.feeding import start_feeding_scheduler, start_morning_scheduler, handle_feeding_inquiry as _handle_feeding_status
 #Dues: no background scheduler; admin-only Gmail test is routed directly from the router
 from .handlers.dues import start_dues_scheduler
 from .handlers.gmail import start_gmail_logging_scheduler
@@ -1342,6 +1342,7 @@ async def on_ready():
         pass
     #start feeding scheduler after the bot is ready and loop is running
     asyncio.create_task(start_feeding_scheduler(bot))
+    asyncio.create_task(start_morning_scheduler(bot))
     #Start Gmail logging scheduler if enabled
     try:
         if getattr(settings, "gmail_enabled", False):

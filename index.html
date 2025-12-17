@@ -36,7 +36,6 @@
             /* DIMENSIONS */
             --legend-height: 46px; 
             --legend-min-height: 46px;
-            --zoom: 1;
         }
 
         * { box-sizing: border-box; }
@@ -204,7 +203,6 @@
             padding: 8px 16px; border-radius: 20px; font-weight: 700; cursor: pointer;
             box-shadow: 0 4px 10px rgba(0,0,0,0.12);
             transition: all 0.35s ease;
-            font-size: calc(1rem * var(--zoom));
         }
         .save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
         .save-btn:active { transform: translateY(0); box-shadow: 0 3px 8px rgba(0,0,0,0.12); }
@@ -300,7 +298,6 @@
             width: max-content;
             display: block;
             transform-origin: top left;
-            zoom: var(--zoom);
         }
 
         .sheet-wrapper {
@@ -342,7 +339,7 @@
             padding: 6px 14px; 
             border-bottom: 1px solid var(--grid-line);
             display: flex; align-items: center; justify-content: space-between; gap: 10px;
-            font-family: 'Montserrat', sans-serif; font-size: calc(0.7rem * var(--zoom)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+            font-family: 'Montserrat', sans-serif; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
         }
 
         .controls-legend.no-sticky {
@@ -377,7 +374,7 @@
             text-transform: uppercase; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
             position: sticky;
             /* Stick exactly below the legend - calculated via JS ResizeObserver now */
-            top: var(--legend-height); 
+            top: calc(var(--legend-height) - 1px); 
             z-index: 400; 
             background-color: white; 
             box-shadow: inset 0 -5px 0 var(--site-text);
@@ -2215,7 +2212,7 @@ function resetZoom() {
 
 function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
-    document.documentElement.style.setProperty('--zoom', zoomLevel.toFixed(3));
+    document.documentElement.style.fontSize = `${zoomLevel * 100}%`;
 
     updateStickyHeights();
 }

@@ -329,7 +329,7 @@
             justify-content: inherit;
             gap: inherit;
             transform-origin: top left;
-            font-size: calc(0.7rem * var(--zoom));
+            font-size: 0.7rem;
         }
 
         /* --- CONTROLS LEGEND (STICKY INSIDE WORKSPACE) --- */
@@ -378,7 +378,7 @@
             text-transform: uppercase; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
             position: sticky;
             /* Stick exactly below the legend - calculated via JS ResizeObserver now */
-            top: calc(var(--legend-height) + (11px / var(--zoom)) - ((var(--zoom) - 1) * 3px)); 
+            top: calc(var(--legend-height) + 11px); 
             z-index: 400; 
             background-color: white; 
             box-shadow: inset 0 -5px 0 var(--site-text);

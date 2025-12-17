@@ -38,8 +38,9 @@ SUBS_ROOT.mkdir(parents=True, exist_ok=True)
 SUBS_LEGACY_FILE = SUBS_ROOT / "subs.jsonl"
 _SUBS_LOCK = asyncio.Lock()
 
-#UI-provided schedule cache
-UI_SCHEDULE_PATH = _PACKAGE_ROOT / "cache" / "feeding_schedule.json"
+# UI-provided schedule cache (ndjson primary, legacy JSON fallback)
+UI_SCHEDULE_PATH = _PACKAGE_ROOT / "cache" / "feeding_schedule.ndjson"
+UI_SCHEDULE_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_schedule.json"
 _DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
 FEEDING_CHECKLIST_PATH = _PACKAGE_ROOT / "cache" / "feeding_checklist.json"
 _FEEDING_CHECKLIST_LOCK = asyncio.Lock()
@@ -429,20 +430,60 @@ def _coerce_uid(val) -> Optional[int | str]:
         return s  #allow non-numeric IDs
 
 
-def _load_schedule_versions() -> List[dict]:
-    if not UI_SCHEDULE_PATH.exists():
-        return []
+def _read_schedule_ndjson(path: Path) -> List[dict]:
+    versions: List[dict] = []
+    if not path.exists():
+        return versions
     try:
-        data = json.loads(UI_SCHEDULE_PATH.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and "versions" in data:
-            return data.get("versions") or []
-        if isinstance(data, dict) and "schedule" in data:
-            return [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
-        if isinstance(data, list):
-            return data
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(obj, dict) and obj.get("effective_from"):
+                versions.append({
+                    "effective_from": obj.get("effective_from"),
+                    "schedule": obj.get("schedule") or {},
+                    "meta": obj.get("meta") or {}
+                })
     except Exception:
-        return []
+        return versions
+    return versions
+
+
+def _load_schedule_versions() -> List[dict]:
+    versions = _read_schedule_ndjson(UI_SCHEDULE_PATH)
+    if versions:
+        return versions
+    if UI_SCHEDULE_PATH_LEGACY.exists():
+        try:
+            data = json.loads(UI_SCHEDULE_PATH_LEGACY.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and "versions" in data:
+                versions = data.get("versions") or []
+            elif isinstance(data, dict) and "schedule" in data:
+                versions = [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
+            elif isinstance(data, list):
+                versions = data
+            if versions:
+                _save_schedule_versions(versions)
+            return versions
+        except Exception:
+            return []
     return []
+
+
+def _save_schedule_versions(versions: List[dict]) -> None:
+    meta = {"updated_at": int(time.time())}
+    UI_SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = UI_SCHEDULE_PATH.with_name(UI_SCHEDULE_PATH.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for v in versions:
+            f.write(json.dumps(v, separators=(",", ":")) + "\n")
+        f.write(json.dumps({"meta": meta}, separators=(",", ":")) + "\n")
+    tmp.replace(UI_SCHEDULE_PATH)
 
 
 def _resolve_schedule_for_date(target_date: Optional[date]) -> Dict[str, Any]:
@@ -591,8 +632,11 @@ def _station_universe(existing: Optional[dict] = None) -> List[str]:
         canon = _canonical_station(st) or st
         if canon:
             names.add(canon)
-    sched_payload = _load_json(str(UI_SCHEDULE_PATH), {})
-    sched = sched_payload.get("schedule", {}) or {}
+    versions = _load_schedule_versions()
+    sched = {}
+    if versions:
+        latest = sorted(versions, key=lambda v: v.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[-1]
+        sched = latest.get("schedule", {}) or {}
     for st in sched.keys():
         canon = _canonical_station(st) or st
         if canon:

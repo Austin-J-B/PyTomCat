@@ -10,7 +10,8 @@ from typing import Dict, List, Optional
 from datetime import datetime, date
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-STATIONS_PATH = _PACKAGE_ROOT / "cache" / "stations.json"
+STATIONS_PATH = _PACKAGE_ROOT / "cache" / "stations.ndjson"
+STATIONS_LEGACY_PATH = _PACKAGE_ROOT / "cache" / "stations.json"
 _DEFAULT_EFFECTIVE = "1970-01-01"
 
 
@@ -71,9 +72,32 @@ def _clean_stations(stations: List[Dict]) -> List[Dict]:
 
 
 def _load_versions() -> List[Dict]:
-    if STATIONS_PATH.exists():
+    def _read_ndjson(path: Path) -> List[Dict]:
+        out: List[Dict] = []
+        if not path.exists():
+            return out
         try:
-            with open(STATIONS_PATH, "r", encoding="utf-8") as f:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(obj, dict) and obj.get("effective_from"):
+                    out.append({
+                        "effective_from": obj.get("effective_from"),
+                        "stations": obj.get("stations") or []
+                    })
+        except Exception:
+            return out
+        return out
+
+    versions = _read_ndjson(STATIONS_PATH)
+    if not versions and STATIONS_LEGACY_PATH.exists():
+        try:
+            with open(STATIONS_LEGACY_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict) and "versions" in data:
                 versions = data.get("versions") or []
@@ -85,10 +109,10 @@ def _load_versions() -> List[Dict]:
                 versions = data
             else:
                 versions = []
+            if versions:
+                _save_versions(versions, update_meta=True)
         except Exception:
             versions = []
-    else:
-        versions = []
 
     if not versions:
         versions = [{"effective_from": _DEFAULT_EFFECTIVE, "stations": _SEEDED_STATIONS}]
@@ -102,16 +126,15 @@ def _load_versions() -> List[Dict]:
 
 
 def _save_versions(versions: List[Dict], update_meta: bool = True) -> None:
-    payload = {
-        "versions": versions,
-        "meta": {}
-    }
+    meta = {}
     if update_meta:
-        payload["meta"]["updated_at"] = _now_iso()
+        meta["updated_at"] = _now_iso()
     STATIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = STATIONS_PATH.with_suffix(".tmp")
+    tmp = STATIONS_PATH.with_name(STATIONS_PATH.name + ".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+        for v in versions:
+            f.write(json.dumps(v, separators=(",", ":")) + "\n")
+        f.write(json.dumps({"meta": meta}, separators=(",", ":")) + "\n")
     tmp.replace(STATIONS_PATH)
 
 

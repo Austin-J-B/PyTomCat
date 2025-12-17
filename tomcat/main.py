@@ -49,8 +49,9 @@ def _debug(msg: str) -> None:
     if _AUTH_DEBUG:
         print(f"[UI-AUTH] {msg}")
 
-#Local persistence for the UI schedule
-SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
+# Local persistence for the UI schedule (ndjson), with legacy JSON fallback for migration
+SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.ndjson"
+LEGACY_SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
 #Versioned schedule helpers
 _DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
 
@@ -158,26 +159,63 @@ def _issue_session_response(user_info: dict, permissions: dict, request: web.Req
 
 
 # --- schedule version helpers ---
+def _read_schedule_ndjson(path: Path) -> list:
+    versions: list = []
+    if not path.exists():
+        return versions
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(obj, dict) and obj.get("effective_from"):
+                versions.append({
+                    "effective_from": obj.get("effective_from"),
+                    "schedule": obj.get("schedule") or {},
+                    "meta": obj.get("meta") or {}
+                })
+    except Exception:
+        return versions
+    return versions
+
+
 def _load_schedule_versions() -> list:
-    if not SCHEDULE_PATH.exists():
+    versions = _read_schedule_ndjson(SCHEDULE_PATH)
+    if versions:
+        return versions
+
+    # Legacy JSON fallback (migrates forward to ndjson)
+    if not LEGACY_SCHEDULE_PATH.exists():
         return []
     try:
-        data = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
+        data = json.loads(LEGACY_SCHEDULE_PATH.read_text(encoding="utf-8"))
         if isinstance(data, dict) and "versions" in data:
-            return data.get("versions") or []
-        if isinstance(data, dict) and "schedule" in data:
-            return [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
-        if isinstance(data, list):
-            return data
+            versions = data.get("versions") or []
+        elif isinstance(data, dict) and "schedule" in data:
+            versions = [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
+        elif isinstance(data, list):
+            versions = data
+        if versions:
+            _save_schedule_versions(versions)
+        return versions
     except Exception:
         return []
     return []
 
 
 def _save_schedule_versions(versions: list):
-    payload = {"versions": versions, "meta": {"updated_at": int(time.time())}}
+    meta = {"updated_at": int(time.time())}
     SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SCHEDULE_PATH.write_text(json.dumps(payload), encoding="utf-8")
+    tmp = SCHEDULE_PATH.with_name(SCHEDULE_PATH.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for v in versions:
+            f.write(json.dumps(v, separators=(",", ":")) + "\n")
+        f.write(json.dumps({"meta": meta}, separators=(",", ":")) + "\n")
+    tmp.replace(SCHEDULE_PATH)
 
 
 def _resolve_schedule_for_date(target_iso: Optional[str]) -> dict:

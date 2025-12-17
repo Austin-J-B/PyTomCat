@@ -926,6 +926,8 @@ async function loadSchedule() {
         renderWeekOptions();
         stationEffectiveDate = selectedWeek;
         await fetchStations(selectedWeek);
+        renderGrid();
+        updateSubUserOptions();
         console.log("Schedule loaded", Object.keys(scheduleData));
         setSaveStatus("Loaded", "ok");
     } catch (e) {

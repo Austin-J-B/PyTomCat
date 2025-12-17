@@ -36,6 +36,7 @@
             /* DIMENSIONS */
             --legend-height: 46px; 
             --legend-min-height: 46px;
+            --zoom: 1;
         }
 
         * { box-sizing: border-box; }
@@ -298,6 +299,7 @@
             width: max-content;
             display: block;
             transform-origin: top left;
+            zoom: var(--zoom);
         }
 
         .sheet-wrapper {
@@ -374,7 +376,7 @@
             text-transform: uppercase; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
             position: sticky;
             /* Stick exactly below the legend - calculated via JS ResizeObserver now */
-            top: calc(var(--legend-height) - 1px); 
+            top: calc(var(--legend-height) + 1px); 
             z-index: 400; 
             background-color: white; 
             box-shadow: inset 0 -5px 0 var(--site-text);
@@ -2212,7 +2214,7 @@ function resetZoom() {
 
 function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
-    document.documentElement.style.fontSize = `${zoomLevel * 100}%`;
+    document.documentElement.style.setProperty('--zoom', zoomLevel.toFixed(3));
 
     updateStickyHeights();
 }

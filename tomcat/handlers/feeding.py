@@ -507,6 +507,9 @@ def _resolve_schedule_for_date(target_date: Optional[date]) -> Dict[str, Any]:
     sched = best.get("schedule") or {}
     if not isinstance(sched, dict):
         sched = {}
+    # Restrict to known station names for that effective week
+    allowed = set(station_names(best.get("effective_from")))
+    sched = {st: row for st, row in sched.items() if st in allowed}
     return {"schedule": sched, "effective_from": best.get("effective_from")}
 
 
@@ -681,22 +684,15 @@ def _load_feeding_checklist_data() -> dict:
 def _station_universe(existing: Optional[dict] = None) -> List[str]:
     data = existing or _load_feeding_checklist_data()
     names: set[str] = set()
+    # Stations come from the authoritative station list
     for st in station_names():
         canon = _canonical_station(st) or st
         if canon:
             names.add(canon)
+    # Retain any known stations already in the checklist that are still in the station list
     for st in data.get("stations", []):
         canon = _canonical_station(st) or st
-        if canon:
-            names.add(canon)
-    versions = _load_schedule_versions()
-    sched = {}
-    if versions:
-        latest = sorted(versions, key=lambda v: v.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[-1]
-        sched = latest.get("schedule", {}) or {}
-    for st in sched.keys():
-        canon = _canonical_station(st) or st
-        if canon:
+        if canon and canon in names:
             names.add(canon)
     return sorted(names)
 

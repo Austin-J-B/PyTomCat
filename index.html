@@ -467,7 +467,7 @@
                 </div>
             </div>
             <div class="instructions-banner">
-                "Click" to select • "Ctrl + Click" to multi-select • "Shift + Click" for range • "Enter" to assign • "Del" to erase
+                "Click" to select   •   "Ctrl + Click" to multi-select   •   "Shift + Click" for range   •   "Enter" to assign   •   "Del" to erase
             </div>
 
             <table id="schedule-table">
@@ -1010,6 +1010,7 @@ function renderStationWeekOptions() {
 // Deterministic pastel colors with in-session collision avoidance.
 const colorAssignments = new Map();
 const usedColors = new Set();
+const usedHueBuckets = new Set(); // track hue buckets to avoid near-duplicates
 
 function hashId(str) {
     // FNV-1a 32-bit hash for consistent distribution
@@ -1034,19 +1035,23 @@ function getVolunteerColor(id) {
     };
 
     let hue = rand() * 360;             // full hue wheel
-    let sat = 65 + rand() * 20;         // 65-85%
-    let light = 70 + rand() * 8;        // 70-78% (light enough for dark text)
+    let sat = 55 + rand() * 30;         // 55-85%
+    let light = 65 + rand() * 15;       // 65-80% (light enough for dark text)
 
-    // Avoid exact duplicates within this session by nudging hue
+    // Avoid exact duplicates/near-duplicates within this session by nudging hue and lightness
     const golden = 137.508; // golden angle
     let color = `hsl(${hue.toFixed(3)}, ${sat.toFixed(2)}%, ${light.toFixed(2)}%)`;
     let tries = 0;
-    while (usedColors.has(color) && tries < 32) {
+    const bucket = () => Math.round(hue * 10) / 10; // 0.1° buckets
+    while ((usedColors.has(color) || usedHueBuckets.has(bucket())) && tries < 48) {
         hue = (hue + golden) % 360;
+        light = Math.min(82, light + 1.2);
+        sat = Math.min(85, sat + 0.8);
         color = `hsl(${hue.toFixed(3)}, ${sat.toFixed(2)}%, ${light.toFixed(2)}%)`;
         tries++;
     }
     usedColors.add(color);
+    usedHueBuckets.add(bucket());
     colorAssignments.set(id, color);
     return color;
 }

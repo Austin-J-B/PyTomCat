@@ -286,7 +286,7 @@
             overflow-x: auto; 
             padding: 0 40px 40px 40px; 
             display: grid;
-            place-items: start center;
+            place-items: start start;
             background-color: var(--workspace-bg);
             background-image: radial-gradient(var(--workspace-dot) 1px, transparent 1px);
             background-size: 20px 20px;
@@ -296,10 +296,10 @@
         }
 
         .workspace-zoom {
-            width: 100%;
-            display: grid;
-            place-items: start center;
+            width: max-content;
+            display: block;
             transform-origin: top left;
+            transform: scale(var(--zoom));
         }
 
         .sheet-wrapper {
@@ -371,7 +371,7 @@
             text-transform: uppercase; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
             position: sticky;
             /* Stick exactly below the legend - calculated via JS ResizeObserver now */
-            top: var(--legend-height); 
+            top: calc(var(--legend-height) / var(--zoom)); 
             z-index: 400; 
             background-color: white; 
             box-shadow: inset 0 -5px 0 var(--site-text);
@@ -682,7 +682,7 @@ const resizeObserver = new ResizeObserver(entries => {
         // Ignore hidden legends so we don't apply stale heights
         if (!entry.target || entry.target.offsetParent === null) continue;
         // Use full box height (padding + border) so sticky offsets match exactly
-        const height = Math.ceil(entry.target.getBoundingClientRect().height);
+        const height = Math.ceil(entry.target.getBoundingClientRect().height / (zoomLevel || 1));
         document.documentElement.style.setProperty('--legend-height', `${height}px`);
     }
 });
@@ -865,7 +865,7 @@ function updateStickyHeights() {
     
     // Fallback if observer hasn't fired yet
     if (legends.length > 0) {
-        const legendH = Math.ceil(legends[0].getBoundingClientRect().height);
+        const legendH = Math.ceil(legends[0].getBoundingClientRect().height / (zoomLevel || 1));
         root.style.setProperty('--legend-height', `${legendH}px`);
     } else {
         // No visible legend (e.g., read-only view) so headers should pin to the top
@@ -2208,11 +2208,6 @@ function resetZoom() {
 function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
     document.documentElement.style.setProperty('--zoom', zoomLevel.toFixed(3));
-
-    ['sheet-container','sub-container','claim-container','checklist-container'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.style.zoom = zoomLevel;
-    });
 
     updateStickyHeights();
 }

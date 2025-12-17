@@ -308,7 +308,6 @@
         .sheet-zoom {
             width: 100%;
             transform-origin: top center;
-            transition: transform 0.1s ease-out;
         }
 
         /* Scale legend contents without moving the sticky container itself */
@@ -320,7 +319,6 @@
             justify-content: inherit;
             gap: inherit;
             transform-origin: top center;
-            transition: transform 0.1s ease-out;
         }
 
         /* --- CONTROLS LEGEND (STICKY INSIDE WORKSPACE) --- */
@@ -678,8 +676,7 @@ const resizeObserver = new ResizeObserver(entries => {
         // Ignore hidden legends so we don't apply stale heights
         if (!entry.target || entry.target.offsetParent === null) continue;
         // Use full box height (padding + border) so sticky offsets match exactly
-        const zoom = Math.max(1, zoomLevel || 1);
-        const height = Math.ceil(entry.target.getBoundingClientRect().height * zoom);
+        const height = Math.ceil(entry.target.getBoundingClientRect().height);
         document.documentElement.style.setProperty('--legend-height', `${height}px`);
     }
 });
@@ -859,11 +856,10 @@ function updateStickyHeights() {
     const header = document.querySelector('header.site-header');
     const legends = Array.from(document.querySelectorAll('.controls-legend')).filter(el => el.offsetParent !== null);
     const headerH = header ? Math.ceil(header.getBoundingClientRect().height) : 0;
-    const zoom = Math.max(1, zoomLevel || 1);
     
     // Fallback if observer hasn't fired yet
     if (legends.length > 0) {
-        const legendH = Math.ceil(legends[0].getBoundingClientRect().height * zoom);
+        const legendH = Math.ceil(legends[0].getBoundingClientRect().height);
         root.style.setProperty('--legend-height', `${legendH}px`);
     } else {
         // No visible legend (e.g., read-only view) so headers should pin to the top
@@ -2206,8 +2202,9 @@ function resetZoom() {
 function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
 
-    document.querySelectorAll('.sheet-zoom, .legend-zoom').forEach(el => {
-        el.style.transform = `scale(${zoomLevel})`;
+    document.querySelectorAll('.sheet-wrapper, .controls-legend, .sheet-zoom, .legend-zoom').forEach(el => {
+        el.style.transform = ''; // avoid creating a new containing block for sticky
+        el.style.zoom = zoomLevel;
     });
 
     updateStickyHeights();

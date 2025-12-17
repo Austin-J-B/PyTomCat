@@ -302,9 +302,13 @@
             display: flex;
             flex-direction: column;
             margin-top: 40px;
-            /* ZOOM FIX: Use transform instead of CSS zoom property */
+        }
+
+        /* Zoomed content only; keep sticky bars outside to avoid transform bugs */
+        .sheet-zoom {
+            width: 100%;
             transform-origin: top center;
-            transition: transform 0.1s ease-out; 
+            transition: transform 0.1s ease-out;
         }
 
         /* --- CONTROLS LEGEND (STICKY INSIDE WORKSPACE) --- */
@@ -466,7 +470,8 @@
                     </div>
                 </div>
             </div>
-            <div class="instructions-banner">
+            <div class="sheet-zoom">
+                <div class="instructions-banner">
                 "Click" to select   •   "Ctrl + Click" to multi-select   •   "Shift + Click" for range   •   "Enter" to assign   •   "Del" to erase
             </div>
 
@@ -486,18 +491,20 @@
                 <tbody>
                     </tbody>
             </table>
+            </div>
         </div>
 
         <div class="sheet-wrapper" id="sub-container" style="display:none; padding: 0 0 20px 0; width: min(960px, 100%); box-sizing: border-box;">
             <div class="controls-legend" style="margin:0; padding: 0 20px; width: 100%; box-sizing: border-box;">
                 <div class="key-combo">Request a Substitute</div>
             </div>
-            <div class="sub-form">
-                <div class="form-row" id="sub-user-wrapper">
-                    <label for="sub-user">Impersonate user</label>
-                    <div class="search-container">
-                        <input type="text" id="sub-user" placeholder="Find user" autocomplete="off">
-                        <div id="sub-user-results" class="search-results"></div>
+            <div class="sheet-zoom">
+                <div class="sub-form">
+                    <div class="form-row" id="sub-user-wrapper">
+                        <label for="sub-user">Impersonate user</label>
+                        <div class="search-container">
+                            <input type="text" id="sub-user" placeholder="Find user" autocomplete="off">
+                            <div id="sub-user-results" class="search-results"></div>
                     </div>
                 </div>
 
@@ -526,6 +533,7 @@
                     <button class="save-btn" onclick="submitSubRequest()">Submit</button>
                     <div id="sub-status" class="save-status"></div>
                 </div>
+                </div>
             </div>
         </div>
 
@@ -533,12 +541,13 @@
             <div class="controls-legend" style="margin:0; padding: 0 20px; width: 100%; box-sizing: border-box;">
                 <div class="key-combo">Substitute Requests</div>
             </div>
-            <div class="sub-form">
-                <div class="form-row" id="claim-user-wrapper">
-                    <label for="claim-user">Impersonate user</label>
-                    <div class="search-container">
-                        <input type="text" id="claim-user" placeholder="Find user" autocomplete="off">
-                        <div id="claim-user-results" class="search-results"></div>
+            <div class="sheet-zoom">
+                <div class="sub-form">
+                    <div class="form-row" id="claim-user-wrapper">
+                        <label for="claim-user">Impersonate user</label>
+                        <div class="search-container">
+                            <input type="text" id="claim-user" placeholder="Find user" autocomplete="off">
+                            <div id="claim-user-results" class="search-results"></div>
                     </div>
                 </div>
                 <div class="tab-section">
@@ -559,6 +568,7 @@
                 <div class="form-row actions" id="claim-actions">
                     <button class="save-btn" onclick="submitClaim()">Submit</button>
                 </div>
+                </div>
             </div>
         </div>
 
@@ -566,12 +576,13 @@
             <div class="controls-legend no-sticky" style="margin:0; padding: 0 20px; width: 100%; box-sizing: border-box;">
                 <div class="key-combo">Feeding Settings</div>
             </div>
-            <div class="sub-form">
-                <div class="form-row">
-                    <label class="station-section-label">Station names and aliases</label>
-                    <div class="form-row" style="gap:4px; justify-content:center; align-items:center;">
-                        <div style="font-weight:500;">Effective week</div>
-                        <select id="station-effective-date" class="select-input"></select>
+            <div class="sheet-zoom">
+                <div class="sub-form">
+                    <div class="form-row">
+                        <label class="station-section-label">Station names and aliases</label>
+                        <div class="form-row" style="gap:4px; justify-content:center; align-items:center;">
+                            <div style="font-weight:500;">Effective week</div>
+                            <select id="station-effective-date" class="select-input"></select>
                     </div>
                     <div id="station-manager-list" class="station-manager"></div>
                     <button class="station-add-btn" type="button" onclick="addStationRow()">Add station</button>
@@ -596,6 +607,7 @@
                 <div class="form-row actions">
                     <button class="save-btn" onclick="saveChecklist()">Save Checklist</button>
                     <div id="checklist-save-status" class="save-status"></div>
+                </div>
                 </div>
             </div>
         </div>
@@ -2172,9 +2184,8 @@ function resetZoom() {
 function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
 
-    ['sheet-container', 'sub-container', 'claim-container', 'checklist-container'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.style.transform = `scale(${zoomLevel})`;
+    document.querySelectorAll('.sheet-zoom').forEach(el => {
+        el.style.transform = `scale(${zoomLevel})`;
     });
 }
 

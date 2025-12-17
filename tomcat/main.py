@@ -244,6 +244,9 @@ def _resolve_schedule_for_date(target_iso: Optional[str]) -> dict:
         best = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[0]
 
     sched = best.get("schedule") or {}
+    # Filter schedule to known station names for that effective date
+    allowed = set(station_names(best.get("effective_from")))
+    sched = {st: row for st, row in sched.items() if st in allowed}
     return {"schedule": sched, "effective_from": best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE, "meta": best.get("meta") or {}}
 
 

@@ -42,7 +42,9 @@ _SUBS_LOCK = asyncio.Lock()
 UI_SCHEDULE_PATH = _PACKAGE_ROOT / "cache" / "feeding_schedule.ndjson"
 UI_SCHEDULE_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_schedule.json"
 _DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
-FEEDING_CHECKLIST_PATH = _PACKAGE_ROOT / "cache" / "feeding_checklist.json"
+# Feeding checklist store (ndjson primary, legacy JSON fallback)
+FEEDING_CHECKLIST_PATH = _PACKAGE_ROOT / "cache" / "feeding_checklist.ndjson"
+FEEDING_CHECKLIST_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_checklist.json"
 _FEEDING_CHECKLIST_LOCK = asyncio.Lock()
 
 #------------- simple data types ----------------
@@ -613,8 +615,63 @@ def _station_header_map(ws) -> Dict[str, int]:
 
 
 #------------- Local feeding checklist store -------------
+def _read_checklist_ndjson(path: Path) -> dict:
+    stations: list[str] = []
+    days: Dict[str, Dict[str, bool]] = {}
+    meta: Dict[str, Any] = {}
+    if not path.exists():
+        return {"stations": stations, "days": days, "meta": meta}
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            if "stations" in obj and "date" not in obj and isinstance(obj.get("stations"), list):
+                stations = obj.get("stations") or stations
+                continue
+            if "date" in obj:
+                iso = str(obj.get("date") or "").strip()
+                if not iso:
+                    continue
+                status = obj.get("status") or {}
+                if isinstance(status, dict):
+                    days[iso] = {k: bool(v) for k, v in status.items()}
+                continue
+            if "meta" in obj and isinstance(obj.get("meta"), dict):
+                meta.update(obj.get("meta"))
+    except Exception:
+        return {"stations": stations, "days": days, "meta": meta}
+    return {"stations": stations, "days": days, "meta": meta}
+
+
+def _save_checklist_ndjson(stations: list[str], days: Dict[str, Dict[str, bool]], meta: Dict[str, Any]) -> None:
+    FEEDING_CHECKLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = FEEDING_CHECKLIST_PATH.with_name(FEEDING_CHECKLIST_PATH.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        if stations:
+            f.write(json.dumps({"stations": stations}, separators=(",", ":")) + "\n")
+        for iso in sorted(days.keys()):
+            f.write(json.dumps({"date": iso, "status": days[iso]}, separators=(",", ":")) + "\n")
+        f.write(json.dumps({"meta": meta or {}}, separators=(",", ":")) + "\n")
+    tmp.replace(FEEDING_CHECKLIST_PATH)
+
+
 def _load_feeding_checklist_data() -> dict:
-    data = _load_json(str(FEEDING_CHECKLIST_PATH), {"stations": [], "days": {}, "meta": {}})
+    data = _read_checklist_ndjson(FEEDING_CHECKLIST_PATH)
+    if not data.get("stations") and not data.get("days") and FEEDING_CHECKLIST_PATH_LEGACY.exists():
+        legacy = _load_json(str(FEEDING_CHECKLIST_PATH_LEGACY), {"stations": [], "days": {}, "meta": {}})
+        legacy["stations"] = legacy.get("stations") or []
+        legacy["days"] = legacy.get("days") or {}
+        legacy["meta"] = legacy.get("meta") or {}
+        # migrate forward
+        _save_checklist_ndjson(legacy["stations"], legacy["days"], legacy["meta"])
+        return legacy
     data["stations"] = data.get("stations") or []
     data["days"] = data.get("days") or {}
     data["meta"] = data.get("meta") or {}
@@ -699,7 +756,7 @@ async def set_feeding_day_status(date_iso: str, status: Dict[str, Any]) -> dict:
         meta = data.get("meta", {}) or {}
         meta["updated_at"] = _now_iso()
         data["meta"] = meta
-        _save_json_atomic(FEEDING_CHECKLIST_PATH, data)
+        _save_checklist_ndjson(data["stations"], data["days"], meta)
         return {clean_date: {st: bool(day.get(st, False)) for st in data["stations"]}}
 
 def _parse_date_str(s: str) -> Optional[str]:

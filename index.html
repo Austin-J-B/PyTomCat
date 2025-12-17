@@ -378,7 +378,7 @@
             text-transform: uppercase; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
             position: sticky;
             /* Stick exactly below the legend - calculated via JS ResizeObserver now */
-            top: calc(var(--legend-height) + 11px); 
+            top: calc(var(--legend-height) + (11px / var(--zoom))); 
             z-index: 400; 
             background-color: white; 
             box-shadow: inset 0 -5px 0 var(--site-text);

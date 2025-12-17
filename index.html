@@ -204,6 +204,7 @@
             padding: 8px 16px; border-radius: 20px; font-weight: 700; cursor: pointer;
             box-shadow: 0 4px 10px rgba(0,0,0,0.12);
             transition: all 0.35s ease;
+            font-size: calc(1rem * var(--zoom));
         }
         .save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
         .save-btn:active { transform: translateY(0); box-shadow: 0 3px 8px rgba(0,0,0,0.12); }
@@ -341,7 +342,7 @@
             padding: 6px 14px; 
             border-bottom: 1px solid var(--grid-line);
             display: flex; align-items: center; justify-content: space-between; gap: 10px;
-            font-family: 'Montserrat', sans-serif; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+            font-family: 'Montserrat', sans-serif; font-size: calc(0.7rem * var(--zoom)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
         }
 
         .controls-legend.no-sticky {
@@ -688,8 +689,7 @@ const resizeObserver = new ResizeObserver(entries => {
         if (!entry.target || entry.target.offsetParent === null) continue;
         // Use full box height (padding + border) so sticky offsets match exactly
         const heightEl = entry.target.querySelector('.legend-zoom') || entry.target;
-        const zoom = zoomLevel || 1;
-        const height = Math.ceil(heightEl.getBoundingClientRect().height / zoom);
+        const height = Math.ceil(heightEl.getBoundingClientRect().height);
         document.documentElement.style.setProperty('--legend-height', `${height}px`);
     }
 });
@@ -873,8 +873,7 @@ function updateStickyHeights() {
     // Fallback if observer hasn't fired yet
     if (legends.length > 0) {
         const heightEl = legends[0].querySelector('.legend-zoom') || legends[0];
-        const zoom = zoomLevel || 1;
-        const legendH = Math.ceil(heightEl.getBoundingClientRect().height / zoom);
+        const legendH = Math.ceil(heightEl.getBoundingClientRect().height);
         root.style.setProperty('--legend-height', `${legendH}px`);
     } else {
         // No visible legend (e.g., read-only view) so headers should pin to the top

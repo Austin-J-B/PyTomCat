@@ -311,6 +311,18 @@
             transition: transform 0.1s ease-out;
         }
 
+        /* Scale legend contents without moving the sticky container itself */
+        .legend-zoom {
+            width: 100%;
+            display: inherit;
+            flex-direction: inherit;
+            align-items: inherit;
+            justify-content: inherit;
+            gap: inherit;
+            transform-origin: top center;
+            transition: transform 0.1s ease-out;
+        }
+
         /* --- CONTROLS LEGEND (STICKY INSIDE WORKSPACE) --- */
         .controls-legend {
             position: sticky;
@@ -451,21 +463,23 @@
     <div class="workspace" id="workspace">
         <div class="sheet-wrapper" id="sheet-container">
             <div class="controls-legend controls-legend-stack">
-                <div class="legend-actions top-controls">
-                    <div class="week-selector">
-                        <select id="week-select" class="select-input" onchange="handleWeekChange(this.value)">
-                        </select>
-                    </div>
-                    <div class="legend-right">
-                        <div class="search-container compact">
-                            <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
-                            <div id="search-results" class="search-results"></div>
+                <div class="legend-zoom">
+                    <div class="legend-actions top-controls">
+                        <div class="week-selector">
+                            <select id="week-select" class="select-input" onchange="handleWeekChange(this.value)">
+                            </select>
                         </div>
-                        <div class="legend-actions" style="gap:12px;">
-                            <div id="selection-display" class="current-selection empty">
-                                Select User
+                        <div class="legend-right">
+                            <div class="search-container compact">
+                                <input type="text" id="member-search" placeholder="Search Volunteer..." autocomplete="off">
+                                <div id="search-results" class="search-results"></div>
                             </div>
-                            <button class="save-btn" id="save-btn" onclick="saveSchedule()" title="Save schedule">Save</button>
+                            <div class="legend-actions" style="gap:12px;">
+                                <div id="selection-display" class="current-selection empty">
+                                    Select User
+                                </div>
+                                <button class="save-btn" id="save-btn" onclick="saveSchedule()" title="Save schedule">Save</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -496,7 +510,9 @@
 
         <div class="sheet-wrapper" id="sub-container" style="display:none; padding: 0 0 20px 0; width: min(960px, 100%); box-sizing: border-box;">
             <div class="controls-legend" style="margin:0; padding: 0 20px; width: 100%; box-sizing: border-box;">
-                <div class="key-combo">Request a Substitute</div>
+                <div class="legend-zoom">
+                    <div class="key-combo">Request a Substitute</div>
+                </div>
             </div>
             <div class="sheet-zoom">
                 <div class="sub-form">
@@ -539,7 +555,9 @@
 
         <div class="sheet-wrapper" id="claim-container" style="display:none; padding: 0 0 20px 0; width: min(960px, 100%); box-sizing: border-box;">
             <div class="controls-legend" style="margin:0; padding: 0 20px; width: 100%; box-sizing: border-box;">
-                <div class="key-combo">Substitute Requests</div>
+                <div class="legend-zoom">
+                    <div class="key-combo">Substitute Requests</div>
+                </div>
             </div>
             <div class="sheet-zoom">
                 <div class="sub-form">
@@ -574,7 +592,9 @@
 
         <div class="sheet-wrapper" id="checklist-container" style="display:none; padding: 0 0 20px 0; width: min(960px, 100%); box-sizing: border-box;">
             <div class="controls-legend no-sticky" style="margin:0; padding: 0 20px; width: 100%; box-sizing: border-box;">
-                <div class="key-combo">Feeding Settings</div>
+                <div class="legend-zoom">
+                    <div class="key-combo">Feeding Settings</div>
+                </div>
             </div>
             <div class="sheet-zoom">
                 <div class="sub-form">
@@ -658,7 +678,8 @@ const resizeObserver = new ResizeObserver(entries => {
         // Ignore hidden legends so we don't apply stale heights
         if (!entry.target || entry.target.offsetParent === null) continue;
         // Use full box height (padding + border) so sticky offsets match exactly
-        const height = Math.ceil(entry.target.getBoundingClientRect().height);
+        const zoom = Math.max(1, zoomLevel || 1);
+        const height = Math.ceil(entry.target.getBoundingClientRect().height * zoom);
         document.documentElement.style.setProperty('--legend-height', `${height}px`);
     }
 });
@@ -838,10 +859,11 @@ function updateStickyHeights() {
     const header = document.querySelector('header.site-header');
     const legends = Array.from(document.querySelectorAll('.controls-legend')).filter(el => el.offsetParent !== null);
     const headerH = header ? Math.ceil(header.getBoundingClientRect().height) : 0;
+    const zoom = Math.max(1, zoomLevel || 1);
     
     // Fallback if observer hasn't fired yet
     if (legends.length > 0) {
-        const legendH = Math.ceil(legends[0].getBoundingClientRect().height);
+        const legendH = Math.ceil(legends[0].getBoundingClientRect().height * zoom);
         root.style.setProperty('--legend-height', `${legendH}px`);
     } else {
         // No visible legend (e.g., read-only view) so headers should pin to the top
@@ -2184,9 +2206,11 @@ function resetZoom() {
 function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
 
-    document.querySelectorAll('.sheet-zoom').forEach(el => {
+    document.querySelectorAll('.sheet-zoom, .legend-zoom').forEach(el => {
         el.style.transform = `scale(${zoomLevel})`;
     });
+
+    updateStickyHeights();
 }
 
 const initialView = getViewFromLocation() || 'schedule';

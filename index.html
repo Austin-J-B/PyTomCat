@@ -688,7 +688,8 @@ const resizeObserver = new ResizeObserver(entries => {
         if (!entry.target || entry.target.offsetParent === null) continue;
         // Use full box height (padding + border) so sticky offsets match exactly
         const heightEl = entry.target.querySelector('.legend-zoom') || entry.target;
-        const height = Math.ceil(heightEl.getBoundingClientRect().height);
+        const zoom = zoomLevel || 1;
+        const height = Math.ceil(heightEl.getBoundingClientRect().height / zoom);
         document.documentElement.style.setProperty('--legend-height', `${height}px`);
     }
 });
@@ -872,7 +873,8 @@ function updateStickyHeights() {
     // Fallback if observer hasn't fired yet
     if (legends.length > 0) {
         const heightEl = legends[0].querySelector('.legend-zoom') || legends[0];
-        const legendH = Math.ceil(heightEl.getBoundingClientRect().height);
+        const zoom = zoomLevel || 1;
+        const legendH = Math.ceil(heightEl.getBoundingClientRect().height / zoom);
         root.style.setProperty('--legend-height', `${legendH}px`);
     } else {
         // No visible legend (e.g., read-only view) so headers should pin to the top

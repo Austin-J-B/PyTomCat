@@ -299,6 +299,7 @@
             width: max-content;
             display: block;
             transform-origin: top left;
+            zoom: var(--zoom);
         }
 
         .sheet-wrapper {
@@ -316,7 +317,6 @@
             width: 100%; 
             display: inline-block;
             transform-origin: top left;
-            transform: scale(var(--zoom));
         }
 
         /* Scale legend contents without moving the sticky container itself */
@@ -328,7 +328,6 @@
             justify-content: inherit;
             gap: inherit;
             transform-origin: top left;
-            transform: scale(var(--zoom));
         }
 
         /* --- CONTROLS LEGEND (STICKY INSIDE WORKSPACE) --- */

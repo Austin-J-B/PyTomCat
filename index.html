@@ -36,6 +36,7 @@
             /* DIMENSIONS */
             --legend-height: 46px; 
             --legend-min-height: 46px;
+            --zoom: 1;
         }
 
         * { box-sizing: border-box; }
@@ -312,9 +313,7 @@
         }
 
         /* Zoomed content only; keep sticky bars outside to avoid transform bugs */
-        .sheet-zoom {
-            width: 100%;
-        }
+        .sheet-zoom { width: 100%; }
 
         /* Scale legend contents without moving the sticky container itself */
         .legend-zoom {
@@ -2208,10 +2207,12 @@ function resetZoom() {
 
 function applyZoom() {
     document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
-    const workspaceZoom = document.getElementById('workspace-zoom');
-    if (workspaceZoom) {
-        workspaceZoom.style.zoom = zoomLevel;
-    }
+    document.documentElement.style.setProperty('--zoom', zoomLevel.toFixed(3));
+
+    ['sheet-container','sub-container','claim-container','checklist-container'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.zoom = zoomLevel;
+    });
 
     updateStickyHeights();
 }

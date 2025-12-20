@@ -1,3 +1,6 @@
-{"stations":["Business","HOP","Lot 50","Maintenance","Mary Kay & Zen","Microwave","Snickers","The Greens","West Hall"]}
+{"stations":["Business","HOP","Lot 50","Maintenance","Microwave","Snickers","The Greens","West Hall"]}
 {"date":"2025-12-16","status":{"Maintenance":true,"West Hall":true,"Business":true,"HOP":true,"Lot 50":true,"Mary Kay & Zen":false,"Microwave":true,"Snickers":true,"The Greens":true}}
-{"meta":{"updated_at":"2025-12-16T23:20:01.296451-06:00"}}
+{"date":"2025-12-17","status":{"West Hall":true,"Maintenance":true,"The Greens":true,"HOP":true,"Lot 50":true}}
+{"date":"2025-12-18","status":{"Microwave":true,"Lot 50":true,"Business":true,"Snickers":true,"Maintenance":true,"West Hall":true,"The Greens":true,"HOP":true}}
+{"date":"2025-12-19","status":{"Maintenance":true,"The Greens":true,"HOP":true,"West Hall":true}}
+{"meta":{"updated_at":"2025-12-19T17:07:17.005619-06:00"}}

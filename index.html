@@ -682,6 +682,7 @@ let availableWeeks = [];
 let selectedWeek = null;
 let stationEffectiveDate = null;
 let stationVersions = [];
+const _legendBaseHeights = new WeakMap();
 
 // --- RESIZE OBSERVER FOR STICKY HEADER ---
 const resizeObserver = new ResizeObserver(entries => {
@@ -690,8 +691,8 @@ const resizeObserver = new ResizeObserver(entries => {
         if (!entry.target || entry.target.offsetParent === null) continue;
         // Use full box height (padding + border), then unscale for CSS zoom.
         const zoom = Math.max(0.01, Number(zoomLevel) || 1);
-        const height = Math.ceil(entry.target.getBoundingClientRect().height / zoom);
-        document.documentElement.style.setProperty('--legend-height', `${height}px`);
+        const height = entry.target.getBoundingClientRect().height / zoom;
+        document.documentElement.style.setProperty('--legend-height', `${height.toFixed(3)}px`);
     }
 });
 
@@ -874,8 +875,8 @@ function updateStickyHeights() {
     // Fallback if observer hasn't fired yet
     if (legends.length > 0) {
         const zoom = Math.max(0.01, Number(zoomLevel) || 1);
-        const legendH = Math.ceil(legends[0].getBoundingClientRect().height / zoom);
-        root.style.setProperty('--legend-height', `${legendH}px`);
+        const legendH = legends[0].getBoundingClientRect().height / zoom;
+        root.style.setProperty('--legend-height', `${legendH.toFixed(3)}px`);
     } else {
         // No visible legend (e.g., read-only view) so headers should pin to the top
         root.style.setProperty('--legend-height', `0px`);
@@ -884,12 +885,37 @@ function updateStickyHeights() {
     root.style.setProperty('--site-header-height', `${headerH}px`);
 }
 
+function syncLegendZoom() {
+    const legend = document.querySelector('.controls-legend');
+    if (!legend || legend.offsetParent === null) return;
+    const content = legend.querySelector('.legend-zoom') || legend;
+    const rectH = content.getBoundingClientRect().height;
+    if (!rectH) return;
+    if (zoomLevel === 1 || !_legendBaseHeights.has(content)) {
+        _legendBaseHeights.set(content, rectH);
+        content.style.zoom = '';
+        return;
+    }
+    const baseH = _legendBaseHeights.get(content) || rectH;
+    const expected = baseH * zoomLevel;
+    if (Math.abs(rectH - expected) > 1) {
+        content.style.zoom = zoomLevel.toFixed(3);
+    } else if (content.style.zoom) {
+        content.style.zoom = '';
+    }
+}
+
 window.addEventListener('resize', () => {
     updateStickyHeights();
+    syncLegendZoom();
 });
 window.addEventListener('load', () => {
     updateStickyHeights();
-    setTimeout(updateStickyHeights, 60);
+    syncLegendZoom();
+    setTimeout(() => {
+        updateStickyHeights();
+        syncLegendZoom();
+    }, 60);
 });
 
 // --- API CALL ---
@@ -2219,6 +2245,7 @@ function applyZoom() {
     document.documentElement.style.setProperty('--zoom', zoomLevel.toFixed(3));
 
     updateStickyHeights();
+    syncLegendZoom();
 }
 
 const initialView = getViewFromLocation() || 'schedule';

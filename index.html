@@ -230,6 +230,11 @@
         .station-section-label { font-size: 1.16rem; font-weight: 900; letter-spacing: 0.01em; margin-bottom: 2px; }
         .station-add-btn { background: #f6f7f4; color: #3e4637; border: 1px solid var(--grid-line); padding: 6px 10px; border-radius: 10px; width: auto; align-self: flex-start; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .select-input { min-width: 180px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--grid-line); font-weight: 500; background: white; }
+        .week-selector .select-input {
+            font-size: calc(0.95rem * var(--week-select-scale, 1));
+            padding: calc(6px * var(--week-select-scale, 1)) calc(10px * var(--week-select-scale, 1));
+            line-height: 1.2;
+        }
         .controls-legend-stack { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 4px; border-bottom: 0; }
         .top-controls { width: 100%; display: flex; align-items: center; gap: 10px; }
         .legend-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
@@ -903,6 +908,19 @@ function syncLegendZoom() {
         content.style.zoom = '';
     } else {
         content.style.zoom = correction.toFixed(3);
+    }
+
+    const weekSelect = legend.querySelector('#week-select');
+    if (weekSelect) {
+        const selRectH = weekSelect.getBoundingClientRect().height;
+        const selLayoutH = weekSelect.offsetHeight;
+        const selApplied = selRectH && selLayoutH ? (selRectH / selLayoutH) : 1;
+        const selCorrection = zoomLevel / (selApplied || 1);
+        if (Math.abs(selCorrection - 1) <= 0.05) {
+            weekSelect.style.setProperty('--week-select-scale', '1');
+        } else {
+            weekSelect.style.setProperty('--week-select-scale', selCorrection.toFixed(3));
+        }
     }
 }
 

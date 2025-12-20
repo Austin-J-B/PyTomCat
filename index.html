@@ -287,7 +287,7 @@
             overflow-x: auto; 
             padding: 0 40px 40px 40px; 
             display: grid;
-            place-items: start start;
+            place-items: start center;
             background-color: var(--workspace-bg);
             background-image: radial-gradient(var(--workspace-dot) 1px, transparent 1px);
             background-size: 20px 20px;
@@ -890,18 +890,19 @@ function syncLegendZoom() {
     if (!legend || legend.offsetParent === null) return;
     const content = legend.querySelector('.legend-zoom') || legend;
     const rectH = content.getBoundingClientRect().height;
-    if (!rectH) return;
+    const layoutH = content.offsetHeight;
+    if (!rectH || !layoutH) return;
     if (zoomLevel === 1 || !_legendBaseHeights.has(content)) {
         _legendBaseHeights.set(content, rectH);
         content.style.zoom = '';
         return;
     }
-    const baseH = _legendBaseHeights.get(content) || rectH;
-    const expected = baseH * zoomLevel;
-    if (Math.abs(rectH - expected) > 1) {
-        content.style.zoom = zoomLevel.toFixed(3);
-    } else if (content.style.zoom) {
+    const appliedScale = rectH / layoutH;
+    const correction = zoomLevel / (appliedScale || 1);
+    if (Math.abs(correction - 1) <= 0.05) {
         content.style.zoom = '';
+    } else {
+        content.style.zoom = correction.toFixed(3);
     }
 }
 

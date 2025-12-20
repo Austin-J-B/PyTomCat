@@ -378,7 +378,7 @@
             text-transform: uppercase; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; padding: 15px;
             position: sticky;
             /* Stick exactly below the legend - calculated via JS ResizeObserver now */
-            top: calc(var(--legend-height) + 11px); 
+            top: var(--legend-height); 
             z-index: 400; 
             background-color: white; 
             box-shadow: inset 0 -5px 0 var(--site-text);
@@ -688,9 +688,9 @@ const resizeObserver = new ResizeObserver(entries => {
     for (let entry of entries) {
         // Ignore hidden legends so we don't apply stale heights
         if (!entry.target || entry.target.offsetParent === null) continue;
-        // Use full box height (padding + border) so sticky offsets match exactly
-        const heightEl = entry.target.querySelector('.legend-zoom') || entry.target;
-        const height = Math.ceil(heightEl.getBoundingClientRect().height);
+        // Use full box height (padding + border), then unscale for CSS zoom.
+        const zoom = Math.max(0.01, Number(zoomLevel) || 1);
+        const height = Math.ceil(entry.target.getBoundingClientRect().height / zoom);
         document.documentElement.style.setProperty('--legend-height', `${height}px`);
     }
 });
@@ -873,8 +873,8 @@ function updateStickyHeights() {
     
     // Fallback if observer hasn't fired yet
     if (legends.length > 0) {
-        const heightEl = legends[0].querySelector('.legend-zoom') || legends[0];
-        const legendH = Math.ceil(heightEl.getBoundingClientRect().height);
+        const zoom = Math.max(0.01, Number(zoomLevel) || 1);
+        const legendH = Math.ceil(legends[0].getBoundingClientRect().height / zoom);
         root.style.setProperty('--legend-height', `${legendH}px`);
     } else {
         // No visible legend (e.g., read-only view) so headers should pin to the top

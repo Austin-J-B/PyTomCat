@@ -109,12 +109,6 @@ def _is_trusted_member(message, settings, *, prior_count: int = 0) -> Optional[s
         msg_threshold = int(getattr(settings, 'spam_trust_message_threshold', 50) or 50)
         if prior_count >= msg_threshold:
             return "trusted_message_count"
-        #Account age gate
-        if getattr(member, 'created_at', None) is not None:
-            from datetime import datetime, timezone
-            age_days = (datetime.now(timezone.utc) - member.created_at).days
-            if age_days >= int(getattr(settings, 'spam_min_account_days', 30) or 30):
-                return "trusted_age"
         #Trusted roles
         role_reason = _has_privileged_role(member, settings)
         if role_reason:

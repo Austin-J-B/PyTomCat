@@ -654,13 +654,36 @@ async def handle_cat_photo(intent: Intent, ctx: Dict[str, Any]) -> None:
 
 #invites_cache
 message_cache: dict[int, str] = {}
+invites_cache: dict[int, dict[str, int]] = {}
+_invite_refresh_locks: dict[int, asyncio.Lock] = {}
+_invite_refresh_ts: dict[int, float] = {}
+INVITE_REFRESH_COOLDOWN_SEC = int(os.getenv("INVITE_REFRESH_COOLDOWN_SEC", "10") or "10")
 
-async def _refresh_invites(guild: discord.Guild):
-    """Refreshes the invite cache for a given guild."""
+async def _fetch_invites(guild: discord.Guild, *, force: bool = False) -> Optional[list[discord.Invite]]:
+    """Fetch invites with a per-guild cooldown to avoid rate limits."""
     if not guild.me.guild_permissions.manage_guild:
         print(f"Warning: Missing 'Manage Server' permission in '{guild.name}' to track invites.")
+        return None
+    gid = int(getattr(guild, "id", 0) or 0)
+    if not gid:
+        return None
+    lock = _invite_refresh_locks.setdefault(gid, asyncio.Lock())
+    async with lock:
+        now = time.time()
+        last = _invite_refresh_ts.get(gid, 0.0)
+        if not force and (now - last) < INVITE_REFRESH_COOLDOWN_SEC:
+            return None
+        _invite_refresh_ts[gid] = now
+        try:
+            return await guild.invites()
+        except Exception:
+            return None
+
+async def _refresh_invites(guild: discord.Guild, *, force: bool = False) -> None:
+    """Refreshes the invite cache for a given guild."""
+    invites = await _fetch_invites(guild, force=force)
+    if not invites:
         return
-    invites = await guild.invites()
     invites_cache[guild.id] = {inv.code: inv.uses or 0 for inv in invites}
 
 #TomCatUI
@@ -1637,10 +1660,6 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         pass
     data = SPAM_ALERTS.get(payload.message_id)
     if not data:
-        try:
-            log_action("spam_alert_miss", f"msg={payload.message_id}", f"user={payload.user_id}; emoji={payload.emoji}")
-        except Exception:
-            pass
         return
     emoji_str = str(payload.emoji)
     if emoji_str not in {'❌', '✖', '✖️'}:
@@ -1751,16 +1770,17 @@ async def on_member_join(member: discord.Member):
         inviter_id = None
         try:
             before = invites_cache.get(guild.id, {})
-            invites = await guild.invites()
-            after = {inv.code: (inv.uses or 0) for inv in invites}
-            for inv in invites:
-                b = before.get(inv.code, 0)
-                a = after.get(inv.code, 0)
-                if a > b:
-                    code_used = inv.code
-                    inviter_id = getattr(inv.inviter, 'id', None)
-                    break
-            invites_cache[guild.id] = after
+            invites = await _fetch_invites(guild)
+            if invites:
+                after = {inv.code: (inv.uses or 0) for inv in invites}
+                for inv in invites:
+                    b = before.get(inv.code, 0)
+                    a = after.get(inv.code, 0)
+                    if a > b:
+                        code_used = inv.code
+                        inviter_id = getattr(inv.inviter, 'id', None)
+                        break
+                invites_cache[guild.id] = after
         except Exception:
             pass
 

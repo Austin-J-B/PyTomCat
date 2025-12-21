@@ -2,159 +2,512 @@
 
 from __future__ import annotations
 import asyncio
+import base64
+import hashlib
+import hmac
 import time
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
+from collections import deque
+from datetime import datetime
 
 import os
 import json
 from pathlib import Path
 import aiohttp
 from aiohttp import web
-# Import settings before first use
+import logging
+#Import settings before first use
 from .config import settings
-# Config specific to your Discord App (from Developer Portal)
+#Config specific to your Discord App (from Developer Portal)
 CLIENT_ID = getattr(settings, 'ui_activity_app_id', None) or os.getenv("UITEST_ACTIVITY_APP_ID")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 
-# Local persistence for the UI schedule
-SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
-# Fallback station list for empty schedules (mirrors UI)
-DEFAULT_STATIONS = [
-    "Microwave", "Snickers", "Business", "The Greens", "HOP",
-    "Lot 50", "Mary Kay & Zen", "West Hall", "Maintenance"
-]
+SESSION_SECRET = os.getenv("UI_SESSION_SECRET")
+if not SESSION_SECRET:
+    raise RuntimeError("UI_SESSION_SECRET is required to issue UI session cookies (set a long random value in .env)")
 
-# Define your Role IDs for permissions
-ROLES = {
-    "FEEDING_MANAGER": 643587274797481988, # Example ID
-    "PHOTO_LABELER": 798371895434149940,   # Example ID
-    "VIEWER": 551082419768393729           # Example ID
+SESSION_TTL_SECONDS = int(os.getenv("UI_SESSION_TTL_SECONDS", "3600"))
+#Default secure cookies ON so cross-site (e.g., github pages -> your domain) can send them.
+_COOKIE_SECURE = os.getenv("UI_COOKIE_SECURE", "true").lower() == "true"
+#If secure, use SameSite=None (required for third-party); otherwise keep Lax for localhost testing.
+_COOKIE_SAMESITE = "None" if _COOKIE_SECURE else "Lax"
+
+_ALLOWED_ORIGINS = {
+    origin.strip()
+    for origin in os.getenv("UI_ALLOWED_ORIGINS", "http://localhost:8080").split(",")
+    if origin.strip()
 }
 
-# Your main guild ID (replace with your actual guild/server ID)
-YOUR_GUILD_ID = 643586809166561310
+_AUTH_DEBUG = os.getenv("UI_AUTH_DEBUG", "false").lower() == "true"
 
-async def auth_token_exchange(request):
-    """Exchanges the temporary code from frontend for a user access token."""
-    data = await request.json()
-    code = data.get("code")
-    # Exchange code with Discord API
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            'https://discord.com/api/oauth2/token',
-            data={
-                'client_id': CLIENT_ID,
-                'client_secret': CLIENT_SECRET,
-                'grant_type': 'authorization_code',
-                'code': code,
-            }
-        ) as resp:
-            if resp.status != 200:
-                return web.Response(status=401, text="Invalid code")
-            token_data = await resp.json()
-            access_token = token_data['access_token']
+#Officer/guild/role IDs are configured via settings/env only (no code defaults).
+OFFICER_ROLE_ID = int(getattr(settings, "officer_role_id", 0) or 0)
 
-        # Get User ID from Discord
-        async with session.get(
-            'https://discord.com/api/users/@me',
-            headers={'Authorization': f'Bearer {access_token}'}
-        ) as user_resp:
-            user_info = await user_resp.json()
-            user_id = int(user_info['id'])
 
-    # CHECK ROLES (The important part)
-    # We use your existing bot instance to check roles in the guild
-    guild = bot.get_guild(YOUR_GUILD_ID)
+def _debug(msg: str) -> None:
+    """Print lightweight auth/debug traces when enabled."""
+    if _AUTH_DEBUG:
+        print(f"[UI-AUTH] {msg}")
+
+# Local persistence for the UI schedule (ndjson), with legacy JSON fallback for migration
+SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.ndjson"
+LEGACY_SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
+#Versioned schedule helpers
+_DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
+
+def _week_start_iso(dt: datetime | None = None) -> str:
+    d = (dt or datetime.now()).date()
+    days_to_sunday = (d.weekday() + 1) % 7  # Monday=0 ->1 day back; Sunday=6 ->0
+    sunday = d - timedelta(days=days_to_sunday)
+    return sunday.isoformat()
+#Rate limiting constants for the web API
+RATE_LIMIT_MAX_REQUESTS = 200
+RATE_LIMIT_WINDOW_SECONDS = 60
+_rate_limit_counters: dict[str, deque] = {}
+
+#Define your Role IDs for permissions
+ROLES = {
+    "FEEDING_MANAGER": int(getattr(settings, "role_feeding_manager_id", 0) or 0),
+    "PHOTO_LABELER": int(getattr(settings, "role_photo_labeler_id", 0) or 0),
+    "VIEWER": int(getattr(settings, "role_viewer_id", 0) or 0),
+}
+
+#Your main guild ID (replace with your actual guild/server ID)
+YOUR_GUILD_ID = int(getattr(settings, "ui_guild_id", None) or getattr(settings, "target_guild_id", None) or 0)
+#UI can override via env if needed
+UI_GUILD_ID = YOUR_GUILD_ID
+
+
+def _b64_encode(data: str) -> str:
+    return base64.urlsafe_b64encode(data.encode("utf-8")).decode("utf-8").rstrip("=")
+
+
+def _b64_decode(data: str) -> str:
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding).decode("utf-8")
+
+
+def _sign_payload(payload: dict) -> str:
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    sig = hmac.new(SESSION_SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{_b64_encode(body)}.{sig}"
+
+
+def _verify_session(token: str) -> Optional[dict]:
+    if not token or "." not in token:
+        return None
+    try:
+        encoded_body, sig = token.split(".", 1)
+        body = _b64_decode(encoded_body)
+        expected_sig = hmac.new(
+            SESSION_SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(expected_sig, sig):
+            return None
+        payload = json.loads(body)
+        if payload.get("exp", 0) < int(time.time()):
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+def _get_session_from_request(request: web.Request) -> Optional[dict]:
+    token = request.cookies.get("tc_session")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1]
+    _debug(f"session cookie_present={bool(token)}")
+    return _verify_session(token) if token else None
+
+
+def _issue_session_response(user_info: dict, permissions: dict, request: web.Request) -> web.Response:
+    """Sign a session payload and return a JSON response with cookie set."""
+    now_ts = int(time.time())
+    #CRITICAL FIX: Ensure user_id is a string to prevent JS integer precision loss
+    user_id_str = str(user_info.get("id"))
+    
+    session_payload = {
+        "user_id": user_id_str, 
+        "username": user_info.get("username"),
+        "global_name": user_info.get("global_name"),
+        "permissions": permissions,
+        "iat": now_ts,
+        "exp": now_ts + SESSION_TTL_SECONDS,
+    }
+    session_token = _sign_payload(session_payload)
+
+    resp = web.json_response({
+        "user": {
+            "id": user_id_str,
+            "username": user_info.get("username"),
+            "global_name": user_info.get("global_name"),
+        },
+        "permissions": permissions
+    })
+    resp.set_cookie(
+        "tc_session",
+        session_token,
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=_COOKIE_SECURE,
+        samesite=_COOKIE_SAMESITE,
+    )
+    _debug(f"set-cookie secure={_COOKIE_SECURE} samesite={_COOKIE_SAMESITE}")
+    return _with_cors(resp, request)
+
+
+# --- schedule version helpers ---
+def _read_schedule_ndjson(path: Path) -> list:
+    versions: list = []
+    if not path.exists():
+        return versions
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(obj, dict) and obj.get("effective_from"):
+                versions.append({
+                    "effective_from": obj.get("effective_from"),
+                    "schedule": obj.get("schedule") or {},
+                    "meta": obj.get("meta") or {}
+                })
+    except Exception:
+        return versions
+    return versions
+
+
+def _load_schedule_versions() -> list:
+    versions = _read_schedule_ndjson(SCHEDULE_PATH)
+    if versions:
+        return versions
+
+    # Legacy JSON fallback (migrates forward to ndjson)
+    if not LEGACY_SCHEDULE_PATH.exists():
+        return []
+    try:
+        data = json.loads(LEGACY_SCHEDULE_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "versions" in data:
+            versions = data.get("versions") or []
+        elif isinstance(data, dict) and "schedule" in data:
+            versions = [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
+        elif isinstance(data, list):
+            versions = data
+        if versions:
+            _save_schedule_versions(versions)
+        return versions
+    except Exception:
+        return []
+    return []
+
+
+def _save_schedule_versions(versions: list):
+    meta = {"updated_at": int(time.time())}
+    SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SCHEDULE_PATH.with_name(SCHEDULE_PATH.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for v in versions:
+            f.write(json.dumps(v, separators=(",", ":")) + "\n")
+        f.write(json.dumps({"meta": meta}, separators=(",", ":")) + "\n")
+    tmp.replace(SCHEDULE_PATH)
+
+
+def _resolve_schedule_for_date(target_iso: Optional[str]) -> dict:
+    """Return schedule and effective_from for the given date (YYYY-MM-DD)."""
+    versions = _load_schedule_versions()
+    if not versions:
+        return {"schedule": {}, "effective_from": _DEFAULT_SCHED_EFFECTIVE, "meta": {}}
+    target_date = None
+    if target_iso:
+        try:
+            target_date = datetime.fromisoformat(target_iso).date()
+        except Exception:
+            target_date = None
+    if not target_date:
+        target_date = datetime.now().date()
+
+    best = None
+    for v in versions:
+        try:
+            eff = datetime.fromisoformat(str(v.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date()
+        except Exception:
+            continue
+        if eff <= target_date and (best is None or datetime.fromisoformat(str(best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date() < eff):
+            best = v
+    if not best:
+        best = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[0]
+
+    sched = best.get("schedule") or {}
+    # Filter schedule to known station names for that effective date
+    allowed = set(station_names(best.get("effective_from")))
+    sched = {st: row for st, row in sched.items() if st in allowed}
+    return {"schedule": sched, "effective_from": best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE, "meta": best.get("meta") or {}}
+
+
+def _upsert_schedule_version(schedule: dict, effective_from: str, meta: dict | None = None) -> list:
+    try:
+        eff = datetime.fromisoformat(str(effective_from)).date().isoformat()
+    except Exception:
+        eff = _DEFAULT_SCHED_EFFECTIVE
+    versions = _load_schedule_versions()
+    replaced = False
+    for v in versions:
+        if str(v.get("effective_from")) == eff:
+            v["schedule"] = schedule
+            v["meta"] = meta or v.get("meta") or {}
+            replaced = True
+            break
+    if not replaced:
+        versions.append({"effective_from": eff, "schedule": schedule, "meta": meta or {}})
+    versions = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)
+    _save_schedule_versions(versions)
+    return versions
+
+
+async def _resolve_member(user_id: int) -> tuple[Optional[discord.Guild], Optional[discord.Member]]:
+    """Find a member in the configured guild or any guild the bot is in."""
+    guild = bot.get_guild(YOUR_GUILD_ID) if "bot" in globals() else None
     member = guild.get_member(user_id) if guild else None
     if not member and guild:
-        # Fallback: fetch if not cached
         try:
             member = await guild.fetch_member(user_id)
         except Exception:
             member = None
 
-    user_roles = [r.id for r in member.roles] if member else []
+    if not member and "bot" in globals():
+        for g in bot.guilds:
+            try:
+                candidate = g.get_member(user_id)
+                if not candidate:
+                    candidate = await g.fetch_member(user_id)
+                if candidate:
+                    return g, candidate
+            except Exception:
+                continue
+    return guild, member
 
-    # Determine permissions
-    permissions = {
-        "can_edit_schedule": ROLES["FEEDING_MANAGER"] in user_roles,
-        "can_label_photos": ROLES["PHOTO_LABELER"] in user_roles,
-        "can_view": ROLES["VIEWER"] in user_roles
+
+def _build_permissions(user_roles: list[int]) -> dict:
+    """Calculate permissions based on Discord roles."""
+    is_officer = OFFICER_ROLE_ID in user_roles
+    return {
+        "can_edit_schedule": is_officer,
+        "can_label_photos": ROLES.get("PHOTO_LABELER") in user_roles,
+        "can_view": True,
+        "is_officer": is_officer,
     }
 
-    if not permissions["can_view"]:
-         return web.Response(status=403, text="Not authorized to view this app.")
 
-    # Return the token back to frontend (or a session cookie) 
-    # + the permissions so the UI knows what buttons to show
-    return web.json_response({
-        "access_token": access_token,
-        "user": user_info,
-        "permissions": permissions
-    })
+def _require_permissions(
+    request: web.Request,
+    *,
+    require_view: bool = False,
+    require_edit: bool = False,
+) -> tuple[Optional[dict], Optional[web.Response]]:
+    session = _get_session_from_request(request)
+    if not session:
+        _debug(f"_require_permissions missing session require_view={require_view} require_edit={require_edit}")
+        return None, _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
 
-# --- The Secure Save Endpoint ---
+    permissions = session.get("permissions", {})
+    if require_view and not permissions.get("can_view"):
+        return None, _with_cors(web.Response(status=403, text="Not authorized to view"), request)
+    if require_edit and not permissions.get("can_edit_schedule"):
+        return None, _with_cors(web.Response(status=403, text="Schedule editing not allowed"), request)
+    return session, None
+
+async def auth_token_exchange(request):
+    """Exchanges the temporary code from frontend for a user access token."""
+    _debug(f"POST /api/auth/token headers_origin={request.headers.get('Origin')} query={dict(request.query)}")
+    try:
+        data = await request.json()
+    except Exception:
+        return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
+    code = data.get("code")
+    redirect_uri = data.get("redirect_uri") 
+    _debug(f"payload redirect_uri={redirect_uri} code_present={bool(code)}")
+
+    if not code:
+        return _with_cors(web.Response(status=400, text="Missing authorization code"), request)
+    if not CLIENT_SECRET or not CLIENT_ID:
+        return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)
+
+    async with aiohttp.ClientSession() as session:
+        token_payload = {
+            'client_id': CLIENT_ID,
+            'client_secret': CLIENT_SECRET,
+            'grant_type': 'authorization_code',
+            'code': code,
+        }
+        
+        if redirect_uri:
+            token_payload['redirect_uri'] = redirect_uri
+
+        try:
+            async with session.post(
+                'https://discord.com/api/oauth2/token',
+                data=token_payload,
+            ) as resp:
+                if resp.status != 200:
+                    err_text = await resp.text()
+                    _debug(f"discord token error status={resp.status} body={err_text}")
+                    return _with_cors(
+                        web.Response(
+                            status=401,
+                            text=f"Token exchange failed (discord status={resp.status})"
+                        ),
+                        request
+                    )
+            
+                token_data = await resp.json()
+                access_token = token_data.get('access_token')
+                _debug(f"discord token ok scopes={token_data.get('scope')} expires_in={token_data.get('expires_in')}")
+        except Exception as exc:
+            _debug(f"discord token exception={exc}")
+            return _with_cors(web.Response(status=502, text="Token exchange request failed"), request)
+
+        try:
+            async with session.get(
+                'https://discord.com/api/users/@me',
+                headers={'Authorization': f'Bearer {access_token}'}
+            ) as user_resp:
+                user_info = await user_resp.json()
+                user_id = int(user_info['id'])
+                _debug(f"discord /users/@me status={user_resp.status} user_id={user_id}")
+        except Exception as exc:
+            _debug(f"/users/@me exception={exc}")
+            return _with_cors(web.Response(status=502, text="Failed to fetch user profile"), request)
+
+    guild, member = await _resolve_member(user_id)
+    if not guild or not member:
+        guild_ids = [getattr(g, "id", None) for g in bot.guilds]
+        _debug(f"guild/member missing guild={bool(guild)} member={bool(member)} bot_guilds={guild_ids}")
+        return _with_cors(web.Response(status=403, text="Unable to validate guild membership"), request)
+
+    user_roles = [r.id for r in member.roles] if member else []
+    permissions = _build_permissions(user_roles)
+
+    return _issue_session_response(user_info, permissions, request)
+
+
+async def get_session(request: web.Request):
+    """Validate an existing session cookie and refresh it."""
+    session = _get_session_from_request(request)
+    if not session:
+        return _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
+
+    try:
+        user_id = int(session.get("user_id"))
+    except Exception:
+        return _with_cors(web.Response(status=400, text="Invalid session payload"), request)
+
+    guild, member = await _resolve_member(user_id)
+    if not guild or not member:
+        return _with_cors(web.Response(status=403, text="Guild membership required"), request)
+
+    user_roles = [r.id for r in member.roles]
+    permissions = _build_permissions(user_roles)
+    user_info = {
+        "id": user_id,
+        "username": session.get("username") or getattr(member, "name", ""),
+        "global_name": session.get("global_name") or getattr(member, "global_name", None),
+    }
+
+    return _issue_session_response(user_info, permissions, request)
+
+#--- The Secure Save Endpoint ---
 async def save_schedule(request):
     """Persist the feeding schedule to a local JSON file."""
-    data = await request.json()
+    _, error = _require_permissions(request, require_view=True, require_edit=True)
+    if error:
+        return error
+    try:
+        data = await request.json()
+    except Exception:
+        return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
     schedule = data.get("schedule", {})
     meta = data.get("meta", {})
+    effective_from = data.get("effective_from") or data.get("week")
+    if not isinstance(schedule, dict):
+        return _with_cors(web.Response(status=400, text="Schedule must be an object"), request)
+    if not effective_from:
+        return _with_cors(web.Response(status=400, text="effective_from is required"), request)
 
-    # Persist to disk (cache/feeding_schedule.json)
     try:
-        SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "schedule": schedule,
-            "meta": {**meta, "saved_at": int(time.time())}
-        }
-        SCHEDULE_PATH.write_text(json.dumps(payload), encoding="utf-8")
-    except Exception as e:
-        resp = web.Response(status=500, text=f"Failed to save schedule: {e}")
-        resp.headers.update(_CORS_HEADERS)
-        return resp
+        meta_out = {**meta, "saved_at": int(time.time())}
+        _upsert_schedule_version(schedule, effective_from, meta_out)
+    except Exception:
+        logging.exception("Unexpected error when saving schedule")
+        return _with_cors(web.Response(status=500, text="Failed to save schedule."), request)
 
-    resp = web.json_response({"status": "ok"})
-    resp.headers.update(_CORS_HEADERS)
-    return resp
+    return _with_cors(web.json_response({"status": "ok"}), request)
 
 
 async def get_schedule(request):
     """Load the last saved schedule if it exists; otherwise return empty slots."""
-    if not SCHEDULE_PATH.exists():
-        empty = {station: [""] * 7 for station in (getattr(settings, "feeding_schedule", {}) or {}).keys()}
-        if not empty:
-            empty = {station: [""] * 7 for station in DEFAULT_STATIONS}
-        resp = web.json_response({"schedule": empty, "meta": {"saved_at": None}})
-        resp.headers.update(_CORS_HEADERS)
-        return resp
+    _, error = _require_permissions(request, require_view=True)
+    if error:
+        return error
+    _debug(f"GET /api/schedule session_ok")
+    
+    #Helper to force all IDs to strings
+    def stringify_schedule(sched):
+        new_sched = {}
+        for station, row in sched.items():
+            #Cast each ID to string, handling None/0 as empty string
+            new_sched[station] = [str(uid) if uid else "" for uid in row]
+        return new_sched
 
-    try:
-        payload = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
-        resp = web.json_response(payload)
-        resp.headers.update(_CORS_HEADERS)
-        return resp
-    except Exception as e:
-        resp = web.Response(status=500, text=f"Failed to load schedule: {e}")
-        resp.headers.update(_CORS_HEADERS)
-        return resp
+    week_param = request.query.get("week")
+    resolved = _resolve_schedule_for_date(week_param)
+    sched = stringify_schedule(resolved.get("schedule", {}))
+    stations = station_names(week_param)
+    versions = _load_schedule_versions()
+    weeks = sorted([v.get("effective_from") for v in versions if v.get("effective_from") and v.get("effective_from") != _DEFAULT_SCHED_EFFECTIVE], reverse=True)
+    if not weeks:
+        weeks = [_week_start_iso()]
+
+    payload = {
+        "schedule": sched,
+        "stations": stations,
+        "effective_from": resolved.get("effective_from") if resolved.get("effective_from") != _DEFAULT_SCHED_EFFECTIVE else (week_param or _week_start_iso()),
+        "weeks": weeks,
+        "meta": resolved.get("meta") or {}
+    }
+    _debug(f"/api/schedule returning stations={list(sched.keys())} effective_from={payload.get('effective_from')}")
+
+    resp = web.json_response(payload)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return _with_cors(resp, request)
 
 import discord
 from discord.ext import commands
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from .config import settings
-from .logger import log_event, log_action  # noqa: F401  # imported for shared use
+from .logger import log_event, log_action  #noqa: F401  #imported for shared use
 from .intent_router import IntentRouter, Intent
 from .handlers.misc import handle_channel_image_intake as _handle_image_intake, start_profile_scheduler
 from .services.show_cache import warm_cache_on_boot
 from .services.profile_cache import start_profile_cache_scheduler
+from .handlers import feeding as _feed
+from .stations import station_names, station_definitions, save_stations_version, station_versions
+from UserInterface.sub_request_linker import build_open_sub_requests_view
 
 
 intent_router = IntentRouter()
 
 SPAM_ALERTS: Dict[int, Dict[str, int]] = {}
 
-# ------- Discord intents & bot -------
+#------- Discord intents & bot -------
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -163,12 +516,13 @@ intents.reactions = True
 
 bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
 
-# ------- Import real handlers -------
-# Cats / Feeding and Dues handlers already use the (intent, ctx) signature
+#------- Import real handlers -------
+#Cats / Feeding and Dues handlers already use the (intent, ctx) signature
 from .handlers.cats import handle_cat_show as _handle_cat_show, handle_cat_photo as _handle_cat_photo
-from .handlers.feeding import start_feeding_scheduler, handle_feeding_inquiry as _handle_feeding_status
-# Dues: no background scheduler; admin-only Gmail test is routed directly from the router
-from .handlers.dues import start_gmail_logging_scheduler, start_dues_scheduler
+from .handlers.feeding import start_feeding_scheduler, start_morning_scheduler, handle_feeding_inquiry as _handle_feeding_status
+#Dues: no background scheduler; admin-only Gmail test is routed directly from the router
+from .handlers.dues import start_dues_scheduler
+from .handlers.gmail import start_gmail_logging_scheduler
 
 from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
@@ -176,7 +530,7 @@ from .handlers.misc import handle_misc as _handle_misc_raw
 from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
 
 
-# --- Muted wrappers: run handlers but drop outbound sends ---
+#--- Muted wrappers: run handlers but drop outbound sends ---
 class _MuteChannel:
     """Proxy channel object that logs outbound messages instead of sending."""
     def __init__(self, real, label_fn):
@@ -186,9 +540,9 @@ class _MuteChannel:
         self.name = getattr(real, "name", None)
 
     async def send(self, content=None, **kwargs):
-        # Log what would have been sent; don’t actually send.
-        from .logger import log_action  # local import to avoid cycles
-        # Prefer a short preview of content or note an embed
+        #Log what would have been sent; don’t actually send.
+        from .logger import log_action  #local import to avoid cycles
+        #Prefer a short preview of content or note an embed
         preview = ""
         if content:
             preview = str(content)
@@ -201,20 +555,20 @@ class _MuteChannel:
             f"channel={self._label_fn(self._real)}",
             preview[:120],
         )
-        return None  # mimic coroutine
+        return None  #mimic coroutine
 
     def __getattr__(self, name):
-        # Delegate unknown attributes/methods to the real channel
+        #Delegate unknown attributes/methods to the real channel
         return getattr(self._real, name)
 
 class _MuteMessage:
     """Lightweight message proxy used when silent mode blocks replies."""
     def __init__(self, real_msg, muted_channel):
-        # Keep attributes handlers touch; forward everything else if needed
+        #Keep attributes handlers touch; forward everything else if needed
         self._real = real_msg
         self.channel = muted_channel
         self.author = real_msg.author
-        # Preserve common identifiers used by router/handlers
+        #Preserve common identifiers used by router/handlers
         self.id = getattr(real_msg, "id", None)
         self.guild = getattr(real_msg, "guild", None)
         self.content = real_msg.content
@@ -222,7 +576,7 @@ class _MuteMessage:
         self.attachments = getattr(real_msg, "attachments", [])
 
     def __getattr__(self, name):
-        # Delegate any other attributes to the real discord.Message
+        #Delegate any other attributes to the real discord.Message
         return getattr(self._real, name)
 
 
@@ -240,24 +594,37 @@ def _user_label(u: Union[discord.Member, discord.User]) -> str:
 
 def _channel_label(ch: discord.abc.Messageable) -> str:
     """Pretty-print channels/threads for logs and muted output."""
-    # Guild text channel
+    #Guild text channel
     if isinstance(ch, discord.TextChannel):
         return f"#{ch.name}"
-    # Thread inside a parent channel; parent can be None so guard it
+    #Thread inside a parent channel; parent can be None so guard it
     if isinstance(ch, discord.Thread):
         parent = getattr(ch, "parent", None)
         parent_prefix = f"#{parent.name}/" if parent and getattr(parent, "name", None) else ""
         return f"{parent_prefix}{ch.name}"
-    # 1:1 DM (recipient is Optional[User])
+    #1:1 DM (recipient is Optional[User])
     if isinstance(ch, discord.DMChannel):
         return "DM"
-    # Group DM, Stage, Voice, PartialMessageable, whatever else
+    #Group DM, Stage, Voice, PartialMessageable, whatever else
     name = getattr(ch, "name", None)
     return f"#{name}" if isinstance(name, str) and name else ch.__class__.__name__.lower()
 
 
+def _format_date_for_notification(date_iso: str) -> str:
+    """Formats an ISO date string into 'Weekday, MM/DD/YYYY'."""
+    try:
+        # Handles both 'YYYY-MM-DD' and 'YYYY-MM-DDTHH:MM:SS'
+        dt = datetime.fromisoformat(date_iso.split('T')[0])
+        dow = dt.strftime("%A")
+        date_pretty = dt.strftime("%m/%d/%Y")
+        return f"{dow}, {date_pretty}"
+    except (ValueError, TypeError):
+        return date_iso # Fallback to original string if something is wrong
 
-# ------- Adapters to unify handler signatures -------
+
+
+
+#------- Adapters to unify handler signatures -------
 async def handle_cat_show(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_cat_show(intent, ctx)
 
@@ -265,14 +632,14 @@ async def handle_feeding_status(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_feeding_status(intent, ctx)
 
 async def handle_dues_notice(intent: Intent, ctx: Dict[str, Any]) -> None:
-    # Deprecated placeholder; kept for compatibility if referenced elsewhere
+    #Deprecated placeholder; kept for compatibility if referenced elsewhere
     pass
 
-# Admin handler expects (args, ctx) where args == intent.data
+#Admin handler expects (args, ctx) where args == intent.data
 async def handle_silent_mode(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_silent_mode_raw(intent.data, ctx)
 
-# Misc handler expects (message, *, now_ts, allow_in_channels)
+#Misc handler expects (message, *, now_ts, allow_in_channels)
 async def handle_misc(intent: Intent, ctx: Dict[str, Any]) -> None:
     message: discord.Message = ctx["message"]
     await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
@@ -287,48 +654,116 @@ async def handle_cat_photo(intent: Intent, ctx: Dict[str, Any]) -> None:
 
 #invites_cache
 message_cache: dict[int, str] = {}
+invites_cache: dict[int, dict[str, int]] = {}
+_invite_refresh_locks: dict[int, asyncio.Lock] = {}
+_invite_refresh_ts: dict[int, float] = {}
+INVITE_REFRESH_COOLDOWN_SEC = int(os.getenv("INVITE_REFRESH_COOLDOWN_SEC", "10") or "10")
 
-async def _refresh_invites(guild: discord.Guild):
-    """Refreshes the invite cache for a given guild."""
+async def _fetch_invites(guild: discord.Guild, *, force: bool = False) -> Optional[list[discord.Invite]]:
+    """Fetch invites with a per-guild cooldown to avoid rate limits."""
     if not guild.me.guild_permissions.manage_guild:
         print(f"Warning: Missing 'Manage Server' permission in '{guild.name}' to track invites.")
+        return None
+    gid = int(getattr(guild, "id", 0) or 0)
+    if not gid:
+        return None
+    lock = _invite_refresh_locks.setdefault(gid, asyncio.Lock())
+    async with lock:
+        now = time.time()
+        last = _invite_refresh_ts.get(gid, 0.0)
+        if not force and (now - last) < INVITE_REFRESH_COOLDOWN_SEC:
+            return None
+        _invite_refresh_ts[gid] = now
+        try:
+            return await guild.invites()
+        except Exception:
+            return None
+
+async def _refresh_invites(guild: discord.Guild, *, force: bool = False) -> None:
+    """Refreshes the invite cache for a given guild."""
+    invites = await _fetch_invites(guild, force=force)
+    if not invites:
         return
-    invites = await guild.invites()
     invites_cache[guild.id] = {inv.code: inv.uses or 0 for inv in invites}
 
 #TomCatUI
-_CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-}
+
+def _cors_headers(request: web.Request) -> Dict[str, str]:
+    origin = request.headers.get("Origin")
+    allow_origin = None
+    if origin and ("*" in _ALLOWED_ORIGINS or origin in _ALLOWED_ORIGINS):
+        allow_origin = origin
+    elif "*" in _ALLOWED_ORIGINS:
+        allow_origin = "*"
+
+    headers = {
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Vary": "Origin",
+    }
+    _debug(f"CORS origin={origin!r} allow_origin={allow_origin!r}")
+    if allow_origin:
+        headers["Access-Control-Allow-Origin"] = allow_origin
+    if allow_origin and allow_origin != "*":
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return headers
+
+
+def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResponse:
+    resp.headers.update(_cors_headers(request))
+    return resp
+
+
+@web.middleware
+async def rate_limit_middleware(request: web.Request, handler):
+    """Limit requests per client to reduce abuse of the web API."""
+    client_ip = request.remote
+    if not client_ip:
+        peername = request.transport.get_extra_info("peername") if request.transport else None
+        if isinstance(peername, (tuple, list)) and peername:
+            client_ip = peername[0]
+        elif isinstance(peername, str):
+            client_ip = peername
+    client_id = client_ip or "unknown"
+    now = time.time()
+    bucket = _rate_limit_counters.setdefault(client_id, deque())
+    while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
+        bucket.popleft()
+    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        return _with_cors(web.Response(status=429, text="Too many requests"), request)
+    bucket.append(now)
+    return await handler(request)
 
 
 async def start_web_server(bot):
     """Simple web server to serve the UI and API."""
-    app = web.Application()
+    app = web.Application(middlewares=[rate_limit_middleware])
 
     async def get_index(request):
         """Serve the index.html file."""
         try:
             with open("index.html", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="text/html")
-                resp.headers.update(_CORS_HEADERS)
-                return resp
+                return _with_cors(web.Response(text=f.read(), content_type="text/html"), request)
         except FileNotFoundError:
             return web.Response(text="index.html not found. Please upload it to the bot root.", status=404)
 
     async def get_members(request):
-        """Return JSON list of members with the Feeding Team role."""
+        """Return JSON list of members allowed to be scheduled."""
+        _, error = _require_permissions(request, require_view=True)
+        if error:
+            return error
         FEEDING_TEAM_ROLE_ID = None
-        DUE_PAYING_ROLE_ID = 774442956375064606
+        DUE_PAYING_ROLE_ID = int(getattr(settings, "role_due_paying_id", 0) or 0)
+        HOLIDAY_FEEDER_ROLE_ID = int(getattr(settings, "role_holiday_feeder_id", 0) or 0)
         found_members = []
         
         for guild in bot.guilds:
-            role = guild.get_role(DUE_PAYING_ROLE_ID) if DUE_PAYING_ROLE_ID else None
-            if role:
+            for role_id in (DUE_PAYING_ROLE_ID, HOLIDAY_FEEDER_ROLE_ID):
+                role = guild.get_role(role_id) if role_id else None
+                if not role:
+                    continue
                 for member in role.members:
-                    # Use display_name (nickname) if available, fallback to username
+                    #Use display_name (nickname) if available, fallback to username
                     name = member.display_name
                     found_members.append({
                         "name": name,
@@ -337,171 +772,400 @@ async def start_web_server(bot):
                         "color": str(member.color) if member.color else "#000000"
                     })
 
-        # Deduplicate by ID in case multiple guilds are involved
+        #Deduplicate by ID in case multiple guilds are involved
         unique_members = {m['id']: m for m in found_members}.values()
-        # Sort alphabetically
+        #Sort alphabetically
         sorted_members = sorted(unique_members, key=lambda x: x['name'].lower())
 
+        _debug(f"/api/members count={len(sorted_members)} roles={[DUE_PAYING_ROLE_ID, HOLIDAY_FEEDER_ROLE_ID]}")
+
         resp = web.json_response(list(sorted_members))
-        resp.headers.update(_CORS_HEADERS)
         resp.headers["Cache-Control"] = "no-store"
-        return resp
+        return _with_cors(resp, request)
 
     async def options_members(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+        return _with_cors(web.Response(status=204), request)
 
     async def options_schedule(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+        return _with_cors(web.Response(status=204), request)
 
     async def options_schedule_save(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+        return _with_cors(web.Response(status=204), request)
 
-    async def options_subrequest(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+    async def options_stations(request):
+        return _with_cors(web.Response(status=204), request)
 
-    async def options_sub_open(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+    async def options_auth_token(request):
+        return _with_cors(web.Response(status=204), request)
 
-    async def options_sub_claim(request):
-        return web.Response(status=204, headers=_CORS_HEADERS)
+    async def options_auth_session(request):
+        return _with_cors(web.Response(status=204), request)
 
-    async def submit_subrequest(request):
-        """Record a manual sub request and notify the feeding team channel."""
+    async def get_stations_api(request):
+        """Return station definitions for a given date (default: today) plus available versions."""
+        _, error = _require_permissions(request, require_view=True)
+        if error:
+            return error
+        date_param = request.query.get("date")
+        versions = station_versions()
+        return _with_cors(web.json_response({
+            "stations": station_definitions(date_param),
+            "versions": versions
+        }), request)
+
+    async def save_stations_api(request):
+        """Replace station definitions for an effective date; officer only."""
+        _, error = _require_permissions(request, require_view=True, require_edit=True)
+        if error:
+            return error
         try:
             data = await request.json()
         except Exception:
-            return web.Response(status=400, text="Invalid JSON", headers=_CORS_HEADERS)
-
-        user_id = data.get("user_id")
-        user_name = data.get("user_name") or ""
-        date_iso = data.get("date")
-        stations = data.get("stations") or []
-        if not user_id or not date_iso or not stations:
-            return web.Response(status=400, text="Missing user_id, date, or stations", headers=_CORS_HEADERS)
-
-        # Append to logs/subs/YYYY/YYYY-MM.jsonl
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+        stations_payload = data.get("stations")
+        effective_from = data.get("effective_from") or data.get("date")
+        if not isinstance(stations_payload, list):
+            return _with_cors(web.Response(status=400, text="Stations must be a list"), request)
+        if not effective_from:
+            return _with_cors(web.Response(status=400, text="effective_from is required"), request)
         try:
-            from datetime import datetime
-            from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
-            month_key = _sub_month_key_from_date(date_iso)
-            if not month_key:
-                month_key = datetime.now().strftime("%Y-%m")
-            path = _sub_log_path_from_key(month_key)
-            import os, json
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            record = {
-                "kind": "sub_request",
-                "id": f"sub-{int(datetime.now().timestamp()*1000)}",
-                "station": ", ".join(stations),
-                "stations": stations,
-                "dates": [date_iso],
-                "requester": int(user_id),
-                "requester_name": user_name,
-                "assignee": None,
-                "status": "requested",
-                "channel_id": 0,
-                "message_id": 0,
-                "created_at": datetime.now().isoformat(),
-                "log_month": month_key,
-                "message_preview": "",
-                "trigger_phrase": "ui_sub_request",
-            }
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record) + "\n")
+            versions = save_stations_version(stations_payload, effective_from)
         except Exception as e:
-            return web.Response(status=500, text=f"Failed to log sub request: {e}", headers=_CORS_HEADERS)
+            logging.exception("Failed to save stations")  # Logs the full stack trace
+            return _with_cors(
+                web.Response(status=500, text="Failed to save stations due to an internal error."), request
+            )
+        # Reload and return updated list
+        return _with_cors(web.json_response({"stations": station_definitions(effective_from), "versions": versions}), request)
 
-        # Notify feeding team channel (include day-of-week and friendly date)
+    async def options_subrequest(request):
+        return _with_cors(web.Response(status=204), request)
+
+    async def options_sub_open(request):
+        return _with_cors(web.Response(status=204), request)
+
+    async def options_sub_claim(request):
+        return _with_cors(web.Response(status=204), request)
+
+    async def options_feeding_checklist(request):
+        return _with_cors(web.Response(status=204), request)
+
+    async def get_feeding_checklist(request):
+        """Officer-only: read local feeding checklist within a date range."""
+        _, error = _require_permissions(request, require_edit=True)
+        if error:
+            return error
+        q_from = request.query.get("from")
+        q_to = request.query.get("to")
+        payload = _feed.get_feeding_snapshot(q_from, q_to)
+        return _with_cors(web.json_response(payload), request)
+
+    async def save_feeding_checklist(request):
+        """Officer-only: replace station fed/unfed state for a date."""
+        _, error = _require_permissions(request, require_edit=True)
+        if error:
+            return error
+        try:
+            data = await request.json()
+        except Exception:
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
+        date_iso = data.get("date")
+        status_map = data.get("status") or {}
+        if not date_iso or not isinstance(status_map, dict):
+            return _with_cors(web.Response(status=400, text="Missing required fields"), request)
+
+        try:
+            status_clean = {_feed._canonical_station(k) or k: bool(v) for k, v in status_map.items()}
+            await _feed.set_feeding_day_status(date_iso, status_clean)
+            snap = _feed.get_feeding_snapshot(date_iso, date_iso)
+            return _with_cors(web.json_response(snap), request)
+        except ValueError:
+            return _with_cors(web.Response(status=400, text="Invalid date format"), request)
+        except Exception as e:
+            logging.exception("Error saving feeding checklist")
+            return _with_cors(web.Response(status=500, text="Save failed due to an internal error"), request)
+
+    async def submit_subrequest(request):
+        """Record a manual sub request."""
+        session, error = _require_permissions(request, require_view=True)
+        if error: return error
+        
+        try:
+            data = await request.json()
+        except Exception:
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
+        #--- SECURITY / IMPERSONATION LOGIC ---
+        req_user_id = data.get("user_id")
+        req_user_name = data.get("user_name")
+        
+        #If user is NOT an officer, force them to use their own identity
+        permissions = session.get("permissions", {})
+        if not permissions.get("is_officer"):
+            req_user_id = session.get("user_id")
+            req_user_name = session.get("username") #fallback
+        
+        #If officer didn't provide a specific user (standard submit), default to self
+        if not req_user_id:
+            req_user_id = session.get("user_id")
+        if not req_user_name:
+            req_user_name = session.get("username")
+
+        raw_requests = data.get("requests")
+        parsed_requests = []
+
+        if isinstance(raw_requests, list) and raw_requests:
+            for entry in raw_requests:
+                date_iso = entry.get("date")
+                stations = entry.get("stations") or []
+                if not date_iso or not stations:
+                    continue
+                try:
+                    date_obj = datetime.fromisoformat(str(date_iso))
+                    date_iso_clean = date_obj.date().isoformat()
+                except ValueError:
+                    continue
+                stations_clean = [s for s in stations if s]
+                if stations_clean:
+                    parsed_requests.append({
+                        "date": date_iso_clean,
+                        "stations": list(dict.fromkeys(stations_clean)),
+                    })
+        else:
+            date_iso = data.get("date")
+            stations = data.get("stations") or []
+            if not req_user_id or not date_iso or not stations:
+                return _with_cors(web.Response(status=400, text="Missing required fields"), request)
+            try:
+                date_obj = datetime.fromisoformat(str(date_iso))
+                date_iso_clean = date_obj.date().isoformat()
+            except ValueError:
+                return _with_cors(web.Response(status=400, text="Invalid date format"), request)
+            stations_clean = [s for s in stations if s]
+            parsed_requests.append({
+                "date": date_iso_clean,
+                "stations": list(dict.fromkeys(stations_clean)),
+            })
+
+        if not req_user_id or not parsed_requests:
+            return _with_cors(web.Response(status=400, text="Missing required fields"), request)
+
+        batch_id = f"sub-{int(datetime.now().timestamp()*1000)}"
+        created_ts = datetime.now().isoformat()
+        records_written = []
+
+        #Append each date as its own record so the claim UI stays simple
+        try:
+            from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
+            for idx, req in enumerate(parsed_requests, start=1):
+                date_iso = req["date"]
+                stations = req["stations"]
+                month_key = _sub_month_key_from_date(date_iso) or datetime.now().strftime("%Y-%m")
+                path = _sub_log_path_from_key(month_key)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+
+                record = {
+                    "kind": "sub_request",
+                    "id": f"{batch_id}-{idx}",
+                    "parent_id": batch_id,
+                    "station": ", ".join(stations),
+                    "stations": stations,
+                    "dates": [date_iso],
+                    "requester": str(req_user_id),  #Force string to future-proof
+                    "requester_name": req_user_name,
+                    "assignee": None,
+                    "status": "requested",
+                    "created_at": created_ts,
+                    "trigger_phrase": "ui_sub_request",
+                }
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record) + "\n")
+                records_written.append(record)
+        except Exception as e:
+            logging.exception("Exception occurred while writing sub request log")
+            return _with_cors(web.Response(status=500, text="An internal error occurred"), request)
+
+        #Notify Discord once for the batch
         try:
             channel_id = getattr(settings, "ch_feeding_team", None)
             if channel_id:
                 ch = bot.get_channel(int(channel_id))
-                from discord.abc import Messageable
-                if isinstance(ch, Messageable):
-                    # Build station list text
-                    if len(stations) >= 3:
-                        station_text = ", ".join(stations[:-1]) + f", and {stations[-1]}"
-                    elif len(stations) == 2:
-                        station_text = f"{stations[0]} and {stations[1]}"
-                    else:
-                        station_text = stations[0]
-                    try:
-                        from datetime import datetime
-                        dt = datetime.fromisoformat(date_iso)
-                        dow = dt.strftime("%A")
-                        date_pretty = dt.strftime("%m/%d/%Y")
-                    except Exception:
-                        dow = ""
-                        date_pretty = date_iso
-                    msg = f"<@{user_id}> is looking for a substitute feeder for {station_text} on {dow + ', ' if dow else ''}{date_pretty}"
-                    try:
-                        await ch.send(msg)
-                    except Exception:
-                        pass
+                if hasattr(ch, 'send'):
+                    lines = [f"<@{req_user_id}> requested substitutes:"]
+                    for rec in records_written:
+                        stations_str = rec.get("station") or ", ".join(rec.get("stations") or [])
+                        date_iso = (rec.get("dates") or [""])[0]
+                        pretty_date = _format_date_for_notification(date_iso)
+                        lines.append(f"- {pretty_date}: **{stations_str}**")
+                    view = build_open_sub_requests_view()
+                    await ch.send("\n".join(lines), view=view)
         except Exception:
             pass
 
-        return web.json_response({"status": "ok"}, headers=_CORS_HEADERS)
+        return _with_cors(web.json_response({"status": "ok"}), request)
+    
+    async def delete_subrequest(request):
+        """Physically remove a request from the log file."""
+        session, error = _require_permissions(request, require_view=True)
+        if error: return error
 
+        try:
+            data = await request.json()
+        except:
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
+        target_id = data.get("id")
+        date_iso = data.get("date")
+
+        if not target_id or not date_iso:
+            return _with_cors(web.Response(status=400, text="Missing ID or Date"), request)
+
+        try:
+            date_obj = datetime.fromisoformat(str(date_iso))
+            date_iso = date_obj.date().isoformat()
+        except ValueError:
+            return _with_cors(web.Response(status=400, text="Invalid date format"), request)
+
+        from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
+        month_key = _sub_month_key_from_date(date_iso)
+        path = _sub_log_path_from_key(month_key)
+
+        if not os.path.exists(path):
+            return _with_cors(web.Response(status=404, text="Record not found"), request)
+
+        #Re-write file excluding the item
+        new_lines = []
+        deleted_item = None
+        user_id_str = str(session.get("user_id"))
+        is_officer = session.get("permissions", {}).get("is_officer")
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        rec = json.loads(line)
+                        if rec.get("id") == target_id:
+                            #Permission check with strict ID comparison
+                            requester_id = str(rec.get("requester") or "")
+                            assignee_id = str(rec.get("assignee") or "")
+                            is_owner = (user_id_str == requester_id) or (user_id_str == assignee_id)
+
+                            if not is_officer and not is_owner:
+                                return _with_cors(web.Response(status=403, text="You can only delete your own items."), request)
+                            deleted_item = rec
+                            continue #Skip this line (Delete)
+                        new_lines.append(line)
+                    except:
+                        new_lines.append(line)
+            
+            if deleted_item:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.writelines(new_lines)
+                
+                #Notify Discord
+                ch_id = getattr(settings, "ch_feeding_team", None)
+                if ch_id:
+                    ch = bot.get_channel(int(ch_id))
+                    if hasattr(ch, 'send'):
+                        actor_id = session.get("user_id")
+                        actor_name = session.get("username", "Unknown")
+                        actor_label = f"<@{actor_id}>" if actor_id else actor_name
+                        kind = "Request" if deleted_item.get("kind") == "sub_request" else "Claim"
+                        st = deleted_item.get("station") or "Unknown"
+                        pretty_date = _format_date_for_notification(date_iso)
+                        await ch.send(f"**{kind} Deleted**: {actor_label} removed the item for **{st}** on {pretty_date}.")
+
+                return _with_cors(web.json_response({"status": "ok"}), request)
+            else:
+                return _with_cors(web.Response(status=404, text="Item ID not found in log"), request)
+
+        except Exception as e:
+            logging.exception("Error deleting subrequest")
+            return _with_cors(web.Response(status=500, text="An internal error has occurred."), request)
+    
+    async def leave_activity(request):
+        """Disconnects the requesting user from their voice channel."""
+        session, error = _require_permissions(request, require_view=True)
+        if error: return error
+        
+        user_id = session.get("user_id")
+        if not user_id:
+            return _with_cors(web.Response(status=400, text="No user"), request)
+
+        # Find the member in the guild
+        guild, member = await _resolve_member(int(user_id))
+        
+        if member and member.voice:
+            try:
+                # This disconnects them from Voice
+                await member.move_to(None)
+                _debug(f"Disconnected user {user_id} from voice.")
+            except Exception as e:
+                print(f"[Activity] Failed to disconnect {user_id}: {e}")
+                
+        return _with_cors(web.json_response({"status": "ok"}), request)
+    
     async def list_open_subs(request):
         """List sub requests separated into available, upcoming filled, and past (expired/fulfilled)."""
-        import glob, json
+        _, error = _require_permissions(request, require_view=True)
+        if error:
+            return error
+        import json
         from datetime import datetime
+        from .handlers import feeding as _feed
         today = datetime.now().date()
 
-        accepted_map = {}  # (parent_id, station, date_iso) -> assignee_id
-        accepted_meta = {}  # (parent_id, station, date_iso) -> requester_name
+        accepted_map = {}  #(parent_id, station, date_iso) -> assignee_id
+        accepted_meta = {}  #(parent_id, station, date_iso) -> requester_name
         requested_items = []
         missing_requester_ids = set()
         missing_assignee_ids = set()
 
-        for path in glob.glob(os.path.join("logs", "subs", "*", "*.jsonl")):
+        #Load using the shared feeding helpers so paths are consistent with the bot
+        files = _feed._load_sub_files(
+            month_keys=None,
+            include_legacy=_feed.SUBS_LEGACY_FILE.exists(),
+        )
+        for path, rows in files:
             try:
-                with open(path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            rec = json.loads(line)
-                        except Exception:
-                            continue
-                        status = rec.get("status")
-                        stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
-                        dates = rec.get("dates") or []
-                        date_iso = dates[0] if dates else None
-                        parent_id = rec.get("id")
-                        if status == "accepted":
-                            assignee = rec.get("assignee")
-                            if assignee:
-                                try:
-                                    missing_assignee_ids.add(int(assignee))
-                                except Exception:
-                                    pass
-                            for st in stations:
-                                accepted_map[(rec.get("parent_id") or parent_id, st, date_iso)] = assignee
-                        elif status == "requested":
-                            requester = rec.get("requester")
-                            requester_name = rec.get("requester_name") or ""
-                            if requester and not requester_name:
-                                try:
-                                    missing_requester_ids.add(int(requester))
-                                except Exception:
-                                    pass
-                            for st in stations:
-                                requested_items.append({
-                                    "id": parent_id,
-                                    "station": st,
-                                    "date": date_iso,
-                                    "requester_id": requester,
-                                    "requester_name": requester_name,
-                                    "assignee_id": None,
-                                    "assignee_name": rec.get("assignee_name") or "",
-                                })
+                for rec in rows:
+                    status = rec.get("status")
+                    stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
+                    dates = rec.get("dates") or []
+                    date_iso = dates[0] if dates else None
+                    parent_id = rec.get("id")
+                    if status == "accepted":
+                        assignee = rec.get("assignee")
+                        if assignee:
+                            try:
+                                missing_assignee_ids.add(int(assignee))
+                            except Exception:
+                                pass
+                        for st in stations:
+                            accepted_map[(rec.get("parent_id") or parent_id, st, date_iso)] = assignee
+                    elif status == "requested":
+                        requester = rec.get("requester")
+                        requester_name = rec.get("requester_name") or ""
+                        if requester and not requester_name:
+                            try:
+                                missing_requester_ids.add(int(requester))
+                            except Exception:
+                                pass
+                        for st in stations:
+                            requested_items.append({
+                                "id": parent_id,
+                                "station": st,
+                                "date": date_iso,
+                                "requester_id": str(requester) if requester else "", #Ensure string
+                                "requester_name": requester_name,
+                                "assignee_id": None,
+                                "assignee_name": rec.get("assignee_name") or "",
+                            })
             except Exception:
                 continue
 
-        # Resolve display names for any requester IDs that were missing names in the log.
+        #Resolve display names for any requester IDs that were missing names in the log.
         name_cache: Dict[int, str] = {}
         if missing_requester_ids:
             guild = bot.get_guild(YOUR_GUILD_ID) if "bot" in globals() else None
@@ -518,10 +1182,10 @@ async def start_web_server(bot):
                         if member:
                             display = getattr(member, "display_name", None) or getattr(member, "global_name", None) or member.name
                     if not display and "bot" in globals():
-                        user = bot.get_user(uid)  # type: ignore[name-defined]
+                        user = bot.get_user(uid)  #type: ignore[name-defined]
                         if not user and hasattr(bot, "fetch_user"):
                             try:
-                                user = await bot.fetch_user(uid)  # type: ignore[attr-defined]
+                                user = await bot.fetch_user(uid)  #type: ignore[attr-defined]
                             except Exception:
                                 user = None
                         if user:
@@ -547,10 +1211,10 @@ async def start_web_server(bot):
                         if member:
                             display = getattr(member, "display_name", None) or getattr(member, "global_name", None) or member.name
                     if not display and "bot" in globals():
-                        user = bot.get_user(uid)  # type: ignore[name-defined]
+                        user = bot.get_user(uid)  #type: ignore[name-defined]
                         if not user and hasattr(bot, "fetch_user"):
                             try:
-                                user = await bot.fetch_user(uid)  # type: ignore[attr-defined]
+                                user = await bot.fetch_user(uid)  #type: ignore[attr-defined]
                             except Exception:
                                 user = None
                         if user:
@@ -560,12 +1224,12 @@ async def start_web_server(bot):
                 if display:
                     assignee_name_cache[uid] = display
 
-        # After reading all records, populate requester/assignee names and assignee ids from the accept map
+        #After reading all records, populate requester/assignee names and assignee ids from the accept map
         for item in requested_items:
             key = (item.get("id"), item.get("station"), item.get("date"))
             assignee = accepted_map.get(key)
             if assignee:
-                item["assignee_id"] = assignee
+                item["assignee_id"] = str(assignee) #Ensure string
                 if not item.get("assignee_name"):
                     try:
                         item["assignee_name"] = assignee_name_cache.get(int(assignee), "")
@@ -594,20 +1258,28 @@ async def start_web_server(bot):
             else:
                 target_list = upcoming_filled if assignee else available
 
+            #Avoid timezone-induced date shifting in browsers: anchor date to noon
+            safe_date = date_iso
+            if date_iso and len(str(date_iso)) == 10 and "T" not in str(date_iso):
+                safe_date = f"{date_iso}T12:00:00"
+
             out = dict(item)
-            requester_id = item.get("requester_id")
-            if requester_id and not out.get("requester_name"):
-                try:
-                    out["requester_name"] = name_cache.get(int(requester_id), "")
-                except Exception:
-                    out["requester_name"] = ""
+            out["date_raw"] = date_iso
+            out["date"] = safe_date
+            #CRITICAL FIX: Strict string conversion for output
+            if out.get("requester_id"):
+                out["requester_id"] = str(out["requester_id"])
+            if out.get("requester"):
+                out["requester"] = str(out["requester"])
+                
             if assignee:
-                out["assignee_id"] = assignee
+                out["assignee_id"] = str(assignee)
                 if not out.get("assignee_name"):
                     try:
                         out["assignee_name"] = assignee_name_cache.get(int(assignee), "")
                     except Exception:
                         out["assignee_name"] = ""
+            
             target_list.append(out)
 
         resp = web.json_response({
@@ -615,23 +1287,26 @@ async def start_web_server(bot):
             "upcoming_filled": upcoming_filled,
             "past": past,
         })
-        resp.headers.update(_CORS_HEADERS)
-        return resp
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return _with_cors(resp, request)
 
     async def claim_subs(request):
         """Mark sub requests as accepted by a user."""
+        session, error = _require_permissions(request, require_view=True)
+        if error:
+            return error
         try:
             data = await request.json()
         except Exception:
-            return web.Response(status=400, text="Invalid JSON", headers=_CORS_HEADERS)
-        user_id = data.get("user_id")
+            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+        user_id = data.get("user_id") or session.get("user_id")
         picks = data.get("picks") or []
         if not user_id or not picks:
-            return web.Response(status=400, text="Missing user_id or picks", headers=_CORS_HEADERS)
+            return _with_cors(web.Response(status=400, text="Missing user_id or picks"), request)
 
         from datetime import datetime
         now_iso = datetime.now().isoformat()
-        messages_by_date = {}
+        messages_by_date = {}  #date_iso -> list of (station, requester_id, requester_name)
 
         for pick in picks:
             parent_id = pick.get("id")
@@ -642,7 +1317,7 @@ async def start_web_server(bot):
             if not parent_id or not station or not date_iso:
                 continue
             try:
-                # Locate log file by month
+                #Locate log file by month
                 from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
                 key = _sub_month_key_from_date(date_iso) or datetime.now().strftime("%Y-%m")
                 path = _sub_log_path_from_key(key)
@@ -654,8 +1329,8 @@ async def start_web_server(bot):
                     "station": station,
                     "stations": [station],
                     "dates": [date_iso],
-                    "requester": requester,
-                    "assignee": int(user_id),
+                    "requester": str(requester) if requester else "", #Ensure string
+                    "assignee": str(user_id), #Ensure string
                     "status": "accepted",
                     "channel_id": 0,
                     "message_id": 0,
@@ -667,26 +1342,33 @@ async def start_web_server(bot):
                 }
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(json.dumps(rec) + "\n")
-                messages_by_date.setdefault(date_iso, []).append((station, requester))
+                messages_by_date.setdefault(date_iso, []).append((station, requester, requester_name))
             except Exception:
                 continue
 
-        # Notify feeding team channel
+        #Notify feeding team channel
         try:
             channel_id = getattr(settings, "ch_feeding_team", None)
             if channel_id and messages_by_date:
                 ch = bot.get_channel(int(channel_id))
                 from discord.abc import Messageable
                 if isinstance(ch, Messageable):
-                    # Build a single aggregated message
+                    #Build a single aggregated message
                     try:
-                        req_ids = []
+                        req_mentions_set = set()
                         date_bits = []
-                        all_req_ids = set()
                         for date_iso, items in messages_by_date.items():
-                            stations = [st for st, _ in items]
-                            reqs = [req for _, req in items if req]
-                            all_req_ids.update(reqs)
+                            stations = [st for st, _, _ in items]
+                            reqs = [(req, req_name) for _, req, req_name in items]
+                            for req, req_name in reqs:
+                                mention = None
+                                if req and str(req).isdigit():
+                                    mention = f"<@{req}>"
+                                elif req_name:
+                                    mention = req_name
+                                else:
+                                    mention = "someone"
+                                req_mentions_set.add(mention)
                             if len(stations) >= 3:
                                 stations_text = ", ".join(stations[:-1]) + f", and {stations[-1]}"
                             elif len(stations) == 2:
@@ -702,10 +1384,10 @@ async def start_web_server(bot):
                                 date_pretty = date_iso
                             date_bits.append(f"{stations_text} on {dow + ', ' if dow else ''}{date_pretty}")
                         req_mentions = ""
-                        if len(all_req_ids) >= 2:
-                            req_mentions = " and ".join([f"<@{rid}>" for rid in all_req_ids])
-                        elif len(all_req_ids) == 1:
-                            req_mentions = f"<@{list(all_req_ids)[0]}>"
+                        if len(req_mentions_set) >= 2:
+                            req_mentions = " and ".join(req_mentions_set)
+                        elif len(req_mentions_set) == 1:
+                            req_mentions = next(iter(req_mentions_set))
                         else:
                             req_mentions = "someone"
                         msg = f"<@{user_id}> picked up {req_mentions}'s substitute request for " + " and ".join(date_bits)
@@ -715,49 +1397,62 @@ async def start_web_server(bot):
         except Exception:
             pass
 
-        return web.json_response({"status": "ok"}, headers=_CORS_HEADERS)
+        return _with_cors(web.json_response({"status": "ok"}), request)
 
     app.add_routes([
         web.get('/', get_index),
         web.get('/api/members', get_members),
         web.options('/api/members', options_members),
         web.post('/api/auth/token', auth_token_exchange),
+        web.get('/api/auth/session', get_session),
+        web.options('/api/auth/token', options_auth_token),
+        web.options('/api/auth/session', options_auth_session),
         web.post('/api/schedule/save', save_schedule),
         web.get('/api/schedule', get_schedule),
         web.options('/api/schedule', options_schedule),
         web.options('/api/schedule/save', options_schedule_save),
+        web.get('/api/stations', get_stations_api),
+        web.post('/api/stations', save_stations_api),
+        web.options('/api/stations', options_stations),
+        web.get('/api/feeding/checklist', get_feeding_checklist),
+        web.post('/api/feeding/checklist', save_feeding_checklist),
+        web.options('/api/feeding/checklist', options_feeding_checklist),
         web.post('/api/subrequest', submit_subrequest),
         web.options('/api/subrequest', options_subrequest),
         web.get('/api/subs/open', list_open_subs),
         web.options('/api/subs/open', options_sub_open),
         web.post('/api/subs/claim', claim_subs),
         web.options('/api/subs/claim', options_sub_claim),
+        web.post('/api/subrequest/delete', delete_subrequest),
+        web.options('/api/subrequest/delete', options_subrequest), 
+        web.post('/api/activity/leave', leave_activity),
+        web.options('/api/activity/leave', options_subrequest)
     ])
 
     runner = web.AppRunner(app)
     await runner.setup()
-    # Listen on all interfaces at port 8080
+    #Listen on localhost to avoid exposing the UI externally by default
     site = web.TCPSite(runner, '0.0.0.0', 8080)
     print("[TomCat-UI] Web server starting on http://localhost:8080")
     await site.start()
 
 
-# ------- Lifecycle -------
+#------- Lifecycle -------
 @bot.event
 async def on_ready():
     """Discord callback fired once the bot connects."""
     print(f"[TomCat] Logged in as {bot.user} in {len(bot.guilds)} guild(s).")
-    # Machine + human “ONLINE” handled by logger.log_event
+    #Machine + human “ONLINE” handled by logger.log_event
     log_event({
         "event": "online",
         "user": str(bot.user),
         "guild_count": len(bot.guilds),
     })
 
-    # Startup health checks (file logs only)
+    #Startup health checks (file logs only)
     async def _health_checks():
         try:
-            # Check image intake tabs
+            #Check image intake tabs
             from .handlers.misc import _open_ws as _open_ws_misc
             for ch_id, tab in (settings.channel_sheet_map or {}).items():
                 try:
@@ -771,7 +1466,7 @@ async def on_ready():
         except Exception as e:
             log_event({"event":"health","component":"image_tab","status":"error","error": str(e)})
         try:
-            # Check feeding checklist tab
+            #Check feeding checklist tab
             from .handlers.feeding import _open_feeding_ws
             ws = _open_feeding_ws()
             if ws:
@@ -783,7 +1478,7 @@ async def on_ready():
 
     asyncio.create_task(_health_checks())
 
-    # Seed invite caches for all guilds (for join attribution)
+    #Seed invite caches for all guilds (for join attribution)
     try:
         for g in bot.guilds:
             try:
@@ -794,14 +1489,15 @@ async def on_ready():
         pass
     asyncio.create_task(start_web_server(bot))
     asyncio.create_task(start_profile_scheduler(bot))
-    # Warm the show-photo cache in background
+    #Warm the show-photo cache in background
     try:
         asyncio.create_task(warm_cache_on_boot())
     except Exception:
         pass
-    # start feeding scheduler after the bot is ready and loop is running
+    #start feeding scheduler after the bot is ready and loop is running
     asyncio.create_task(start_feeding_scheduler(bot))
-    # Start Gmail logging scheduler if enabled
+    asyncio.create_task(start_morning_scheduler(bot))
+    #Start Gmail logging scheduler if enabled
     try:
         if getattr(settings, "gmail_enabled", False):
             asyncio.create_task(start_gmail_logging_scheduler(bot))
@@ -809,14 +1505,14 @@ async def on_ready():
             asyncio.create_task(start_dues_scheduler(bot))
     except Exception:
         pass
-    # Start catabase profile cache scheduler
+    #Start catabase profile cache scheduler
     try:
         asyncio.create_task(start_profile_cache_scheduler())
     except Exception:
         pass
 
 
-# ------- Message entrypoint -------
+#------- Message entrypoint -------
 @bot.event
 async def on_message(message: discord.Message):
     """Main message hook: run anti-spam and route intents."""
@@ -824,7 +1520,7 @@ async def on_message(message: discord.Message):
         return
 
 
-    # Human + machine log of the incoming message
+    #Human + machine log of the incoming message
     log_event({
         "event": "message",
         "author": _user_label(message.author),
@@ -833,20 +1529,21 @@ async def on_message(message: discord.Message):
         "attachments": len(message.attachments) if hasattr(message, "attachments") else 0,
     })
 
-    # Spam protection (text + heuristics + NLP backstop for new/untrusted accounts)
+    #Spam protection (text + heuristics + NLP backstop for new/untrusted accounts)
     from .spam import check_spam
     spam_flag, reason = check_spam(message, settings)
     if spam_flag:
-        # Log and notify in logging channel, then delete the message
+        #Log and notify in logging channel, then delete the message
         try:
-            # Delete spam message (best-effort)
+            #Delete spam message (best-effort)
             try:
                 await message.delete()
                 decision = "deleted"
-            except Exception:
+            except Exception as delete_exc:
                 decision = "kept"
+                log_action("spam_delete_error", f"ch={_channel_label(message.channel)}", str(delete_exc))
 
-            # Write log line
+            #Write log line
             log_event({
                 "event": "spam",
                 "user": _user_label(message.author),
@@ -856,7 +1553,7 @@ async def on_message(message: discord.Message):
                 "reason": reason,
             })
 
-            # Notify moderators in CH_LOGGING
+            #Notify moderators in CH_LOGGING
             log_ch_id = getattr(settings, 'ch_logging', None)
             if log_ch_id:
                 ch = message.guild.get_channel(int(log_ch_id)) if message.guild else None
@@ -895,7 +1592,7 @@ async def on_message(message: discord.Message):
         except Exception:
             pass
         return
-    # Channel/DM → Sheet image intake
+    #Channel/DM → Sheet image intake
     try:
         if getattr(message, "attachments", None):
             in_map = settings.channel_sheet_map and int(getattr(message.channel, "id", 0) or 0) in settings.channel_sheet_map
@@ -905,13 +1602,13 @@ async def on_message(message: discord.Message):
     except Exception as e:
         log_action("image_intake_error", f"channel={getattr(message.channel,'id','?')}", str(e))
 
-    # Lightweight fun triggers (e.g., "meow") anywhere; safe_send respects silent mode
+    #Lightweight fun triggers (e.g., "meow") anywhere; safe_send respects silent mode
     try:
         await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
     except Exception:
         pass
 
-    # Build ctx once
+    #Build ctx once
     ctx: Dict[str, Any] = {
         "bot": bot,
         "message": message,
@@ -919,7 +1616,7 @@ async def on_message(message: discord.Message):
         "author": message.author,
     }
 
-    # Global mute: while silent_mode is ON, route everything through a MuteChannel/Message
+    #Global mute: while silent_mode is ON, route everything through a MuteChannel/Message
     if settings.silent_mode:
         muted_ch = _MuteChannel(message.channel, _channel_label)
         muted_msg = _MuteMessage(message, muted_ch)
@@ -936,6 +1633,31 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     """Handle reaction-based workflows (feeding + spam ban)."""
     if payload.user_id == getattr(bot.user, 'id', None):
         return
+    #General reaction logging (keeps legacy behavior)
+    try:
+        ch = bot.get_channel(int(payload.channel_id))
+        msg = None
+        preview = ""
+        author_name = ""
+        if ch and hasattr(ch, 'fetch_message'):
+            try:
+                msg = await ch.fetch_message(int(payload.message_id))
+                content = msg.clean_content if isinstance(getattr(msg, 'content', None), str) else ""
+                preview = content[:40] + ("..." if len(content) > 40 else "")
+                author_name = _user_label(getattr(msg, 'author', None))
+            except Exception:
+                pass
+        log_event({
+            "event": "reaction_add",
+            "user": _user_label(getattr(payload, 'member', None)) or str(payload.user_id),
+            "channel": _channel_label(ch) if ch else str(payload.channel_id),
+            "message_id": int(payload.message_id),
+            "emoji": str(payload.emoji),
+            "message_preview": preview,
+            "message_author": author_name,
+        })
+    except Exception:
+        pass
     data = SPAM_ALERTS.get(payload.message_id)
     if not data:
         return
@@ -946,7 +1668,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     guild = bot.get_guild(guild_id) if guild_id else None
     if not guild:
         return
-    # Prevent the accused user from banning themselves via reaction
+    #Prevent the accused user from banning themselves via reaction
     if payload.user_id == data.get('user_id'):
         return
     try:
@@ -961,12 +1683,19 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         can_ban = True
     else:
         ban_role_tokens = [s.lower() for s in (getattr(settings, 'spam_ban_role_names', []) or [])]
+        ban_role_ids = set(getattr(settings, 'spam_ban_role_ids', []) or [])
+        officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
         for role in getattr(member, 'roles', []) or []:
+            try:
+                rid = int(getattr(role, "id", 0) or 0)
+            except Exception:
+                rid = 0
             rname = str(getattr(role, 'name', '')).lower()
-            if any(tok in rname for tok in ban_role_tokens):
+            if any(tok in rname for tok in ban_role_tokens) or (rid and (rid in ban_role_ids or rid == officer_role_id)):
                 can_ban = True
                 break
     if not can_ban:
+        log_action("spam_ban_denied", f"user={payload.user_id}", f"emoji={emoji_str}")
         return
     target_id = data.get('user_id')
     if not target_id:
@@ -986,7 +1715,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         log_action('spam_ban_error', f"guild={guild_id}", str(ban_exc))
 
 
-# ------- Edit/Delete logging -------
+#------- Edit/Delete logging -------
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
     """Re-run router when users edit messages."""
@@ -1019,13 +1748,13 @@ async def on_message_delete(message: discord.Message):
         pass
 
 
-# ------- Member join/leave + invite tracking -------
+#------- Member join/leave + invite tracking -------
 @bot.event
 async def on_member_join(member: discord.Member):
     """Track invite usage and log onboarding events."""
     try:
         guild = member.guild
-        # Compute account age in days
+        #Compute account age in days
         created = getattr(member, 'created_at', None)
         from datetime import timezone
         age_days = None
@@ -1036,21 +1765,22 @@ async def on_member_join(member: discord.Member):
             except Exception:
                 age_days = None
 
-        # Detect which invite increased
+        #Detect which invite increased
         code_used = None
         inviter_id = None
         try:
             before = invites_cache.get(guild.id, {})
-            invites = await guild.invites()
-            after = {inv.code: (inv.uses or 0) for inv in invites}
-            for inv in invites:
-                b = before.get(inv.code, 0)
-                a = after.get(inv.code, 0)
-                if a > b:
-                    code_used = inv.code
-                    inviter_id = getattr(inv.inviter, 'id', None)
-                    break
-            invites_cache[guild.id] = after
+            invites = await _fetch_invites(guild)
+            if invites:
+                after = {inv.code: (inv.uses or 0) for inv in invites}
+                for inv in invites:
+                    b = before.get(inv.code, 0)
+                    a = after.get(inv.code, 0)
+                    if a > b:
+                        code_used = inv.code
+                        inviter_id = getattr(inv.inviter, 'id', None)
+                        break
+                invites_cache[guild.id] = after
         except Exception:
             pass
 
@@ -1102,37 +1832,6 @@ async def on_invite_delete(invite: discord.Invite):
         pass
 
 
-# ------- Reactions and role changes logging -------
-@bot.event
-async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    try:
-        # Ignore bot reactions
-        if payload.user_id == getattr(bot.user, 'id', None):
-            return
-        ch = bot.get_channel(int(payload.channel_id))
-        msg = None
-        preview = ""
-        author_name = ""
-        if ch and hasattr(ch, 'fetch_message'):
-            try:
-                msg = await ch.fetch_message(int(payload.message_id))
-                content = msg.clean_content if isinstance(getattr(msg, 'content', None), str) else ""
-                preview = content[:40] + ("..." if len(content) > 40 else "")
-                author_name = _user_label(getattr(msg, 'author', None))
-            except Exception:
-                pass
-        log_event({
-            "event": "reaction_add",
-            "user": _user_label(getattr(payload, 'member', None)) or str(payload.user_id),
-            "channel": _channel_label(ch) if ch else str(payload.channel_id),
-            "message_id": int(payload.message_id),
-            "emoji": str(payload.emoji),
-            "message_preview": preview,
-            "message_author": author_name,
-        })
-    except Exception:
-        pass
-
 @bot.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     """Keep spam alert reactions tidy when moderators undo them."""
@@ -1164,7 +1863,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
     try:
-        # Compare role IDs
+        #Compare role IDs
         before_ids = {int(r.id) for r in getattr(before, 'roles', [])}
         after_ids = {int(r.id) for r in getattr(after, 'roles', [])}
         added_ids = list(after_ids - before_ids)
@@ -1188,7 +1887,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     except Exception:
         pass
 
-# Optional: parity command (kept tiny)
+#Optional: parity command (kept tiny)
 @bot.command(name="members")
 async def members(ctx: commands.Context):
     log_event({

@@ -66,7 +66,7 @@ def _nlp_predict_spam(settings, text: str) -> float:
     if not _nlp_cached:
         return 0.0
     try:
-        # zero-shot: higher prob => more likely spam
+        #zero-shot: higher prob => more likely spam
         return float(_nlp_cached.predict_spam(text))
     except Exception:
         return 0.0
@@ -109,13 +109,7 @@ def _is_trusted_member(message, settings, *, prior_count: int = 0) -> Optional[s
         msg_threshold = int(getattr(settings, 'spam_trust_message_threshold', 50) or 50)
         if prior_count >= msg_threshold:
             return "trusted_message_count"
-        # Account age gate
-        if getattr(member, 'created_at', None) is not None:
-            from datetime import datetime, timezone
-            age_days = (datetime.now(timezone.utc) - member.created_at).days
-            if age_days >= int(getattr(settings, 'spam_min_account_days', 30) or 30):
-                return "trusted_age"
-        # Trusted roles
+        #Trusted roles
         role_reason = _has_privileged_role(member, settings)
         if role_reason:
             return role_reason
@@ -134,7 +128,7 @@ def check_spam(message, settings) -> tuple[bool, str]:
     trust = _is_trusted_member(message, settings, prior_count=prior_count)
     if trust:
         return (False, trust)
-    # Strong indicators
+    #Strong indicators
     contact_hits = []
     score = 0
     if EMAIL_RE.search(text):
@@ -155,7 +149,7 @@ def check_spam(message, settings) -> tuple[bool, str]:
         if rx.search(text):
             score += 2
             matched_rules.append(rx.pattern)
-    # fuzzy phrases
+    #fuzzy phrases
     fuzzy_phrases = [
         "tickets available", "4 tickets", "american airlines center",
         "dm me if interested", "message me if interested", "first come first serve",
@@ -166,11 +160,11 @@ def check_spam(message, settings) -> tuple[bool, str]:
         if _fuzzy_hit(text, ph, 86):
             score += 1
             fuzzy_hits.append(ph)
-    # NLP backstop
+    #NLP backstop
     spam_prob = _nlp_predict_spam(settings, text)
     if spam_prob >= float(getattr(settings, 'spam_nlp_conf', 0.9)):
         score += 3
-    # Logging for visibility
+    #Logging for visibility
     try:
         author_id = getattr(getattr(message, 'author', None), 'id', 'unknown')
         channel_id = getattr(getattr(message, 'channel', None), 'id', 'unknown')

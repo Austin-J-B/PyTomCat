@@ -12,8 +12,8 @@ from ..config import settings
 
 try:
     from .sheets_client import sheets_client
-except Exception:  # pragma: no cover - during tests without Sheets client
-    sheets_client = None  # type: ignore
+except Exception:  #pragma: no cover - during tests without Sheets client
+    sheets_client = None  #type: ignore
 
 _CACHE: Dict[str, List[str]] = {}
 _CACHE_TS: float = 0.0
@@ -46,7 +46,7 @@ def _split_locations(raw: str) -> List[str]:
     for part in parts:
         if not part:
             continue
-        # Decompose multi-word pieces like "center chase apartments the greens"
+        #Decompose multi-word pieces like "center chase apartments the greens"
         if "  " in part:
             part = _RE_WHITESPACE.sub(" ", part)
         if part:
@@ -115,7 +115,7 @@ def _build_mapping(rows: List[List[str]]) -> Dict[str, List[str]]:
         for segment in segments:
             station_name = resolve_station_or_cat(segment, want="station", include_stopword_aliases=True)
             if not station_name:
-                # Try again with "station" removed (e.g., "Lot 50 station")
+                #Try again with "station" removed (e.g., "Lot 50 station")
                 cleaned = re.sub(r"\bstations?\b", "", segment, flags=re.I)
                 cleaned = _normalize_text(cleaned)
                 if cleaned and cleaned != segment:

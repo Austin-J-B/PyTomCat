@@ -8,7 +8,15 @@ import discord
 from tomcat.logger import log_action
 
 
-SUB_REQUEST_URL = "https://austin-j-b.github.io/PyTomCat/?api=https://ui.catsofuta.org#sub"
+SUB_REQUEST_URL = "https://ui.catsofuta.org/#sub"
+OPEN_SUB_REQUESTS_URL = "https://ui.catsofuta.org/#claim"
+
+
+def build_open_sub_requests_view() -> discord.ui.View:
+    """Reusable view that links directly to the open sub requests page."""
+    view = discord.ui.View()
+    view.add_item(discord.ui.Button(label="Open sub requests", url=OPEN_SUB_REQUESTS_URL))
+    return view
 
 
 async def handle_sub_request_link(ctx: Dict[str, Any]) -> None:

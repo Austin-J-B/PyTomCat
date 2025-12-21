@@ -1,6 +1,6 @@
 """Utilities for running YOLO detection/classification for TomCat."""
 
-# tomcat/vision/vision.py
+#tomcat/vision/vision.py
 from __future__ import annotations
 import io
 import os
@@ -12,26 +12,26 @@ from PIL import Image, ImageDraw, ImageFont
 import torch
 from torch import Tensor
 
-# ultralytics is optional at import time; treat it as Any to appease Pylance
+#ultralytics is optional at import time; treat it as Any to appease Pylance
 try:
-    from ultralytics import YOLO  # type: ignore
+    from ultralytics import YOLO  #type: ignore
 except Exception:
-    YOLO = None  # type: ignore[assignment]
+    YOLO = None  #type: ignore[assignment]
 
 from ..config import settings
 from ..logger import log_action
 
-# ---------- Constants aligned to v5.6 ----------
+#---------- Constants aligned to v5.6 ----------
 _PURPLE = "#4C007F"
-_DEFAULT_CONF = 0.552  # tuned for maximum F1
+_DEFAULT_CONF = 0.552  #tuned for maximum F1
 
-# ---------- Internal state (typed loosely to keep Pylance calm) ----------
+#---------- Internal state (typed loosely to keep Pylance calm) ----------
 _yolo: Optional[Any] = None
 _clf: Optional[torch.nn.Module] = None
 _device: Optional[torch.device] = None
 _half: bool = False
 
-_font: Optional[Any] = None  # FreeTypeFont vs ImageFont stubs vary; keep it Any
+_font: Optional[Any] = None  #FreeTypeFont vs ImageFont stubs vary; keep it Any
 
 
 def _pick_device() -> torch.device:
@@ -74,9 +74,9 @@ def _ensure_detector() -> None:
     weights = settings.cv_detect_weights
     if not weights or not os.path.exists(weights):
         raise FileNotFoundError(f"Detect weights not found: {weights}")
-    y: Any = YOLO(weights)  # type: ignore[call-arg]
+    y: Any = YOLO(weights)  #type: ignore[call-arg]
     try:
-        y.to(str(_device))  # ok to no-op on some builds
+        y.to(str(_device))  #ok to no-op on some builds
     except Exception:
         pass
     _yolo = y
@@ -92,18 +92,18 @@ def _ensure_classifier() -> None:
         ckpt_path = settings.cv_classify_weights
         if not ckpt_path or not os.path.exists(ckpt_path):
             log_action('viz_clf_load_info', 'path_missing', str(ckpt_path))
-            return  # classifier is optional
-        # Try loading to the chosen device; if that fails, try CPU as a fallback and log details
+            return  #classifier is optional
+        #Try loading to the chosen device; if that fails, try CPU as a fallback and log details
         last_exc = None
         try:
             try:
-                state = torch.load(ckpt_path, map_location=_device, weights_only=True)  # torch>=2.4
+                state = torch.load(ckpt_path, map_location=_device, weights_only=True)  #torch>=2.4
             except TypeError:
                 state = torch.load(ckpt_path, map_location=_device)
         except Exception as e:
             last_exc = e
             log_action('viz_clf_load_warn', 'load_device_failed', f"dev={_device} err={type(e).__name__}:{e}")
-            # Try CPU fallback
+            #Try CPU fallback
             try:
                 cpu_dev = torch.device('cpu')
                 try:
@@ -111,12 +111,12 @@ def _ensure_classifier() -> None:
                 except TypeError:
                     state = torch.load(ckpt_path, map_location=cpu_dev)
                 log_action('viz_clf_load_info', 'cpu_fallback', f"loaded_to_cpu from {ckpt_path}")
-                # Ensure model will be moved to the intended device later
+                #Ensure model will be moved to the intended device later
             except Exception as e2:
                 log_action('viz_clf_load_error', 'cpu_fallback_failed', f"{type(e2).__name__}:{e2}")
                 raise last_exc or e2
 
-        # Infer num_classes from checkpoint if possible
+        #Infer num_classes from checkpoint if possible
         sd = state.get("state_dict", state) if isinstance(state, dict) else state
         fc_w = None
         if isinstance(sd, dict):
@@ -127,10 +127,10 @@ def _ensure_classifier() -> None:
         if fc_w is not None and hasattr(fc_w, "shape"):
             num_classes = int(fc_w.shape[0])
         else:
-            # fallback to config length or 1
+            #fallback to config length or 1
             num_classes = max(1, len(settings.cv_class_names) or 1)
 
-        # Build model head with the right class count
+        #Build model head with the right class count
         from torchvision.models import resnet18
         from torch import nn
 
@@ -145,7 +145,7 @@ def _ensure_classifier() -> None:
             except Exception:
                 pass
 
-        # Ensure class names length matches; fill with Cat{i}
+        #Ensure class names length matches; fill with Cat{i}
         if len(settings.cv_class_names) < num_classes:
             settings.cv_class_names.extend(
                 [f"Cat{i}" for i in range(len(settings.cv_class_names), num_classes)]
@@ -153,7 +153,7 @@ def _ensure_classifier() -> None:
 
         _clf = model
     except Exception as e:
-        # Do NOT let a bad classifier kill detect/crop. Just log and continue.
+        #Do NOT let a bad classifier kill detect/crop. Just log and continue.
         log_action("viz_clf_load_error", f"type={type(e).__name__}", str(e))
         _clf = None
 
@@ -176,7 +176,7 @@ def _enforce_max_dim(img: Image.Image) -> None:
     """Clamp huge images to the configured max dimension."""
     limit = int(getattr(settings, "cv_max_image_dim", 0) or 0)
     if limit <= 0:
-        return  # no cap
+        return  #no cap
     mx = max(img.size)
     if mx > limit:
         raise ValueError(
@@ -222,26 +222,26 @@ class Det:
 @dataclass
 class IdentifyResult:
     boxed_jpeg: bytes
-    results: List[dict]  # [{"index": 1, "name": "...", "conf": 0.87, "box": [x1,y1,x2,y2]}]
+    results: List[dict]  #[{"index": 1, "name": "...", "conf": 0.87, "box": [x1,y1,x2,y2]}]
 
 
 def _draw_boxes(img: Image.Image, dets: List[Det]) -> Image.Image:
     """Render bounding boxes and labels onto an image with adaptive thickness."""
     draw = ImageDraw.Draw(img)
     font = _load_font()
-    # Adaptive line width: thicker on very large images (e.g., 4K)
+    #Adaptive line width: thicker on very large images (e.g., 4K)
     max_dim = max(img.size)
     width = 6 if max_dim >= 2000 else 3
     for idx, d in enumerate(dets, start=1):
         x1, y1, x2, y2 = d.xyxy
         draw.rectangle([x1, y1, x2, y2], outline=_PURPLE, width=width)
         label = f"{idx}"
-        # textbbox may not exist on very old Pillow; fallback to textsize
+        #textbbox may not exist on very old Pillow; fallback to textsize
         try:
-            bbox = draw.textbbox((0, 0), label, font=font)  # type: ignore[attr-defined]
+            bbox = draw.textbbox((0, 0), label, font=font)  #type: ignore[attr-defined]
             tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         except Exception:
-            tw, th = draw.textsize(label, font=font)  # type: ignore[attr-defined]
+            tw, th = draw.textsize(label, font=font)  #type: ignore[attr-defined]
         pad = 4
         bx1, by1 = int(x1), int(max(0, y1 - th - 2 * pad))
         bx2, by2 = bx1 + tw + 2 * pad, by1 + th + 2 * pad
@@ -256,9 +256,9 @@ def _run_yolo(img: Image.Image) -> List[Det]:
     yolo = _get_yolo()
     det_img, sx, sy = _resize_for_detect(img, settings.cv_detect_imgsz)
 
-    # Prefer predict API so we can pass conf/iou/half/device explicitly.
+    #Prefer predict API so we can pass conf/iou/half/device explicitly.
     try:
-        res = yolo.predict(  # type: ignore[call-arg, attr-defined]
+        res = yolo.predict(  #type: ignore[call-arg, attr-defined]
             det_img,
             conf=(settings.cv_conf or _DEFAULT_CONF),
             iou=settings.cv_iou,
@@ -268,11 +268,11 @@ def _run_yolo(img: Image.Image) -> List[Det]:
             verbose=False,
         )
     except TypeError:
-        # Fallback to call-style for older ultralytics versions
-        res = yolo(det_img)  # type: ignore[operator]
+        #Fallback to call-style for older ultralytics versions
+        res = yolo(det_img)  #type: ignore[operator]
 
     dets: List[Det] = []
-    for r in res:  # ultralytics returns an iterable of results
+    for r in res:  #ultralytics returns an iterable of results
         boxes = r.boxes.xyxy.detach().to("cpu").numpy()
         confs = r.boxes.conf.detach().to("cpu").numpy()
         for b, c in zip(boxes, confs):
@@ -317,7 +317,7 @@ def crop(image_bytes: bytes) -> List[bytes]:
 def _prep_tensor(pil: Image.Image) -> Tensor:
     """Convert a PIL image into a normalized torch tensor."""
     """Resize square and convert to a Tensor. v5.6 parity: no ImageNet normalization."""
-    from torchvision.transforms import Compose, Resize, ToTensor  # local import to avoid global hard deps
+    from torchvision.transforms import Compose, Resize, ToTensor  #local import to avoid global hard deps
     size = settings.cv_clf_imgsz
     tfm = Compose([Resize((size, size)), ToTensor()])
     t = cast(Tensor, tfm(pil))
@@ -354,7 +354,7 @@ def identify(image_bytes: bytes) -> IdentifyResult:
             with torch.inference_mode():
                 device = _device if _device is not None else torch.device("cpu")
                 batch = torch.stack(tiles, dim=0).to(device, non_blocking=True)
-                logits = _clf(batch)  # type: ignore[operator]
+                logits = _clf(batch)  #type: ignore[operator]
                 probs = torch.softmax(logits, dim=1).detach().to("cpu").numpy()
 
             names = settings.cv_class_names or []

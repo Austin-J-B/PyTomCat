@@ -16,7 +16,7 @@ async def handle_feeding_schedule_link(ctx: Dict[str, Any]) -> None:
         color=0x5865F2,
     )
     view = discord.ui.View()
-    view.add_item(discord.ui.Button(label="Open feeding schedule", url="https://austin-j-b.github.io/PyTomCat/?api=https://ui.catsofuta.org#"))  # replace with real URL if different
+    view.add_item(discord.ui.Button(label="Open feeding schedule", url="https://ui.catsofuta.org/"))  
     try:
         sent = await channel.send(embed=embed, view=view)
     except Exception as exc:

@@ -39,7 +39,37 @@ def _get_env_var(key: str, default: str = "") -> str:
         return (match.group(1) or match.group(2) or "").strip()
     return default
 
-def _configure_tunnel() -> str | None:
+def _read_config_tunnel_id() -> str | None:
+    if not CONFIG_PATH.exists():
+        return None
+    for line in CONFIG_PATH.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("tunnel:"):
+            return stripped.split(":", 1)[1].strip()
+    return None
+
+def _resolve_credentials_path(raw_value: str) -> Path:
+    candidate = Path(raw_value.strip())
+    if not candidate.is_absolute():
+        candidate = ROOT / candidate
+    return candidate.resolve()
+
+def _maybe_create_tunnel(
+    cloudflared_path: Path | None, cf_dir: Path, tunnel_name: str
+) -> Path | None:
+    if not cloudflared_path or not cloudflared_path.exists():
+        return None
+    existing = {p.name for p in cf_dir.glob("*.json")}
+    try:
+        subprocess.run(
+            [str(cloudflared_path), "tunnel", "create", tunnel_name], check=True
+        )
+    except subprocess.CalledProcessError:
+        return None
+    created = [p for p in cf_dir.glob("*.json") if p.name not in existing]
+    return created[0] if created else None
+
+def _configure_tunnel(cloudflared_path: Path | None) -> str | None:
     """
     Generates a config.yml that maps ALL public domains found in 
     UI_ALLOWED_ORIGINS to localhost:8080.
@@ -47,11 +77,51 @@ def _configure_tunnel() -> str | None:
     cf_dir = Path.home() / ".cloudflared"
     
     # 1. Find credentials
-    creds_files = list(cf_dir.glob("*.json"))
-    if not creds_files:
+    creds_path: Path | None = None
+    env_creds_path = _get_env_var("CLOUDFLARE_TUNNEL_CREDENTIALS")
+    if env_creds_path:
+        candidate = _resolve_credentials_path(env_creds_path)
+        if candidate.exists():
+            creds_path = candidate
+        else:
+            print(f"[Tunnel] Credentials file not found: {candidate}")
+
+    env_tunnel_id = _get_env_var("CLOUDFLARE_TUNNEL_ID")
+    if not creds_path and env_tunnel_id:
+        candidate = cf_dir / f"{env_tunnel_id}.json"
+        if candidate.exists():
+            creds_path = candidate
+        else:
+            print(f"[Tunnel] Credentials not found for tunnel ID: {env_tunnel_id}")
+
+    expected_id = _read_config_tunnel_id()
+    if not creds_path and expected_id:
+        candidate = cf_dir / f"{expected_id}.json"
+        if candidate.exists():
+            creds_path = candidate
+
+    if not creds_path:
+        creds_files = list(cf_dir.glob("*.json"))
+        if creds_files:
+            creds_path = creds_files[0]
+            if len(creds_files) > 1:
+                names = ", ".join(p.name for p in creds_files)
+                print(f"[Tunnel] Multiple credentials found; using {creds_path.name} ({names})")
+        else:
+            tunnel_name = _get_env_var("CLOUDFLARE_TUNNEL_NAME")
+            if tunnel_name:
+                created = _maybe_create_tunnel(cloudflared_path, cf_dir, tunnel_name)
+                if created:
+                    creds_path = created
+
+    if not creds_path:
         print("\n[Tunnel] CRITICAL: No credentials found in ~/.cloudflared/")
+        if expected_id:
+            print(f"[Tunnel] Expected tunnel ID from config.yml: {expected_id}")
+        print("Copy <TunnelID>.json from the original machine's ~/.cloudflared into this machine.")
+        print("Or set CLOUDFLARE_TUNNEL_CREDENTIALS in .env to point at the JSON file.")
+        print("If you want new credentials, run `cloudflared tunnel create <name>` after login.")
         return None
-    creds_path = creds_files[0]
     
     try:
         data = json.loads(creds_path.read_text(encoding="utf-8"))
@@ -84,7 +154,7 @@ def _configure_tunnel() -> str | None:
 
         config_content = f"""
 tunnel: {tunnel_id}
-credentials-file: {str(creds_path.absolute()).replace(os.sep, '/')}
+credentials-file: {str(creds_path.resolve()).replace(os.sep, '/')}
 
 ingress:
 {ingress_rules}
@@ -108,16 +178,16 @@ def main() -> None:
         print("Virtual environment not found.")
         sys.exit(1)
 
-    # --- 1. Configure Tunnel ---
-    tunnel_uuid = _configure_tunnel()
-
-    # --- 2. Commands ---
-    bot_cmd = [str(python_path), "-m", "tomcat.main"]
-
     if os.name == "nt":
         cloudflared_path = ROOT / "cloudflared.exe"
     else:
         cloudflared_path = ROOT / "cloudflared"
+
+    # --- 1. Configure Tunnel ---
+    tunnel_uuid = _configure_tunnel(cloudflared_path if cloudflared_path.exists() else None)
+
+    # --- 2. Commands ---
+    bot_cmd = [str(python_path), "-m", "tomcat.main"]
 
     tunnel_cmd = None
     if cloudflared_path.exists() and tunnel_uuid:

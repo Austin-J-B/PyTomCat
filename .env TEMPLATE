@@ -17,6 +17,11 @@ COMMAND_PREFIX=! # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago
 
+# ===== Cloudflare Tunnel =====
+CLOUDFLARE_TUNNEL_ID=                # Tunnel ID used to locate ~/.cloudflared/<id>.json
+CLOUDFLARE_TUNNEL_CREDENTIALS=       # Optional path to tunnel credentials JSON
+CLOUDFLARE_TUNNEL_NAME=              # Optional: create tunnel if credentials are missing
+
 # Comma-separated admin user IDs who can run privileged commands
 ADMIN_IDS=
 

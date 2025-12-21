@@ -3,7 +3,7 @@ Share the sheets with the service account email.
 """
 from __future__ import annotations
 from gspread.auth import service_account
-from ..config import settings  # package-local config
+from ..config import settings  #package-local config
 
 _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",

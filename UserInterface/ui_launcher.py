@@ -9,7 +9,7 @@ import discord
 from tomcat.config import settings
 from tomcat.logger import log_action
 
-# Guild-specific default voice/stage channels for the UI Activity.
+#DefaultActivityChannels maps guild IDs to the voice or stage channel used for the UI Activity.
 DEFAULT_ACTIVITY_CHANNELS: dict[int, int] = {
     551082419768393729: 1425331929422630992,
     798371894985752587: 798371895434149940,

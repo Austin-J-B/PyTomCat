@@ -5,7 +5,7 @@ import os, re, json, asyncio, time
 from typing import Optional, Dict, Any, List
 
 from ..config import settings
-from .catsheets import sheets_client  # type: ignore
+from .catsheets import sheets_client  #type: ignore
 
 _CACHE: Dict[str, Dict[str, Any]] = {}
 _TS: float = 0.0
@@ -127,13 +127,13 @@ def refresh_sync() -> int:
         ws = sheets_client().open_by_key(sid).worksheet("CatDatabase")
         rows = ws.get_all_values()
     except Exception:
-        # Attempt snapshot load; still return 0 to indicate no new refresh
+        #Attempt snapshot load; still return 0 to indicate no new refresh
         _load_snapshot()
         return 0
     if not rows:
         return 0
     header, *data = rows
-    # Map known columns by approximate keys
+    #Map known columns by approximate keys
     def hkey(s: str) -> str:
         return re.sub(r"[^a-z]+", "", (s or '').lower())
     idx = {hkey(h): i for i, h in enumerate(header)}
@@ -158,7 +158,7 @@ def refresh_sync() -> int:
 
     cache: Dict[str, Dict[str, Any]] = {}
     for r in data:
-        # Fallback: if we couldn't detect a header for full name, use first column (0)
+        #Fallback: if we couldn't detect a header for full name, use first column (0)
         full_idx = i_full if i_full >= 0 else 0
         full = (r[full_idx] if full_idx < len(r) else '').strip()
         if not full:
@@ -188,7 +188,7 @@ def refresh_sync() -> int:
         global _COUNT
         _COUNT = len(_CACHE)
         _save_snapshot()
-        # Also write a CSV snapshot with all columns for offline usage
+        #Also write a CSV snapshot with all columns for offline usage
         try:
             import csv
             path = "Catabase - CatDatabase.csv"
@@ -242,7 +242,7 @@ def _ensure_loaded() -> None:
 def get_profile(name: str) -> Optional[Dict[str, Any]]:
     """Fetch a profile dict from cache, refreshing if stale."""
     _ensure_loaded()
-    # Refresh if stale based on TTL
+    #Refresh if stale based on TTL
     if (time.monotonic() - _TS) > _ttl_sec():
         try:
             refresh_sync()
@@ -251,7 +251,7 @@ def get_profile(name: str) -> Optional[Dict[str, Any]]:
     key = _norm(name)
     if key in _CACHE:
         return _CACHE[key]
-    # Try contains search
+    #Try contains search
     for k, v in _CACHE.items():
         if key and key in k:
             return v

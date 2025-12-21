@@ -5,7 +5,7 @@ import discord
 from typing import Any
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..intent_router import Intent  # type: ignore
+    from ..intent_router import Intent  #type: ignore
 from ..aliases import resolve_station_or_cat
 from ..services.catsheets import (
     get_cat_profile,
@@ -33,6 +33,25 @@ def _display_name(full: str) -> str:
     return re.sub(r"^\s*\d+\.\s*", "", str(full or "")).strip()
 
 
+def _single_display_name(label: str, requested: str | None = None) -> str:
+    """
+    When a photo label lists multiple cats (e.g., '46. Princess, 45. Boots'),
+    return just the requested cat's display name if present; otherwise the first.
+    """
+    def _norm(s: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", s.lower())
+
+    req_clean = _norm(_display_name(requested or "") or "")
+    parts = [p.strip() for p in str(label or "").split(",") if p.strip()]
+    for p in parts:
+        disp = _display_name(p)
+        if req_clean and _norm(disp) == req_clean:
+            return disp
+    if parts:
+        return _display_name(parts[0])
+    return _display_name(label or requested or "")
+
+
 def _format_age_value(raw) -> str:
     """Convert various birthday/age representations into friendly text.
 
@@ -55,7 +74,7 @@ def _format_age_value(raw) -> str:
             return "1 year"
         return f"{years} years"
 
-    # Numeric values: treat as approximate years
+    #Numeric values: treat as approximate years
     if isinstance(raw, (int, float)):
         value = float(raw)
         if value < 1:
@@ -69,7 +88,7 @@ def _format_age_value(raw) -> str:
     if not text:
         return ""
 
-    # Parse date strings (mm/dd/yyyy, yyyy-mm-dd, etc.)
+    #Parse date strings (mm/dd/yyyy, yyyy-mm-dd, etc.)
     parsed = None
     for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%Y/%m/%d"):
         try:
@@ -91,7 +110,7 @@ def _format_age_value(raw) -> str:
     if parsed > today:
         return text
 
-    # Compute months difference
+    #Compute months difference
     months_total = (today.year - parsed.year) * 12 + (today.month - parsed.month)
     if today.day < parsed.day:
         months_total -= 1
@@ -108,7 +127,7 @@ def _format_age_value(raw) -> str:
 class PhotoView(discord.ui.View):
     """Reusable view that lets users page through cached cat photos."""
     def __init__(self, cat_name: str):
-        super().__init__(timeout=None)  # no expiry while the bot is running
+        super().__init__(timeout=None)  #no expiry while the bot is running
         self.cat_name = cat_name
 
     async def _edit_or_send(
@@ -151,12 +170,12 @@ class PhotoView(discord.ui.View):
 
     @discord.ui.button(label="Show me another", style=discord.ButtonStyle.primary)
     async def another(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Defer immediately to avoid 3s interaction timeout
+        #Defer immediately to avoid 3s interaction timeout
         try:
             await interaction.response.defer(thinking=False)
         except Exception:
             pass
-        # Try cache first for speed
+        #Try cache first for speed
         cached_bytes, meta = await pop_one_cached(self.cat_name)
         if cached_bytes:
             ex = set()
@@ -167,7 +186,7 @@ class PhotoView(discord.ui.View):
             except Exception:
                 pass
             asyncio.create_task(ensure_cat_cache(self.cat_name, settings.show_cache_per_cat, exclude_serials=ex))
-            display = _display_name(self.cat_name)
+            display = _single_display_name(self.cat_name, self.cat_name)
             title = f"__**Random Photo of {display}**__"
             serial = meta.get('serial','Unknown') if isinstance(meta, dict) else 'Unknown'
             rev = meta.get('reverse_index','?') if isinstance(meta, dict) else '?'
@@ -198,7 +217,7 @@ class PhotoView(discord.ui.View):
                 "user_id": getattr(getattr(interaction, "user", None), "id", None),
             })
             return
-        # Else pull a random recent photo
+        #Else pull a random recent photo
         pick2 = await get_random_photo(self.cat_name)
         if isinstance(pick2, str):
             delivery, delivered_id = await self._edit_or_send(
@@ -219,7 +238,7 @@ class PhotoView(discord.ui.View):
             })
             return
         full = self.cat_name
-        display = _display_name(full)
+        display = _single_display_name(full, self.cat_name)
         title = f"__**Random Photo of {display}**__"
         desc = (
             f"**Here's a random photo of {display}**\n"
@@ -298,22 +317,22 @@ async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
         await ch.send("Which cat would you like to see? Ex: `TomCat, show Microwave`")
         return
 
-    # Try cached photo first for speed without hitting Sheets
+    #Try cached photo first for speed without hitting Sheets
     cached_bytes: Optional[bytes] = None
     cached_meta = None
     cached_bytes, cached_meta = await pop_one_cached(name, use_sheet=False)
     if cached_bytes:
-        # Send immediate embed; enrich from cached sidecar profile if available (no live sheet)
-        display = _display_name(cached_meta.get('display_name') or name) if isinstance(cached_meta, dict) else _display_name(name)
+        #Send immediate embed; enrich from cached sidecar profile if available (no live sheet)
+        display = _single_display_name(cached_meta.get('display_name') or name, name) if isinstance(cached_meta, dict) else _single_display_name(name, name)
         title = f"__**Random Photo of {display}**__"
         desc = f"**Here's a random photo of {display}**\n(Photo {cached_meta.get('reverse_index','?')} out of {cached_meta.get('total_available','?')})\nImage: {cached_meta.get('serial','Unknown')}" if isinstance(cached_meta, dict) else None
         embed = discord.Embed(title=title, description=desc or "", color=0x2F3136)
-        # No extra profile fields in the caption
+        #No extra profile fields in the caption
         file = discord.File(io.BytesIO(cached_bytes), filename="cache.jpg")
         embed.set_image(url="attachment://cache.jpg")
         await ch.send(embed=embed, file=file)
 
-        # Refill cache in background (exclude served serial)
+        #Refill cache in background (exclude served serial)
         async def _refill():
             ex = set()
             try:
@@ -329,17 +348,17 @@ async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
         asyncio.create_task(_refill())
         return
 
-    # Fallback: fetch a random recent photo and send simple caption
+    #Fallback: fetch a random recent photo and send simple caption
     pick = await get_random_photo(name)
     if isinstance(pick, str):
-        # Try resolving via profile, then retry once with actual name
+        #Try resolving via profile, then retry once with actual name
         profile = await get_cat_profile(name)
         if isinstance(profile, dict):
             pick = await get_random_photo(profile.get('actual_name') or name)
         if isinstance(pick, str):
             await ch.send(pick)
             return
-    display = _display_name(pick.get('actual_name') or name)
+    display = _single_display_name(pick.get('actual_name') or name, name)
     title = f"__**Random Photo of {display}**__"
     desc = (
         f"**Here's a random photo of {display}**\n"
@@ -402,7 +421,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
         await ch.send("Which cat would you like to see? Ex: `TomCat, show me Microwave`")
         return
 
-    # Try cache first without hitting Sheets
+    #Try cache first without hitting Sheets
     cached_bytes2, cached_meta2 = await pop_one_cached(name, use_sheet=False)
     if cached_bytes2:
         ex2 = set()
@@ -419,15 +438,15 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
         total_avail = cached_meta2.get('total_available','?') if isinstance(cached_meta2, dict) else '?'
         reverse_idx = cached_meta2.get('reverse_index','?') if isinstance(cached_meta2, dict) else '?'
         serial = cached_meta2.get('serial','cached') if isinstance(cached_meta2, dict) else 'cached'
-        display = _display_name(cached_meta2.get('display_name') or name) if isinstance(cached_meta2, dict) else _display_name(name)
+        display = _single_display_name(cached_meta2.get('display_name') or name, name) if isinstance(cached_meta2, dict) else _single_display_name(name, name)
     else:
-        # Fallback to sheet-backed path
+        #Fallback to sheet-backed path
         profile = await get_cat_profile(name)
         if isinstance(profile, str):
             await ch.send(profile)
             return
         actual = profile["actual_name"]
-        display = _display_name(actual)
+        display = _single_display_name(actual, name)
         pick = await get_random_photo(actual)
         if isinstance(pick, str):
             await ch.send(pick)
@@ -436,7 +455,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
         img_bytes_for_embed: Optional[bytes] = None
         tmp: Optional[str] = None
 
-    # Try fast auto-crop if enabled
+    #Try fast auto-crop if enabled
     if settings.auto_crop_show_photo and img_url:
         try:
             tmp = await _download_to_temp(img_url, settings.cv_temp_dir)
@@ -478,7 +497,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
     if img_bytes_for_embed:
         file = discord.File(io.BytesIO(img_bytes_for_embed), filename="crop.jpg")
         embed.set_image(url="attachment://crop.jpg")
-        # Pass FULL_NAME: use cached_meta's full_name when cached, else actual
+        #Pass FULL_NAME: use cached_meta's full_name when cached, else actual
         full_for_button = (cached_meta2.get('full_name') if isinstance(cached_meta2, dict) else None) or (actual if not cached_bytes2 else name)
         await ch.send(embed=embed, file=file, view=PhotoView(full_for_button))
     else:
@@ -488,7 +507,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
 
 
 
-# Optional: tiny wrapper to expose a strict "who is" alias if you want a separate name
+#Optional: tiny wrapper to expose a strict "who is" alias if you want a separate name
 async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
     """Render a cat profile card sourced from cached Sheets data."""
     ch: discord.abc.MessageableChannel = ctx["channel"]
@@ -496,7 +515,7 @@ async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
     if not name:
         await ch.send("Which cat would you like to see? Ex: `TomCat, who is Microwave`")
         return
-    # Prefer cached profile snapshot to avoid live sheet; fall back to sheet builder
+    #Prefer cached profile snapshot to avoid live sheet; fall back to sheet builder
     prof = PC.get_profile(name)
     if not prof:
         emb = await _build_profile_embed(name)
@@ -518,7 +537,7 @@ async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
                 e.set_image(url=img)
         await ch.send(embed=e)
         return
-    # Build embed from cached profile with classic text layout
+    #Build embed from cached profile with classic text layout
     actual = prof.get('actual_name') or name
     display = re.sub(r"^\s*\d+\.\s*", "", str(actual))
     e = discord.Embed(title=f"__**{display}**__", color=0x2F3136)
@@ -559,7 +578,7 @@ async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
     if comm:
         lines.append(f"**Comments:** {comm}")
     e.description = "\n".join(lines)
-    # Image: prefer most-recent cached JPEG to avoid Sheets; else profile image_url; else skip
+    #Image: prefer most-recent cached JPEG to avoid Sheets; else profile image_url; else skip
     img_bytes = latest_cached_bytes(actual) or None
     if img_bytes:
         file = discord.File(io.BytesIO(img_bytes), filename="recent.jpg")

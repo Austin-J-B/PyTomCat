@@ -5,12 +5,19 @@ from __future__ import annotations
 import io
 import os
 import math
+from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Any, cast
 
 from PIL import Image, ImageDraw, ImageFont
 import torch
 from torch import Tensor
+
+#Keep Ultralytics config within the repo unless overridden by the environment.
+os.environ.setdefault(
+    "YOLO_CONFIG_DIR",
+    str(Path(__file__).resolve().parents[2] / ".ultra"),
+)
 
 #ultralytics is optional at import time; treat it as Any to appease Pylance
 try:

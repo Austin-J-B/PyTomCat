@@ -1920,7 +1920,12 @@ async def members(ctx: commands.Context):
     await ctx.send("Members count: (hook up to Members sheet)")
 
 def run():
-    bot.run(settings.discord_token)
+    log_formatter = logging.Formatter(
+        "[{asctime}] [{levelname}] {name}: {message}",
+        "%Y-%m-%d %H:%M:%S",
+        style="{",
+    )
+    bot.run(settings.discord_token, log_formatter=log_formatter)
 
 if __name__ == "__main__":
     run()

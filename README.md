@@ -112,6 +112,8 @@ on whether `nvidia-smi` is available (override with `--gpu` or `--cpu`).
      `GOOGLE_SERVICE_ACCOUNT_JSON`.
 
 6. **Optional: configure Ultralytics cache**
+   - `scripts/start.py` now sets `YOLO_CONFIG_DIR` to `./.ultra` automatically.
+   - If you want to override it, set `YOLO_CONFIG_DIR` yourself:
    ```bash
    mkdir -p .ultra
    export YOLO_CONFIG_DIR=$PWD/.ultra  #or set in PowerShell: $env:YOLO_CONFIG_DIR = "$pwd\.ultra"

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import json
 import re
+import shutil
 from pathlib import Path
 
 
@@ -169,7 +170,14 @@ ingress:
         return None
 
 def main() -> None:
-    yolo_dir = ROOT / ".config" / "ultralytics"
+    yolo_dir = ROOT / ".ultra"
+    legacy_dir = ROOT.with_suffix(".ultra")
+    if legacy_dir.exists() and not yolo_dir.exists():
+        try:
+            shutil.copytree(legacy_dir, yolo_dir, dirs_exist_ok=True)
+            print(f"[YOLO] Migrated Ultralytics cache to {yolo_dir}")
+        except Exception as exc:
+            print(f"[YOLO] Failed to migrate legacy cache: {exc}")
     yolo_dir.mkdir(parents=True, exist_ok=True)
     os.environ["YOLO_CONFIG_DIR"] = str(yolo_dir)
     

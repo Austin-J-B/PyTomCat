@@ -25,6 +25,7 @@ VENV_DIR = ROOT / ".venv"
 WEIGHTS_DIR = ROOT / "weights"
 ONNX_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.onnx"
 TOKENIZER_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.tokenizer.json"
+CONFIG_PATH = ROOT / "config.yml"
 
 REQUIRED_WEIGHTS = ["NanoModel.pt", "NanoClassifier.pt"]
 
@@ -57,6 +58,11 @@ ROLE_DUES_PERKS=                     # Role granted by dues perks workflow
 COMMAND_PREFIX=! # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago
+
+# ===== Cloudflare Tunnel =====
+CLOUDFLARE_TUNNEL_ID=                # Tunnel ID used to locate ~/.cloudflared/<id>.json
+CLOUDFLARE_TUNNEL_CREDENTIALS=       # Optional path to tunnel credentials JSON
+CLOUDFLARE_TUNNEL_NAME=              # Optional: create tunnel if credentials are missing
 
 # Comma-separated admin user IDs who can run privileged commands
 ADMIN_IDS=
@@ -232,6 +238,65 @@ def _ensure_cloudflared_auth(bin_path: Path) -> None:
         print("\nCloudflare login failed or was cancelled.")
         print("   You may need to run `cloudflared.exe tunnel login` manually.")
 
+def _read_expected_tunnel_id() -> str | None:
+    if not CONFIG_PATH.exists():
+        return None
+    try:
+        for line in CONFIG_PATH.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("tunnel:"):
+                return stripped.split(":", 1)[1].strip()
+    except Exception:
+        return None
+    return None
+
+def _ensure_cloudflared_credentials(
+    bin_path: Path,
+    creds_source: Path | None,
+    tunnel_name: str | None,
+) -> None:
+    if not bin_path.exists():
+        return
+
+    cf_dir = Path.home() / ".cloudflared"
+    cf_dir.mkdir(exist_ok=True)
+
+    creds_files = list(cf_dir.glob("*.json"))
+    if creds_files:
+        names = ", ".join(p.name for p in creds_files)
+        print(f"Cloudflare tunnel credentials found: {names}")
+        return
+
+    _print_header("Cloudflare Tunnel Credentials")
+    expected_id = _read_expected_tunnel_id()
+
+    if creds_source:
+        if not creds_source.exists():
+            print(f"Credentials file not found: {creds_source}")
+        else:
+            target = cf_dir / creds_source.name
+            shutil.copy2(creds_source, target)
+            print(f"Copied tunnel credentials to: {target}")
+            return
+
+    if tunnel_name:
+        try:
+            subprocess.run([str(bin_path), "tunnel", "create", tunnel_name], check=True)
+        except subprocess.CalledProcessError:
+            print("Cloudflare tunnel creation failed.")
+        else:
+            creds_files = list(cf_dir.glob("*.json"))
+            if creds_files:
+                names = ", ".join(p.name for p in creds_files)
+                print(f"Created tunnel credentials: {names}")
+                return
+
+    print("No Cloudflare tunnel credentials found.")
+    if expected_id:
+        print(f"Expected tunnel ID from config.yml: {expected_id}")
+        print(f"Copy {expected_id}.json into {cf_dir}")
+    print("Re-run install with --tunnel-credentials <path> or --tunnel-name <name>.")
+
 def _create_or_reuse_venv(python_exe: Path) -> None:
     if _venv_python().exists():
         print("Virtual environment already present – reusing .venv")
@@ -376,6 +441,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--resume-model", action="store_true", help="resume DeBERTa download/test")
     parser.add_argument("--skip-model", action="store_true", help="skip DeBERTa download")
     parser.add_argument("--clean-hf-cache", action="store_true", help="delete local HF caches")
+    parser.add_argument(
+        "--tunnel-credentials",
+        type=Path,
+        help="path to existing Cloudflare tunnel credentials JSON to copy into ~/.cloudflared",
+    )
+    parser.add_argument(
+        "--tunnel-name",
+        help="create a new Cloudflare tunnel with this name if credentials are missing",
+    )
     return parser.parse_args()
 
 def main() -> None:
@@ -397,6 +471,8 @@ def main() -> None:
     #1. Cloudflare Binary & Auth
     cf_path = _ensure_cloudflared()
     _ensure_cloudflared_auth(cf_path)
+    creds_source = args.tunnel_credentials.resolve() if args.tunnel_credentials else None
+    _ensure_cloudflared_credentials(cf_path, creds_source, args.tunnel_name)
 
     if args.resume_model:
         if not _venv_python().exists():

@@ -270,7 +270,9 @@ def _upsert_schedule_version(schedule: dict, effective_from: str, meta: dict | N
     return versions
 
 
-async def _resolve_member(user_id: int) -> tuple[Optional[discord.Guild], Optional[discord.Member]]:
+async def _resolve_member_once(
+    user_id: int,
+) -> tuple[Optional[discord.Guild], Optional[discord.Member]]:
     """Find a member in the configured guild or any guild the bot is in."""
     guild = bot.get_guild(YOUR_GUILD_ID) if "bot" in globals() else None
     member = guild.get_member(user_id) if guild else None
@@ -290,6 +292,25 @@ async def _resolve_member(user_id: int) -> tuple[Optional[discord.Guild], Option
                     return g, candidate
             except Exception:
                 continue
+    return guild, member
+
+
+async def _resolve_member(user_id: int) -> tuple[Optional[discord.Guild], Optional[discord.Member]]:
+    """Find a member with a short retry to smooth Discord cache/API lag."""
+    guild: Optional[discord.Guild] = None
+    member: Optional[discord.Member] = None
+    for attempt in range(3):
+        if "bot" in globals():
+            try:
+                if hasattr(bot, "is_ready") and not bot.is_ready():
+                    await bot.wait_until_ready()
+            except Exception:
+                pass
+        guild, member = await _resolve_member_once(user_id)
+        if member:
+            return guild, member
+        if attempt < 2:
+            await asyncio.sleep(0.4 * (attempt + 1))
     return guild, member
 
 

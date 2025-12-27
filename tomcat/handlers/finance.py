@@ -924,15 +924,14 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
     return results
 
 
-def _fetch_recent_records(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> List[dict]:
-    """Fetch recent rows from a worksheet and normalize into comparable records.
-    kind: 'income' or 'expense'
-    """
+def _fetch_recent_records(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> Optional[List[dict]]:
+    """Fetch recent rows from a worksheet. Returns None if fetch fails (connection error)."""
     try:
         vals = ws.get_all_values()
     except Exception as e:
         log_action('finance_sheet_error', f'{kind}_fetch', str(e))
-        return []
+        return None # CRITICAL FIX: Return None instead of empty list on error
+        
     if not vals:
         return []
     limit = max_rows if max_rows > 0 else _RECENT_ROWS_LIMIT
@@ -1116,6 +1115,10 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
         return {event.email_id: (False, str(e)) for event in events}
 
     existing = _fetch_recent_records(ws, 'income')
+    # If fetch failed (None), we MUST abort to prevent duplicate logging
+    if existing is None:
+        return {event.email_id: (False, 'sheet_read_failed') for event in events}
+
     seen_fp = _load_fingerprints()
     seen_txn = _load_txn_ids()
     seen_msg = _load_message_ids()
@@ -1207,6 +1210,10 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
         return {event.email_id: (False, str(e)) for event in events}
 
     existing = _fetch_recent_records(ws, 'expense')
+    # If fetch failed (None), we MUST abort to prevent duplicate logging
+    if existing is None:
+        return {event.email_id: (False, 'sheet_read_failed') for event in events}
+
     seen_fp = _load_fingerprints()
     seen_txn = _load_txn_ids()
     seen_msg = _load_message_ids()
@@ -1320,7 +1327,10 @@ async def _process_finance_events(
         if sheet_res[0]:
             processed[event.email_id] = True
         skip_reason = str(sheet_res[1])
-        if notify and not (not sheet_res[0] and (skip_reason.startswith('dup_') or skip_reason == 'dues_skip')):
+        # Only notify if successful OR if it failed for a reason other than duplicates/sheet-read-failure
+        should_notify = sheet_res[0] or (not skip_reason.startswith('dup_') and skip_reason != 'dues_skip' and skip_reason != 'sheet_read_failed')
+
+        if notify and should_notify:
             blank = event.note.strip() == ""
             await _notify_sandbox(bot, event, event.direction, sheet_res, inferred, blank)
         results.append((event, sheet_res, inferred))
@@ -1330,7 +1340,9 @@ async def _process_finance_events(
         if sheet_res[0]:
             processed[event.email_id] = True
         skip_reason = str(sheet_res[1])
-        if notify and not (not sheet_res[0] and skip_reason.startswith('dup_')):
+        should_notify = sheet_res[0] or (not skip_reason.startswith('dup_') and skip_reason != 'sheet_read_failed')
+        
+        if notify and should_notify:
             blank = event.note.strip() == ""
             await _notify_sandbox(bot, event, event.direction, sheet_res, inferred, blank)
         results.append((event, sheet_res, inferred))

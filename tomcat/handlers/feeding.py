@@ -1130,6 +1130,7 @@ def _update_existing_sub_request(
 
 _MORNING_SCHEDULER_LOCK = asyncio.Lock()
 _MORNING_SCHEDULER_STARTED = False
+_LAST_MORNING_MESSAGE_KEY: Optional[str] = None  # Tracks last sent date to prevent duplicates
 
 
 async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.View | None]:
@@ -1199,15 +1200,24 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
 
 async def start_morning_scheduler(bot: discord.Client) -> None:
     """Kick off the daily 7:40am morning message."""
-    global _MORNING_SCHEDULER_STARTED
+    global _MORNING_SCHEDULER_STARTED, _LAST_MORNING_MESSAGE_KEY
     async with _MORNING_SCHEDULER_LOCK:
         if _MORNING_SCHEDULER_STARTED:
             return
 
         async def _runner():
+            global _LAST_MORNING_MESSAGE_KEY
             while True:
                 try:
                     await _sleep_until_local_time(7, 40)
+                    
+                    # Guard against duplicate sends for the same day
+                    now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+                    today_key = now.date().isoformat()
+                    if _LAST_MORNING_MESSAGE_KEY == today_key:
+                        log_action("morning_scheduler", f"date={today_key}", "duplicate_skip")
+                        continue
+                    
                     channel_id = getattr(settings, "ch_feeding_team", None)
                     if not channel_id:
                         log_action("morning_scheduler", "channel=None", "skipped")
@@ -1220,7 +1230,10 @@ async def start_morning_scheduler(bot: discord.Client) -> None:
 
                     message_content, view = await build_morning_message(bot)
                     await ch.send(message_content, view=view)
-                    log_action("morning_scheduler", "sent", f"channel={channel_id}")
+                    
+                    # Mark this date as sent AFTER successful send
+                    _LAST_MORNING_MESSAGE_KEY = today_key
+                    log_action("morning_scheduler", "sent", f"channel={channel_id}; date={today_key}")
 
                 except Exception as e:
                     log_action("morning_scheduler_error", "loop", str(e))

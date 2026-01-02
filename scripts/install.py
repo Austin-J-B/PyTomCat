@@ -39,35 +39,24 @@ TORCH_GPU_SPEC = [
 ]
 
 #Environment template used to scaffold a fresh .env file
-ENV_TEMPLATE_CONTENT = """#=====Discord=====
-DISCORD_TOKEN=#
-DISCORD_CLIENT_SECRET=#
-# Required: secret for signing UI session cookies
-UI_SESSION_SECRET=
-UI_ALLOWED_ORIGINS=                  #Should match the Discord OAuth2 dev portal
-UI_AUTH_DEBUG=false                  # Enable verbose auth/CORS logging when true
-UI_GUILD_ID=                         # Optional: override guild ID to validate membership for UI auth
-UI_COOKIE_SECURE=true                # Use secure cookies (SameSite=None) so cross-site pages send session
-OFFICER_ROLE_ID=                     # Required: officer role for UI/admin actions
-ROLE_FEEDING_MANAGER=                # Feeding manager role ID
-ROLE_PHOTO_LABELER=                  # Photo labeler role ID
-ROLE_VIEWER=                         # Basic viewer role ID
-ROLE_DUE_PAYING=                     # Due-paying member role ID (UI roster)
-ROLE_HOLIDAY_FEEDER=                # Holiday feeder role ID (UI roster)
-ROLE_DUES_PERKS=                     # Role granted by dues perks workflow
-COMMAND_PREFIX=! # Command prefix used by commands.Bot
+ENV_TEMPLATE_CONTENT = """# ===== Discord =====
+DISCORD_TOKEN=
+DISCORD_CLIENT_SECRET=
+UI_SESSION_SECRET=                    # Required: secret for signing UI session cookies
+UI_ALLOWED_ORIGINS=                   # Should match the Discord OAuth2 dev portal
+UI_AUTH_DEBUG=false                   # Enable verbose auth/CORS logging when true
+UI_GUILD_ID=                          # Optional: override guild ID to validate membership for UI auth
+UI_COOKIE_SECURE=true                 # Use secure cookies (SameSite=None) so cross-site pages send session
+COMMAND_PREFIX=!                      # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago
 
-# ===== Cloudflare Tunnel =====
-CLOUDFLARE_TUNNEL_ID=                # Tunnel ID used to locate ~/.cloudflared/<id>.json
-CLOUDFLARE_TUNNEL_CREDENTIALS=       # Optional path to tunnel credentials JSON
-CLOUDFLARE_TUNNEL_NAME=              # Optional: create tunnel if credentials are missing
-
 # Comma-separated admin user IDs who can run privileged commands
 ADMIN_IDS=
+# Comma-separated role IDs that can ban spammers via reaction
+SPAM_BAN_ROLE_IDS=
 
-# ===== Channels  =====
+# ===== Channels (Discord snowflakes) =====
 CH_FEEDING_TEAM=
 CH_TOMCAT_SANDBOX=
 CH_PICTURES_OF_CATS=
@@ -75,54 +64,69 @@ CH_REPORT_NEW_CATS=
 CH_DUE_PORTAL=
 CH_LOGGING=
 CH_CATDOCDUMP=
+CH_MEMBER_NAMES=
 TARGET_GUILD_ID=
-
 CHANNEL_SHEET_MAP=CH_PICTURES_OF_CATS:TCBPicsInput, CH_REPORT_NEW_CATS:TCBPicsInput, CH_TOMCAT_SANDBOX:TCBPicsInput, CH_CATDOCDUMP:TCBVetBillInput
 allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
-CH_MEMBER_NAMES=
+
+# Ping target when a spam message is detected
 SPAM_ALERT_USER_ID=
 
 # ===== Google Service Account =====
 GOOGLE_SERVICE_ACCOUNT_JSON=./credentials/service_account.json
 
 # ===== Sheets =====
-SHEET_CATABASE_ID=
-SHEET_VISION_ID=
-SHEET_MEGASHEET_ID=
+SHEET_CATABASE_ID=                    # Catabase (cat bios + latest image URL)
+SHEET_VISION_ID=                      # Vision/aux (RecentPics, FeedingStationChecklist, etc.)
+SHEET_MEGASHEET_ID=                   # Members/finance megasheet (used for dues/membership)
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
+# ===== ML Model Paths =====
 NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
 NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
 CV_DETECT_WEIGHTS=weights/NanoModel.pt
 CV_CLASSIFY_WEIGHTS=weights/NanoClassifier.pt
+CV_MAX_DOWNLOAD_MB=0                  # Set to 0 to lift the max file size limit
 
-CV_MAX_DOWNLOAD_MB=0
+# ===== Gmail Ingestion =====
+GMAIL_ENABLED=true                    # Toggle Gmail integration; disable to skip email polling entirely
+GMAIL_CREDENTIALS_PATH=credentials/gmail_oauth_client.json  # OAuth client secrets downloaded from Google Cloud
+GMAIL_TOKEN_PATH=credentials/gmail_token.json              # Stored refresh/access token generated after auth
+GMAIL_LOCAL_PORT=8765                 # Local redirect port the OAuth helper spins up
 
-# Gmail ingestion
-GMAIL_ENABLED=true
-GMAIL_CREDENTIALS_PATH=credentials/gmail_oauth_client.json
-GMAIL_TOKEN_PATH=credentials/gmail_token.json
-GMAIL_LOCAL_PORT=8765
+# ===== Dues Processing =====
+DUES_ENABLED=true                     # Master switch for dues automation
+DUES_ALLOWED_AMOUNTS=15               # Base dues amount (comma-list if multiples allowed)
+DUES_EMAIL_WINDOW_DAYS=5              # Only consider payment emails this many days back
+DUES_SCAN_SKIP_OLDEST=3               # Skip this many oldest sheet rows when scanning in batches
+DUES_SCAN_LIMIT=500                   # Cap rows reviewed per pass to limit Sheets API usage
+DUES_NLP_ENABLED=true                 # Enable NLP heuristics for intent/donation parsing
+DUES_MEMBERSHIP_TTL_SEC=300           # Cache TTL for dues membership lookups (seconds)
+DUES_FAST_MAP=1                       # Use fast user map resolver (set 0 to force slower fallback)
+DUES_AUTO_VERIFY_THRESHOLD=0.90       # Auto-verify members with score >= this threshold
 
-# Dues processing knobs
-DUES_ENABLED=true
-DUES_ALLOWED_AMOUNTS=15
-DUES_EMAIL_WINDOW_DAYS=5
-DUES_SCAN_SKIP_OLDEST=3
-DUES_SCAN_LIMIT=500
-DUES_NLP_ENABLED=true
-DUES_MEMBERSHIP_TTL_SEC=300
-DUES_FAST_MAP=1
+# ===== Bot Identity =====
+BOT_USER_ID=                          # Bot user ID for mention detection + wake word shortcuts
 
-BOT_USER_ID=
+# ===== Cache Expiry =====
+CAT_PROFILE_TTL_SEC=3600              # Seconds before cached cat profiles auto-refresh
+CAT_ALIASES_TTL_SEC=7200              # Seconds before alias table refreshes from Sheets
+FINANCE_SHEET_THROTTLE_SEC=0.5        # When finances are requested, it waits this long between queries
 
-# Cache expiry settings
-CAT_PROFILE_TTL_SEC=3600
-CAT_ALIASES_TTL_SEC=7200
+# ===== UI / Role IDs =====
+UITEST_ACTIVITY_APP_ID=               # For the user interface to work
+OFFICER_ROLE_ID=                      # Required: officer role for UI/admin actions
+ROLE_FEEDING_MANAGER=                 # Feeding manager role ID
+ROLE_PHOTO_LABELER=                   # Photo labeler role ID
+ROLE_VIEWER=                          # Basic viewer role ID
+ROLE_DUE_PAYING=                      # Due-paying member role ID
+ROLE_HOLIDAY_FEEDER=                  # Holiday feeder role ID
+ROLE_DUES_PERKS=                      # Role granted by dues perks workflow
 
-FINANCE_SHEET_THROTTLE_SEC=0.5
-
-UITEST_ACTIVITY_APP_ID=
+# ===== Cloudflare Tunnel =====
+CLOUDFLARE_TUNNEL_ID=                 # Tunnel ID used to locate ~/.cloudflared/<id>.json
+CLOUDFLARE_TUNNEL_CREDENTIALS=        # Optional path to tunnel credentials JSON
+CLOUDFLARE_TUNNEL_NAME=               # Optional: create tunnel if credentials are missing
 """
 ENV_TEMPLATE_PATH = ROOT / ".env TEMPLATE"
 

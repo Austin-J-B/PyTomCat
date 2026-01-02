@@ -1344,7 +1344,8 @@
                         <div class="form-row">
                             <label for="checklist-date">Station status date</label>
                             <div class="date-picker">
-                                <button class="date-btn" type="button">Select</button>
+                                <button class="date-btn" type="button"
+                                    onclick="document.getElementById('checklist-date').showPicker()">Select</button>
                                 <input type="date" id="checklist-date" class="date-input-overlay">
                             </div>
                             <div id="checklist-load-status" class="warn"></div>

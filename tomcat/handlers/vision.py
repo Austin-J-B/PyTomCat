@@ -24,7 +24,9 @@ async def _download_attachment(att: discord.Attachment) -> str:
     if att.size and settings.cv_max_download_mb and (att.size > settings.cv_max_download_mb * 1024 * 1024):
         raise ValueError(f"Attachment too large ({att.size} bytes). Max {settings.cv_max_download_mb} MB.")
     os.makedirs(settings.cv_temp_dir, exist_ok=True)
-    path = os.path.join(settings.cv_temp_dir, f"{att.id}_{att.filename}")
+    safe_name = os.path.basename(att.filename or "attachment")
+    safe_name = "".join(c for c in safe_name if c.isalnum() or c in {".", "_", "-"}).strip("._-") or "attachment"
+    path = os.path.join(settings.cv_temp_dir, f"{att.id}_{safe_name}")
     async with aiohttp.ClientSession() as sess:
         async with sess.get(att.url) as resp:
             resp.raise_for_status()

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 import os, re, io, asyncio
+import ipaddress
 from typing import Optional, List, Tuple
 from pathlib import Path
 import aiohttp
 import time
+from urllib.parse import urlparse
 
 from ..config import settings
 from ..logger import log_action
@@ -66,6 +68,17 @@ def latest_cached_bytes(full_name: str) -> Optional[bytes]:
 async def _download_bytes(url: str, timeout_sec: float = 6.0) -> Optional[bytes]:
     """Fetch raw bytes from a show-photo URL with a timeout."""
     try:
+        parsed = urlparse(url)
+        host = parsed.hostname
+        if host:
+            if host.lower() == "localhost" or host.lower().endswith(".local"):
+                return None
+            try:
+                ip = ipaddress.ip_address(host)
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                    return None
+            except ValueError:
+                pass
         timeout = aiohttp.ClientTimeout(total=timeout_sec)
         async with aiohttp.ClientSession(timeout=timeout) as sess:
             async with sess.get(url) as resp:

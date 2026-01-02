@@ -1669,6 +1669,12 @@ async def handle_run_dues_perks(intent, ctx) -> None:
     """
     ch = ctx.get('channel')
     bot = ctx.get('bot')
+    author = ctx.get('author')
+    is_admin = int(getattr(author, 'id', 0) or 0) in (getattr(settings, 'admin_ids', []) or []) or \
+               getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+    if not is_admin:
+        log_action("dues_perks_denied", f"user={getattr(author,'id',0)}", "not_admin")
+        return
     if not ch or not bot:
         return
 

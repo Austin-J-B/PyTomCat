@@ -212,6 +212,7 @@ LOG_LAST_FINANCES_RE = re.compile(r"\blog(?:\s+the)?\s+last\s+(\d+)\s+finances\b
 DUE_CHECK_RE = re.compile(r"\bcheck\s+due\s+payments\b", re.I)
 EXPORT_DUES_RE = re.compile(r"\bexport\s+due(?:s)?\s+portal\b", re.I)
 DUES_PERKS_RE = re.compile(r"\brun\s+dues\s+perks\b", re.I)
+RUN_DUES_JOB_RE = re.compile(r"\brun\s+dues\s+job\b", re.I)
 DUES_UPDATE_RE = re.compile(r"\bupdate\s+due[-\s]?pay(?:ing)?\s+members\b", re.I)
 RECACHE_SHOW_RE = re.compile(r"\brecache\s+(?:show|photo|photos|cache|cats?)\b", re.I)
 RECACHE_ONE_RE = re.compile(r"\brecache\s+(.+?)(?:\s+photos?)?\b", re.I)
@@ -585,6 +586,19 @@ class IntentRouter:
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="dues_update", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            #Admin-only: run dues job (manual trigger for daily scheduler)
+            if RUN_DUES_JOB_RE.search(text_wo):
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return IntentEvent(
+                    type="dues_run_job", confidence=0.99,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
@@ -1200,6 +1214,20 @@ class IntentRouter:
         if event.type == "dues_update":
             from .handlers.dues import handle_update_dues_members
             await handle_update_dues_members(_intent("dues_update", {}), {**ctx, "bot": ctx.get("bot")})
+            return
+
+        if event.type == "dues_run_job":
+            from .handlers.dues import _run_daily_dues_job
+            ch = ctx.get("channel")
+            try:
+                await _safe_send(ch, "Running daily dues job...")
+            except Exception:
+                pass
+            await _run_daily_dues_job(ctx.get("bot"))
+            try:
+                await _safe_send(ch, "Daily dues job complete.")
+            except Exception:
+                pass
             return
 
         if event.type == "role_remove_all":

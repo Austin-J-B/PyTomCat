@@ -26,83 +26,21 @@ except Exception:
         await ch.send(text, **kwargs)
 
 #============================
-#Gmail auth helpers (unchanged)
+#Gmail auth helpers (imported from gmail.py)
 #============================
 
-GMAIL_SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-]
+from .gmail import (
+    GMAIL_SCOPES,
+    EMAILS_DIR,
+    _paths,
+    _maybe_migrate_token,
+    _new_flow,
+    _build_gmail_service,
+    _PENDING_OAUTH,
+)
 
-EMAILS_DIR = "logs/emails"
+# Keep handle_gmail_auth_code locally since it has dues-specific behavior
 
-def _env(key: str, default: Optional[str] = None) -> Optional[str]:
-    v = os.getenv(key)
-    return v if v is not None else default
-
-def _paths() -> tuple[str, str]:
-    cred = _env("GMAIL_CREDENTIALS_PATH", "credentials/gmail_oauth_client.json") or "credentials/gmail_oauth_client.json"
-    token = _env("GMAIL_TOKEN_PATH", "credentials/gmail_token.json") or "credentials/gmail_token.json"
-    return cred, token
-
-def _maybe_migrate_token(target_path: str) -> str:
-    try:
-        old = "gmail_token.json"
-        if not os.path.exists(target_path) and os.path.exists(old):
-            os.makedirs(os.path.dirname(target_path) or ".", exist_ok=True)
-            import shutil
-            shutil.move(old, target_path)
-        return target_path
-    except Exception:
-        return target_path
-
-_PENDING_OAUTH: Dict[int, Any] = {}
-
-def _new_flow():
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    cred_path, _ = _paths()
-    flow = InstalledAppFlow.from_client_secrets_file(cred_path, scopes=GMAIL_SCOPES)
-    return flow
-
-async def _build_gmail_service(channel) -> Any:
-    from google.oauth2.credentials import Credentials
-    from googleapiclient.discovery import build
-    from google.auth.transport.requests import Request
-
-    cred_path, token_path = _paths()
-    token_path = _maybe_migrate_token(token_path)
-    creds: Optional[Credentials] = None  #type: ignore
-
-    if os.path.exists(token_path):
-        try:
-            creds = Credentials.from_authorized_user_file(token_path, GMAIL_SCOPES)
-        except Exception:
-            creds = None
-    if creds and creds.expired and creds.refresh_token:
-        try:
-            await asyncio.to_thread(creds.refresh, Request())
-        except Exception:
-            creds = None
-
-    if not creds:
-        if not os.path.exists(cred_path):
-            raise FileNotFoundError(f"Missing OAuth client file at {cred_path}")
-        flow = _new_flow()
-        port = int(os.getenv("GMAIL_LOCAL_PORT", "8765") or "8765")
-        flow.redirect_uri = f"http://localhost:{port}/"
-        auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
-        _PENDING_OAUTH[int(getattr(getattr(channel, 'guild', None), 'id', 0)) or 0] = flow
-        _PENDING_OAUTH[-1] = flow
-        try:
-            await safe_send(channel, (
-                "Gmail authorization needed. Open and approve, then reply: 'TomCat, auth code <code>' or 'TomCat, auth url <full URL>'.\n"
-                f"URL:\n{auth_url}"
-            ))
-            log_action("gmail_auth_url", "", auth_url)
-        except Exception:
-            pass
-        raise RuntimeError("gmail_auth_pending")
-
-    return await asyncio.to_thread(lambda: build("gmail", "v1", credentials=creds))
 
 #============================
 #Time helpers
@@ -600,6 +538,28 @@ def _current_semester_label() -> str:
 def _norm_sem_label(s: str) -> str:
     return re.sub(r"\s+", " ", (s or '').strip().title())
 
+def _get_semester_expiry(semester_label: str) -> date:
+    """Return the expiration date for a semester's dues role.
+    
+    Fall expires Jan 31 of the next year.
+    Spring expires Sept 15 of the same year.
+    """
+    from datetime import date
+    normalized = (semester_label or '').strip().lower()
+    year_match = re.search(r'\d{4}', normalized)
+    year = int(year_match.group()) if year_match else datetime.now().year
+    
+    if 'fall' in normalized:
+        # Fall expires Jan 31 of NEXT year
+        return date(year + 1, 1, 31)
+    elif 'spring' in normalized:
+        # Spring expires Sept 15 of SAME year
+        return date(year, 9, 15)
+    else:
+        # Default: 6 months from now
+        return (datetime.now() + timedelta(days=180)).date()
+
+
 def _is_uta_email(s: str) -> bool:
     e = (s or '').strip().lower()
     if not e:
@@ -710,9 +670,19 @@ class InvitesConfirmView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         try:
-            if interaction.user and int(interaction.user.id) == self.author_id:
+            user = interaction.user
+            if not user:
+                return False
+            # Allow original author
+            if int(user.id) == self.author_id:
                 return True
-            await interaction.response.send_message("Only the original requester can confirm.", ephemeral=True)
+            # Allow any officer (by role)
+            officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
+            if officer_role_id and hasattr(user, 'roles'):
+                for role in user.roles:
+                    if int(getattr(role, 'id', 0)) == officer_role_id:
+                        return True
+            await interaction.response.send_message("Only officers can confirm.", ephemeral=True)
         except Exception:
             pass
         return False
@@ -2585,25 +2555,230 @@ async def handle_check_dues(intent, ctx) -> None:
         log_action('dues_check_error', '', str(e))
 
 #============================
-#Dues scheduler (unchanged shell; uses _analyze_dues above)
+#Dues scheduler - Daily verification and role sync
 #============================
 
+def _get_uninvited_uta_emails(semester: str) -> list[str]:
+    """Return UTA emails for the semester that haven't been MavOrgs invited."""
+    rows = _load_membership_rows()
+    cur_sem_norm = _norm_sem_label(semester).lower()
+    
+    uninvited = []
+    for row in rows:
+        if not row.get('verified'):
+            continue
+        if row.get('mavorgs_invite'):
+            continue
+        
+        sem_norm = _norm_sem_label(row.get('semester', '')).lower()
+        if sem_norm != cur_sem_norm:
+            continue
+        
+        email = (row.get('email') or '').strip().lower()
+        if email.endswith('@mavs.uta.edu') or email.endswith('@uta.edu'):
+            uninvited.append(email)
+    
+    return sorted(set(uninvited))
+
+async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, list]:
+    """Add roles to verified members, remove from expired.
+    
+    Returns (added_members, removed_members) for logging.
+    """
+    from datetime import date
+    role_id = int(getattr(settings, 'role_due_paying_id', 0) or 0)
+    if not role_id:
+        role_id = int(getattr(settings, 'role_dues_perks_id', 0) or 0)
+    if not role_id:
+        return [], []
+    
+    role_obj = guild.get_role(role_id)
+    if not role_obj:
+        log_action('dues_role_sync', 'role_not_found', f'id={role_id}')
+        return [], []
+    
+    # Load all membership rows
+    rows = _load_membership_rows()
+    
+    # Build maps: who should have role, who should lose it
+    should_have: set = set()
+    should_remove: set = set()
+    
+    for row in rows:
+        discord_name = (row.get('discord_username') or '').strip().lower()
+        if not discord_name:
+            continue
+        
+        if not row.get('verified'):
+            continue
+        
+        sem_label = row.get('semester', '')
+        expiry = _get_semester_expiry(sem_label)
+        
+        if today_date <= expiry:
+            should_have.add(discord_name)
+        else:
+            should_remove.add(discord_name)
+    
+    added = []
+    removed = []
+    
+    # Iterate guild members
+    for member in guild.members:
+        member_key = member.name.lower()
+        has_role = role_obj in member.roles
+        
+        # Add role to verified members
+        if member_key in should_have and not has_role:
+            try:
+                await member.add_roles(role_obj, reason="TomCat: verified dues for current semester")
+                added.append(member)
+            except Exception as e:
+                log_action('dues_role_add_error', f'uid={member.id}', str(e))
+        
+        # Remove role from expired members
+        elif member_key in should_remove and has_role:
+            try:
+                await member.remove_roles(role_obj, reason="TomCat: dues expired, not renewed")
+                removed.append(member)
+            except Exception as e:
+                log_action('dues_role_remove_error', f'uid={member.id}', str(e))
+    
+    return added, removed
+
+async def _run_daily_dues_job(bot) -> None:
+    """Execute the daily dues verification and role sync."""
+    from datetime import date
+    
+    # Get target guild
+    guild = None
+    guild_id = int(getattr(settings, 'target_guild_id', 0) or 0)
+    if guild_id:
+        guild = bot.get_guild(guild_id)
+    if not guild:
+        for g in getattr(bot, 'guilds', []):
+            guild = g
+            break
+    if not guild:
+        log_action('dues_scheduler', 'no_guild', 'skipped')
+        return
+    
+    # Ensure members are cached
+    try:
+        async for _ in guild.fetch_members(limit=None):
+            pass
+    except Exception:
+        pass
+    
+    # Get channels
+    log_ch_id = int(getattr(settings, 'ch_logging', 0) or 0)
+    member_ch_id = int(getattr(settings, 'ch_member_names', 0) or 0)
+    log_ch = bot.get_channel(log_ch_id) if log_ch_id else None
+    member_ch = bot.get_channel(member_ch_id) if member_ch_id else None
+    
+    cur_sem = _current_semester_label()
+    today_date = date.today()
+    
+    # 1. Analyze dues portal messages
+    try:
+        rows = await _analyze_dues(bot)
+    except Exception as e:
+        log_action('dues_scheduler_analyze_error', '', str(e))
+        rows = []
+    
+    # 2. Auto-verify high-confidence entries (score >= 0.90)
+    threshold = float(getattr(settings, 'dues_auto_verify_threshold', 0.90) or 0.90)
+    verified = []
+    for rec in rows:
+        score = float(rec.get('score_total', 0.0) or 0.0)
+        if score >= threshold:
+            verified.append(rec)
+            # Log full breakdown to machine logs
+            log_action('dues_auto_verify', 
+                       f"user={rec.get('author','?')} score={score:.2f}",
+                       json.dumps({k: v for k, v in rec.items() if k.startswith('score_') or k in ['author', 'provider', 'semester']}))
+    
+    # 3. Mark verified in sheet if we have emails
+    if verified:
+        try:
+            emails_to_verify = [(r.get('primary_email'), r.get('semester') or cur_sem) for r in verified if r.get('primary_email')]
+            if emails_to_verify:
+                await _mark_verified_emails(emails_to_verify)
+        except Exception as e:
+            log_action('dues_mark_verified_error', '', str(e))
+    
+    # 4. Log to CH_LOGGING (human readable)
+    if log_ch and verified:
+        lines = ["Dues processed and verified:"]
+        for rec in verified:
+            uname = rec.get('author', 'unknown')
+            provider = rec.get('provider', 'unknown')
+            score = float(rec.get('score_total', 0.0) or 0.0)
+            lines.append(f"  {uname} ({provider}) - score {score:.2f}")
+        try:
+            await safe_send(log_ch, '\n'.join(lines))
+        except Exception as e:
+            log_action('dues_log_send_error', 'verified_list', str(e))
+    
+    # 5. Sync roles (add for verified, remove for expired)
+    added, removed = await _sync_dues_roles(bot, guild, cur_sem, today_date)
+    
+    if log_ch and (added or removed):
+        role_lines = []
+        if added:
+            role_lines.append(f"Roles added: {len(added)}")
+        if removed:
+            role_lines.append(f"Roles removed (expired): {len(removed)}")
+        try:
+            await safe_send(log_ch, '\n'.join(role_lines))
+        except Exception:
+            pass
+    
+    # 6. Output MavOrgs invite list (UTA emails only)
+    uninvited = _get_uninvited_uta_emails(cur_sem)
+    if log_ch and uninvited:
+        email_list = '\n'.join(uninvited)
+        view = InvitesConfirmView(0, uninvited)  # 0 = any officer can confirm
+        try:
+            await safe_send(log_ch, f"UTA emails not yet invited to MavOrgs:\n{email_list}", view=view)
+        except Exception as e:
+            log_action('dues_mavorgs_list_error', '', str(e))
+    
+    # 7. Output to CH_MEMBER_NAMES
+    if member_ch and verified:
+        for rec in verified:
+            real_name = rec.get('full_name') or rec.get('primary_member', {}).get('full_name', 'Unknown')
+            username = rec.get('author', 'unknown')
+            sem = rec.get('semester') or cur_sem
+            line = f"{real_name}, {username}, {_norm_sem_label(sem).lower()}"
+            try:
+                await safe_send(member_ch, line)
+                await asyncio.sleep(1.1)  # Rate limit
+            except Exception:
+                pass
+    
+    log_action('dues_scheduler', f'verified={len(verified)} added={len(added)} removed={len(removed)}', 'done')
+
 async def start_dues_scheduler(bot) -> None:
-    """Kick off the periodic dues reconciliation job."""
+    """Daily dues verification: score-based verification, role sync, MavOrgs invite tracking."""
     if not getattr(settings, 'dues_enabled', True):
         return
-    target_h, target_m = 3, 0
+    
+    target_h, target_m = 3, 0  # 3:00 AM daily
+    
     while True:
+        # Sleep until target time
         now = datetime.now()
         nxt = now.replace(hour=target_h, minute=target_m, second=0, microsecond=0)
         if nxt <= now:
             nxt += timedelta(days=1)
         await asyncio.sleep((nxt - now).total_seconds())
+        
         try:
-            rows = await _analyze_dues(bot)
-            log_action('dues_scheduler', f'count={len(rows)}', 'done')
+            await _run_daily_dues_job(bot)
         except Exception as e:
             log_action('dues_scheduler_error', '', str(e))
+
 
 #============================
 #Email logging (kept from original)

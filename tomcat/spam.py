@@ -31,11 +31,20 @@ try:
     from rapidfuzz import fuzz as rf_fuzz
     def _fuzzy_hit(text: str, phrase: str, thresh: int=88) -> bool:
         try:
+            text_len = len(text.strip())
+            phrase_len = len(phrase.strip())
+            # Coverage check: message must be at least 50% of phrase length (IoU-like)
+            if phrase_len > 0 and text_len / phrase_len < 0.5:
+                return False
             return rf_fuzz.partial_ratio(text.lower(), phrase.lower()) >= thresh
         except Exception:
             return False
 except Exception:
     def _fuzzy_hit(text: str, phrase: str, thresh: int=88) -> bool:
+        text_len = len((text or "").strip())
+        phrase_len = len(phrase.strip())
+        if phrase_len > 0 and text_len / phrase_len < 0.5:
+            return False
         return phrase.lower() in (text or "").lower()
 
 _nlp_cached = None

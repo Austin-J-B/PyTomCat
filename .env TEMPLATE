@@ -1,92 +1,59 @@
 # ===== Discord =====
-DISCORD_TOKEN=#
-DISCORD_CLIENT_SECRET=#
-UI_SESSION_SECRET=                   # Required: secret for signing UI session cookies
-UI_ALLOWED_ORIGINS=                  #Should match the Discord OAuth2 dev portal
-UI_AUTH_DEBUG=false                  # Enable verbose auth/CORS logging when true
-UI_GUILD_ID=                         # Optional: override guild ID to validate membership for UI auth
-UI_COOKIE_SECURE=true                # Use secure cookies (SameSite=None) so cross-site pages send session
-OFFICER_ROLE_ID=                     # Required: officer role for UI/admin actions
-ROLE_FEEDING_MANAGER=                # Feeding manager role ID
-ROLE_PHOTO_LABELER=                  # Photo labeler role ID
-ROLE_VIEWER=                         # Basic viewer role ID
-ROLE_DUE_PAYING=                     # Due-paying member role ID (UI roster)
-ROLE_HOLIDAY_FEEDER=                # Holiday feeder role ID (UI roster)
-ROLE_DUES_PERKS=                     # Role granted by dues perks workflow
-COMMAND_PREFIX=! # Command prefix used by commands.Bot
+DISCORD_TOKEN=
+DISCORD_CLIENT_SECRET=
+UI_SESSION_SECRET=                    # Required: secret for signing UI session cookies
+UI_ALLOWED_ORIGINS=                   # Should match the Discord OAuth2 dev portal
+UI_AUTH_DEBUG=false                   # Enable verbose auth/CORS logging when true
+UI_GUILD_ID=                          # Optional: override guild ID to validate membership for UI auth
+UI_COOKIE_SECURE=true                 # Use secure cookies (SameSite=None) so cross-site pages send session
+COMMAND_PREFIX=!                      # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago
 
-# ===== Cloudflare Tunnel =====
-CLOUDFLARE_TUNNEL_ID=                # Tunnel ID used to locate ~/.cloudflared/<id>.json
-CLOUDFLARE_TUNNEL_CREDENTIALS=       # Optional path to tunnel credentials JSON
-CLOUDFLARE_TUNNEL_NAME=              # Optional: create tunnel if credentials are missing
-
 # Comma-separated admin user IDs who can run privileged commands
 ADMIN_IDS=
+# Comma-separated role IDs that can ban spammers via reaction
+SPAM_BAN_ROLE_IDS=
 
-# ===== Channels  =====
-# CH_FEEDING_TEAM: channel where the bot listens for feeding station updates, posts 8pm pings, sub requests, and related notices
+# ===== Channels (Discord snowflakes) =====
 CH_FEEDING_TEAM=
-
-# CH_TOMCAT_SANDBOX: sandbox channel for testing commands/UI safely
 CH_TOMCAT_SANDBOX=
-
-# CH_PICTURES_OF_CATS: channel where cat photos are posted; routed to intake sheet tab below
 CH_PICTURES_OF_CATS=
-
-# CH_REPORT_NEW_CATS: channel for new cat sightings/reports; routed to intake sheet tab below
 CH_REPORT_NEW_CATS=
-
-# CH_DUE_PORTAL: channel for dues/membership intake and status updates
 CH_DUE_PORTAL=
-
-# CH_LOGGING: channel where TomCat posts internal logs, errors, and status updates
 CH_LOGGING=
-
-# CH_CATDOCDUMP: channel where vet bills/receipts are dropped; routed to vet bill sheet tab below
 CH_CATDOCDUMP=
-
-# TARGET_GUILD_ID: primary guild/server ID used for admin tasks (role removals, etc.)
+CH_MEMBER_NAMES=
 TARGET_GUILD_ID=
-
-# Map channels to target Sheets tabs for intake (format: CH_NAME:SheetTab, comma separated)
 CHANNEL_SHEET_MAP=CH_PICTURES_OF_CATS:TCBPicsInput, CH_REPORT_NEW_CATS:TCBPicsInput, CH_TOMCAT_SANDBOX:TCBPicsInput, CH_CATDOCDUMP:TCBVetBillInput
-# allowed_feeding_channel_ids: list of channel vars where feeding schedule commands are permitted
 allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
 
-# CH_MEMBER_NAMES: channel new due-paying-member names are posted.
-CH_MEMBER_NAMES=
-
-# who to ping when a spam message is detected (user ID)
+# Ping target when a spam message is detected
 SPAM_ALERT_USER_ID=
 
 # ===== Google Service Account =====
 GOOGLE_SERVICE_ACCOUNT_JSON=./credentials/service_account.json
 
 # ===== Sheets =====
-# Catabase (cat bios + latest image URL)
-SHEET_CATABASE_ID= #Catabase
-# Vision/aux (RecentPics, FeedingStationChecklist, etc.)
-SHEET_VISION_ID=  #TomCatVision
-# Members/finance megasheet (used later for dues/membership)
-SHEET_MEGASHEET_ID= # CCC megasheet
+SHEET_CATABASE_ID=                    # Catabase (cat bios + latest image URL)
+SHEET_VISION_ID=                      # Vision/aux (RecentPics, FeedingStationChecklist, etc.)
+SHEET_MEGASHEET_ID=                   # Members/finance megasheet (used for dues/membership)
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
+# ===== ML Model Paths =====
 NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
 NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
 CV_DETECT_WEIGHTS=weights/NanoModel.pt
 CV_CLASSIFY_WEIGHTS=weights/NanoClassifier.pt
+CV_MAX_DOWNLOAD_MB=0                  # Set to 0 to lift the max file size limit
 
-CV_MAX_DOWNLOAD_MB=0 # Set to 0 to lift the max file size limit
-
-# Gmail ingestion
+# ===== Gmail Ingestion =====
 GMAIL_ENABLED=true                    # Toggle Gmail integration; disable to skip email polling entirely
 GMAIL_CREDENTIALS_PATH=credentials/gmail_oauth_client.json  # OAuth client secrets downloaded from Google Cloud
 GMAIL_TOKEN_PATH=credentials/gmail_token.json              # Stored refresh/access token generated after auth
-GMAIL_LOCAL_PORT=8765                                      # Local redirect port the OAuth helper spins up
+GMAIL_LOCAL_PORT=8765                 # Local redirect port the OAuth helper spins up
 
-# Dues processing knobs
+# ===== Dues Processing =====
 DUES_ENABLED=true                     # Master switch for dues automation
 DUES_ALLOWED_AMOUNTS=15               # Base dues amount (comma-list if multiples allowed)
 DUES_EMAIL_WINDOW_DAYS=5              # Only consider payment emails this many days back
@@ -95,14 +62,27 @@ DUES_SCAN_LIMIT=500                   # Cap rows reviewed per pass to limit Shee
 DUES_NLP_ENABLED=true                 # Enable NLP heuristics for intent/donation parsing
 DUES_MEMBERSHIP_TTL_SEC=300           # Cache TTL for dues membership lookups (seconds)
 DUES_FAST_MAP=1                       # Use fast user map resolver (set 0 to force slower fallback)
+DUES_AUTO_VERIFY_THRESHOLD=0.90       # Auto-verify members with score >= this threshold
 
-# Discord bot identity (bot user ID; used for mention detection + wake word shortcuts)
-BOT_USER_ID=
+# ===== Bot Identity =====
+BOT_USER_ID=                          # Bot user ID for mention detection + wake word shortcuts
 
-# Cache expiry settings
+# ===== Cache Expiry =====
 CAT_PROFILE_TTL_SEC=3600              # Seconds before cached cat profiles auto-refresh
 CAT_ALIASES_TTL_SEC=7200              # Seconds before alias table refreshes from Sheets
+FINANCE_SHEET_THROTTLE_SEC=0.5        # When finances are requested, it waits this long between queries
 
-FINANCE_SHEET_THROTTLE_SEC=0.5        # When finances are requested, it waits this long between queries. 
+# ===== UI / Role IDs =====
+UITEST_ACTIVITY_APP_ID=               # For the user interface to work
+OFFICER_ROLE_ID=                      # Required: officer role for UI/admin actions
+ROLE_FEEDING_MANAGER=                 # Feeding manager role ID
+ROLE_PHOTO_LABELER=                   # Photo labeler role ID
+ROLE_VIEWER=                          # Basic viewer role ID
+ROLE_DUE_PAYING=                      # Due-paying member role ID
+ROLE_HOLIDAY_FEEDER=                  # Holiday feeder role ID
+ROLE_DUES_PERKS=                      # Role granted by dues perks workflow
 
-UITEST_ACTIVITY_APP_ID=                # Application ID used by the UI embedded app/tests (Discord activity)
+# ===== Cloudflare Tunnel =====
+CLOUDFLARE_TUNNEL_ID=                 # Tunnel ID used to locate ~/.cloudflared/<id>.json
+CLOUDFLARE_TUNNEL_CREDENTIALS=        # Optional path to tunnel credentials JSON
+CLOUDFLARE_TUNNEL_NAME=               # Optional: create tunnel if credentials are missing

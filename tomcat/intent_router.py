@@ -571,6 +571,11 @@ class IntentRouter:
 
             #Dues perks: run perks (emails + usernames)
             if DUES_PERKS_RE.search(text_wo):
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="dues_perks", confidence=0.99,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],

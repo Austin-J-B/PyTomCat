@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import time
+import secrets
 from typing import Any, Dict, Optional, Union
 from collections import deque
 from datetime import datetime
@@ -125,6 +126,7 @@ def _get_session_from_request(request: web.Request) -> Optional[dict]:
 def _issue_session_response(user_info: dict, permissions: dict, request: web.Request) -> web.Response:
     """Sign a session payload and return a JSON response with cookie set."""
     now_ts = int(time.time())
+    csrf_token = secrets.token_urlsafe(32)
     #CRITICAL FIX: Ensure user_id is a string to prevent JS integer precision loss
     user_id_str = str(user_info.get("id"))
     
@@ -133,6 +135,7 @@ def _issue_session_response(user_info: dict, permissions: dict, request: web.Req
         "username": user_info.get("username"),
         "global_name": user_info.get("global_name"),
         "permissions": permissions,
+        "csrf": csrf_token,
         "iat": now_ts,
         "exp": now_ts + SESSION_TTL_SECONDS,
     }
@@ -144,7 +147,8 @@ def _issue_session_response(user_info: dict, permissions: dict, request: web.Req
             "username": user_info.get("username"),
             "global_name": user_info.get("global_name"),
         },
-        "permissions": permissions
+        "permissions": permissions,
+        "csrf_token": csrf_token,
     })
     resp.set_cookie(
         "tc_session",
@@ -343,6 +347,17 @@ def _require_permissions(
         return None, _with_cors(web.Response(status=403, text="Schedule editing not allowed"), request)
     return session, None
 
+
+def _require_csrf(request: web.Request, session: dict) -> Optional[web.Response]:
+    """Require CSRF token for state-changing requests."""
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return None
+    expected = session.get("csrf")
+    provided = request.headers.get("X-CSRF-Token") or request.headers.get("X-TC-CSRF")
+    if not expected or not provided or not hmac.compare_digest(str(expected), str(provided)):
+        return _with_cors(web.Response(status=403, text="Missing or invalid CSRF token"), request)
+    return None
+
 async def auth_token_exchange(request):
     """Exchanges the temporary code from frontend for a user access token."""
     _debug(f"POST /api/auth/token headers_origin={request.headers.get('Origin')} query={dict(request.query)}")
@@ -446,9 +461,12 @@ async def get_session(request: web.Request):
 #--- The Secure Save Endpoint ---
 async def save_schedule(request):
     """Persist the feeding schedule to a local JSON file."""
-    _, error = _require_permissions(request, require_view=True, require_edit=True)
+    session, error = _require_permissions(request, require_view=True, require_edit=True)
     if error:
         return error
+    csrf_error = _require_csrf(request, session)
+    if csrf_error:
+        return csrf_error
     try:
         data = await request.json()
     except Exception:
@@ -836,9 +854,12 @@ async def start_web_server(bot):
 
     async def save_stations_api(request):
         """Replace station definitions for an effective date; officer only."""
-        _, error = _require_permissions(request, require_view=True, require_edit=True)
+        session, error = _require_permissions(request, require_view=True, require_edit=True)
         if error:
             return error
+        csrf_error = _require_csrf(request, session)
+        if csrf_error:
+            return csrf_error
         try:
             data = await request.json()
         except Exception:
@@ -883,9 +904,12 @@ async def start_web_server(bot):
 
     async def save_feeding_checklist(request):
         """Officer-only: replace station fed/unfed state for a date."""
-        _, error = _require_permissions(request, require_edit=True)
+        session, error = _require_permissions(request, require_edit=True)
         if error:
             return error
+        csrf_error = _require_csrf(request, session)
+        if csrf_error:
+            return csrf_error
         try:
             data = await request.json()
         except Exception:
@@ -911,6 +935,9 @@ async def start_web_server(bot):
         """Record a manual sub request."""
         session, error = _require_permissions(request, require_view=True)
         if error: return error
+        csrf_error = _require_csrf(request, session)
+        if csrf_error:
+            return csrf_error
         
         try:
             data = await request.json()
@@ -1030,6 +1057,9 @@ async def start_web_server(bot):
         """Physically remove a request from the log file."""
         session, error = _require_permissions(request, require_view=True)
         if error: return error
+        csrf_error = _require_csrf(request, session)
+        if csrf_error:
+            return csrf_error
 
         try:
             data = await request.json()
@@ -1109,6 +1139,9 @@ async def start_web_server(bot):
         """Disconnects the requesting user from their voice channel."""
         session, error = _require_permissions(request, require_view=True)
         if error: return error
+        csrf_error = _require_csrf(request, session)
+        if csrf_error:
+            return csrf_error
         
         user_id = session.get("user_id")
         if not user_id:
@@ -1316,11 +1349,17 @@ async def start_web_server(bot):
         session, error = _require_permissions(request, require_view=True)
         if error:
             return error
+        csrf_error = _require_csrf(request, session)
+        if csrf_error:
+            return csrf_error
         try:
             data = await request.json()
         except Exception:
             return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+        permissions = session.get("permissions", {})
         user_id = data.get("user_id") or session.get("user_id")
+        if not permissions.get("is_officer"):
+            user_id = session.get("user_id")
         picks = data.get("picks") or []
         if not user_id or not picks:
             return _with_cors(web.Response(status=400, text="Missing user_id or picks"), request)

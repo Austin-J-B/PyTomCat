@@ -2224,7 +2224,7 @@
                 const endpoint = apiBase ? `${apiBase}/api/schedule/save` : '/api/schedule/save';
                 const res = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
                     credentials: "include",
                     body: JSON.stringify({
                         schedule: scheduleData,
@@ -2508,7 +2508,7 @@
                 const endpoint = apiBase ? `${apiBase}/api/feeding/checklist` : `/api/feeding/checklist`;
                 const res = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
                     credentials: "include",
                     body: JSON.stringify({
                         date: checklistDate,
@@ -2584,7 +2584,7 @@
                 const endpoint = apiBase ? `${apiBase}/api/stations` : '/api/stations';
                 const res = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
                     credentials: "include",
                     body: JSON.stringify({ stations: payload, effective_from: effective })
                 });
@@ -2859,7 +2859,7 @@
                 const endpoint = apiBase ? `${apiBase}/api/subrequest` : '/api/subrequest';
                 const res = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
                     credentials: "include",
                     body: JSON.stringify({
                         user_id: subSelectedUser.id,
@@ -2968,7 +2968,7 @@
                 const endpoint = apiBase ? `${apiBase}/api/subs/claim` : '/api/subs/claim';
                 const res = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
                     credentials: "include",
                     body: JSON.stringify({
                         user_id: String(claimUser.id || ""),
@@ -3043,15 +3043,17 @@
         // Strip search/hash to ensure this matches Discord Portal exactly
         const REDIRECT_URI = window.location.origin + window.location.pathname;
 
-        let authState = { token: null, user: null, permissions: {} };
+        let authState = { token: null, user: null, permissions: {}, csrf: null };
 
         function rememberNonce(nonce) {
             oauthNonce = nonce;
             try {
                 if (nonce) {
                     sessionStorage.setItem(STATE_STORAGE_KEY, nonce);
+                    localStorage.setItem(STATE_STORAGE_KEY, nonce);
                 } else {
                     sessionStorage.removeItem(STATE_STORAGE_KEY);
+                    localStorage.removeItem(STATE_STORAGE_KEY);
                 }
             } catch (e) {
                 console.warn('Unable to persist OAuth nonce', e);
@@ -3060,7 +3062,7 @@
 
         function readStoredNonce() {
             try {
-                return sessionStorage.getItem(STATE_STORAGE_KEY);
+                return sessionStorage.getItem(STATE_STORAGE_KEY) || localStorage.getItem(STATE_STORAGE_KEY);
             } catch (e) {
                 return oauthNonce;
             }
@@ -3186,6 +3188,7 @@
                 const data = await res.json();
                 authState.user = data.user;
                 authState.permissions = data.permissions;
+                authState.csrf = data.csrf_token || null;
                 updateUIForUser();
                 await init(true);
                 return true;
@@ -3193,6 +3196,14 @@
                 console.warn('Session resume failed', e);
                 return false;
             }
+        }
+
+        function authHeaders(extra = {}) {
+            const headers = { ...extra };
+            if (authState.csrf) {
+                headers["X-CSRF-Token"] = authState.csrf;
+            }
+            return headers;
         }
 
         async function exchangeCode(code, redirectUri) {
@@ -3217,6 +3228,7 @@
                 const data = await res.json();
                 authState.user = data.user;
                 authState.permissions = data.permissions;
+                authState.csrf = data.csrf_token || null;
                 rememberNonce(null);
 
                 updateUIForUser();
@@ -3241,7 +3253,11 @@
             // 1. Tell backend to kick us from voice
             try {
                 const endpoint = `${apiBase}/api/activity/leave`;
-                await fetch(endpoint, { method: 'POST' });
+                await fetch(endpoint, {
+                    method: 'POST',
+                    credentials: "include",
+                    headers: authHeaders()
+                });
             } catch (e) {
                 console.error("Failed to signal leave", e);
             }
@@ -3542,7 +3558,7 @@
                 const endpoint = apiBase ? `${apiBase}/api/subrequest/delete` : '/api/subrequest/delete';
                 const res = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
                     credentials: "include",
                     body: JSON.stringify({ id, date })
                 });

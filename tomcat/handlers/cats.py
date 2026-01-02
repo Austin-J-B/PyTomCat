@@ -16,6 +16,8 @@ from ..services.catsheets import (
 from ..logger import log_action, log_event 
 import re
 import os, io, asyncio, aiohttp
+import ipaddress
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from ..vision import vision as V
 from ..services.show_cache import pop_one_cached, ensure_cat_cache, latest_cached_bytes
@@ -401,7 +403,20 @@ async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
 async def _download_to_temp(url: str, dest_dir: str) -> str:
     """Fetch an image URL to a temp file so crops can run locally."""
     os.makedirs(dest_dir, exist_ok=True)
+    parsed = urlparse(url)
+    host = parsed.hostname
+    if host:
+        if host.lower() == "localhost" or host.lower().endswith(".local"):
+            raise ValueError("Blocked local address")
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            ip = None
+        if ip and (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved):
+            raise ValueError("Blocked local address")
     fname = url.split("?")[0].split("/")[-1] or "photo.jpg"
+    fname = os.path.basename(fname)
+    fname = "".join(c for c in fname if c.isalnum() or c in {".", "_", "-"}) or "photo.jpg"
     path = os.path.join(dest_dir, f"show_{hash(url)}_{fname}")
     timeout = aiohttp.ClientTimeout(total=6)
     async with aiohttp.ClientSession(timeout=timeout) as sess:

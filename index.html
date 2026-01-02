@@ -1342,11 +1342,20 @@
                         </div>
                         <div class="divider"></div>
                         <div class="form-row">
-                            <label for="checklist-date">Station status date</label>
+                            <label>Station status date</label>
                             <div class="date-picker">
-                                <button class="date-btn" type="button"
-                                    onclick="document.getElementById('checklist-date').showPicker()">Select</button>
-                                <input type="date" id="checklist-date" class="date-input-overlay">
+                                <button class="date-btn" type="button" id="checklist-date-btn"
+                                    onclick="toggleChecklistCalendar()">Select</button>
+                                <div id="checklist-date-panel" class="date-panel" style="display:none;">
+                                    <div class="cal-header">
+                                        <button class="cal-nav" type="button"
+                                            onclick="shiftChecklistMonth(-1)">&larr;</button>
+                                        <div id="checklist-cal-label"></div>
+                                        <button class="cal-nav" type="button"
+                                            onclick="shiftChecklistMonth(1)">&rarr;</button>
+                                    </div>
+                                    <div class="cal-grid" id="checklist-cal-grid"></div>
+                                </div>
                             </div>
                             <div id="checklist-load-status" class="warn"></div>
                         </div>
@@ -2439,15 +2448,13 @@
         // --- FEEDING CHECKLIST (Officer only) ---
         function initChecklistDefaultDate() {
             if (!authState.permissions?.is_officer) return;
-            const input = document.getElementById('checklist-date');
-            if (!input) return;
-            if (!input.value) {
+            if (!checklistDate) {
                 const today = new Date();
-                const iso = today.toISOString().slice(0, 10);
-                input.value = iso;
-                checklistDate = iso;
+                checklistDate = today.toISOString().slice(0, 10);
+                checklistCalendarMonth = new Date(today);
             }
-            loadChecklist(input.value || checklistDate);
+            updateChecklistDateButton();
+            loadChecklist(checklistDate);
         }
 
         function renderChecklistStations() {
@@ -2780,6 +2787,96 @@
             const el = document.getElementById('date-warning');
             if (el) el.textContent = msg || '';
         }
+
+        // --- CHECKLIST DATE CALENDAR ---
+        let checklistCalendarMonth = new Date();
+
+        function toggleChecklistCalendar() {
+            const panel = document.getElementById('checklist-date-panel');
+            if (!panel) return;
+            const visible = panel.style.display === 'block';
+            panel.style.display = visible ? 'none' : 'block';
+            if (!visible) renderChecklistCalendar();
+        }
+
+        function shiftChecklistMonth(delta) {
+            const next = new Date(checklistCalendarMonth);
+            next.setMonth(checklistCalendarMonth.getMonth() + delta, 1);
+            checklistCalendarMonth = next;
+            renderChecklistCalendar();
+        }
+
+        function renderChecklistCalendar() {
+            const grid = document.getElementById('checklist-cal-grid');
+            const label = document.getElementById('checklist-cal-label');
+            if (!grid || !label) return;
+
+            const year = checklistCalendarMonth.getFullYear();
+            const month = checklistCalendarMonth.getMonth();
+            label.textContent = checklistCalendarMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+            grid.innerHTML = '';
+            // Day headers
+            ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].forEach(d => {
+                const cell = document.createElement('div');
+                cell.className = 'cal-cell header';
+                cell.textContent = d;
+                grid.appendChild(cell);
+            });
+
+            const first = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0).getDate();
+            const startDow = first.getDay();
+
+            // Empty cells for days before month starts
+            for (let i = 0; i < startDow; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'cal-cell empty';
+                grid.appendChild(cell);
+            }
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Day cells
+            for (let day = 1; day <= lastDay; day++) {
+                const d = new Date(year, month, day);
+                const iso = d.toISOString().slice(0, 10);
+                const cell = document.createElement('div');
+                const isSelected = checklistDate === iso;
+                cell.className = 'cal-cell day allowed' + (isSelected ? ' selected' : '');
+                cell.textContent = day;
+                cell.onclick = () => {
+                    checklistDate = iso;
+                    updateChecklistDateButton();
+                    loadChecklist(iso);
+                    document.getElementById('checklist-date-panel').style.display = 'none';
+                };
+                grid.appendChild(cell);
+            }
+        }
+
+        function updateChecklistDateButton() {
+            const btn = document.getElementById('checklist-date-btn');
+            if (!btn) return;
+            if (!checklistDate) {
+                btn.textContent = 'Select';
+                return;
+            }
+            const dt = parseISODateLocal(checklistDate) || new Date(checklistDate);
+            const weekday = dt.toLocaleDateString(undefined, { weekday: 'long', month: 'numeric', day: 'numeric', year: 'numeric' });
+            btn.textContent = weekday;
+        }
+
+        // Close checklist calendar when clicking outside
+        document.addEventListener('click', (e) => {
+            const panel = document.getElementById('checklist-date-panel');
+            const btn = document.getElementById('checklist-date-btn');
+            if (!panel || !btn) return;
+            if (!panel.contains(e.target) && !btn.contains(e.target)) {
+                panel.style.display = 'none';
+            }
+        });
 
         function renderStationsForSelected() {
             const wrap = document.getElementById('station-checklist');

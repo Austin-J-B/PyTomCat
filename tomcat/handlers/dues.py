@@ -2606,9 +2606,8 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
     # Load all membership rows
     rows = _load_membership_rows()
     
-    # Build maps: who should have role, who should lose it
-    should_have: set = set()
-    should_remove: set = set()
+    # Track max expiry date per user - only remove if ALL verified entries are expired
+    user_max_expiry: dict = {}  # discord_name -> max expiry date
     
     for row in rows:
         discord_name = (row.get('discord_username') or '').strip().lower()
@@ -2621,7 +2620,16 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
         sem_label = row.get('semester', '')
         expiry = _get_semester_expiry(sem_label)
         
-        if today_date <= expiry:
+        # Track the maximum expiry date for each user
+        if discord_name not in user_max_expiry or expiry > user_max_expiry[discord_name]:
+            user_max_expiry[discord_name] = expiry
+    
+    # Now build should_have and should_remove based on max expiry
+    should_have: set = set()
+    should_remove: set = set()
+    
+    for discord_name, max_expiry in user_max_expiry.items():
+        if today_date <= max_expiry:
             should_have.add(discord_name)
         else:
             should_remove.add(discord_name)

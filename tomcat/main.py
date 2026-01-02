@@ -1590,7 +1590,8 @@ async def on_message(message: discord.Message):
                         "Message:\n"
                         f"{message.content or ''}\n\n"
                         f"{mention}\n"
-                        "Click the ❌ reaction below to ban this user."
+                        "🔨 to ban user\n"
+                        "✅ to mark as no threat"
                     ).strip()
                     alert_msg = None
                     if getattr(settings, "silent_mode", False):
@@ -1603,7 +1604,8 @@ async def on_message(message: discord.Message):
                             log_action("spam_alert_error", f"ch={getattr(ch,'id',None)}", str(send_exc))
                     if alert_msg:
                         try:
-                            await alert_msg.add_reaction('❌')
+                            await alert_msg.add_reaction('🔨')
+                            await alert_msg.add_reaction('✅')
                             target_id = int(getattr(message.author, 'id', 0) or 0)
                             guild_id = int(getattr(message.guild, 'id', 0) or 0)
                             if target_id:
@@ -1683,7 +1685,22 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if not data:
         return
     emoji_str = str(payload.emoji)
-    if emoji_str not in {'❌', '✖', '✖️'}:
+    
+    #Handle checkmark = "not spam" - remove the hammer react so no one accidentally clicks it
+    if emoji_str in {'✅', '✔', '✔️'}:
+        try:
+            ch = bot.get_channel(payload.channel_id)
+            if ch:
+                msg = await ch.fetch_message(payload.message_id)
+                await msg.remove_reaction('🔨', bot.user)
+        except Exception:
+            pass
+        SPAM_ALERTS.pop(payload.message_id, None)
+        log_action('spam_safe', f"msg={payload.message_id}", f"by={payload.user_id}")
+        return
+    
+    #Only handle hammer for ban (ignore legacy X and other reactions)
+    if emoji_str not in {'🔨', '🛠', '🛠️'}:
         return
     guild_id = payload.guild_id or data.get('guild_id', 0)
     guild = bot.get_guild(guild_id) if guild_id else None

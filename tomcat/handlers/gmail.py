@@ -85,8 +85,15 @@ async def _build_gmail_service(channel) -> Any:
         _PENDING_OAUTH[-1] = flow
         try:
             await safe_send(channel, (
-                "Gmail authorization needed. Open and approve, then reply: 'TomCat, auth code <code>'.\n"
-                f"URL:\n{auth_url}"
+                "📧 **Gmail Authorization Needed**\n\n"
+                "**Follow these steps:**\n"
+                "1. Click the link below to open Google's authorization page\n"
+                "2. Sign in with the **organization's Gmail account**\n"
+                "3. Click **Continue** and then **Authorize** when prompted\n"
+                "4. You'll be redirected to a blank page or an 'error' page — this is expected!\n"
+                "5. **Copy the entire URL** from your browser's address bar\n"
+                "6. Reply here with: `TomCat, auth url <paste the full URL here>`\n\n"
+                f"🔗 **Authorization Link:**\n{auth_url}"
             ))
             log_action("gmail_auth_url", "", auth_url)
         except Exception:

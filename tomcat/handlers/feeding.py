@@ -1143,7 +1143,8 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
     weekday_name = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][today.weekday()]
     
     sched = _read_schedule_for_weekday(weekday_name, today)
-    todays_stations = sorted([s for s in sched.keys() if sched.get(s)])
+    # Include ALL stations from the schedule, even those without feeders assigned
+    todays_stations = sorted(sched.keys())
 
     async with _SUBS_LOCK:
         files = _load_sub_files(_all_sub_month_keys(), include_legacy=True)
@@ -1164,13 +1165,15 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
     for station in todays_stations:
         roster_parts = []
         original_feeders = sched.get(station, [])
+        station_canonical = _canonical_station(station) or station
         
         for feeder_id in original_feeders:
             feeder_request_id = None
             for req in subs:
+                req_station = _canonical_station(req.get("station")) or req.get("station")
                 if (req.get("status") == "requested" 
                     and str(req.get("requester")) == str(feeder_id) 
-                    and _canonical_station(req.get("station")) == station 
+                    and req_station == station_canonical 
                     and today_iso in _normalize_dates(req.get("dates") or [])):
                     feeder_request_id = req.get("id")
                     break
@@ -1181,10 +1184,14 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
                     roster_parts.append(_format_user(bot, sub_assignee_id, False))
                 else:
                     original_feeder_name = _format_user(bot, feeder_id, False)
-                    roster_parts.append(f"**NEEDS SUB** (for {original_feeder_name})")
+                    roster_parts.append(f"⚠️ Needs Sub (for {original_feeder_name})")
                     open_request_exists = True
             else:
                 roster_parts.append(_format_user(bot, feeder_id, False))
+        
+        # Handle stations with no one assigned
+        if not roster_parts:
+            roster_parts.append("Unassigned")
         
         lines.append(f"• **{station}**: {', '.join(roster_parts)}")
 
@@ -1456,10 +1463,12 @@ async def build_8pm_lines(
 
     if not include_fed:
         lines: List[str] = ["**Currently unfed stations**"]
-        if not unfed:
+        # Filter out unassigned stations - don't ping for stations no one was supposed to feed
+        assigned_unfed = [st for st in (unfed or []) if _assignees_for(st)]
+        if not assigned_unfed:
             lines.append("none")
             return "\n".join(lines)
-        for st in unfed:
+        for st in assigned_unfed:
             lines.append(_format_station_line(st))
         return "\n".join(lines)
 

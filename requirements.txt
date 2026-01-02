@@ -28,7 +28,7 @@ opencv-python-headless==4.10.0.84
 ultralytics==8.2.97
 
 #PyTorch
-torch==2.4.1
+torch==2.8.0
 torchvision==0.19.1
 
 #HTTP utilities

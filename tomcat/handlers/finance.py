@@ -930,7 +930,7 @@ def _fetch_recent_records(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> 
         vals = ws.get_all_values()
     except Exception as e:
         log_action('finance_sheet_error', f'{kind}_fetch', str(e))
-        return None # CRITICAL FIX: Return None instead of empty list on error
+        return None #CRITICAL FIX: Return None instead of empty list on error
         
     if not vals:
         return []
@@ -1028,7 +1028,7 @@ def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
         if abs(float(amt) - ev_amt) > (0.25 if ev_amt < 5 else 1.00):
             continue
         
-        # Provider check (Venmo vs Cashapp)
+        #Provider check (Venmo vs Cashapp)
         provider = (r.get('provider') or '').strip().lower()
         if provider and ev_provider and provider != ev_provider:
             continue
@@ -1051,21 +1051,21 @@ def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
         elif not norm_note_sheet and not norm_note:
             note_match = True
 
-        # Strict same-day match on counterparty or combined text
+        #Strict same-day match on counterparty or combined text
         if day_gap == 0 and (counterparty_match or note_match or combined_match):
             return True
 
-        # Near-day match requires stronger agreement
+        #Near-day match requires stronger agreement
         if day_gap <= 2:
             if counterparty_match and (note_match or not norm_note_sheet or not norm_note or combined_match):
                 return True
             if note_match and counterparty_match:
                 return True
-            # Treat refund/reimbursement adjustments as duplicates even if wording differs
+            #Treat refund/reimbursement adjustments as duplicates even if wording differs
             if counterparty_match and (_has_refund_word(note) or _has_refund_word(ev_note)):
                 return True
 
-        # Fallback: if the full text matches closely within a short window, treat as duplicate
+        #Fallback: if the full text matches closely within a short window, treat as duplicate
         if day_gap <= 3 and combined_match:
             return True
     return False
@@ -1115,7 +1115,7 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
         return {event.email_id: (False, str(e)) for event in events}
 
     existing = _fetch_recent_records(ws, 'income')
-    # If fetch failed (None), we MUST abort to prevent duplicate logging
+    #If fetch failed (None), we MUST abort to prevent duplicate logging
     if existing is None:
         return {event.email_id: (False, 'sheet_read_failed') for event in events}
 
@@ -1210,7 +1210,7 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
         return {event.email_id: (False, str(e)) for event in events}
 
     existing = _fetch_recent_records(ws, 'expense')
-    # If fetch failed (None), we MUST abort to prevent duplicate logging
+    #If fetch failed (None), we MUST abort to prevent duplicate logging
     if existing is None:
         return {event.email_id: (False, 'sheet_read_failed') for event in events}
 
@@ -1327,7 +1327,7 @@ async def _process_finance_events(
         if sheet_res[0]:
             processed[event.email_id] = True
         skip_reason = str(sheet_res[1])
-        # Only notify if successful OR if it failed for a reason other than duplicates/sheet-read-failure
+        #Only notify if successful OR if it failed for a reason other than duplicates/sheet-read-failure
         should_notify = sheet_res[0] or (not skip_reason.startswith('dup_') and skip_reason != 'dues_skip' and skip_reason != 'sheet_read_failed')
 
         if notify and should_notify:

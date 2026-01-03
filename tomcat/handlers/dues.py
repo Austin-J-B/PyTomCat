@@ -39,7 +39,7 @@ from .gmail import (
     _PENDING_OAUTH,
 )
 
-# Keep handle_gmail_auth_code locally since it has dues-specific behavior
+#Keep handle_gmail_auth_code locally since it has dues-specific behavior
 
 
 #============================
@@ -404,7 +404,11 @@ def _is_explicit_payment_message(text: str) -> bool:
     ])
     if not provider:
         return False
-    #Strong signals
+    #In the dues portal context, mentioning a provider is sufficient evidence.
+    #The portal is specifically for dues payments, so "[Name] [Provider]" is valid.
+    #
+    #Still check for strong signals first (paid, sent, etc.) for clarity,
+    #but if a provider is mentioned, we accept it.
     if any(p in t for p in [" paid ", " paid,", " paid.", " paid!", " sent ", " sent.", " sent,", " donated "]):
         return True
     #Common phrasings seen in payment emails, e.g., "used cashapp"
@@ -416,7 +420,10 @@ def _is_explicit_payment_message(text: str) -> bool:
     #"via/through <provider>"
     if (" via " in t or " through " in t):
         return True
-    return False
+    #NEW: In dues portal, just having a provider mentioned is enough
+    #since the channel context already implies it's about payments.
+    #This handles formats like "Charlotte Brownlee PayPal" or "John Smith venmo"
+    return True
 
 #--- Sheet ingress (via Sheets API) ---
 
@@ -550,13 +557,13 @@ def _get_semester_expiry(semester_label: str) -> date:
     year = int(year_match.group()) if year_match else datetime.now().year
     
     if 'fall' in normalized:
-        # Fall expires Jan 31 of NEXT year
+        #Fall expires Jan 31 of NEXT year
         return date(year + 1, 1, 31)
     elif 'spring' in normalized:
-        # Spring expires Sept 15 of SAME year
+        #Spring expires Sept 15 of SAME year
         return date(year, 9, 15)
     else:
-        # Default: 6 months from now
+        #Default: 6 months from now
         return (datetime.now() + timedelta(days=180)).date()
 
 
@@ -673,10 +680,10 @@ class InvitesConfirmView(discord.ui.View):
             user = interaction.user
             if not user:
                 return False
-            # Allow original author
+            #Allow original author
             if int(user.id) == self.author_id:
                 return True
-            # Allow any officer (by role)
+            #Allow any officer (by role)
             officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
             if officer_role_id and hasattr(user, 'roles'):
                 for role in user.roles:
@@ -706,7 +713,12 @@ class InvitesConfirmView(discord.ui.View):
     @discord.ui.button(label="No", style=discord.ButtonStyle.secondary, custom_id="mavorgs_no")
     async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            await interaction.response.send_message("Okay, not marking invites.", ephemeral=True)
+            await interaction.response.defer(thinking=False)
+        except Exception:
+            pass
+        #Delete the original message to clean up the chat
+        try:
+            await interaction.message.delete()
         except Exception:
             pass
         try:
@@ -1103,6 +1115,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
     """Analyze dues, auto-verify high-confidence entries, clean up, then run dues perks.
 
     Steps:
+    - Scan and log new emails first (all-in-one convenience).
     - Run the same analysis as dues_check and post the standard summary lines.
     - For each row with score >= 1.20, with a corroborating provider email, and not flagged cash/donation:
         * Mark Verified=TRUE for that row (by email+semester)
@@ -1115,6 +1128,57 @@ async def handle_update_dues_members(intent, ctx) -> None:
     if not ch or not bot:
         return
     global _MEMBERSHIP_ROWS_CACHE, _MEMBERSHIP_ROWS_TS
+    
+    #Step 0: Scan and log new emails first
+    email_status_msg = None
+    try:
+        email_status_msg = await ch.send('Scanning emails…')
+    except Exception:
+        pass
+    
+    logged_count = 0
+    try:
+        async with _EMAIL_LOG_LOCK:
+            svc = await _build_gmail_service(ch)
+            #Scan recent emails (last 50 by default for dues purposes)
+            q = os.getenv("GMAIL_LAST_QUERY", "in:inbox -from:me")
+            n = int(getattr(settings, 'dues_email_scan_count', 50) or 50)
+            res = await asyncio.to_thread(
+                lambda: svc.users().messages().list(userId="me", q=q, maxResults=n, includeSpamTrash=False).execute()
+            )
+            msgs = res.get("messages", []) if isinstance(res, dict) else []
+            if msgs:
+                delay = float(getattr(settings, 'gmail_log_manual_delay_sec', 0.25) or 0.25)
+                logged_count = await _log_emails_batch(svc, list(msgs)[::-1], delay_sec=delay)
+        
+        #Update the status message with the result
+        if email_status_msg:
+            try:
+                await email_status_msg.edit(content=f'Logged {logged_count} new email(s).')
+            except Exception:
+                pass
+        
+        #Also run finance processing on new emails
+        try:
+            await finance.process_financial_emails(bot)
+        except Exception as e:
+            log_action('finance_process_error', 'dues_update', str(e))
+            
+    except RuntimeError:
+        #Gmail auth pending
+        if email_status_msg:
+            try:
+                await email_status_msg.edit(content='Gmail auth pending - skipping email scan.')
+            except Exception:
+                pass
+    except Exception as e:
+        log_action('dues_email_scan_error', '', str(e))
+        if email_status_msg:
+            try:
+                await email_status_msg.edit(content=f'Email scan error: {e}')
+            except Exception:
+                pass
+    
     #1) Analyze and post the same summary as handle_check_dues
     placeholder = None
     try:
@@ -1144,7 +1208,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
         pay_from_email = (rec.get('payment_username_email') or '—')
         score = float(rec.get('score_total') or 0.0)
         lines.append(f"- Discord: {auth} ({disp}), Real Name: {name}, Payment App Username: {pay_from_email}, Score = {score:.2f} ({_conf_label(score)})")
-    header = "Dues check results (last 15):\n"
+    header = "Recent dues check results:\n"
     if placeholder:
         await placeholder.edit(content=header + ("\n".join(lines[:15]) if lines else ""))
     else:
@@ -1729,7 +1793,8 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         if e not in seen:
             seen.add(e); emails_unique.append(e)
     if emails_unique:
-        await safe_send(ch, "MavOrgs student email list:\n" + "\n".join(emails_unique))
+        await safe_send(ch, "MavOrgs student email list:")
+        await safe_send(ch, "\n".join(emails_unique))
     else:
         await safe_send(ch, "No pending MavOrgs emails for verified members this semester.")
 
@@ -1791,7 +1856,6 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         and str(r.get('verified') or '').strip().lower() not in {'true','yes','y','1','x','✅'}
     })
     parts: list[str] = []
-    parts.append(f"Matched {len(matched_labels)}/{len(use_rows_dedup)}")
     if unmatched_entries:
         parts.append("Unmatched verified entries:\n" + "\n".join(unmatched_entries))
     if possible_rows:
@@ -2525,7 +2589,7 @@ async def handle_check_dues(intent, ctx) -> None:
             pay_from_email = rec.get('payment_username_email') or '—'
             score = float(rec.get('score_total') or 0.0)
             lines.append(f"- Discord: {auth} ({disp}), Real Name: {name}, Payment App Username: {pay_from_email}, Score = {score:.2f} ({_conf_label(score)})")
-        header = "Dues check results (last 15):\n"
+        header = "Recent dues check results:\n"
         body = "\n".join(lines[:15])
         max_len = 1900
         chunks: List[str] = []
@@ -2590,6 +2654,10 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
     """Add roles to verified members, remove from expired.
     
     Returns (added_members, removed_members) for logging.
+    
+    Role addition: Uses simple username matching (same as before).
+    Role removal: Uses robust matching to avoid removing roles from users who 
+                 changed their Discord username but still have valid dues.
     """
     from datetime import date
     role_id = int(getattr(settings, 'role_due_paying_id', 0) or 0)
@@ -2603,16 +2671,18 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
         log_action('dues_role_sync', 'role_not_found', f'id={role_id}')
         return [], []
     
-    # Load all membership rows
+    #Load all membership rows
     rows = _load_membership_rows()
     
-    # Track max expiry date per user - only remove if ALL verified entries are expired
-    user_max_expiry: dict = {}  # discord_name -> max expiry date
+    #Build username -> max expiry map for ADDING roles (simple matching)
+    user_max_expiry: dict = {}  #discord_name -> max expiry date
+    
+    #Also build a list of all verified rows with valid expiry for REMOVAL checks
+    verified_rows_with_expiry: list = []  #(row, expiry_date)
     
     for row in rows:
         discord_name = (row.get('discord_username') or '').strip().lower()
-        if not discord_name:
-            continue
+        full_name = (row.get('full_name') or '').strip()
         
         if not row.get('verified'):
             continue
@@ -2620,29 +2690,33 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
         sem_label = row.get('semester', '')
         expiry = _get_semester_expiry(sem_label)
         
-        # Track the maximum expiry date for each user
-        if discord_name not in user_max_expiry or expiry > user_max_expiry[discord_name]:
-            user_max_expiry[discord_name] = expiry
+        #For additions: track max expiry by simple username match
+        if discord_name:
+            if discord_name not in user_max_expiry or expiry > user_max_expiry[discord_name]:
+                user_max_expiry[discord_name] = expiry
+        
+        #For removals: store all verified rows for fuzzy matching later
+        verified_rows_with_expiry.append((row, expiry))
     
-    # Now build should_have and should_remove based on max expiry
+    #Build set of usernames that SHOULD have the role (for additions)
     should_have: set = set()
-    should_remove: set = set()
-    
     for discord_name, max_expiry in user_max_expiry.items():
         if today_date <= max_expiry:
             should_have.add(discord_name)
-        else:
-            should_remove.add(discord_name)
     
     added = []
     removed = []
     
-    # Iterate guild members
-    for member in guild.members:
+    #Get list of members as a list for _best_member_match
+    members_list = list(guild.members)
+    
+    #Iterate guild members
+    for member in members_list:
         member_key = member.name.lower()
         has_role = role_obj in member.roles
         
-        # Add role to verified members
+        #=== ROLE ADDITION (unchanged logic) ===
+        #Add role to verified members via simple username match
         if member_key in should_have and not has_role:
             try:
                 await member.add_roles(role_obj, reason="TomCat: verified dues for current semester")
@@ -2650,21 +2724,53 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
             except Exception as e:
                 log_action('dues_role_add_error', f'uid={member.id}', str(e))
         
-        # Remove role from expired members
-        elif member_key in should_remove and has_role:
-            try:
-                await member.remove_roles(role_obj, reason="TomCat: dues expired, not renewed")
-                removed.append(member)
-            except Exception as e:
-                log_action('dues_role_remove_error', f'uid={member.id}', str(e))
+        #=== ROLE REMOVAL (new robust logic) ===
+        #Only remove if member currently has the role AND we can't find ANY valid 
+        #verified entry that matches them via fuzzy matching
+        elif has_role:
+            #Check if this member matches ANY verified row with non-expired dues
+            member_has_valid_dues = False
+            
+            for row, expiry in verified_rows_with_expiry:
+                if today_date > expiry:
+                    #This entry is expired, skip it
+                    continue
+                
+                #Use the same robust matching as _best_member_match
+                sheet_username = row.get('discord_username') or ''
+                sheet_full_name = row.get('full_name') or ''
+                
+                if not sheet_username and not sheet_full_name:
+                    continue
+                
+                #Try to match this member against this row
+                matched_member, score, matched_form, mode = _best_member_match(
+                    sheet_username, 
+                    sheet_full_name, 
+                    [member]  #Only check against this one member
+                )
+                
+                #If we got a reasonable match (score >= 80), consider them valid
+                if matched_member and score >= 80:
+                    member_has_valid_dues = True
+                    break
+            
+            #Only remove if we checked all rows and found NO valid match
+            if not member_has_valid_dues:
+                try:
+                    await member.remove_roles(role_obj, reason="TomCat: dues expired, not renewed")
+                    removed.append(member)
+                except Exception as e:
+                    log_action('dues_role_remove_error', f'uid={member.id}', str(e))
     
     return added, removed
+
 
 async def _run_daily_dues_job(bot) -> None:
     """Execute the daily dues verification and role sync."""
     from datetime import date
     
-    # Get target guild
+    #Get target guild
     guild = None
     guild_id = int(getattr(settings, 'target_guild_id', 0) or 0)
     if guild_id:
@@ -2677,14 +2783,14 @@ async def _run_daily_dues_job(bot) -> None:
         log_action('dues_scheduler', 'no_guild', 'skipped')
         return
     
-    # Ensure members are cached
+    #Ensure members are cached
     try:
         async for _ in guild.fetch_members(limit=None):
             pass
     except Exception:
         pass
     
-    # Get channels
+    #Get channels
     log_ch_id = int(getattr(settings, 'ch_logging', 0) or 0)
     member_ch_id = int(getattr(settings, 'ch_member_names', 0) or 0)
     log_ch = bot.get_channel(log_ch_id) if log_ch_id else None
@@ -2693,26 +2799,26 @@ async def _run_daily_dues_job(bot) -> None:
     cur_sem = _current_semester_label()
     today_date = date.today()
     
-    # 1. Analyze dues portal messages
+    #1. Analyze dues portal messages
     try:
         rows = await _analyze_dues(bot)
     except Exception as e:
         log_action('dues_scheduler_analyze_error', '', str(e))
         rows = []
     
-    # 2. Auto-verify high-confidence entries (score >= 0.90)
+    #2. Auto-verify high-confidence entries (score >= 0.90)
     threshold = float(getattr(settings, 'dues_auto_verify_threshold', 0.90) or 0.90)
     verified = []
     for rec in rows:
         score = float(rec.get('score_total', 0.0) or 0.0)
         if score >= threshold:
             verified.append(rec)
-            # Log full breakdown to machine logs
+            #Log full breakdown to machine logs
             log_action('dues_auto_verify', 
                        f"user={rec.get('author','?')} score={score:.2f}",
                        json.dumps({k: v for k, v in rec.items() if k.startswith('score_') or k in ['author', 'provider', 'semester']}))
     
-    # 3. Mark verified in sheet if we have emails
+    #3. Mark verified in sheet if we have emails
     if verified:
         try:
             emails_to_verify = [(r.get('primary_email'), r.get('semester') or cur_sem) for r in verified if r.get('primary_email')]
@@ -2721,7 +2827,7 @@ async def _run_daily_dues_job(bot) -> None:
         except Exception as e:
             log_action('dues_mark_verified_error', '', str(e))
     
-    # 4. Log to CH_LOGGING (human readable)
+    #4. Log to CH_LOGGING (human readable)
     if log_ch and verified:
         lines = ["Dues processed and verified:"]
         for rec in verified:
@@ -2734,7 +2840,7 @@ async def _run_daily_dues_job(bot) -> None:
         except Exception as e:
             log_action('dues_log_send_error', 'verified_list', str(e))
     
-    # 5. Sync roles (add for verified, remove for expired)
+    #5. Sync roles (add for verified, remove for expired)
     added, removed = await _sync_dues_roles(bot, guild, cur_sem, today_date)
     
     if log_ch and (added or removed):
@@ -2748,17 +2854,17 @@ async def _run_daily_dues_job(bot) -> None:
         except Exception:
             pass
     
-    # 6. Output MavOrgs invite list (UTA emails only)
+    #6. Output MavOrgs invite list (UTA emails only)
     uninvited = _get_uninvited_uta_emails(cur_sem)
     if log_ch and uninvited:
         email_list = '\n'.join(uninvited)
-        view = InvitesConfirmView(0, uninvited)  # 0 = any officer can confirm
+        view = InvitesConfirmView(0, uninvited)  #0 = any officer can confirm
         try:
             await safe_send(log_ch, f"UTA emails not yet invited to MavOrgs:\n{email_list}", view=view)
         except Exception as e:
             log_action('dues_mavorgs_list_error', '', str(e))
     
-    # 7. Output to CH_MEMBER_NAMES
+    #7. Output to CH_MEMBER_NAMES
     if member_ch and verified:
         for rec in verified:
             real_name = rec.get('full_name') or rec.get('primary_member', {}).get('full_name', 'Unknown')
@@ -2767,7 +2873,7 @@ async def _run_daily_dues_job(bot) -> None:
             line = f"{real_name}, {username}, {_norm_sem_label(sem).lower()}"
             try:
                 await safe_send(member_ch, line)
-                await asyncio.sleep(1.1)  # Rate limit
+                await asyncio.sleep(1.1)  #Rate limit
             except Exception:
                 pass
     
@@ -2778,10 +2884,10 @@ async def start_dues_scheduler(bot) -> None:
     if not getattr(settings, 'dues_enabled', True):
         return
     
-    target_h, target_m = 3, 0  # 3:00 AM daily
+    target_h, target_m = 3, 0  #3:00 AM daily
     
     while True:
-        # Sleep until target time
+        #Sleep until target time
         now = datetime.now()
         nxt = now.replace(hour=target_h, minute=target_m, second=0, microsecond=0)
         if nxt <= now:

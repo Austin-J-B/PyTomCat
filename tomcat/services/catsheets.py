@@ -17,13 +17,13 @@ except Exception:
     import re as _re
     def norm_alnum_lower(s: str) -> str:
         return _re.sub(r"[^a-z0-9]+", "", (s or "").lower())
-import re # Ensure this is imported at the top of the file
+import re #Ensure this is imported at the top of the file
 from pathlib import Path
 
-# Configuration for "TCB Pics Formatted" columns (0-based index)
-COL_LABEL = 0   # Officer ID / Name
-COL_URL = 6     # Picture Link
-COL_SERIAL = 7  # Serial number
+#Configuration for "TCB Pics Formatted" columns (0-based index)
+COL_LABEL = 0   #Officer ID / Name
+COL_URL = 6     #Picture Link
+COL_SERIAL = 7  #Serial number
 
 _TCB_ROWS: list[list[str]] | None = None
 _TCB_TS: float = 0.0
@@ -82,7 +82,7 @@ def get_tcb_pics_rows(ttl_sec: int | None = None) -> list[list[str]]:
 async def _get_all_photos_long_format():
     """Helper to fetch the master photo list from Catabase."""
     rows = get_tcb_pics_rows()
-    return rows[1:] if rows else []  # Skip header
+    return rows[1:] if rows else []  #Skip header
 
 async def get_most_recent_photo(full_name: str) -> dict | str:
     """Fetch the most recent photo row for a cat from the long-format list."""
@@ -95,7 +95,7 @@ async def get_most_recent_photo(full_name: str) -> dict | str:
     matches = []
     
     for r in rows:
-        # Safety check for row length
+        #Safety check for row length
         if len(r) <= COL_SERIAL: continue
         
         if norm_alnum_lower(r[COL_LABEL]) == key:
@@ -105,10 +105,10 @@ async def get_most_recent_photo(full_name: str) -> dict | str:
     if not matches:
         return f"No photos found for {full_name}."
 
-    # Sort by Serial Number (descending)
+    #Sort by Serial Number (descending)
     def parse_serial(row):
         try:
-            # Remove non-digits (e.g. "sn123" -> 123)
+            #Remove non-digits (e.g. "sn123" -> 123)
             val = row[COL_SERIAL]
             return int(re.sub(r"\D", "", val) or 0)
         except:
@@ -123,7 +123,7 @@ async def get_most_recent_photo(full_name: str) -> dict | str:
         "total_available": len(matches)
     }
 
-# Optional: Update get_recent_photo to use the new source too
+#Optional: Update get_recent_photo to use the new source too
 async def get_recent_photo(full_name: str) -> dict | str:
     """Pick a random recent photo from the full history."""
     try:
@@ -145,7 +145,7 @@ async def get_recent_photo(full_name: str) -> dict | str:
         "url": pick[COL_URL],
         "serial": pick[COL_SERIAL],
         "total_available": len(matches),
-        "reverse_index": 0 # Not easily calculated in random fetch, simplified
+        "reverse_index": 0 #Not easily calculated in random fetch, simplified
     }
 
 

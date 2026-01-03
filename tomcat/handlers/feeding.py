@@ -31,23 +31,25 @@ except Exception:
 CENTRAL_TZ = ZoneInfo("America/Chicago") if ZoneInfo else None
 
 #------------- subs log -------------
-#Monthly JSONL files under logs/subs/<year>/<year-month>.jsonl
+#Substitution requests are stored in monthly JSONL files for audit/history.
+#Path: logs/subs/<year>/<year-month>.jsonl
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent.parent
 SUBS_ROOT = _PACKAGE_ROOT / "logs" / "subs"
 SUBS_ROOT.mkdir(parents=True, exist_ok=True)
 SUBS_LEGACY_FILE = SUBS_ROOT / "subs.jsonl"
 _SUBS_LOCK = asyncio.Lock()
 
-# UI-provided schedule cache (ndjson primary, legacy JSON fallback)
+#UI-provided schedule cache (ndjson primary, legacy JSON fallback)
 UI_SCHEDULE_PATH = _PACKAGE_ROOT / "cache" / "feeding_schedule.ndjson"
 UI_SCHEDULE_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_schedule.json"
 _DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
-# Feeding checklist store (ndjson primary, legacy JSON fallback)
+#Feeding checklist store (ndjson primary, legacy JSON fallback)
 FEEDING_CHECKLIST_PATH = _PACKAGE_ROOT / "cache" / "feeding_checklist.ndjson"
 FEEDING_CHECKLIST_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_checklist.json"
 _FEEDING_CHECKLIST_LOCK = asyncio.Lock()
 
 #------------- simple data types ----------------
+#Typed records for substitution workflow state.
 @dataclass
 class SubRecord:
     id: str
@@ -61,6 +63,7 @@ class SubRecord:
     created_at: str
 
 #------------- helpers: time/date ---------------
+#All timestamps use CENTRAL_TZ when available for consistency with CCC's location.
 def _today_iso() -> str:
     """Return today's date string using the configured timezone."""
     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
@@ -72,6 +75,7 @@ def _now_iso() -> str:
     return now.isoformat()
 
 #------------- helpers: files/json --------------
+#Atomic writes prevent partial file corruption on crash/power loss.
 def _load_json(path: str, default):
     """Read a JSON file, returning default on error."""
     try:
@@ -398,10 +402,23 @@ def _format_user(bot: Optional[discord.Client], uid: int | str, mention: bool) -
     if mention:
         return f"<@{uid}>"
     name = None
+    #First, try to get the user from the bot cache
     if bot:
-        user = bot.get_user(uid)
+        user = bot.get_user(int(uid) if isinstance(uid, str) and uid.isdigit() else uid)
         if user:
             name = getattr(user, "global_name", None) or getattr(user, "display_name", None) or getattr(user, "name", None)
+    #If not found, try to get from guild members (more reliable for guild members)
+    if not name and bot:
+        uid_int = int(uid) if isinstance(uid, str) and str(uid).isdigit() else uid
+        for guild in getattr(bot, 'guilds', []):
+            try:
+                member = guild.get_member(uid_int)
+                if member:
+                    name = getattr(member, "display_name", None) or getattr(member, "global_name", None) or getattr(member, "name", None)
+                    break
+            except Exception:
+                continue
+    #Fallback to user_id_map from settings
     if not name:
         lookup = {}
         try:
@@ -507,7 +524,7 @@ def _resolve_schedule_for_date(target_date: Optional[date]) -> Dict[str, Any]:
     sched = best.get("schedule") or {}
     if not isinstance(sched, dict):
         sched = {}
-    # Restrict to known station names for that effective week
+    #Restrict to known station names for that effective week
     allowed = set(station_names(best.get("effective_from")))
     sched = {st: row for st, row in sched.items() if st in allowed}
     return {"schedule": sched, "effective_from": best.get("effective_from")}
@@ -558,12 +575,14 @@ def _canonical_station(station: Optional[str]) -> Optional[str]:
     return text
 
 #------------- Google Sheets glue (safe stubs) ---
+#Sheets calls are cached and retried on 429 to stay within API quotas.
 def _get_feeding_checklist_sheet_id() -> Optional[str]:
     #We store the checklist in the Vision sheet under tab "FeedingStationChecklist"
     return getattr(settings, "sheet_vision_id", None) or getattr(settings, "aux_spreadsheet_id", None)
 
 _FEED_WS_CACHE: Tuple[Any, float] | None = None
-_FEED_WS_TTL_SEC = 55.0  #refresh roughly every minute
+#TTL slightly under 60s to avoid race with external cron jobs hitting the sheet.
+_FEED_WS_TTL_SEC = 55.0
 
 def _open_feeding_ws():
     """Open the FeedingStationChecklist worksheet with short TTL caching and 429 backoff."""
@@ -618,6 +637,7 @@ def _station_header_map(ws) -> Dict[str, int]:
 
 
 #------------- Local feeding checklist store -------------
+#Checklist state is persisted locally in NDJSON for fast reads; Sheets is source of truth.
 def _read_checklist_ndjson(path: Path) -> dict:
     stations: list[str] = []
     days: Dict[str, Dict[str, bool]] = {}
@@ -672,7 +692,7 @@ def _load_feeding_checklist_data() -> dict:
         legacy["stations"] = legacy.get("stations") or []
         legacy["days"] = legacy.get("days") or {}
         legacy["meta"] = legacy.get("meta") or {}
-        # migrate forward
+        #migrate forward
         _save_checklist_ndjson(legacy["stations"], legacy["days"], legacy["meta"])
         return legacy
     data["stations"] = data.get("stations") or []
@@ -684,12 +704,12 @@ def _load_feeding_checklist_data() -> dict:
 def _station_universe(existing: Optional[dict] = None) -> List[str]:
     data = existing or _load_feeding_checklist_data()
     names: set[str] = set()
-    # Stations come from the authoritative station list
+    #Stations come from the authoritative station list
     for st in station_names():
         canon = _canonical_station(st) or st
         if canon:
             names.add(canon)
-    # Retain any known stations already in the checklist that are still in the station list
+    #Retain any known stations already in the checklist that are still in the station list
     for st in data.get("stations", []):
         canon = _canonical_station(st) or st
         if canon and canon in names:
@@ -720,7 +740,7 @@ def get_feeding_snapshot(date_from: Optional[str] = None, date_to: Optional[str]
             continue
         if d_to and d > d_to:
             continue
-        # Normalize day map to known stations
+        #Normalize day map to known stations
         days[iso] = {st: bool(day.get(st, False)) for st in stations}
 
     return {
@@ -1130,27 +1150,27 @@ def _update_existing_sub_request(
 
 _MORNING_SCHEDULER_LOCK = asyncio.Lock()
 _MORNING_SCHEDULER_STARTED = False
-_LAST_MORNING_MESSAGE_KEY: Optional[str] = None  # Tracks last sent date to prevent duplicates
+_LAST_MORNING_MESSAGE_KEY: Optional[str] = None  #Tracks last sent date to prevent duplicates
 
 
 async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.View | None]:
     """Builds the 7:45 AM 'Good Morning' message with the day's feeding schedule."""
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
     today_iso = today.isoformat()
-    # This looks odd, but is how the 8pm scheduler gets the weekday name for the schedule lookup.
-    # Monday (weekday() == 0) becomes "Mon", which _read_schedule_for_weekday finds at index 1.
-    # Sunday (weekday() == 6) becomes "Sun", which is at index 0. It's quirky but consistent.
+    #This looks odd, but is how the 8pm scheduler gets the weekday name for the schedule lookup.
+    #Monday (weekday() == 0) becomes "Mon", which _read_schedule_for_weekday finds at index 1.
+    #Sunday (weekday() == 6) becomes "Sun", which is at index 0. It's quirky but consistent.
     weekday_name = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][today.weekday()]
     
     sched = _read_schedule_for_weekday(weekday_name, today)
-    # Include ALL stations from the schedule, even those without feeders assigned
+    #Include ALL stations from the schedule, even those without feeders assigned
     todays_stations = sorted(sched.keys())
 
     async with _SUBS_LOCK:
         files = _load_sub_files(_all_sub_month_keys(), include_legacy=True)
         subs = [item for sublist in files for item in sublist[1]]
 
-    # Map accepted request IDs to assignees for today
+    #Map accepted request IDs to assignees for today
     accepted_req_map = {
         r.get("parent_id"): r.get("assignee") 
         for r in subs 
@@ -1184,12 +1204,12 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
                     roster_parts.append(_format_user(bot, sub_assignee_id, False))
                 else:
                     original_feeder_name = _format_user(bot, feeder_id, False)
-                    roster_parts.append(f"⚠️ Needs Sub (for {original_feeder_name})")
+                    roster_parts.append(f"Needs Sub (for {original_feeder_name})")
                     open_request_exists = True
             else:
                 roster_parts.append(_format_user(bot, feeder_id, False))
         
-        # Handle stations with no one assigned
+        #Handle stations with no one assigned
         if not roster_parts:
             roster_parts.append("Unassigned")
         
@@ -1218,7 +1238,7 @@ async def start_morning_scheduler(bot: discord.Client) -> None:
                 try:
                     await _sleep_until_local_time(7, 40)
                     
-                    # Guard against duplicate sends for the same day
+                    #Guard against duplicate sends for the same day
                     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
                     today_key = now.date().isoformat()
                     if _LAST_MORNING_MESSAGE_KEY == today_key:
@@ -1238,7 +1258,7 @@ async def start_morning_scheduler(bot: discord.Client) -> None:
                     message_content, view = await build_morning_message(bot)
                     await ch.send(message_content, view=view)
                     
-                    # Mark this date as sent AFTER successful send
+                    #Mark this date as sent AFTER successful send
                     _LAST_MORNING_MESSAGE_KEY = today_key
                     log_action("morning_scheduler", "sent", f"channel={channel_id}; date={today_key}")
 
@@ -1403,7 +1423,7 @@ async def build_8pm_lines(
         key = _canonical_station(station) or station
         scheduled_ids = sched.get(key, [])
         if not scheduled_ids:
-            # Check for subs for unassigned stations
+            #Check for subs for unassigned stations
             for r in reversed(subs):
                 if r.get("status") != "accepted": continue
                 rec_station = _canonical_station(r.get("station")) or r.get("station")
@@ -1412,7 +1432,7 @@ async def build_8pm_lines(
                 
                 assignee_id = r.get("assignee")
                 if assignee_id:
-                    return [assignee_id] # Return the sub, even if no one was scheduled
+                    return [assignee_id] #Return the sub, even if no one was scheduled
             return []
 
         final_assignees = list(scheduled_ids)
@@ -1463,7 +1483,7 @@ async def build_8pm_lines(
 
     if not include_fed:
         lines: List[str] = ["**Currently unfed stations**"]
-        # Filter out unassigned stations - don't ping for stations no one was supposed to feed
+        #Filter out unassigned stations - don't ping for stations no one was supposed to feed
         assigned_unfed = [st for st in (unfed or []) if _assignees_for(st)]
         if not assigned_unfed:
             lines.append("none")

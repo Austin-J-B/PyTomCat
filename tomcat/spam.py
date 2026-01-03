@@ -33,13 +33,13 @@ try:
         try:
             text_len = len(text.strip())
             phrase_len = len(phrase.strip())
-            # Coverage check: message must be at least 50% of phrase length (IoU-like)
+            #Coverage check: message must be at least 50% of phrase length (IoU-like)
             if phrase_len > 0 and text_len / phrase_len < 0.5:
                 return False
             return rf_fuzz.partial_ratio(text.lower(), phrase.lower()) >= thresh
-        except Exception:
+        except Exception:  #rapidfuzz internal error; treat as no match
             return False
-except Exception:
+except Exception:  #rapidfuzz not installed; use simple substring fallback
     def _fuzzy_hit(text: str, phrase: str, thresh: int=88) -> bool:
         text_len = len((text or "").strip())
         phrase_len = len(phrase.strip())
@@ -55,11 +55,11 @@ def _message_count_key(message) -> Tuple[int, int]:
     """Produce a (guild_id, user_id) tuple for per-user spam heuristics."""
     try:
         guild_id = int(getattr(getattr(message, 'guild', None), 'id', 0) or 0)
-    except Exception:
+    except Exception:  #malformed guild attr; default to 0
         guild_id = 0
     try:
         user_id = int(getattr(getattr(message, 'author', None), 'id', 0) or 0)
-    except Exception:
+    except Exception:  #malformed author attr; default to 0
         user_id = 0
     return (guild_id, user_id)
 
@@ -70,14 +70,14 @@ def _nlp_predict_spam(settings, text: str) -> float:
         try:
             from .nlp.model import NLPModel
             _nlp_cached = NLPModel.maybe_load(settings)
-        except Exception:
+        except Exception:  #NLP import/init failed; disable permanently
             _nlp_cached = False
     if not _nlp_cached:
         return 0.0
     try:
         #zero-shot: higher prob => more likely spam
         return float(_nlp_cached.predict_spam(text))
-    except Exception:
+    except Exception:  #prediction failed; return neutral score
         return 0.0
 
 def _has_privileged_role(member, settings) -> Optional[str]:
@@ -89,7 +89,7 @@ def _has_privileged_role(member, settings) -> Optional[str]:
             name = str(getattr(r, 'name', '')).lower()
             if any(token in name for token in trusted_list):
                 return "trusted_role"
-    except Exception:
+    except Exception:  #role access failed; assume no bypass
         pass
     return None
 
@@ -107,13 +107,13 @@ def _is_trusted_member(message, settings, *, prior_count: int = 0) -> Optional[s
                     return "trusted_admin"
                 if getattr(perms, 'manage_guild', False) or getattr(perms, 'ban_members', False):
                     return "trusted_moderator"
-        except Exception:
+        except Exception:  #permissions check failed; fall through to other checks
             pass
         admin_ids = {int(x) for x in (getattr(settings, 'admin_ids', []) or [])}
         try:
             if admin_ids and int(getattr(member, 'id', 0)) in admin_ids:
                 return "trusted_admin"
-        except Exception:
+        except Exception:  #admin_ids lookup failed; assume not admin
             pass
         msg_threshold = int(getattr(settings, 'spam_trust_message_threshold', 50) or 50)
         if prior_count >= msg_threshold:
@@ -123,7 +123,7 @@ def _is_trusted_member(message, settings, *, prior_count: int = 0) -> Optional[s
         if role_reason:
             return role_reason
         return None
-    except Exception:
+    except Exception:  #trust evaluation failed; do not trust
         return False
 
 def check_spam(message, settings) -> tuple[bool, str]:
@@ -194,7 +194,7 @@ def check_spam(message, settings) -> tuple[bool, str]:
                 log_action("spam_detect_debug", f"user={author_id}; ch={channel_id}", f"score={score}; {detail_msg}")
             else:
                 log_action("spam_watch", f"user={author_id}; ch={channel_id}", f"score={score}; {detail_msg}")
-    except Exception:
+    except Exception:  #logging failure must not block spam detection
         pass
 
     if score >= MIN_SPAM_SCORE:

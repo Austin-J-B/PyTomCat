@@ -1139,7 +1139,7 @@ class IntentRouter:
             text_wo = self._strip_wake_tokens((event.text or ""), message)
             m = AUTH_CODE_RE.search(text_wo)
             auth = m.group(1).strip() if m else ""
-            from .handlers.gmail import handle_gmail_auth_code  # <--- UPDATED
+            from .handlers.gmail import handle_gmail_auth_code  #<--- UPDATED
             await handle_gmail_auth_code(_intent("gmail_auth_code", {"auth": auth}), ctx)
             return
 

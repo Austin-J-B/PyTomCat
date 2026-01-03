@@ -29,7 +29,7 @@ def _cat_id_from_full(full_name: str) -> Optional[int]:
         return None
     try:
         return int(m.group(1))
-    except Exception:
+    except Exception:  #non-numeric prefix; shouldn't happen with regex match
         return None
 
 def latest_cached_bytes(full_name: str) -> Optional[bytes]:
@@ -62,7 +62,7 @@ def latest_cached_bytes(full_name: str) -> Optional[bytes]:
         return None
     try:
         return Path(best).read_bytes()
-    except Exception:
+    except Exception:  #file read failed (deleted, permissions, etc.)
         return None
 
 async def _download_bytes(url: str, timeout_sec: float = 6.0) -> Optional[bytes]:
@@ -84,7 +84,7 @@ async def _download_bytes(url: str, timeout_sec: float = 6.0) -> Optional[bytes]
             async with sess.get(url) as resp:
                 resp.raise_for_status()
                 return await resp.read()
-    except Exception:
+    except Exception:  #network/parse error; caller handles None
         return None
 
 def _maybe_crop_single(raw: bytes) -> Optional[bytes]:
@@ -101,7 +101,7 @@ def _maybe_crop_single(raw: bytes) -> Optional[bytes]:
         if len(crops) == 1:
             return crops[0]
         return None
-    except Exception:
+    except Exception:  #vision model unavailable or failed; return uncropped
         return None
 
 _RECENTPICS_ROWS: Optional[List[List[str]]] = None
@@ -120,12 +120,12 @@ def reset_recentpics_cache() -> None:
     _RECENTPICS_ROWS = None
     _RECENTPICS_TS = 0.0
 
-# --- INSERT IN tomcat/services/show_cache.py ---
+#--- INSERT IN tomcat/services/show_cache.py ---
 
 async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
     """Return URL/SERIAL pairs from TCB Pics Formatted for a given FULL_NAME."""
     try:
-        # Reuse the existing row caching mechanism, but fetch from the new sheet
+        #Reuse the existing row caching mechanism, but fetch from the new sheet
         rows = None
         now = time.monotonic()
         ttl = max(1, int(getattr(settings, 'show_sheet_recentpics_ttl_sec', 300) or 300))
@@ -140,19 +140,19 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
         if not rows:
             return []
 
-        # Normalize query
+        #Normalize query
         key = re.sub(r"[^a-z0-9]+", "", (full_name or "").lower())
         
-        # Columns in TCB Pics Formatted
+        #Columns in TCB Pics Formatted
         COL_LABEL = 0
         COL_URL = 6
         COL_SERIAL = 7
 
         matches = []
-        # Skip header row (rows[1:])
+        #Skip header row (rows[1:])
         for r in rows[1:]:
             if len(r) > COL_SERIAL:
-                # Check name match
+                #Check name match
                 if re.sub(r"[^a-z0-9]+", "", (r[COL_LABEL] or "").lower()) == key:
                     if (r[COL_URL] or "").startswith("http"):
                         matches.append(r)
@@ -160,7 +160,7 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
         if not matches:
             return []
 
-        # Sort by serial; report reverse_index from the bottom so higher serials show larger numbers
+        #Sort by serial; report reverse_index from the bottom so higher serials show larger numbers
         def parse_serial(row):
             try:
                 return int(re.sub(r"\D", "", row[COL_SERIAL]) or 0)
@@ -173,7 +173,7 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
         out: List[Tuple[str, str, int, int]] = []
         
         for idx, r in enumerate(matches):
-            # (URL, Serial, Reverse Index, Total)
+            #(URL, Serial, Reverse Index, Total)
             out.append((
                 r[COL_URL], 
                 r[COL_SERIAL] or "0", 
@@ -221,7 +221,7 @@ def _normalize_cached_names(cat_dir: str) -> None:
         renamed = False
         src = os.path.join(cat_dir, fn)
 
-        # Case 1: legacy catId_sn1234.jpg -> sn1234.jpg
+        #Case 1: legacy catId_sn1234.jpg -> sn1234.jpg
         m = re.match(r"(\d+)_sn(\d+)(\.[a-z0-9]+)$", fn, flags=re.IGNORECASE)
         if m:
             serial = m.group(2)
@@ -229,7 +229,7 @@ def _normalize_cached_names(cat_dir: str) -> None:
             new_fn = f"sn{serial.zfill(4)}{ext}"
             renamed = True
         else:
-            # Case 2: sn30.jpg -> sn0030.jpg (pad to 4 digits)
+            #Case 2: sn30.jpg -> sn0030.jpg (pad to 4 digits)
             m2 = re.match(r"sn(\d+)(\.[a-z0-9]+)$", fn, flags=re.IGNORECASE)
             if m2 and len(m2.group(1)) < 4:
                 serial = m2.group(1)
@@ -309,8 +309,8 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
     #Always shuffle so new cache entries vary across the full history
     try:
         import random as _rand
-        _rand.shuffle(pairs)
-    except Exception:
+        _rand.shuffle(pairs)  #vary cache entries across full history
+    except Exception:  #shuffle failed; proceed with original order
         pass
     #Try to grab profile once to embed into sidecar metadata (avoid live sheet on send)
     profile_snapshot: Optional[dict] = None
@@ -330,7 +330,7 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
                 "nicknames": prof.get("nicknames"),
                 "comments": prof.get("comments"),
             }
-    except Exception:
+    except Exception:  #profile lookup optional; proceed with None
         profile_snapshot = None
     have_serials = _existing_serials(cdir)
     if exclude_serials:
@@ -341,22 +341,22 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
     headers = {"User-Agent": "TomCatShowCache/1.0 (+https://example.invalid)"}
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as sess:
       for url, serial, reverse_index, total_available in pairs:
-        # CHANGE 1: Do not break early! We need to scan existing files to update totals.
-        # if total >= min_count: break 
+        #CHANGE 1: Do not break early! We need to scan existing files to update totals.
+        #if total >= min_count: break 
 
         sn = re.sub(r"[^0-9]", "", serial or "") or "0"
         
         if sn in have_serials:
-            # CHANGE 2: "Heal" stale metadata in existing files without re-downloading images
+            #CHANGE 2: "Heal" stale metadata in existing files without re-downloading images
             try:
                 base = f"sn{str(sn).zfill(4)}"
                 jp = os.path.join(cdir, f"{base}.json")
                 if os.path.exists(jp):
                     import json as _json
-                    # Read current meta
+                    #Read current meta
                     meta = _json.loads(Path(jp).read_text(encoding='utf-8'))
                     
-                    # If total count or index has drifted, update the file
+                    #If total count or index has drifted, update the file
                     if meta.get("total_available") != total_available:
                         meta["total_available"] = total_available
                         meta["reverse_index"] = reverse_index
@@ -365,11 +365,11 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
                 pass
             continue
 
-        # CHANGE 3: Only apply the limit when considering a NEW download
+        #CHANGE 3: Only apply the limit when considering a NEW download
         if total >= min_count:
             continue
 
-        # ... (rest of download logic remains the same) ...
+        #... (rest of download logic remains the same) ...
         #Download with shared session
         raw = None
         #Try a couple of times to download; some hosts are flaky

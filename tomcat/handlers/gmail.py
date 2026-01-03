@@ -12,9 +12,9 @@ from bs4 import BeautifulSoup
 from ..config import settings
 from ..logger import log_action, log_event
 from ..utils.sender import safe_send
-from . import finance  # Pass emails to finance handler
+from . import finance  #Pass emails to finance handler
 
-# --- Constants & Config ---
+#--- Constants & Config ---
 EMAILS_DIR = "logs/emails"
 INDEX_FILE = f"{EMAILS_DIR}/index.jsonl"
 _EMAIL_LOG_LOCK = asyncio.Lock()
@@ -29,7 +29,7 @@ _MONTH_NAMES = {
     7: "Jul", 8: "Aug", 9: "Sept", 10: "Oct", 11: "Nov", 12: "Dec",
 }
 
-# --- Auth Helpers ---
+#--- Auth Helpers ---
 def _paths() -> tuple[str, str]:
     cred = os.getenv("GMAIL_CREDENTIALS_PATH", "credentials/gmail_oauth_client.json")
     token = os.getenv("GMAIL_TOKEN_PATH", "credentials/gmail_token.json")
@@ -79,7 +79,7 @@ async def _build_gmail_service(channel) -> Any:
         port = int(os.getenv("GMAIL_LOCAL_PORT", "8765") or "8765")
         flow.redirect_uri = f"http://localhost:{port}/"
         auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
-        # Store flow for callback
+        #Store flow for callback
         gid = int(getattr(getattr(channel, 'guild', None), 'id', 0)) or 0
         _PENDING_OAUTH[gid] = flow
         _PENDING_OAUTH[-1] = flow
@@ -105,7 +105,7 @@ async def _build_gmail_service(channel) -> Any:
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
-# --- Logging Helpers ---
+#--- Logging Helpers ---
 def _ensure_email_dirs():
     os.makedirs(EMAILS_DIR, exist_ok=True)
 
@@ -187,8 +187,8 @@ async def _log_emails_batch(svc, messages: List[Dict[str, Any]], delay_sec: floa
     logged = _load_logged_ids()
     seen = set(logged)
     count = 0
-    # Process newest to oldest (if input is newest-first, we reverse it outside or just process)
-    # Actually, unique list first
+    #Process newest to oldest (if input is newest-first, we reverse it outside or just process)
+    #Actually, unique list first
     uniq = []
     seen_in = set()
     for m in messages:
@@ -221,7 +221,7 @@ async def _log_emails_batch(svc, messages: List[Dict[str, Any]], delay_sec: floa
             log_action("gmail_log_error", str(m.get("id")), str(e))
     return count
 
-# --- Handlers ---
+#--- Handlers ---
 
 async def handle_check_last_email(intent, ctx) -> None:
     ch = ctx["channel"]
@@ -272,25 +272,25 @@ async def handle_log_recent_emails(intent, ctx) -> None:
             msgs = res.get("messages", [])
             logged = await _log_emails_batch(svc, msgs, delay_sec=0.1)
             await safe_send(ch, f"Logged {logged} new email(s).")
-            # Trigger finance
+            #Trigger finance
             bot = ctx.get("bot")
             if bot: await finance.process_financial_emails(bot)
         except Exception as e:
             await safe_send(ch, f"Error: {e}")
 
-# --- Scheduler ---
+#--- Scheduler ---
 
 async def start_gmail_logging_scheduler(bot) -> None:
     """Independent Gmail Poller."""
     while True:
         try:
-            # Try acquire lock; if busy (manual run), skip
+            #Try acquire lock; if busy (manual run), skip
             try:
                 await asyncio.wait_for(_EMAIL_LOG_LOCK.acquire(), timeout=0.5)
                 try:
-                    # Check for auth config but don't crash if missing
+                    #Check for auth config but don't crash if missing
                     if os.getenv("GMAIL_CREDENTIALS_PATH") or os.path.exists("credentials/gmail_oauth_client.json"):
-                        svc = await _build_gmail_service(getattr(bot, "user", None)) # Silent auth check
+                        svc = await _build_gmail_service(getattr(bot, "user", None)) #Silent auth check
                         q = "in:inbox -from:me newer_than:4h"
                         res = await asyncio.to_thread(lambda: svc.users().messages().list(userId="me", q=q, maxResults=50).execute())
                         msgs = res.get("messages", [])
@@ -302,8 +302,8 @@ async def start_gmail_logging_scheduler(bot) -> None:
                 finally:
                     _EMAIL_LOG_LOCK.release()
             except asyncio.TimeoutError:
-                pass # Lock busy
+                pass #Lock busy
         except Exception as e:
             log_action("gmail_poller_error", "", str(e))
         
-        await asyncio.sleep(4 * 60 * 60) # 4 hours
+        await asyncio.sleep(4 * 60 * 60) #4 hours

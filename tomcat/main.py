@@ -50,7 +50,7 @@ def _debug(msg: str) -> None:
     if _AUTH_DEBUG:
         print(f"[UI-AUTH] {msg}")
 
-# Local persistence for the UI schedule (ndjson), with legacy JSON fallback for migration
+#Local persistence for the UI schedule (ndjson), with legacy JSON fallback for migration
 SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.ndjson"
 LEGACY_SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
 #Versioned schedule helpers
@@ -58,7 +58,7 @@ _DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
 
 def _week_start_iso(dt: datetime | None = None) -> str:
     d = (dt or datetime.now()).date()
-    days_to_sunday = (d.weekday() + 1) % 7  # Monday=0 ->1 day back; Sunday=6 ->0
+    days_to_sunday = (d.weekday() + 1) % 7  #Monday=0 ->1 day back; Sunday=6 ->0
     sunday = d - timedelta(days=days_to_sunday)
     return sunday.isoformat()
 #Rate limiting constants for the web API
@@ -162,7 +162,7 @@ def _issue_session_response(user_info: dict, permissions: dict, request: web.Req
     return _with_cors(resp, request)
 
 
-# --- schedule version helpers ---
+#--- schedule version helpers ---
 def _read_schedule_ndjson(path: Path) -> list:
     versions: list = []
     if not path.exists():
@@ -192,7 +192,7 @@ def _load_schedule_versions() -> list:
     if versions:
         return versions
 
-    # Legacy JSON fallback (migrates forward to ndjson)
+    #Legacy JSON fallback (migrates forward to ndjson)
     if not LEGACY_SCHEDULE_PATH.exists():
         return []
     try:
@@ -248,7 +248,7 @@ def _resolve_schedule_for_date(target_iso: Optional[str]) -> dict:
         best = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[0]
 
     sched = best.get("schedule") or {}
-    # Filter schedule to known station names for that effective date
+    #Filter schedule to known station names for that effective date
     allowed = set(station_names(best.get("effective_from")))
     sched = {st: row for st, row in sched.items() if st in allowed}
     return {"schedule": sched, "effective_from": best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE, "meta": best.get("meta") or {}}
@@ -652,13 +652,13 @@ def _channel_label(ch: discord.abc.Messageable) -> str:
 def _format_date_for_notification(date_iso: str) -> str:
     """Formats an ISO date string into 'Weekday, MM/DD/YYYY'."""
     try:
-        # Handles both 'YYYY-MM-DD' and 'YYYY-MM-DDTHH:MM:SS'
+        #Handles both 'YYYY-MM-DD' and 'YYYY-MM-DDTHH:MM:SS'
         dt = datetime.fromisoformat(date_iso.split('T')[0])
         dow = dt.strftime("%A")
         date_pretty = dt.strftime("%m/%d/%Y")
         return f"{dow}, {date_pretty}"
     except (ValueError, TypeError):
-        return date_iso # Fallback to original string if something is wrong
+        return date_iso #Fallback to original string if something is wrong
 
 
 
@@ -873,11 +873,11 @@ async def start_web_server(bot):
         try:
             versions = save_stations_version(stations_payload, effective_from)
         except Exception as e:
-            logging.exception("Failed to save stations")  # Logs the full stack trace
+            logging.exception("Failed to save stations")  #Logs the full stack trace
             return _with_cors(
                 web.Response(status=500, text="Failed to save stations due to an internal error."), request
             )
-        # Reload and return updated list
+        #Reload and return updated list
         return _with_cors(web.json_response({"stations": station_definitions(effective_from), "versions": versions}), request)
 
     async def options_subrequest(request):
@@ -1147,12 +1147,12 @@ async def start_web_server(bot):
         if not user_id:
             return _with_cors(web.Response(status=400, text="No user"), request)
 
-        # Find the member in the guild
+        #Find the member in the guild
         guild, member = await _resolve_member(int(user_id))
         
         if member and member.voice:
             try:
-                # This disconnects them from Voice
+                #This disconnects them from Voice
                 await member.move_to(None)
                 _debug(f"Disconnected user {user_id} from voice.")
             except Exception as e:

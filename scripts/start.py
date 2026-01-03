@@ -33,7 +33,7 @@ def _get_env_var(key: str, default: str = "") -> str:
         return default
     
     content = ENV_PATH.read_text(encoding="utf-8")
-    # Grab the line, strip comments and quotes
+    #Grab the line, strip comments and quotes
     pattern = f"^{key}\\s*=\\s*(?:\"([^\"]*)\"|([^#\\n]*))"
     match = re.search(pattern, content, re.MULTILINE)
     if match:
@@ -77,7 +77,7 @@ def _configure_tunnel(cloudflared_path: Path | None) -> str | None:
     """
     cf_dir = Path.home() / ".cloudflared"
     
-    # 1. Find credentials
+    #1. Find credentials
     creds_path: Path | None = None
     env_creds_path = _get_env_var("CLOUDFLARE_TUNNEL_CREDENTIALS")
     if env_creds_path:
@@ -128,16 +128,16 @@ def _configure_tunnel(cloudflared_path: Path | None) -> str | None:
         data = json.loads(creds_path.read_text(encoding="utf-8"))
         tunnel_id = data.get("TunnelID")
         
-        # 2. Parse all domains from .env
+        #2. Parse all domains from .env
         raw_origins_str = _get_env_var("UI_ALLOWED_ORIGINS", "ui.catsofuta.org")
         raw_origins = raw_origins_str.split(",")
         
         valid_hostnames = []
         for origin in raw_origins:
-            # Clean up: remove http://, https://, trailing slashes
+            #Clean up: remove http://, https://, trailing slashes
             clean = origin.strip().lower().replace("https://", "").replace("http://", "").strip("/")
             
-            # Skip empty or local addresses
+            #Skip empty or local addresses
             if not clean or "localhost" in clean or "127.0.0.1" in clean:
                 continue
             
@@ -147,8 +147,8 @@ def _configure_tunnel(cloudflared_path: Path | None) -> str | None:
             print("[Tunnel] No public domains found. Defaulting to ui.catsofuta.org")
             valid_hostnames = ["ui.catsofuta.org"]
         
-        # 3. Build Ingress Rules for EVERY domain
-        # This covers both austin-j-b.github.io AND ui.catsofuta.org if listed.
+        #3. Build Ingress Rules for EVERY domain
+        #This covers both austin-j-b.github.io AND ui.catsofuta.org if listed.
         ingress_rules = ""
         for host in valid_hostnames:
             ingress_rules += f"  - hostname: {host}\n    service: http://localhost:8080\n"
@@ -191,10 +191,10 @@ def main() -> None:
     else:
         cloudflared_path = ROOT / "cloudflared"
 
-    # --- 1. Configure Tunnel ---
+    #--- 1. Configure Tunnel ---
     tunnel_uuid = _configure_tunnel(cloudflared_path if cloudflared_path.exists() else None)
 
-    # --- 2. Commands ---
+    #--- 2. Commands ---
     bot_cmd = [str(python_path), "-m", "tomcat.main"]
 
     tunnel_cmd = None
@@ -205,7 +205,7 @@ def main() -> None:
             "run"
         ]
 
-    # --- 3. Start ---
+    #--- 3. Start ---
     print(f"Starting TomCat ecosystem...")
     processes = []
     try:
@@ -216,7 +216,7 @@ def main() -> None:
             print(f"→ Tunnel: {' '.join(tunnel_cmd)}")
             processes.append(subprocess.Popen(tunnel_cmd, cwd=ROOT))
         
-        processes[0].wait() # Wait for bot
+        processes[0].wait() #Wait for bot
     except KeyboardInterrupt:
         print("\nShutting down...")
     finally:

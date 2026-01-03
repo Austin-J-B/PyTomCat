@@ -22,13 +22,14 @@ os.environ.setdefault(
 #ultralytics is optional at import time; treat it as Any to appease Pylance
 try:
     from ultralytics import YOLO  #type: ignore
-except Exception:
+except Exception:  #ultralytics not installed; YOLO calls will raise RuntimeError
     YOLO = None  #type: ignore[assignment]
 
 from ..config import settings
 from ..logger import log_action
 
 #---------- Constants aligned to v5.6 ----------
+#These values were tuned on the CCC cat dataset for optimal F1 score.
 _PURPLE = "#4C007F"
 _DEFAULT_CONF = 0.552  #tuned for maximum F1
 

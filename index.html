@@ -14,29 +14,29 @@
 
     <script type="module">
         import { DiscordSDK } from "https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk@1.1.1/+esm";
-        window.Discord = { DiscordSDK }; // Assign to global window so your existing code can find it
-        window.dispatchEvent(new Event('discord-sdk-ready')); // Tell the app we are ready
+        window.Discord = { DiscordSDK }; //Assign to global window so your existing code can find it
+        window.dispatchEvent(new Event('discord-sdk-ready')); //Tell the app we are ready
     </script>
 
     <style>
         :root {
-            /* --- SITE COLORS --- */
+            /*--- SITE COLORS ---*/
             --site-bg: #FFF9F3;
             --header-tan: #FFF9F3;
             --site-text: #414B3B;
             --site-accent: #8CA87C;
             --site-white: #FFFFFF;
 
-            /* --- THEME COLORS --- */
+            /*--- THEME COLORS ---*/
             --workspace-bg: #C5D6BA;
             --workspace-dot: rgba(65, 75, 59, 0.15);
 
-            /* --- FUNCTIONAL COLORS --- */
+            /*--- FUNCTIONAL COLORS ---*/
             --grid-line: #E0E5D0;
             --selection-highlight: rgba(140, 168, 124, 0.4);
             --focus-ring: #414B3B;
 
-            /* DIMENSIONS */
+            /*DIMENSIONS*/
             --legend-height: 46px;
             --legend-min-height: 46px;
             --zoom: 1;
@@ -56,10 +56,10 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            /* Body never scrolls, only workspace */
+            /*Body never scrolls, only workspace*/
         }
 
-        /* --- SIDEBAR MENU (Unchanged) --- */
+        /*--- SIDEBAR MENU (Unchanged) ---*/
         .sidebar-overlay {
             position: fixed;
             top: 0;
@@ -153,7 +153,7 @@
             font-weight: 700;
         }
 
-        /* --- HEADER --- */
+        /*--- HEADER ---*/
         header.site-header {
             background-color: var(--header-tan);
             padding: 15px 30px;
@@ -163,7 +163,7 @@
             border-bottom: 1px solid rgba(65, 75, 59, 0.15);
             flex-shrink: 0;
             z-index: 900;
-            /* Relative positioning is fine here since it's a flex child that never moves */
+            /*Relative positioning is fine here since it's a flex child that never moves*/
             position: relative;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
         }
@@ -212,7 +212,7 @@
             opacity: 0.7;
         }
 
-        /* --- HEADER UPDATES --- */
+        /*--- HEADER UPDATES ---*/
         .right-header-group {
             display: flex;
             align-items: center;
@@ -225,7 +225,7 @@
             align-items: center;
         }
 
-        /* Mobile header fix */
+        /*Mobile header fix*/
         @media (max-width: 720px) {
             header.site-header {
                 padding: 10px 12px;
@@ -271,7 +271,7 @@
             }
         }
 
-        /* User Profile Indicator */
+        /*User Profile Indicator*/
         .profile-indicator {
             display: flex;
             align-items: center;
@@ -290,17 +290,17 @@
             align-items: center;
             justify-content: center;
             width: 1.25rem;
-            /* Explicit size for the container */
+            /*Explicit size for the container*/
             height: 1.25rem;
         }
 
-        /* SVG Styling */
+        /*SVG Styling*/
         .profile-icon svg {
             width: 100%;
             height: 100%;
             fill: none;
             stroke: currentColor;
-            /* Inherits .role-officer or .role-user color */
+            /*Inherits .role-officer or .role-user color*/
             stroke-width: 2;
             stroke-linecap: round;
             stroke-linejoin: round;
@@ -310,21 +310,21 @@
             color: #d4a017;
         }
 
-        /* Gold Crown */
+        /*Gold Crown*/
         .role-user {
             color: var(--site-accent);
         }
 
-        /* Trash Can Icon (Now Always Visible) */
+        /*Trash Can Icon (Now Always Visible)*/
         .trash-btn {
             opacity: 1;
-            /* CHANGED: Always visible */
+            /*CHANGED: Always visible*/
             background: none;
             border: none;
             cursor: pointer;
             font-size: 1.1rem;
             color: #ccc;
-            /* Subtle default color */
+            /*Subtle default color*/
             transition: color 0.2s;
             margin-left: auto;
             padding: 0 8px;
@@ -334,7 +334,7 @@
             color: #e74c3c;
         }
 
-        /* Buttons */
+        /*Buttons*/
         .save-btn {
             background: var(--site-text);
             color: var(--site-bg);
@@ -378,7 +378,7 @@
             text-align: right;
         }
 
-        /* Sub forms etc (Condensed for brevity - keep your original styling for forms) */
+        /*Sub forms etc (Condensed for brevity - keep your original styling for forms)*/
         .sub-form {
             display: flex;
             flex-direction: column;
@@ -557,7 +557,7 @@
             letter-spacing: 0.01em;
         }
 
-        /* ... Keep calendar/tab styles the same ... */
+        /*... Keep calendar/tab styles the same ...*/
         .date-picker {
             position: relative;
             display: inline-block;
@@ -739,7 +739,7 @@
             color: var(--site-text);
         }
 
-        /* --- SEARCH --- */
+        /*--- SEARCH ---*/
         .search-container {
             position: relative;
             width: 280px;
@@ -810,7 +810,7 @@
             color: var(--site-accent);
         }
 
-        /* --- TOOLS --- */
+        /*--- TOOLS ---*/
         .tool-btn {
             background: transparent;
             border: 1px solid var(--site-text);
@@ -866,11 +866,11 @@
             box-shadow: none;
         }
 
-        /* --- MAIN WORKSPACE (SCROLLABLE) --- */
+        /*--- MAIN WORKSPACE (SCROLLABLE) ---*/
         .workspace {
             flex: 1;
             overflow-y: auto;
-            /* Changed from visible to auto to enable scrolling */
+            /*Changed from visible to auto to enable scrolling*/
             overflow-x: auto;
             padding: 0 40px 40px 40px;
             display: grid;
@@ -900,14 +900,14 @@
             margin-top: 40px;
         }
 
-        /* Zoomed content only; keep sticky bars outside to avoid transform bugs */
+        /*Zoomed content only; keep sticky bars outside to avoid transform bugs*/
         .sheet-zoom {
             width: 100%;
             display: inline-block;
             transform-origin: top left;
         }
 
-        /* Scale legend contents without moving the sticky container itself */
+        /*Scale legend contents without moving the sticky container itself*/
         .legend-zoom {
             width: 100%;
             display: inherit;
@@ -919,7 +919,7 @@
             font-size: 0.7rem;
         }
 
-        /* --- CONTROLS LEGEND (STICKY INSIDE WORKSPACE) --- */
+        /*--- CONTROLS LEGEND (STICKY INSIDE WORKSPACE) ---*/
         .controls-legend {
             position: sticky;
             top: 0;
@@ -946,7 +946,7 @@
             z-index: auto;
         }
 
-        /* Preserve comfortable header sizing on all tabs, even without impersonation controls */
+        /*Preserve comfortable header sizing on all tabs, even without impersonation controls*/
         #sub-container .controls-legend,
         #claim-container .controls-legend {
             font-size: 0.95rem;
@@ -1004,7 +1004,7 @@
             border-spacing: 0;
         }
 
-        /* --- TABLE HEADERS (STICKY BELOW LEGEND) --- */
+        /*--- TABLE HEADERS (STICKY BELOW LEGEND) ---*/
         th {
             font-family: 'Montserrat', sans-serif;
             text-transform: uppercase;
@@ -1013,7 +1013,7 @@
             letter-spacing: 0.1em;
             padding: 15px;
             position: sticky;
-            /* Stick exactly below the legend - calculated via JS ResizeObserver now */
+            /*Stick exactly below the legend - calculated via JS ResizeObserver now*/
             top: var(--legend-height);
             z-index: 400;
             background-color: white;
@@ -1037,7 +1037,7 @@
             border-right: 2px solid var(--site-text);
         }
 
-        /* --- ROW HEADERS (Left Sticky) --- */
+        /*--- ROW HEADERS (Left Sticky) ---*/
         .station-cell {
             font-family: 'Merriweather', serif;
             font-weight: 700;
@@ -1050,7 +1050,7 @@
             width: 220px;
         }
 
-        /* --- DATA CELLS --- */
+        /*--- DATA CELLS ---*/
         td.data-cell {
             width: 160px;
             height: 75px;
@@ -1371,16 +1371,16 @@
                     </div>
                 </div>
             </div>
-        </div> <!-- /workspace-zoom -->
+        </div> <!--/workspace-zoom-->
     </div>
 
     <script>
-        // --- CONFIG ---
+        //--- CONFIG ---
         const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         let STATIONS = [];
         const VIEWS = ["schedule", "sub", "claim", "checklist"];
 
-        // --- STATE ---
+        //--- STATE ---
         let scheduleData = {};
         let members = [];
         let memberById = {};
@@ -1414,12 +1414,12 @@
         let stationVersions = [];
         const _legendBaseHeights = new WeakMap();
 
-        // --- RESIZE OBSERVER FOR STICKY HEADER ---
+        //--- RESIZE OBSERVER FOR STICKY HEADER ---
         const resizeObserver = new ResizeObserver(entries => {
             for (let entry of entries) {
-                // Ignore hidden legends so we don't apply stale heights
+                //Ignore hidden legends so we don't apply stale heights
                 if (!entry.target || entry.target.offsetParent === null) continue;
-                // Use full box height (padding + border), then unscale for CSS zoom.
+                //Use full box height (padding + border), then unscale for CSS zoom.
                 const zoom = Math.max(0.01, Number(zoomLevel) || 1);
                 const height = entry.target.getBoundingClientRect().height / zoom;
                 document.documentElement.style.setProperty('--legend-height', `${height.toFixed(3)}px`);
@@ -1459,7 +1459,7 @@
         function dayOfWeekFromISO(iso) {
             const [y, m, d] = iso.split('-').map(Number);
             const dt = new Date(y, m - 1, d);
-            return dt.getDay(); // 0=Sun
+            return dt.getDay(); //0=Sun
         }
 
         function idsMatch(a, b) {
@@ -1479,7 +1479,7 @@
             if (!start || !end) return out;
             start.setHours(0, 0, 0, 0);
             end.setHours(0, 0, 0, 0);
-            // snap start to Sunday
+            //snap start to Sunday
             start.setDate(start.getDate() - start.getDay());
             while (start <= end) {
                 out.push(start.toISOString().slice(0, 10));
@@ -1517,11 +1517,11 @@
             return normalized[normalized.length - 1];
         }
 
-        // Selection
+        //Selection
         let selectedCells = new Set();
         let anchor = null;
 
-        // --- INITIALIZATION ---
+        //--- INITIALIZATION ---
         function makeEmptySchedule() {
             const base = {};
             STATIONS.forEach(st => { base[st] = new Array(7).fill(""); });
@@ -1580,7 +1580,7 @@
             apiBase = (urlParams.get('api') || apiBase || '').replace(/\/$/, '');
             scheduleData = makeEmptySchedule();
 
-            // Start observing legends for resize
+            //Start observing legends for resize
             document.querySelectorAll('.controls-legend').forEach(el => resizeObserver.observe(el));
 
             updateStickyHeights();
@@ -1602,13 +1602,13 @@
             const legends = Array.from(document.querySelectorAll('.controls-legend')).filter(el => el.offsetParent !== null);
             const headerH = header ? Math.ceil(header.getBoundingClientRect().height) : 0;
 
-            // Fallback if observer hasn't fired yet
+            //Fallback if observer hasn't fired yet
             if (legends.length > 0) {
                 const zoom = Math.max(0.01, Number(zoomLevel) || 1);
                 const legendH = legends[0].getBoundingClientRect().height / zoom;
                 root.style.setProperty('--legend-height', `${legendH.toFixed(3)}px`);
             } else {
-                // No visible legend (e.g., read-only view) so headers should pin to the top
+                //No visible legend (e.g., read-only view) so headers should pin to the top
                 root.style.setProperty('--legend-height', `0px`);
             }
 
@@ -1662,7 +1662,7 @@
             }, 60);
         });
 
-        // --- API CALL ---
+        //--- API CALL ---
         async function fetchMembers() {
             try {
                 const endpoint = apiBase ? `${apiBase}/api/members` : '/api/members';
@@ -1723,7 +1723,7 @@
                 const serverWeeks = (data.weeks || []).map(w => weekStartIso(w));
                 if (data.effective_from) serverWeeks.push(weekStartIso(data.effective_from));
                 const weekSet = new Set(serverWeeks);
-                // include current and next few weeks
+                //include current and next few weeks
                 const base = new Date(requestedWeek || weekStartIso());
                 base.setHours(0, 0, 0, 0);
                 base.setDate(base.getDate() - base.getDay());
@@ -1820,15 +1820,15 @@
             sel.value = stationEffectiveDate || unique[0];
         }
 
-        // --- DISTINCT COLOR PALETTE ---
+        //--- DISTINCT COLOR PALETTE ---
 
-        // Deterministic pastel colors with in-session collision avoidance.
+        //Deterministic pastel colors with in-session collision avoidance.
         const colorAssignments = new Map();
         const usedColors = new Set();
-        const usedHueBuckets = new Set(); // track hue buckets to avoid near-duplicates
+        const usedHueBuckets = new Set(); //track hue buckets to avoid near-duplicates
 
         function hashId(str) {
-            // FNV-1a 32-bit hash for consistent distribution
+            //FNV-1a 32-bit hash for consistent distribution
             let h = 0x811c9dc5;
             for (let i = 0; i < str.length; i++) {
                 h ^= str.charCodeAt(i);
@@ -1842,22 +1842,22 @@
             if (colorAssignments.has(id)) return colorAssignments.get(id);
 
             const seed = hashId(String(id));
-            // Xorshift PRNG based on seed
+            //Xorshift PRNG based on seed
             let x = seed || 1;
             const rand = () => {
                 x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
                 return (x >>> 0) / 4294967295;
             };
 
-            let hue = rand() * 360;             // full hue wheel
-            let sat = 55 + rand() * 30;         // 55-85%
-            let light = 65 + rand() * 15;       // 65-80% (light enough for dark text)
+            let hue = rand() * 360;             //full hue wheel
+            let sat = 55 + rand() * 30;         //55-85%
+            let light = 65 + rand() * 15;       //65-80% (light enough for dark text)
 
-            // Avoid exact duplicates/near-duplicates within this session by nudging hue and lightness
-            const golden = 137.508; // golden angle
+            //Avoid exact duplicates/near-duplicates within this session by nudging hue and lightness
+            const golden = 137.508; //golden angle
             let color = `hsl(${hue.toFixed(3)}, ${sat.toFixed(2)}%, ${light.toFixed(2)}%)`;
             let tries = 0;
-            const bucket = () => Math.round(hue * 10) / 10; // 0.1° buckets
+            const bucket = () => Math.round(hue * 10) / 10; //0.1° buckets
             while ((usedColors.has(color) || usedHueBuckets.has(bucket())) && tries < 48) {
                 hue = (hue + golden) % 360;
                 light = Math.min(82, light + 1.2);
@@ -1871,7 +1871,7 @@
             return color;
         }
 
-        // --- MENU TOGGLE ---
+        //--- MENU TOGGLE ---
         function toggleMenu() {
             const menu = document.getElementById('main-menu');
             const overlay = document.getElementById('sidebar-overlay');
@@ -1879,7 +1879,7 @@
             overlay.classList.toggle('active');
         }
 
-        // --- RENDERING ---
+        //--- RENDERING ---
         function renderGrid() {
             const tbody = document.querySelector('#schedule-table tbody');
             tbody.innerHTML = '';
@@ -1941,7 +1941,7 @@
             });
         }
 
-        // --- INTERACTIONS ---
+        //--- INTERACTIONS ---
         let isDragging = false;
         const saveBtn = document.getElementById('save-btn');
         let saveResetTimer = null;
@@ -1953,7 +1953,7 @@
 
         function setSaveStatus(text, tone = "info") {
             if (!saveBtn) return;
-            // Only surface warnings/errors briefly on the button; otherwise button states handle feedback.
+            //Only surface warnings/errors briefly on the button; otherwise button states handle feedback.
             if (tone === "warn" || tone === "error") {
                 if (saveResetTimer) {
                     clearTimeout(saveResetTimer);
@@ -1982,7 +1982,7 @@
                 saveBtn.textContent = "Saved";
                 saveBtn.classList.add("saved");
                 saveBtn.disabled = false;
-                // Fade back to idle state
+                //Fade back to idle state
                 saveResetTimer = setTimeout(() => {
                     saveBtn.textContent = "Save";
                     saveBtn.classList.remove("saved");
@@ -1995,14 +1995,14 @@
             }
         }
 
-        // Timer storage for generic save buttons (indexed by button ID)
+        //Timer storage for generic save buttons (indexed by button ID)
         const genericSaveTimers = {};
 
         function setGenericSaveButtonState(btnId, state, defaultLabel) {
             const btn = document.getElementById(btnId);
             if (!btn) return;
 
-            // Clear any existing timer for this button
+            //Clear any existing timer for this button
             if (genericSaveTimers[btnId]) {
                 clearTimeout(genericSaveTimers[btnId]);
                 genericSaveTimers[btnId] = null;
@@ -2018,7 +2018,7 @@
                 btn.textContent = "Saved";
                 btn.classList.add("saved");
                 btn.disabled = false;
-                // Fade back to default label after delay
+                //Fade back to default label after delay
                 genericSaveTimers[btnId] = setTimeout(() => {
                     btn.textContent = defaultLabel;
                     btn.classList.remove("saved");
@@ -2075,7 +2075,7 @@
 
         document.addEventListener('mouseup', () => isDragging = false);
 
-        // --- SEARCH LOGIC & KEYBOARD NAV ---
+        //--- SEARCH LOGIC & KEYBOARD NAV ---
         const searchInput = document.getElementById('member-search');
         const resultsBox = document.getElementById('search-results');
         const selectionBadge = document.getElementById('selection-display');
@@ -2159,7 +2159,7 @@
             searchInput.blur();
         }
 
-        // --- KEYBOARD (Grid Actions) ---
+        //--- KEYBOARD (Grid Actions) ---
         document.addEventListener('keydown', (e) => {
             if (e.target.tagName === 'INPUT') {
                 if (e.key === 'Escape') {
@@ -2256,7 +2256,7 @@
             }
         }
 
-        // --- VIEW SWITCHING ---
+        //--- VIEW SWITCHING ---
         function getViewFromLocation() {
             const hashView = (window.location.hash || '').replace('#', '').toLowerCase();
             if (VIEWS.includes(hashView)) return hashView;
@@ -2281,7 +2281,7 @@
         function setView(view, opts = {}) {
             const nextView = VIEWS.includes(view) ? view : 'schedule';
             if (nextView === 'checklist' && !(authState.permissions?.is_officer)) {
-                // Non-officers are not allowed; redirect to schedule
+                //Non-officers are not allowed; redirect to schedule
                 updateUrlForView('schedule');
                 return setView('schedule', { skipUrlUpdate: true });
             }
@@ -2306,7 +2306,7 @@
             applyZoom();
         }
 
-        // --- SUB REQUEST FORM ---
+        //--- SUB REQUEST FORM ---
         function updateSubUserOptions() {
             const scheduledIds = new Set();
             STATIONS.forEach(st => {
@@ -2374,7 +2374,7 @@
             }
         });
 
-        // Close calendar when clicking outside
+        //Close calendar when clicking outside
         document.addEventListener('click', (e) => {
             const panel = document.getElementById('date-panel');
             const btn = document.querySelector('.date-btn');
@@ -2397,7 +2397,7 @@
             renderStationsForSelected();
         }
 
-        // Claim user search (due members)
+        //Claim user search (due members)
         const claimUserInput = document.getElementById('claim-user');
         const claimUserResults = document.getElementById('claim-user-results');
         let claimFiltered = [];
@@ -2445,7 +2445,7 @@
             if (status) status.textContent = '';
         }
 
-        // --- FEEDING CHECKLIST (Officer only) ---
+        //--- FEEDING CHECKLIST (Officer only) ---
         function initChecklistDefaultDate() {
             if (!authState.permissions?.is_officer) return;
             if (!checklistDate) {
@@ -2665,7 +2665,7 @@
             if (!subSelectedUser) return;
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            const horizon = 180; // days ahead
+            const horizon = 180; //days ahead
             for (let i = 0; i < horizon; i++) {
                 const d = new Date(today);
                 d.setDate(today.getDate() + i);
@@ -2674,7 +2674,7 @@
                 if (hasSlot) allowedDates.push(iso);
             }
 
-            // Drop any selections that are no longer valid
+            //Drop any selections that are no longer valid
             const stillValid = new Set();
             selectedDates.forEach(d => {
                 if (allowedDates.includes(d)) stillValid.add(d);
@@ -2730,11 +2730,11 @@
             const year = calendarMonth.getFullYear();
             const month = calendarMonth.getMonth();
             const firstDay = new Date(year, month, 1);
-            const startDow = firstDay.getDay(); // 0=Sun
+            const startDow = firstDay.getDay(); //0=Sun
             const daysInMonth = new Date(year, month + 1, 0).getDate();
             label.textContent = firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
-            // Weekday headers
+            //Weekday headers
             const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
             weekdays.forEach(w => {
                 const div = document.createElement('div');
@@ -2788,7 +2788,7 @@
             if (el) el.textContent = msg || '';
         }
 
-        // --- CHECKLIST DATE CALENDAR ---
+        //--- CHECKLIST DATE CALENDAR ---
         let checklistCalendarMonth = new Date();
 
         function toggleChecklistCalendar() {
@@ -2816,7 +2816,7 @@
             label.textContent = checklistCalendarMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
             grid.innerHTML = '';
-            // Day headers
+            //Day headers
             ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].forEach(d => {
                 const cell = document.createElement('div');
                 cell.className = 'cal-cell header';
@@ -2828,7 +2828,7 @@
             const lastDay = new Date(year, month + 1, 0).getDate();
             const startDow = first.getDay();
 
-            // Empty cells for days before month starts
+            //Empty cells for days before month starts
             for (let i = 0; i < startDow; i++) {
                 const cell = document.createElement('div');
                 cell.className = 'cal-cell empty';
@@ -2838,7 +2838,7 @@
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            // Day cells
+            //Day cells
             for (let day = 1; day <= lastDay; day++) {
                 const d = new Date(year, month, day);
                 const iso = d.toISOString().slice(0, 10);
@@ -2868,7 +2868,7 @@
             btn.textContent = weekday;
         }
 
-        // Close checklist calendar when clicking outside
+        //Close checklist calendar when clicking outside
         document.addEventListener('click', (e) => {
             const panel = document.getElementById('checklist-date-panel');
             const btn = document.getElementById('checklist-date-btn');
@@ -2897,7 +2897,7 @@
                 const stations = stationsForDate(dateIso, subSelectedUser.id);
                 if (!stations.length) return;
 
-                // Normalize stored selections to a Set for this date
+                //Normalize stored selections to a Set for this date
                 const saved = selectedStationsByDate[dateIso];
                 const selectionSet = saved instanceof Set ? saved : new Set(saved || []);
                 selectedStationsByDate[dateIso] = selectionSet;
@@ -3087,7 +3087,7 @@
             }
         }
 
-        // --- ZOOM ---
+        //--- ZOOM ---
         function adjustZoom(delta) {
             zoomLevel = Math.max(0.5, Math.min(1.5, zoomLevel + delta));
             applyZoom();
@@ -3133,12 +3133,12 @@
     </script>
 
     <script>
-        // --- CONFIGURATION ---
+        //--- CONFIGURATION ---
         const CLIENT_ID = "1341667150066225192";
         const DEFAULT_API = "";
         const STATE_STORAGE_KEY = 'tc_ui_oauth_nonce';
 
-        // Strip search/hash to ensure this matches Discord Portal exactly
+        //Strip search/hash to ensure this matches Discord Portal exactly
         const REDIRECT_URI = window.location.origin + window.location.pathname;
 
         let authState = { token: null, user: null, permissions: {}, csrf: null };
@@ -3181,19 +3181,19 @@
             }
         }
 
-        // --- AUTH FLOW ---
-        // --- AUTH FLOW ---
+        //--- AUTH FLOW ---
+        //--- AUTH FLOW ---
         let discordSdk = null;
 
         async function initAuth() {
             const urlParams = new URLSearchParams(window.location.search);
-            // FIX: Robustly detect Activity mode by checking for Discord's injected params
+            //FIX: Robustly detect Activity mode by checking for Discord's injected params
             const isEmbedded = urlParams.has("frame_id") || urlParams.has("instance_id");
 
             const code = urlParams.get('code');
             const state = urlParams.get('state');
 
-            // Determine API Base
+            //Determine API Base
             let currentApi = urlParams.get('api');
             if (state) {
                 const stateObj = parseState(state);
@@ -3207,20 +3207,20 @@
                 if (stateObj.api) currentApi = stateObj.api;
             }
 
-            // Set global apiBase
+            //Set global apiBase
             apiBase = (currentApi || DEFAULT_API).replace(/\/$/, '');
             console.log("Using Backend:", apiBase);
             console.log("Environment: ", isEmbedded ? "Discord Activity" : "Web Browser");
 
-            // 1. DISCORD ACTIVITY FLOW
+            //1. DISCORD ACTIVITY FLOW
             if (isEmbedded) {
                 document.body.classList.add('is-activity');
 
-                // Show the LEAVE button
+                //Show the LEAVE button
                 const leaveBtn = document.getElementById('leave-activity-btn');
                 if (leaveBtn) leaveBtn.style.display = 'flex';
 
-                // Safety check for SDK
+                //Safety check for SDK
                 if (!window.Discord) {
                     document.getElementById('loading').innerHTML = "<div>Error: Discord SDK not loaded.</div>";
                     return;
@@ -3230,7 +3230,7 @@
                     discordSdk = new Discord.DiscordSDK(CLIENT_ID);
                     await discordSdk.ready();
 
-                    // Try "Silent" Auth first
+                    //Try "Silent" Auth first
                     const { code: activityCode } = await discordSdk.commands.authorize({
                         client_id: CLIENT_ID,
                         response_type: "code",
@@ -3239,25 +3239,25 @@
                         scope: ["identify", "guilds.members.read"]
                     });
 
-                    // If successful, swap code for token
+                    //If successful, swap code for token
                     await exchangeCode(activityCode, null);
 
                 } catch (e) {
                     console.warn("Silent auth failed, showing manual activity login button", e);
-                    // CRITICAL: Do NOT fall back to web flow. Show the SDK-compatible button.
+                    //CRITICAL: Do NOT fall back to web flow. Show the SDK-compatible button.
                     showActivityLoginButton();
                 }
                 return;
             }
 
-            // 2. STANDARD WEB FLOW
+            //2. STANDARD WEB FLOW
             if (!code) {
                 const resumed = await resumeSession();
                 if (resumed) return;
             }
 
             if (code) {
-                // Returning from Discord Login Redirect
+                //Returning from Discord Login Redirect
                 const cleanedUrl = new URL(window.location.href);
                 cleanedUrl.searchParams.delete('code');
                 cleanedUrl.searchParams.delete('state');
@@ -3271,7 +3271,7 @@
                 return;
             }
 
-            // Not logged in, not in activity -> Show Web Button
+            //Not logged in, not in activity -> Show Web Button
             showLoginButton();
         }
 
@@ -3335,20 +3335,20 @@
             } catch (e) {
                 console.error("Login Error:", e);
                 alert("Login failed: " + (e && e.message ? e.message : e));
-                // Show the correct button for the context
+                //Show the correct button for the context
                 if (discordSdk) showActivityLoginButton();
                 else showLoginButton();
             }
         }
 
-        // NEW: "Seamless" Leave Function
+        //NEW: "Seamless" Leave Function
         async function leaveActivity() {
             if (!discordSdk) {
                 alert("This only works inside Discord!");
                 return;
             }
 
-            // 1. Tell backend to kick us from voice
+            //1. Tell backend to kick us from voice
             try {
                 const endpoint = `${apiBase}/api/activity/leave`;
                 await fetch(endpoint, {
@@ -3360,11 +3360,11 @@
                 console.error("Failed to signal leave", e);
             }
 
-            // 2. Disconnect client-side
+            //2. Disconnect client-side
             discordSdk.commands.disconnect();
         }
 
-        // NEW: Manual Button for Activities (Calls SDK, does not navigate)
+        //NEW: Manual Button for Activities (Calls SDK, does not navigate)
         function showActivityLoginButton() {
             const loading = document.getElementById('loading');
             if (loading) loading.style.display = 'none';
@@ -3393,7 +3393,7 @@
 
             document.getElementById('manual-auth-btn').onclick = async () => {
                 try {
-                    // Using the SDK command, NOT a redirect
+                    //Using the SDK command, NOT a redirect
                     const { code } = await discordSdk.commands.authorize({
                         client_id: CLIENT_ID,
                         response_type: "code",
@@ -3466,23 +3466,23 @@
 
 
 
-        // ... (Keep updateUIForUser, renderOpenSubs, and deleteRequest functions EXACTLY as they were in the previous step) ...
-        // You MUST include them here for the script to work.
+        //... (Keep updateUIForUser, renderOpenSubs, and deleteRequest functions EXACTLY as they were in the previous step) ...
+        //You MUST include them here for the script to work.
 
-        // Paste updateUIForUser here...
+        //Paste updateUIForUser here...
         function updateUIForUser() {
-            // Remove login overlay
+            //Remove login overlay
             const overlay = document.getElementById('web-login-overlay');
             if (overlay) overlay.remove();
 
-            // Define Line-Art Icons
-            // 1. Crown: Geometric, sharp lines to match Montserrat
+            //Define Line-Art Icons
+            //1. Crown: Geometric, sharp lines to match Montserrat
             const ICON_CROWN = `
     <svg viewBox="0 0 24 24">
         <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"></path>
     </svg>`;
 
-            // 2. User: Simple silhouette, matching stroke weight
+            //2. User: Simple silhouette, matching stroke weight
             const ICON_USER = `
     <svg viewBox="0 0 24 24">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -3492,7 +3492,7 @@
             const isOfficer = authState.permissions.is_officer;
             const canEditSchedule = !!authState.permissions.can_edit_schedule;
 
-            // 1. Update Header Profile
+            //1. Update Header Profile
             const pDisplay = document.getElementById('profile-display');
             const pIcon = document.getElementById('profile-icon');
             const pName = document.getElementById('profile-name');
@@ -3501,7 +3501,7 @@
                 pDisplay.style.display = 'flex';
                 pName.textContent = authState.user.username;
 
-                // Use innerHTML to inject SVG instead of textContent for emoji
+                //Use innerHTML to inject SVG instead of textContent for emoji
                 if (isOfficer) {
                     pIcon.innerHTML = ICON_CROWN;
                     pIcon.className = "profile-icon role-officer";
@@ -3513,13 +3513,13 @@
                 }
             }
 
-            // 2b. Officer-only menu item for checklist
+            //2b. Officer-only menu item for checklist
             const checklistLink = document.getElementById('menu-checklist');
             if (checklistLink) {
                 checklistLink.style.display = isOfficer ? 'block' : 'none';
             }
 
-            // 2. Show/Hide Impersonation Controls
+            //2. Show/Hide Impersonation Controls
             const displayMode = isOfficer ? 'flex' : 'none';
             const subWrapper = document.getElementById('sub-user-wrapper');
             const claimWrapper = document.getElementById('claim-user-wrapper');
@@ -3527,10 +3527,10 @@
             if (subWrapper) subWrapper.style.display = displayMode;
             if (claimWrapper) claimWrapper.style.display = displayMode;
 
-            // 3. Schedule controls (officers only)
+            //3. Schedule controls (officers only)
             applyScheduleAccess(isOfficer, canEditSchedule);
 
-            // 4. Refresh stateful UI with the current identity
+            //4. Refresh stateful UI with the current identity
             if (!isOfficer) {
                 ensureOwnSubUserSelected();
                 ensureOwnClaimUser();
@@ -3539,7 +3539,7 @@
             renderOpenSubs();
         }
 
-        // Override renderOpenSubs to support Delete button
+        //Override renderOpenSubs to support Delete button
         window.renderOpenSubs = function () {
             const isPrev = requestTab === 'previous';
             const wrap = isPrev ? document.getElementById('prev-requests-list') : document.getElementById('open-requests-list');
@@ -3618,10 +3618,10 @@
                     meta.appendChild(status);
                     div.appendChild(meta);
 
-                    // Delete Logic
+                    //Delete Logic
                     const isOfficer = authState.permissions.is_officer;
 
-                    // Fix: Robust string comparison for delete permission
+                    //Fix: Robust string comparison for delete permission
                     const reqId = String(item.requester_id || "");
                     const assId = String(item.assignee_id || "");
                     const myId = String(authState.user?.id || "");
@@ -3631,7 +3631,7 @@
                     if (isOfficer || isOwner) {
                         const trash = document.createElement('button');
                         trash.className = 'trash-btn';
-                        trash.innerHTML = '🗑'; // Simple trash can
+                        trash.innerHTML = '🗑'; //Simple trash can
                         trash.title = "Delete Request";
                         trash.onclick = (e) => {
                             e.preventDefault();
@@ -3674,9 +3674,9 @@
         if (window.Discord) {
             initAuth();
         } else {
-            // Wait for the module to load
+            //Wait for the module to load
             window.addEventListener('discord-sdk-ready', () => initAuth());
-            // Safety timeout in case it never loads (e.g. strict firewall)
+            //Safety timeout in case it never loads (e.g. strict firewall)
             setTimeout(() => {
                 if (!window.Discord) {
                     document.getElementById('loading').innerHTML = "<div>Error: SDK Timed Out. Check connection.</div>";

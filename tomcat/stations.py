@@ -23,7 +23,7 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
 
 
-# Seed data taken from prior hardcoded aliases; written once if no file exists.
+#Seed data taken from prior hardcoded aliases; written once if no file exists.
 _SEEDED_STATIONS: List[Dict] = [
     {"name": "Microwave", "aliases": ["microwave", "mike", "mikey", "miker", "micro", "wave", "old man", "michael", "him", "himb", "chemistry", "chemistry building", "chemistry/planetarium building", "planetarium", "planetarium building", "library", "life science building", "library life science building"]},
     {"name": "Snickers", "aliases": ["snickers", "snicks"]},
@@ -102,10 +102,10 @@ def _load_versions() -> List[Dict]:
             if isinstance(data, dict) and "versions" in data:
                 versions = data.get("versions") or []
             elif isinstance(data, dict) and "stations" in data:
-                # Legacy single version
+                #Legacy single version
                 versions = [{"effective_from": _DEFAULT_EFFECTIVE, "stations": data.get("stations") or []}]
             elif isinstance(data, list):
-                # Defensive fallback
+                #Defensive fallback
                 versions = data
             else:
                 versions = []
@@ -118,7 +118,7 @@ def _load_versions() -> List[Dict]:
         versions = [{"effective_from": _DEFAULT_EFFECTIVE, "stations": _SEEDED_STATIONS}]
         _save_versions(versions, update_meta=False)
 
-    # Normalize/clean
+    #Normalize/clean
     for v in versions:
         v["effective_from"] = v.get("effective_from") or _DEFAULT_EFFECTIVE
         v["stations"] = _clean_stations(v.get("stations") or [])
@@ -142,7 +142,7 @@ def _resolve_version(target: Optional[date]) -> Dict:
     versions = _load_versions()
     if not target:
         target = date.today()
-    # pick latest effective_from <= target
+    #pick latest effective_from <= target
     best = None
     for v in versions:
         try:
@@ -153,7 +153,7 @@ def _resolve_version(target: Optional[date]) -> Dict:
             best = v
     if best:
         return best
-    # fallback earliest
+    #fallback earliest
     return sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_EFFECTIVE)[0]
 
 

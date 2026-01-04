@@ -1022,6 +1022,20 @@ def _has_refund_word(text: str) -> bool:
     return any(word in t for word in ("refund", "reimburse", "reimburs", "return"))
 
 
+def _clean_sheet_text(text: str) -> str:
+    """Remove [Recorded by...] and other metadata suffixes for cleaner comparison."""
+    #Remove [Recorded by the TomCat bot] and similar [brackets] at the end
+    #We use a loop to handle nested/multiple brackets if needed, but simple regex is usually enough
+    #Pattern: remove any [...] block at the end, possibly repeated
+    t = text
+    while True:
+        prev = t
+        t = re.sub(r'\s*\[.*?\]\s*$', '', t)
+        t = re.sub(r'\s*\(Message:.*?\)\s*$', '', t) #Also optional: remove (Message: ...) structure if we want base comparison
+        if t == prev:
+            break
+    return t
+
 def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
     """Heuristic duplicate detection that tolerates close-day repeats."""
     #Allow small transactions (likely food/goods) to duplicate 
@@ -1063,9 +1077,19 @@ def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
         
         combined_sheet = r.get('text') or ''
         combined_event = f"{ev_counterparty} (Message: {ev_note})".strip()
+        
+        #Clean the sheet text of "Recorded by" suffixes for better fuzzy matching
+        clean_sheet_text = _clean_sheet_text(combined_sheet)
+        clean_event_text = _clean_sheet_text(combined_event) #Also clean event to match
+        
         combined_match = False
         if combined_sheet and combined_event:
-            combined_match = _similar_enough(combined_sheet, combined_event)
+            #Try precise clean match first
+            if _similar_enough(clean_sheet_text, clean_event_text):
+                combined_match = True
+            #Fallback to full match
+            elif _similar_enough(combined_sheet, combined_event):
+                combined_match = True
 
         counterparty_match = bool(norm_counter and norm_counterparty and _similar_enough(counterparty, ev_counterparty))
         note_match = False
@@ -1272,17 +1296,17 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
 
         rows.append(_build_expense_row(ev))
         idx_events.append(ev)
+        #Optimistically add to seen sets so subsequent items in this batch are checked against this one
+        seen_fp.add(fp)
+        if ev.txn_id: seen_txn.add(ev.txn_id)
+        if ev.message_id: seen_msg.add(ev.message_id)
 
     if rows:
         append_results = await _append_rows_with_retry(ws, rows, 'expense')
         for ev, (ok, msg) in zip(idx_events, append_results):
             results[ev.email_id] = (ok, msg)
             if ok:
-                seen_fp.add(_fingerprint(ev))
-                if ev.txn_id:
-                    seen_txn.add(ev.txn_id)
-                if ev.message_id:
-                    seen_msg.add(ev.message_id)
+                #Already added to seen sets above, but we need to persist to index
                 _append_index({
                     "email_id": ev.email_id,
                     "status": ev.direction,

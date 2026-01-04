@@ -38,7 +38,6 @@ ADMIN_COMMANDS: List[Tuple[str, str]] = [
     ("TomCat, create profile [N]", "Creates profile card for cat number N."),
     ("TomCat, update all profiles", "Regenerates all cat profile cards."),
     ("TomCat, remove role [ID]", "Removes a role from all server members."),
-    ("TomCat, export dues portal", "Exports the dues portal channel history."),
 ]
 
 MAX_LINES_PER_PAGE = 30
@@ -87,12 +86,14 @@ def _build_glossary_pages(is_admin: bool) -> List[str]:
     all_pages: List[str] = []
     
     #User commands section
-    user_pages = _build_pages(USER_COMMANDS, "__**User Commands**__")
+    user_header = "__**User Commands**__\n*All functions below require the 'TomCat,' prefix.*"
+    user_pages = _build_pages(USER_COMMANDS, user_header)
     all_pages.extend(user_pages)
     
     #Admin commands section (only for admins/officers)
     if is_admin:
-        admin_pages = _build_pages(ADMIN_COMMANDS, "__**Admin Commands**__")
+        admin_header = "__**Admin Commands**__\n*All functions below require the 'TomCat,' prefix.*"
+        admin_pages = _build_pages(ADMIN_COMMANDS, admin_header)
         all_pages.extend(admin_pages)
     
     return all_pages
@@ -123,7 +124,7 @@ class GlossaryView(discord.ui.View):
     def _build_embed(self) -> discord.Embed:
         """Build the embed for the current page."""
         embed = discord.Embed(
-            title="TomCat Function List",
+            title="\U0001F431 TomCat Function List",
             description=self.pages[self.current_page],
             color=0x5865F2  #Discord blurple
         )

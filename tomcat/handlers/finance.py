@@ -636,7 +636,30 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             txn_id=txn_id,
         ), "income")
 
-    #Spending via Cash App
+    #You sent $X to [Name] (person-to-person CashApp transfer, e.g. reimbursements)
+    m = re.match(r"^You sent \$?(?P<amount>[0-9.,]+)\s+to\s+(?P<name>.+?)(?:\s+for\s+(?P<note>.+))?$", text, re.I)
+    if m:
+        name = _clean_counterparty(m.group("name"))
+        amount = _coerce_amount(m.group("amount"), subject, body)
+        note = _extract_cashapp_note(subject, body, m.group("note"))
+        note = _extract_note(note)
+        return (FinanceEvent(
+            email_id=email.get("id", ""),
+            provider="cashapp",
+            counterparty=name,
+            note=note,
+            amount=amount,
+            direction="expense",
+            category=_categorize_expense(name, note or subject),
+            ts=ts,
+            raw_subject=subject,
+            raw_content=content,
+            message_blank=not bool(note.strip()),
+            message_id=message_id,
+            txn_id=txn_id,
+        ), "expense")
+
+    #Spending via Cash App (debit card style purchases at merchants)
     m = re.search(r"You spent \$([0-9.,]+)\s+at\s+([^\n]+)", content, re.I)
     if m:
         amount = _coerce_amount(m.group(1), subject, content)

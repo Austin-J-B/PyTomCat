@@ -86,13 +86,13 @@ def _build_glossary_pages(is_admin: bool) -> List[str]:
     all_pages: List[str] = []
     
     #User commands section
-    user_header = "__**User Commands**__\n*All functions below require the 'TomCat,' prefix.*"
+    user_header = "__**User Commands**__\n*All functions below require the 'TomCat,' prefix.*\n"
     user_pages = _build_pages(USER_COMMANDS, user_header)
     all_pages.extend(user_pages)
     
     #Admin commands section (only for admins/officers)
     if is_admin:
-        admin_header = "__**Admin Commands**__\n*All functions below require the 'TomCat,' prefix.*"
+        admin_header = "__**Admin Commands**__\n*All functions below require the 'TomCat,' prefix.*\n"
         admin_pages = _build_pages(ADMIN_COMMANDS, admin_header)
         all_pages.extend(admin_pages)
     
@@ -124,7 +124,7 @@ class GlossaryView(discord.ui.View):
     def _build_embed(self) -> discord.Embed:
         """Build the embed for the current page."""
         embed = discord.Embed(
-            title="\U0001F431 TomCat Function List",
+            title="TomCat Function List\n",
             description=self.pages[self.current_page],
             color=0x5865F2  #Discord blurple
         )

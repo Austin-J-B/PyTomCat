@@ -1861,7 +1861,8 @@ async def handle_run_dues_perks(intent, ctx) -> None:
     if possible_rows:
         poss = ", ".join(f"{src} → {cand} ({sc}%)" for src, cand, sc in possible_rows[:20])
         parts.append("Possible matches: " + poss)
-    await safe_send(ch, "\n".join(parts) if parts else "No usernames matched for verified members this semester.")
+    if parts:
+        await safe_send(ch, "\n".join(parts))
 
     #3) Errors to sandbox (unmatched + possible + duplicates)
     sandbox = _find_sandbox_channel(bot)

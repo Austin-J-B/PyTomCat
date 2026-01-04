@@ -186,19 +186,10 @@ WHO_PAT  = re.compile(r"\b(who\s+is|who\s*'s|who\s*s|whois)\b", re.I)
 IDENT_PAT= re.compile(r"\b(identify|id|classify|classification)\b", re.I)
 DETECT_PAT = re.compile(r"\bdetect\b", re.I)
 CROP_PAT   = re.compile(r"\bcrop\b", re.I)
-
 FEED_VERB = re.compile(r"\b(fed|fill(?:ed)?|filled|topped(?:\s*off)?)\b", re.I)
-#Negative phrasing like "don't feed" should not trigger a feed update
 FEED_NEGATION_RE = re.compile(r"\b(?:(?:do(?:n't|\s+not))|(?:did(?:n't|\s+not))|(?:never)|(?:cant|can't|cannot)|(?:won't)|(?:should(?:n't|\s+not))|(?:would(?:n't|\s+not))|(?:haven't)|(?:hasn't)|(?:hadn't))\s+(?:feed|fed)\b", re.I)
-#Accept patterns in feeding channels (broad but channel-gated)
-FEEDING_CHECK_RE = re.compile(
-    r"^(?:(?:who(?:['’]s|\s+is|\s+has|\s+have|\s+hasn?['’]?t|\s+haven?['’]?t)\s*(?:been\s+)?fed(?:\s+today)?)|(?: (?:which|what) \s+ stations? \s+ (?:have|has|haven?['’]?t|hasn?['’]?t) \s*(?:been\s+)?fed(?:\s+today)?))\s*[?.!]*$",
-    re.I | re.X,
-)
-WHO_LIVES_RE = re.compile(
-    r"^\s*who\s+lives?\s+(?:at|by|near|around|in|on)\s+(?P<target>.+?)\s*[?.!]*$",
-    re.I,
-)
+FEEDING_CHECK_RE = re.compile(r"^(?:(?:who(?:['’]s|\s+is|\s+has|\s+have|\s+hasn?['’]?t|\s+haven?['’]?t)\s*(?:been\s+)?fed(?:\s+today)?)|(?: (?:which|what) \s+ stations? \s+ (?:have|has|haven?['’]?t|hasn?['’]?t) \s*(?:been\s+)?fed(?:\s+today)?))\s*[?.!]*$",re.I | re.X,)
+WHO_LIVES_RE = re.compile(r"^\s*who\s+lives?\s+(?:at|by|near|around|in|on)\s+(?P<target>.+?)\s*[?.!]*$",re.I,)
 SILENT_CMD = re.compile(r"\bsilent\s*mode\s+(on|off)\b", re.I)
 WHO_THIS_RE = re.compile(r"(?:^|\b)(?:who(?:'s|\s+is)|what(?:'s|\s+is))\s+(?:this|that)\s*(?:cat)?\??$", re.I)
 FEEDING_UPDATE_RE = re.compile(r"^feeding\s+update\s*$", re.I)
@@ -208,6 +199,7 @@ FEEDING_WHO_ANY_RE = re.compile(r"who(?:'s|\s+is)?\s+(?:feeding|feeds?)", re.I)
 CHECK_LAST_EMAIL_RE = re.compile(r"\bcheck\s+(?:the\s+)?last\s+email\b", re.I)
 AUTH_CODE_RE = re.compile(r"\bauth\s+(?:code|url)\s+(.+)$", re.I)
 LOG_PAST_EMAILS_RE = re.compile(r"\blog(?:\s+the)?\s+past\s+(\d+)\s+emails\b", re.I)
+CHECK_EMAILS_RE = re.compile(r"\b(?:check|log|scan|process|read)\s+(?:the\s+)?(?:our\s+)?(?:new\s+)?emails?\b",re.I)
 LOG_LAST_FINANCES_RE = re.compile(r"\blog(?:\s+the)?\s+last\s+(\d+)\s+finances\b", re.I)
 DUE_CHECK_RE = re.compile(r"\bcheck\s+due\s+payments\b", re.I)
 EXPORT_DUES_RE = re.compile(r"\bexport\s+due(?:s)?\s+portal\b", re.I)
@@ -219,19 +211,12 @@ RECACHE_ONE_RE = re.compile(r"\brecache\s+(.+?)(?:\s+photos?)?\b", re.I)
 RECACHE_ALL_RE = re.compile(r"\brecache\s+all\s+(?:show\s+)?(?:cat\s+)?photos?\b", re.I)
 RECACHE_CATABASE_RE = re.compile(r"\brecache\s+(?:catabase|cat\s*database|names)\b", re.I)
 REMOVE_ROLE_RE = re.compile(r"\b(?:remove|clear|strip)\s+(?:the\s+)?role\s+(\d{5,20})(?:\s+from\s+(?:everyone|all))?\b", re.I)
-FEEDING_SCHEDULE_LINK_RE = re.compile(
-    r"(feeding\s*schedule|feed\s*schedule|what[’'`]?\s*(?:is|s)?\s*(?:the\s+)?feeding\s*schedule|whats\s+the\s+feeding\s*schedule)",
-    re.I,
-)
-
-SUB_REQUEST_LINK_RE = re.compile(
-    r"(sub\s*request|find\s+(?:a\s+)?sub|find\s+subs|sub\s*me|cover\s+my\s+shift)",
-    re.I,
-)
-
+FEEDING_SCHEDULE_LINK_RE = re.compile(r"(feeding\s*schedule|feed\s*schedule|what[’'`]?\s*(?:is|s)?\s*(?:the\s+)?feeding\s*schedule|whats\s+the\s+feeding\s*schedule)",re.I,)
+SUB_REQUEST_LINK_RE = re.compile(r"(sub\s*request|find\s+(?:a\s+)?sub|find\s+subs|sub\s*me|cover\s+my\s+shift)",re.I,)
 CREATE_PROFILES_RE = re.compile(r"^create\s+profiles?\s+(\d+)(?:\s+through\s+(\d+))?$", re.I)
 UPDATE_PROFILE_RE  = re.compile(r"^update\s+profile\s+(\d+)$", re.I)
 UPDATE_ALL_PROFILES_RE = re.compile(r"^update\s+all\s+profiles$", re.I)
+FUNCTIONS_RE = re.compile(r"\b(?:functions?|commands?|help|glossary)\b", re.I)
 
 MONTH_NAME_MAP = {
     "jan": 1, "january": 1,
@@ -527,6 +512,19 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
+            #Admin-only: "check emails" / "log emails" / "scan emails" (default 99)
+            if CHECK_EMAILS_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["check emails", "check our email", "log emails", "scan emails", "read emails"]):
+                author = message.author
+                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return IntentEvent(
+                    type="gmail_check_emails", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
             #Admin-only: "log last N finances"
             m_fin = LOG_LAST_FINANCES_RE.search(text_wo)
             if m_fin:
@@ -661,6 +659,15 @@ class IntentRouter:
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
+
+            #Function glossary: "functions", "commands", "help", "glossary"
+            if FUNCTIONS_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["functions", "commands", "help", "glossary"]):
+                return IntentEvent(
+                    type="function_glossary", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
 
             #Admin-only: recache show-photo cache (all or one cat)
             m_all = RECACHE_ALL_RE.search(text_wo)
@@ -1120,6 +1127,24 @@ class IntentRouter:
             await _handle_station_residents(_intent("station_residents", payload), ctx)
             return
 
+        if event.type == "function_glossary":
+            from .handlers.glossary import handle_function_glossary
+            author = message.author
+            #Check if user is admin or has officer role
+            is_admin = int(getattr(author, 'id', 0) or 0) in (getattr(settings, 'admin_ids', []) or [])
+            is_officer = False
+            try:
+                officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
+                if officer_role_id:
+                    roles = getattr(author, 'roles', []) or []
+                    is_officer = any(int(getattr(r, 'id', 0) or 0) == officer_role_id for r in roles)
+            except Exception:
+                pass
+            is_privileged = is_admin or is_officer or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+            await handle_function_glossary(_intent("function_glossary", {}), ctx, is_privileged)
+            return
+
+
         if event.type == "cv_detect":
             via_reply = bool(getattr(message, "reference", None))
             await handle_cv_detect(_intent("cv_detect", {}), {**ctx, "message": message, "silent_on_no_image": via_reply})
@@ -1163,6 +1188,21 @@ class IntentRouter:
             except Exception:
                 pass
             return
+
+        if event.type == "gmail_check_emails":
+            #Default email check command - uses 99 emails
+            try:
+                log_action("intent_dispatch", f"type=gmail_check_emails msg={event.message_id}", "begin")
+            except Exception:
+                pass
+            from .handlers.gmail import handle_log_recent_emails
+            await handle_log_recent_emails(_intent("gmail_log_recent", {"count": 99}), ctx)
+            try:
+                log_action("intent_dispatch", f"type=gmail_check_emails msg={event.message_id}", "done count=99")
+            except Exception:
+                pass
+            return
+
 
         if event.type == "finance_log_recent":
             try:

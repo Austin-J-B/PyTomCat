@@ -17,5 +17,8 @@
 {"date":"2025-12-31","status":{"Microwave":true,"Business":true,"The Greens":true,"HOP":true,"Maintenance":true}}
 {"date":"2026-01-01","status":{"Maintenance":true,"The Greens":true,"HOP":true,"Microwave":true,"West Hall":true}}
 {"date":"2026-01-02","status":{"Business":true,"HOP":true,"Lot 50":true,"Maintenance":true,"Microwave":true,"Snickers":true,"The Greens":true,"West Hall":true}}
-{"date":"2026-01-03","status":{"HOP":true}}
-{"meta":{"updated_at":"2026-01-03T15:55:23.345527-06:00"}}
+{"date":"2026-01-03","status":{"HOP":true,"Microwave":true,"Snickers":true,"Business":true,"The Greens":true,"Lot 50":true,"Maintenance":true}}
+{"date":"2026-01-04","status":{"Business":true,"The Greens":true,"Snickers":true,"Microwave":true,"HOP":true,"Lot 50":true}}
+{"date":"2026-01-05","status":{"Maintenance":true,"West Hall":true,"Business":true,"Microwave":true,"Snickers":true,"Lot 50":true}}
+{"date":"2026-01-06","status":{"Microwave":true,"Maintenance":true,"Business":true,"Lot 50":true,"West Hall":true,"Snickers":true}}
+{"meta":{"updated_at":"2026-01-06T18:48:24.028051-06:00"}}

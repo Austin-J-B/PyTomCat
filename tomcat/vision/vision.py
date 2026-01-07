@@ -35,7 +35,10 @@ _DEFAULT_CONF = 0.552  #tuned for maximum F1
 
 #---------- Internal state (typed loosely to keep Pylance calm) ----------
 _yolo: Optional[Any] = None
-_clf: Optional[torch.nn.Module] = None
+_encoder: Optional[torch.nn.Module] = None  #DINOv3 encoder model
+_gallery_emb: Optional[Tensor] = None       #gallery embeddings [N, D]
+_gallery_labels: Optional[List[int]] = None #gallery class indices
+_idx_to_class: Optional[dict] = None        #index → cat name mapping
 _device: Optional[torch.device] = None
 _half: bool = False
 
@@ -90,80 +93,79 @@ def _ensure_detector() -> None:
     _yolo = y
 
 def _ensure_classifier() -> None:
-    """Load the classifier model if not yet loaded."""
-    """Load classifier lazily; never crash detector if classifier is bad."""
-    global _clf
+    """Load the DINOv3 encoder and gallery for nearest-neighbor classification."""
+    global _encoder, _gallery_emb, _gallery_labels, _idx_to_class
     _ensure_device_only()
-    if _clf is not None:
-        return
+    if _encoder is not None:
+        return  #already loaded
     try:
-        ckpt_path = settings.cv_classify_weights
-        if not ckpt_path or not os.path.exists(ckpt_path):
-            log_action('viz_clf_load_info', 'path_missing', str(ckpt_path))
-            return  #classifier is optional
-        #Try loading to the chosen device; if that fails, try CPU as a fallback and log details
-        last_exc = None
+        encoder_path = settings.cv_encoder_weights
+        gallery_path = settings.cv_gallery_path
+        if not encoder_path or not os.path.exists(encoder_path):
+            log_action('viz_clf_load_info', 'encoder_missing', str(encoder_path))
+            return
+        if not gallery_path or not os.path.exists(gallery_path):
+            log_action('viz_clf_load_info', 'gallery_missing', str(gallery_path))
+            return
+
+        #Load DINOv3 encoder (ViT-S/14 from torch.hub or similar)
         try:
+            encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14', pretrained=False)
+        except Exception as hub_err:
+            log_action('viz_clf_load_warn', 'hub_load_failed', str(hub_err))
+            #Fallback: try loading with dinov2_vitb14 if vits14 fails
             try:
-                state = torch.load(ckpt_path, map_location=_device, weights_only=True)  #torch>=2.4
-            except TypeError:
-                state = torch.load(ckpt_path, map_location=_device)
-        except Exception as e:
-            last_exc = e
-            log_action('viz_clf_load_warn', 'load_device_failed', f"dev={_device} err={type(e).__name__}:{e}")
-            #Try CPU fallback
-            try:
-                cpu_dev = torch.device('cpu')
-                try:
-                    state = torch.load(ckpt_path, map_location=cpu_dev, weights_only=True)
-                except TypeError:
-                    state = torch.load(ckpt_path, map_location=cpu_dev)
-                log_action('viz_clf_load_info', 'cpu_fallback', f"loaded_to_cpu from {ckpt_path}")
-                #Ensure model will be moved to the intended device later
-            except Exception as e2:
-                log_action('viz_clf_load_error', 'cpu_fallback_failed', f"{type(e2).__name__}:{e2}")
-                raise last_exc or e2
+                encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14', pretrained=False)
+            except Exception:
+                log_action('viz_clf_load_error', 'hub_fallback_failed', 'could not load dinov2 model')
+                return
 
-        #Infer num_classes from checkpoint if possible
-        sd = state.get("state_dict", state) if isinstance(state, dict) else state
-        fc_w = None
-        if isinstance(sd, dict):
-            for k, v in sd.items():
-                if k.endswith("fc.weight") and hasattr(v, "shape"):
-                    fc_w = v
-                    break
-        if fc_w is not None and hasattr(fc_w, "shape"):
-            num_classes = int(fc_w.shape[0])
-        else:
-            #fallback to config length or 1
-            num_classes = max(1, len(settings.cv_class_names) or 1)
-
-        #Build model head with the right class count
-        from torchvision.models import resnet18
-        from torch import nn
-
-        model = resnet18(weights=None)
-        model.fc = nn.Linear(model.fc.in_features, num_classes)
-        model.load_state_dict(sd if isinstance(sd, dict) else state, strict=False)
-        model.eval()
-        model.to(_device)
+        #Load encoder weights
+        try:
+            state = torch.load(encoder_path, map_location=_device, weights_only=True)
+        except TypeError:
+            state = torch.load(encoder_path, map_location=_device)
+        encoder.load_state_dict(state, strict=False)
+        encoder.eval()
+        encoder.to(_device)
         if _half:
             try:
-                model.half()
+                encoder.half()
+            except Exception:
+                pass
+        _encoder = encoder
+
+        #Load gallery
+        try:
+            gallery = torch.load(gallery_path, map_location=_device, weights_only=True)
+        except TypeError:
+            gallery = torch.load(gallery_path, map_location=_device)
+
+        _gallery_emb = gallery['emb'].to(_device)  #[N, D]
+        if _half:
+            try:
+                _gallery_emb = _gallery_emb.half()
             except Exception:
                 pass
 
-        #Ensure class names length matches; fill with Cat{i}
-        if len(settings.cv_class_names) < num_classes:
-            settings.cv_class_names.extend(
-                [f"Cat{i}" for i in range(len(settings.cv_class_names), num_classes)]
-            )
+        #gallery['label'] is list of class indices (tensors or ints)
+        if isinstance(gallery['label'], list):
+            _gallery_labels = [int(x) if not hasattr(x, 'item') else x.item() for x in gallery['label']]
+        else:
+            _gallery_labels = gallery['label'].tolist()
 
-        _clf = model
+        #Build idx→name mapping from gallery's class_to_idx
+        class_to_idx = gallery.get('class_to_idx', {})
+        _idx_to_class = {v: k for k, v in class_to_idx.items()}
+
+        log_action('viz_clf_load_info', 'loaded', f"encoder={encoder_path} gallery={gallery_path} n={len(_gallery_labels)}")
+
     except Exception as e:
-        #Do NOT let a bad classifier kill detect/crop. Just log and continue.
         log_action("viz_clf_load_error", f"type={type(e).__name__}", str(e))
-        _clf = None
+        _encoder = None
+        _gallery_emb = None
+        _gallery_labels = None
+        _idx_to_class = None
 
 
 def _get_yolo() -> Any:
@@ -324,10 +326,14 @@ def crop(image_bytes: bytes) -> List[bytes]:
 
 def _prep_tensor(pil: Image.Image) -> Tensor:
     """Convert a PIL image into a normalized torch tensor."""
-    """Resize square and convert to a Tensor. v5.6 parity: no ImageNet normalization."""
-    from torchvision.transforms import Compose, Resize, ToTensor  #local import to avoid global hard deps
+    """Resize square and convert to a Tensor. DINOv3 requires ImageNet normalization."""
+    from torchvision.transforms import Compose, Resize, ToTensor, Normalize
     size = settings.cv_clf_imgsz
-    tfm = Compose([Resize((size, size)), ToTensor()])
+    tfm = Compose([
+        Resize((size, size)),
+        ToTensor(),
+        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
     t = cast(Tensor, tfm(pil))
     if _half:
         try:
@@ -338,8 +344,8 @@ def _prep_tensor(pil: Image.Image) -> Tensor:
 
 
 def identify(image_bytes: bytes) -> IdentifyResult:
-    """Classify the cat in an image using the trained classifier."""
-    """Draw boxes and run classifier on each crop. Returns boxed JPEG + per-box guesses."""
+    """Classify the cat in an image using the trained DINOv3 encoder + gallery."""
+    """Draw boxes and run encoder on each crop to find nearest gallery match."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     _enforce_max_dim(img)
     _ensure_classifier()
@@ -348,7 +354,7 @@ def identify(image_bytes: bytes) -> IdentifyResult:
 
     results: List[dict] = []        
 
-    if _clf is not None and dets:
+    if _encoder is not None and _gallery_emb is not None and dets:
         tiles: List[Tensor] = []
         boxes: List[Tuple[int, int, int, int]] = []
         for d in dets:
@@ -362,18 +368,45 @@ def identify(image_bytes: bytes) -> IdentifyResult:
             with torch.inference_mode():
                 device = _device if _device is not None else torch.device("cpu")
                 batch = torch.stack(tiles, dim=0).to(device, non_blocking=True)
-                logits = _clf(batch)  #type: ignore[operator]
-                probs = torch.softmax(logits, dim=1).detach().to("cpu").numpy()
+                
+                #Get query embeddings [B, D]
+                query_emb = _encoder(batch)
+                #Normalize for cosine similarity
+                query_emb = torch.nn.functional.normalize(query_emb, dim=1, p=2)
+                
+                #Compare against gallery [N, D] (already normalized if needed, but safe to verify)
+                #Actually we should ensure gallery is normalized once on load, but let's just do dot prod
+                #Assuming gallery is normalized. If not, we should normalize _gallery_emb.
+                #Let's normalize gallery on the fly to be safe or ensure it on load. 
+                #For perf, normalize query and gallery.
+                
+                parts = []
+                #Chunked cosine similarity if gallery is huge? 7k is fine for dot product.
+                # [B, N] = [B, D] @ [D, N]
+                sims = torch.mm(query_emb, _gallery_emb.T)
+                
+                #Find best match for each query
+                #values: [B], indices: [B]
+                best_vals, best_idxs = sims.max(dim=1)
+                
+                best_vals = best_vals.detach().to("cpu").numpy()
+                best_idxs = best_idxs.detach().to("cpu").numpy()
 
-            names = settings.cv_class_names or []
-            for idx, (pvec, (cx1, cy1, cx2, cy2)) in enumerate(zip(probs, boxes), start=1):
-                j = int(pvec.argmax())
-                conf = float(pvec[j])
-                guess = names[j] if j < len(names) else f"Cat{j}"
+            idx_to_class = _idx_to_class or {}
+            gallery_labels = _gallery_labels or []
+
+            for idx, (conf, match_idx, (cx1, cy1, cx2, cy2)) in enumerate(zip(best_vals, best_idxs, boxes), start=1):
+                #match_idx is index in gallery
+                if match_idx < len(gallery_labels):
+                    class_idx = gallery_labels[match_idx]
+                    name = idx_to_class.get(class_idx, f"Cat{class_idx}")
+                else:
+                    name = "Unknown"
+                
                 results.append({
                     "index": idx,
-                    "name": guess,
-                    "conf": conf,
+                    "name": name,
+                    "conf": float(conf),
                     "box": [cx1, cy1, cx2, cy2],
                 })
 

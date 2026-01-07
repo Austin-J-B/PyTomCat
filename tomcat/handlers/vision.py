@@ -4,7 +4,6 @@
 from __future__ import annotations
 import os
 import io
-import zipfile
 import asyncio
 import aiohttp
 import discord
@@ -126,12 +125,11 @@ async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
             emb.set_image(url="attachment://crop.jpg")
             await ch.send(embed=emb, file=file)
         else:
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-                for i, b in enumerate(crops, start=1):
-                    z.writestr(f"crop_{i}.jpg", b)
-            buf.seek(0)
-            await ch.send("Multiple cats were detected in this photo. Here are the crops:", file=discord.File(buf, filename="crops.zip"))
+            files = [
+                discord.File(io.BytesIO(b), filename=f"crop_{i}.jpg")
+                for i, b in enumerate(crops, start=1)
+            ]
+            await ch.send(f"Multiple cats detected ({len(crops)}). Here are the crops:", files=files)
 
     except ValueError as ve:
         await ch.send(str(ve))

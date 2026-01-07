@@ -15,6 +15,9 @@ credentials/*
 ## Model weights and other large artifacts
 weights/
 !weights/.gitkeep
+!weights/984_917_yolo12s.pt
+
+
 ## Cached spreadsheet exports checked in for local reference only
 CCC megasheet - Membership Application List.csv
 CCC megasheet - Expenses.csv

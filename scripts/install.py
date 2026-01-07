@@ -295,9 +295,23 @@ def _create_or_reuse_venv(python_exe: Path) -> None:
     #Nuke existing .venv if it is broken or points to a missing interpreter
     if VENV_DIR.exists():
         vpython = _venv_python()
-        if not vpython.exists():
-            print("Virtual environment is broken. Recreating...")
-            shutil.rmtree(VENV_DIR)
+        #Check if python exists AND if pip is functional
+        is_broken = not vpython.exists()
+        if not is_broken:
+            try:
+                #Try running pip list - if it fails, pip is missing or broken
+                subprocess.run([str(vpython), "-m", "pip", "--version"], capture_output=True, check=True)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                is_broken = True
+
+        if is_broken:
+            print("Virtual environment is broken or missing pip. Recreating...")
+            try:
+                shutil.rmtree(VENV_DIR)
+            except PermissionError:
+                print(f"\n[!] ERROR: Cannot delete {VENV_DIR}")
+                print("Permissions were denied. Ensure NO processes (bot, VS Code, etc.) are using the environment.")
+                sys.exit(1)
 
     if _venv_python().exists():
         print("Virtual environment already present – reusing .venv")
@@ -449,7 +463,17 @@ def main() -> None:
     print(f"Root: {ROOT}")
     print(f"Python: {python_exe}")
 
-    #Check for compatibility; bootstrap if on Windows and outside support range
+    #Check if we are running from within the .venv we are trying to manage
+    if str(VENV_DIR) in str(python_exe):
+        print(f"\n[!] ERROR: You are running the installer using the virtual environment at {VENV_DIR}")
+        print("The installer cannot modify or recreate the environment while it is active.")
+        if os.name == "nt":
+            print("\nFIX: Run 'deactivate' and then use your system python, e.g.:")
+            print("  deactivate")
+            print("  python scripts/install.py")
+        else:
+            print("\nFIX: Run 'deactivate' and then use 'python3 scripts/install.py'")
+        sys.exit(1)
     if sys.version_info >= (3, 13) or sys.version_info < (3, 11):
         if os.name == "nt":
             _bootstrap_python_windows()
@@ -480,7 +504,13 @@ def main() -> None:
         except subprocess.CalledProcessError:
             print("\nDependency install failed. Recreating .venv...")
             if VENV_DIR.exists():
-                shutil.rmtree(VENV_DIR)
+                try:
+                    shutil.rmtree(VENV_DIR)
+                except PermissionError:
+                    print(f"\n[!] ERROR: Access Denied to {VENV_DIR}")
+                    print("Ensure no other terminals or processes are using the virtual environment (e.g., the bot or a VS Code terminal).")
+                    print("Close them and run this script again.")
+                    sys.exit(1)
             _create_or_reuse_venv(python_exe)
             _install_torch(torch_force)
             _install_base_dependencies(force_reinstall=True)

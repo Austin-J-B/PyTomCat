@@ -176,9 +176,13 @@ class Settings:
         "CV_DETECT_WEIGHTS",
         os.path.join("weights", "NanoModel.pt"),
     )
-    cv_classify_weights: str = os.getenv(
-        "CV_CLASSIFY_WEIGHTS",
-        os.path.join("weights", "NanoClassifier.pt"),
+    cv_encoder_weights: str = os.getenv(
+        "CV_ENCODER_WEIGHTS",
+        os.path.join("weights", "R4_cat_DINOv3_encoder.pth"),
+    )
+    cv_gallery_path: str = os.getenv(
+        "CV_GALLERY_PATH",
+        os.path.join("weights", "R4.5_cat_DINOv3_gallery.pt"),
     )
 
     #Optional human-readable class names for the classifier. Leave empty to use Cat{idx}.
@@ -191,7 +195,7 @@ class Settings:
     cv_conf: float = float(os.getenv("CV_CONF", "0.552"))           #detector confidence
     cv_iou: float = float(os.getenv("CV_IOU", "0.45"))              #NMS IoU
     cv_detect_imgsz: int = int(os.getenv("CV_DETECT_IMGSZ", "640")) #YOLO inference size
-    cv_clf_imgsz: int = int(os.getenv("CV_CLF_IMGSZ", "640"))       #classifier input size
+    cv_clf_imgsz: int = int(os.getenv("CV_CLF_IMGSZ", "518"))       #DINOv3 native input size
     cv_pad_pct: float = float(os.getenv("CV_PAD_PCT", "0.03"))      #crop expansion
 
     #Safety/limits

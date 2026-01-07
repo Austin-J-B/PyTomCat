@@ -174,34 +174,28 @@ class Settings:
     #Paths (drop-and-play). Change these when you retrain/move weights.
     cv_detect_weights: str = os.getenv(
         "CV_DETECT_WEIGHTS",
-        os.path.join("weights", "984_917_yolo12s.pt"),
+        os.path.join("weights", "NanoModel.pt"),
     )
+    #Point this to your R4.5 .pth file
     cv_encoder_weights: str = os.getenv(
         "CV_ENCODER_WEIGHTS",
-        os.path.join("weights", "R4_cat_DINOv3_encoder.pth"),
+        os.path.join("weights", "R4.5_cat_DINOv3.pth"),
     )
+    #Point this to your R4.5 .pt gallery file
     cv_gallery_path: str = os.getenv(
         "CV_GALLERY_PATH",
-        os.path.join("weights", "R4.5_cat_DINOv3_gallery.pt"),
+        os.path.join("weights", "R4.5_cat_DINOv3_gallery_tta.pt"),
     )
 
-    #Optional human-readable class names for the classifier. Leave empty to use Cat{idx}.
-    cv_class_names: list[str] = field(default_factory=lambda: [
-        "Microwave", "Faye", "Bobbie", "Twix", "Citlali", "Angel", "Winston", "Radar", "Eggs", "Dumpster",
-        "Gregory", "Rubber", "Bruno", "Boots", "Princess", "Nefarious", "Eraser", "Eden", "Cassie", "Coronavirus"
-    ])
-
-    #Core knobs (defaults mirror v5.6 values)
-    cv_conf: float = float(os.getenv("CV_CONF", "0.552"))           #detector confidence
-    cv_iou: float = float(os.getenv("CV_IOU", "0.45"))              #NMS IoU
-    cv_detect_imgsz: int = int(os.getenv("CV_DETECT_IMGSZ", "640")) #YOLO inference size
-    cv_clf_imgsz: int = int(os.getenv("CV_CLF_IMGSZ", "592"))       #Must be 37*16=592 to match pos_embed
-    cv_pad_pct: float = float(os.getenv("CV_PAD_PCT", "0.03"))      #crop expansion
+    #Core knobs
+    cv_conf: float = float(os.getenv("CV_CONF", "0.552"))
+    cv_detect_imgsz: int = int(os.getenv("CV_DETECT_IMGSZ", "640"))
+    cv_clf_imgsz: int = int(os.getenv("CV_CLF_IMGSZ", "448")) #Set to 448 for DINOv3
+    cv_pad_pct: float = float(os.getenv("CV_PAD_PCT", "0.03"))
 
     #Safety/limits
-    cv_max_image_dim: int = int(os.getenv("CV_MAX_IMAGE_DIM", "10000"))   #10K cap on longest side
-    cv_max_download_mb: int = int(os.getenv("CV_MAX_DOWNLOAD_MB", "16")) #attachment size cap
-
+    cv_max_image_dim: int = int(os.getenv("CV_MAX_IMAGE_DIM", "10000"))
+    cv_max_download_mb: int = int(os.getenv("CV_MAX_DOWNLOAD_MB", "16"))
     #Device/precision
     cv_half: bool = os.getenv("CV_FP16", "1").strip().lower() in {"1","true","yes","on"}
 

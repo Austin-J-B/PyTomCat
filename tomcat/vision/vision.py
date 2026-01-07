@@ -1,10 +1,10 @@
-"""Utilities for running YOLO detection/classification for TomCat."""
+"""Utilities for running YOLO detection and DINOv3 ReID similarity for TomCat."""
 
-#tomcat/vision/vision.py
 from __future__ import annotations
 import io
 import os
 import math
+import warnings
 from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Any, cast
@@ -13,420 +13,147 @@ from PIL import Image, ImageDraw, ImageFont
 import torch
 from torch import Tensor
 
-#Keep Ultralytics config within the repo unless overridden by the environment.
+#Keep Ultralytics config within the repo
 os.environ.setdefault(
     "YOLO_CONFIG_DIR",
     str(Path(__file__).resolve().parents[2] / ".ultra"),
 )
 
-#ultralytics is optional at import time; treat it as Any to appease Pylance
 try:
-    from ultralytics import YOLO  #type: ignore
-except Exception:  #ultralytics not installed; YOLO calls will raise RuntimeError
-    YOLO = None  #type: ignore[assignment]
+    from ultralytics import YOLO
+except Exception:
+    YOLO = None
 
 from ..config import settings
 from ..logger import log_action
 
-#---------- Constants aligned to v5.6 ----------
-#These values were tuned on the CCC cat dataset for optimal F1 score.
+#---------- Constants ----------
 _PURPLE = "#4C007F"
-_DEFAULT_CONF = 0.552  #tuned for maximum F1
+_DEFAULT_CONF = 0.552
 
-#---------- Internal state (typed loosely to keep Pylance calm) ----------
+#---------- Internal State ----------
 _yolo: Optional[Any] = None
-_encoder: Optional[torch.nn.Module] = None  #DINOv3 encoder model
-_gallery_emb: Optional[Tensor] = None       #gallery embeddings [N, D]
-_gallery_labels: Optional[List[int]] = None #gallery class indices
-_idx_to_class: Optional[dict] = None        #index → cat name mapping
+_clf: Optional[torch.nn.Module] = None
+_gallery_emb: Optional[Tensor] = None
+_gallery_names: List[str] = []
 _device: Optional[torch.device] = None
 _half: bool = False
+_font: Optional[Any] = None
 
-_font: Optional[Any] = None  #FreeTypeFont vs ImageFont stubs vary; keep it Any
-
-
-def _pick_device() -> torch.device:
-    """Choose CUDA if available, else fall back to CPU."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-
-def _load_font() -> Any:
-    """Load a PIL font for drawing labels."""
-    """Return a font object; exact type varies by Pillow build."""
-    global _font
-    if _font is not None:
-        return _font
-    try:
-        _font = ImageFont.truetype("arial.ttf", 16)
-    except Exception:
-        _font = ImageFont.load_default()
-    return _font
-
-
-def _ensure_device_only() -> None:
-    """Lazy initialize the torch device once."""
-    global _device, _half
-    if _device is None:
-        _device = _pick_device()
-        _half = bool(settings.cv_half) and _device.type == "cuda"
-
-def _ensure_detector() -> None:
-    """Load YOLO detector weights if they are not already resident."""
-    global _yolo
-    _ensure_device_only()
-    if _yolo is not None:
-        return
-    if YOLO is None:
-        raise RuntimeError("ultralytics is not installed. pip install ultralytics")
-    weights = settings.cv_detect_weights
-    if not weights or not os.path.exists(weights):
-        raise FileNotFoundError(f"Detect weights not found: {weights}")
-    y: Any = YOLO(weights)  #type: ignore[call-arg]
-    try:
-        y.to(str(_device))  #ok to no-op on some builds
-    except Exception:
-        pass
-    _yolo = y
-
-
-#Scale layer for head.2 (temperature/scale)
-class ScaleLayer(torch.nn.Module):
-    def __init__(self, init_value=1.0):
-        super().__init__()
-        self.weight = torch.nn.Parameter(torch.tensor([float(init_value)]))
-    def forward(self, x):
-        return x * self.weight
-
-class DINOv3Wrapper(torch.nn.Module):
-    """Wrapper around timm ViT to match the custom checkpoint structure."""
-    def __init__(self):
-        super().__init__()
-        try:
-            import timm
-        except ImportError:
-            raise RuntimeError("timm is required for CV. pip install timm")
-
-        # Create backbone using timm
-        # vit_base_patch14_reg4_dinov2.lvd142m matches the parameters: 4 registers, 768 dim.
-        # We override patch_size=16 and img_size=592 to match the fine-tuning.
-        self.backbone = timm.create_model(
-            'vit_base_patch14_reg4_dinov2.lvd142m',
-            pretrained=True,
-            img_size=592,
-            patch_size=16,
-            num_classes=0,       # Features only
-            global_pool='token', # Use CLS token for pooling
-        )
-        
-        # Reconstruct the Head (Linear -> BN -> Scale)
-        self.head = torch.nn.Sequential(
-            torch.nn.Linear(768, 512),
-            torch.nn.BatchNorm1d(512),
-            ScaleLayer(1.0)
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # timm forward returns the pooled output (CLS token) because global_pool='token'
-        x = self.backbone(x)
-        x = self.head(x)
-        return x
-
-def _ensure_classifier() -> None:
-    """Load the DINOv3 encoder (via timm) and gallery."""
-    global _encoder, _gallery_emb, _gallery_labels, _idx_to_class
-    _ensure_device_only()
-    if _encoder is not None:
-        return  #already loaded
-    try:
-        encoder_path = settings.cv_encoder_weights
-        gallery_path = settings.cv_gallery_path
-        if not encoder_path or not os.path.exists(encoder_path):
-            log_action('viz_clf_load_info', 'encoder_missing', str(encoder_path))
-            return
-        if not gallery_path or not os.path.exists(gallery_path):
-            log_action('viz_clf_load_info', 'gallery_missing', str(gallery_path))
-            return
-
-        try:
-            encoder = DINOv3Wrapper()
-        except Exception as init_err:
-            log_action('viz_clf_load_error', 'wrapper_init_failed', str(init_err))
-            return
-
-        #Load encoder weights from file
-        try:
-            state = torch.load(encoder_path, map_location=_device, weights_only=True)
-        except TypeError:
-            state = torch.load(encoder_path, map_location=_device)
-        
-        # Inspect model keys to guide remapping
-        model_keys = set(encoder.state_dict().keys())
-        use_ls = any('ls1.gamma' in k for k in model_keys)
-        use_reg_tokens = any('register_tokens' in k for k in model_keys)
-        use_reg_token = any('reg_token' in k for k in model_keys) and not use_reg_tokens
-
-        new_state = {}
-        for k, v in state.items():
-            # 1. Handle head keys
-            if k.startswith('head.'):
-                # File has head.0, head.1, head.2. Our model matches matches (Linear, BN, Scale).
-                # Just copy.
-                new_state[k] = v
-                continue
-            
-            # 2. Handle Backbone keys
-            # File keys start with 'backbone.'
-            if k.startswith('backbone.'):
-                # Strip prefix for timm mapping (timm model is in self.backbone, so prefix 'backbone.' is good IF loading into wrapper)
-                # ERROR: output of state_dict() on wrapper WILL have 'backbone.' prefix.
-                # So we KEEP the 'backbone.' prefix.
-                new_k = k
-                
-                # Remap LayerScale: gamma_1 -> ls1.gamma
-                if use_ls and 'gamma_1' in new_k:
-                    new_k = new_k.replace('gamma_1', 'ls1.gamma')
-                if use_ls and 'gamma_2' in new_k:
-                    new_k = new_k.replace('gamma_2', 'ls2.gamma')
-                
-                # Remap Registers: reg_token -> register_tokens (or vice versa)
-                if 'reg_token' in new_k:
-                    if use_reg_tokens:
-                        new_k = new_k.replace('reg_token', 'register_tokens')
-                    # else if model uses reg_token, keep it.
-                
-                new_state[new_k] = v
-        
-        msg = encoder.load_state_dict(new_state, strict=False)
-        
-        # Zero out QKV biases if missing (timm model has them, checkpoint does not)
-        if msg.missing_keys:
-            count_zeroed = 0
-            for k in msg.missing_keys:
-                if 'attn.qkv.bias' in k:
-                    try:
-                        # Traverse to find the parameter
-                        # k ex: backbone.blocks.0.attn.qkv.bias
-                        parts = k.split('.')
-                        obj = encoder
-                        for p in parts:
-                            obj = getattr(obj, p)
-                        with torch.no_grad():
-                            obj.zero_()
-                        count_zeroed += 1
-                    except AttributeError:
-                        pass
-            if count_zeroed > 0:
-                log_action('viz_clf_init', 'zero_bias', f"count={count_zeroed}")
-
-        encoder.eval()
-        encoder.to(_device)
-        if _half:
-            try:
-                encoder.half()
-            except Exception:
-                pass
-        _encoder = encoder
-
-        #Load gallery
-        try:
-            gallery = torch.load(gallery_path, map_location=_device, weights_only=True)
-        except TypeError:
-            gallery = torch.load(gallery_path, map_location=_device)
-
-        _gallery_emb = gallery['emb'].to(_device)  #[N, D]
-        if _half:
-            try:
-                _gallery_emb = _gallery_emb.half()
-            except Exception:
-                pass
-
-        #gallery['label'] is list of class indices (tensors or ints)
-        if isinstance(gallery['label'], list):
-            _gallery_labels = [int(x) if not hasattr(x, 'item') else x.item() for x in gallery['label']]
-        else:
-            _gallery_labels = gallery['label'].tolist()
-
-        #Build idx→name mapping from gallery's class_to_idx
-        class_to_idx = gallery.get('class_to_idx', {})
-        _idx_to_class = {v: k for k, v in class_to_idx.items()}
-
-        log_action('viz_clf_load_info', 'loaded', f"encoder={encoder_path} gallery={gallery_path} n={len(_gallery_labels)}")
-
-    except Exception as e:
-        log_action("viz_clf_load_error", f"type={type(e).__name__}", str(e))
-        _encoder = None
-        _gallery_emb = None
-        _gallery_labels = None
-        _idx_to_class = None
-
-
-def _get_yolo() -> Any:
-    """Instantiate the Ultralytics YOLO model with cached config."""
-    _ensure_detector()
-    assert _yolo is not None, "YOLO failed to load"
-    return _yolo
-
-
-def _jpeg_bytes(img: Image.Image, quality: int = 90) -> bytes:
-    """Serialize a PIL image to JPEG bytes."""
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=quality, optimize=True)
-    return buf.getvalue()
-
-
-def _enforce_max_dim(img: Image.Image) -> None:
-    """Clamp huge images to the configured max dimension."""
-    limit = int(getattr(settings, "cv_max_image_dim", 0) or 0)
-    if limit <= 0:
-        return  #no cap
-    mx = max(img.size)
-    if mx > limit:
-        raise ValueError(
-            f"Image too large ({img.size[0]}x{img.size[1]}). Max dimension is {limit}px."
-        )
-
-
-
-def _resize_for_detect(img: Image.Image, detect_size: int) -> Tuple[Image.Image, float, float]:
-    """Resize input for detection while tracking scale ratios."""
-    w, h = img.size
-    if w <= 0 or h <= 0:
-        return img, 1.0, 1.0
-    if w < h:
-        new_w = detect_size
-        new_h = int(round(h * (detect_size / w)))
-    else:
-        new_h = detect_size
-        new_w = int(round(w * (detect_size / h)))
-    det = img.resize((new_w, new_h))
-    return det, (w / new_w), (h / new_h)
-
-
-def _expand_box(x1: float, y1: float, x2: float, y2: float, pad_pct: float, w: int, h: int) -> Tuple[int, int, int, int]:
-    """Grow detection boxes by a padding percentage while clamping image bounds."""
-    bw = x2 - x1
-    bh = y2 - y1
-    pad_x = bw * pad_pct
-    pad_y = bh * pad_pct
-    nx1 = max(0, int(math.floor(x1 - pad_x)))
-    ny1 = max(0, int(math.floor(y1 - pad_y)))
-    nx2 = min(w, int(math.ceil(x2 + pad_x)))
-    ny2 = min(h, int(math.ceil(y2 + pad_y)))
-    return nx1, ny1, nx2, ny2
-
+@dataclass
+class IdentifyResult:
+    boxed_jpeg: bytes
+    results: List[dict]
 
 @dataclass
 class Det:
     xyxy: Tuple[float, float, float, float]
     conf: float
 
-
-@dataclass
-class IdentifyResult:
-    boxed_jpeg: bytes
-    results: List[dict]  #[{"index": 1, "name": "...", "conf": 0.87, "box": [x1,y1,x2,y2]}]
-
-
-def _draw_boxes(img: Image.Image, dets: List[Det]) -> Image.Image:
-    """Render bounding boxes and labels onto an image with adaptive thickness."""
-    draw = ImageDraw.Draw(img)
-    font = _load_font()
-    #Adaptive line width: thicker on very large images (e.g., 4K)
-    max_dim = max(img.size)
-    width = 6 if max_dim >= 2000 else 3
-    for idx, d in enumerate(dets, start=1):
-        x1, y1, x2, y2 = d.xyxy
-        draw.rectangle([x1, y1, x2, y2], outline=_PURPLE, width=width)
-        label = f"{idx}"
-        #textbbox may not exist on very old Pillow; fallback to textsize
-        try:
-            bbox = draw.textbbox((0, 0), label, font=font)  #type: ignore[attr-defined]
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        except Exception:
-            tw, th = draw.textsize(label, font=font)  #type: ignore[attr-defined]
-        pad = 4
-        bx1, by1 = int(x1), int(max(0, y1 - th - 2 * pad))
-        bx2, by2 = bx1 + tw + 2 * pad, by1 + th + 2 * pad
-        draw.rectangle([bx1, by1, bx2, by2], fill=_PURPLE)
-        draw.text((bx1 + pad, by1 + pad), label, fill="white", font=font)
-    return img
-
-
-def _run_yolo(img: Image.Image) -> List[Det]:
-    """Execute the YOLO detector on a PIL image."""
-    """Run YOLO on a PIL image, returning boxes scaled to the original image coordinates."""
-    yolo = _get_yolo()
-    det_img, sx, sy = _resize_for_detect(img, settings.cv_detect_imgsz)
-
-    #Prefer predict API so we can pass conf/iou/half/device explicitly.
-    try:
-        res = yolo.predict(  #type: ignore[call-arg, attr-defined]
-            det_img,
-            conf=(settings.cv_conf or _DEFAULT_CONF),
-            iou=settings.cv_iou,
-            imgsz=settings.cv_detect_imgsz,
-            half=bool(_half),
-            device=str(_device) if _device is not None else None,
-            verbose=False,
+#---------- Architecture Wrapper ----------
+class DINOv3Wrapper(torch.nn.Module):
+    """Matches the exact structure from your R4.5 notebook checkpoint."""
+    def __init__(self):
+        super().__init__()
+        import timm
+        # 1. Base Model (768 features)
+        self.backbone = timm.create_model(
+            'vit_base_patch16_dinov3', 
+            pretrained=True,
+            num_classes=0
         )
-    except TypeError:
-        #Fallback to call-style for older ultralytics versions
-        res = yolo(det_img)  #type: ignore[operator]
+        
+        # 2. Corrected Head Structure (Linear -> BN -> PReLU)
+        self.head = torch.nn.Sequential(
+            torch.nn.Linear(768, 512, bias=True),
+            torch.nn.BatchNorm1d(512),
+            torch.nn.PReLU()
+        )
 
-    dets: List[Det] = []
-    for r in res:  #ultralytics returns an iterable of results
-        boxes = r.boxes.xyxy.detach().to("cpu").numpy()
-        confs = r.boxes.conf.detach().to("cpu").numpy()
-        for b, c in zip(boxes, confs):
-            if float(c) >= (settings.cv_conf or _DEFAULT_CONF):
-                x1 = float(b[0] * sx)
-                y1 = float(b[1] * sy)
-                x2 = float(b[2] * sx)
-                y2 = float(b[3] * sy)
-                dets.append(Det((x1, y1, x2, y2), float(c)))
-    return dets
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Silence flash attention warning for Windows
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*Torch was not compiled with flash attention.*")
+            feat = self.backbone(x)
+        emb = self.head(feat)
+        return torch.nn.functional.normalize(emb, p=2, dim=1)
 
+#---------- Device & Loader Helpers ----------
+def _pick_device() -> torch.device:
+    if torch.cuda.is_available(): return torch.device("cuda")
+    return torch.device("cpu")
 
-def detect(image_bytes: bytes) -> bytes:
-    """Return the original image annotated with detection boxes."""
-    """Return annotated JPEG with purple boxes for each cat. Raises ValueError on 4K+ images."""
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    _enforce_max_dim(img)
-    dets = _run_yolo(img)
-    annotated = _draw_boxes(img.copy(), dets)
-    out = _jpeg_bytes(annotated, quality=90)
-    log_action("viz_detect", f"boxes={len(dets)}", "ok")
-    return out
+def _ensure_device_only() -> None:
+    global _device, _half
+    if _device is None:
+        _device = _pick_device()
+        _half = bool(settings.cv_half) and _device.type == "cuda"
 
+def _ensure_detector() -> None:
+    global _yolo
+    _ensure_device_only()
+    if _yolo is not None: return
+    if YOLO is None: raise RuntimeError("ultralytics not installed")
+    y: Any = YOLO(settings.cv_detect_weights)
+    _yolo = y
 
-def crop(image_bytes: bytes) -> List[bytes]:
-    """Return cropped regions for each detected cat."""
-    """Return list of JPEG crops expanded by pad_pct per v5.6."""
+def _ensure_classifier() -> None:
+    """Load the DINOv3 encoder and the .pt gallery."""
+    global _clf, _gallery_emb, _gallery_names
+    _ensure_device_only()
+    if _clf is not None and _gallery_emb is not None: return
+
     try:
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        _enforce_max_dim(img)
-        dets = _run_yolo(img)
-        crops: List[bytes] = []
-        for d in dets:
-            x1, y1, x2, y2 = d.xyxy
-            cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, *img.size)
-            crop_img = img.crop((cx1, cy1, cx2, cy2))
-            crops.append(_jpeg_bytes(crop_img, quality=92))
-        if getattr(settings, 'cv_log_crop', True):
-            log_action("viz_crop", f"crops={len(crops)}", "ok")
-        return crops
-    except Exception as e:
-        log_action("viz_crop_error", f"err={type(e).__name__}", str(e))
-        return []
+        #1. Load Encoder (.pth brain)
+        encoder = DINOv3Wrapper()
+        try:
+            state = torch.load(settings.cv_encoder_weights, map_location=_device, weights_only=True)
+        except:
+            state = torch.load(settings.cv_encoder_weights, map_location=_device)
 
+        encoder.load_state_dict(state, strict=True)
+        encoder.to(_device).eval()
+        _clf = encoder
+
+        #2. Load Gallery (.pt memories)
+        try:
+            gal_data = torch.load(settings.cv_gallery_path, map_location=_device, weights_only=False)
+        except Exception:
+            gal_data = torch.load(settings.cv_gallery_path, map_location=_device)
+
+        _gallery_emb = gal_data['emb'].to(_device)
+        _gallery_emb = torch.nn.functional.normalize(_gallery_emb, p=2, dim=1)
+        
+        idx_to_class = {v: k for k, v in gal_data['class_to_idx'].items()}
+        _gallery_names = [idx_to_class[int(i)] for i in gal_data['label']]
+        log_action("viz_clf_load_info", "reid_ready", f"cats={len(set(_gallery_names))}")
+    except Exception as e:
+        log_action("viz_clf_load_error", f"type={type(e).__name__}", str(e))
+        _clf = None
+
+#---------- Image Processing Helpers ----------
+def _enforce_max_dim(img: Image.Image) -> None:
+    m = settings.cv_max_image_dim
+    if not m: return
+    w, h = img.size
+    if w <= m and h <= m: return
+    if w > h:
+        nw, nh = m, int(h * (m / w))
+    else:
+        nw, nh = int(w * (m / h)), m
+    img.draft(None, (nw, nh)) 
+
+def _expand_box(x1: float, y1: float, x2: float, y2: float, pad_pct: float, img_w: int, img_h: int) -> Tuple[float, float, float, float]:
+    w, h = x2 - x1, y2 - y1
+    pw, ph = w * pad_pct, h * pad_pct
+    return (
+        max(0, x1 - pw),
+        max(0, y1 - ph),
+        min(img_w, x2 + pw),
+        min(img_h, y2 + ph)
+    )
 
 def _prep_tensor(pil: Image.Image) -> Tensor:
-    """Convert a PIL image into a normalized torch tensor."""
-    """Resize square and convert to a Tensor. DINOv3 requires ImageNet normalization."""
     from torchvision.transforms import Compose, Resize, ToTensor, Normalize
     size = settings.cv_clf_imgsz
     tfm = Compose([
@@ -434,82 +161,152 @@ def _prep_tensor(pil: Image.Image) -> Tensor:
         ToTensor(),
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-    t = cast(Tensor, tfm(pil))
-    if _half:
-        try:
-            t = t.half()
-        except Exception:
-            pass
-    return t
+    return cast(Tensor, tfm(pil))
 
+def _make_collage(crops: List[Image.Image]) -> Image.Image:
+    """Combine multiple crops into a single grid image."""
+    if not crops: return Image.new('RGB', (100, 100), color='gray')
+    if len(crops) == 1: return crops[0]
+    
+    count = len(crops)
+    cols = math.ceil(math.sqrt(count))
+    rows = math.ceil(count / cols)
+    
+    w, h = crops[0].size
+    grid = Image.new('RGB', (cols * w, rows * h), color='white')
+    
+    for i, c in enumerate(crops):
+        c_resized = c.resize((w, h))
+        x = (i % cols) * w
+        y = (i // cols) * h
+        grid.paste(c_resized, (x, y))
+        
+    return grid
 
-def identify(image_bytes: bytes) -> IdentifyResult:
-    """Classify the cat in an image using the trained DINOv3 encoder + gallery."""
-    """Draw boxes and run encoder on each crop to find nearest gallery match."""
+#---------- Core Logic ----------
+def _run_yolo(img: Image.Image) -> List[Det]:
+    _ensure_detector()
+    res = _yolo.predict(img, conf=settings.cv_conf or _DEFAULT_CONF, imgsz=settings.cv_detect_imgsz, verbose=False)
+    dets = []
+    for r in res:
+        boxes = r.boxes.xyxy.detach().cpu().numpy()
+        confs = r.boxes.conf.detach().cpu().numpy()
+        for b, c in zip(boxes, confs):
+            dets.append(Det((float(b[0]), float(b[1]), float(b[2]), float(b[3])), float(c)))
+    return dets
+
+def detect(image_bytes: bytes) -> IdentifyResult:
+    """Run detection only and return the boxed image."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     _enforce_max_dim(img)
-    _ensure_classifier()
     dets = _run_yolo(img)
     annotated = _draw_boxes(img.copy(), dets)
+    
+    buf = io.BytesIO()
+    annotated.save(buf, format="JPEG")
+    results = [{"box": d.xyxy, "conf": d.conf} for d in dets]
+    return IdentifyResult(boxed_jpeg=buf.getvalue(), results=results)
 
-    results: List[dict] = []        
-
-    if _encoder is not None and _gallery_emb is not None and dets:
-        tiles: List[Tensor] = []
-        boxes: List[Tuple[int, int, int, int]] = []
+def crop(image_bytes: bytes) -> IdentifyResult:
+    """Run detection and return a collage of the cropped cats."""
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    _enforce_max_dim(img)
+    dets = _run_yolo(img)
+    
+    crops = []
+    results = []
+    if dets:
         for d in dets:
             x1, y1, x2, y2 = d.xyxy
             cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, *img.size)
-            crop_img = img.crop((cx1, cy1, cx2, cy2))
-            tiles.append(_prep_tensor(crop_img))
+            crops.append(img.crop((cx1, cy1, cx2, cy2)))
+            results.append({"box": d.xyxy})
+        final_img = _make_collage(crops)
+    else:
+        final_img = img
+
+    buf = io.BytesIO()
+    final_img.save(buf, format="JPEG")
+    return IdentifyResult(boxed_jpeg=buf.getvalue(), results=results)
+
+def identify(image_bytes: bytes) -> IdentifyResult:
+    """Run detection then 512D similarity search for identification."""
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    _enforce_max_dim(img)
+    
+    _ensure_classifier()
+    
+    dets = _run_yolo(img)
+    annotated = _draw_boxes(img.copy(), dets)
+    results = []
+
+    if _clf is not None and _gallery_emb is not None and dets:
+        tiles, boxes = [], []
+        for d in dets:
+            x1, y1, x2, y2 = d.xyxy
+            cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, *img.size)
+            tiles.append(_prep_tensor(img.crop((cx1, cy1, cx2, cy2))))
             boxes.append((int(cx1), int(cy1), int(cx2), int(cy2)))
 
         if tiles:
+            batch = torch.stack(tiles).to(_device)
             with torch.inference_mode():
-                device = _device if _device is not None else torch.device("cpu")
-                batch = torch.stack(tiles, dim=0).to(device, non_blocking=True)
+                query_embs = _clf(batch)
+                similarities = query_embs @ _gallery_emb.T
                 
-                #Get query embeddings [B, D]
-                query_emb = _encoder(batch)
-                #Normalize for cosine similarity
-                query_emb = torch.nn.functional.normalize(query_emb, dim=1, p=2)
+                # Sort all matches descending (best matches first)
+                vals, idxs = torch.sort(similarities, dim=1, descending=True)
                 
-                #Compare against gallery [N, D] (already normalized if needed, but safe to verify)
-                #Actually we should ensure gallery is normalized once on load, but let's just do dot prod
-                #Assuming gallery is normalized. If not, we should normalize _gallery_emb.
-                #Let's normalize gallery on the fly to be safe or ensure it on load. 
-                #For perf, normalize query and gallery.
-                
-                parts = []
-                #Chunked cosine similarity if gallery is huge? 7k is fine for dot product.
-                # [B, N] = [B, D] @ [D, N]
-                sims = torch.mm(query_emb, _gallery_emb.T)
-                
-                #Find best match for each query
-                #values: [B], indices: [B]
-                best_vals, best_idxs = sims.max(dim=1)
-                
-                best_vals = best_vals.detach().to("cpu").numpy()
-                best_idxs = best_idxs.detach().to("cpu").numpy()
+                for i in range(len(dets)):
+                    top_candidates = []
+                    seen_cats = set()
+                    
+                    # Iterate until we find 5 unique identities
+                    for j in range(len(_gallery_names)):
+                        if len(top_candidates) >= 5:
+                            break
+                            
+                        cat_idx = int(idxs[i, j])
+                        cat_conf = float(vals[i, j])
+                        cat_name = _gallery_names[cat_idx]
+                        
+                        if cat_name not in seen_cats:
+                            top_candidates.append((cat_name, cat_conf))
+                            seen_cats.add(cat_name)
+                    
+                    # Best match is just the first unique one
+                    best_name, best_conf = top_candidates[0]
+                    
+                    results.append({
+                        "index": i + 1,
+                        "name": best_name,
+                        "conf": best_conf,
+                        "box": boxes[i],
+                        "top5": top_candidates
+                    })
 
-            idx_to_class = _idx_to_class or {}
-            gallery_labels = _gallery_labels or []
+    buf = io.BytesIO()
+    annotated.save(buf, format="JPEG")
+    return IdentifyResult(boxed_jpeg=buf.getvalue(), results=results)
 
-            for idx, (conf, match_idx, (cx1, cy1, cx2, cy2)) in enumerate(zip(best_vals, best_idxs, boxes), start=1):
-                #match_idx is index in gallery
-                if match_idx < len(gallery_labels):
-                    class_idx = gallery_labels[match_idx]
-                    name = idx_to_class.get(class_idx, f"Cat{class_idx}")
-                else:
-                    name = "Unknown"
-                
-                results.append({
-                    "index": idx,
-                    "name": name,
-                    "conf": float(conf),
-                    "box": [cx1, cy1, cx2, cy2],
-                })
+#---------- Visualization Helpers ----------
+def _get_font(size: int) -> Any:
+    global _font
+    if _font: return _font
+    try:
+        _font = ImageFont.truetype("arial.ttf", size)
+    except:
+        _font = ImageFont.load_default()
+    return _font
 
-    boxed = _jpeg_bytes(annotated, quality=90)
-    log_action("viz_identify", f"boxes={len(dets)} guesses={len(results)}", "ok")
-    return IdentifyResult(boxed_jpeg=boxed, results=results)
+def _draw_boxes(img: Image.Image, dets: List[Det]) -> Image.Image:
+    draw = ImageDraw.Draw(img)
+    fnt = _get_font(max(12, int(img.size[0] * 0.02)))
+    for i, d in enumerate(dets):
+        x1, y1, x2, y2 = d.xyxy
+        draw.rectangle([x1, y1, x2, y2], outline=_PURPLE, width=3)
+        text = f"#{i+1}"
+        tw, th = draw.textbbox((0, 0), text, font=fnt)[2:]
+        draw.rectangle([x1, y1 - th, x1 + tw + 4, y1], fill=_PURPLE)
+        draw.text((x1 + 2, y1 - th), text, fill="white", font=fnt)
+    return img

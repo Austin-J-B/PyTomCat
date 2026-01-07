@@ -84,7 +84,7 @@ MEMBERSHIP_WS_TITLE="Membership Application List"
 # ===== ML Model Paths =====
 NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
 NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
-CV_DETECT_WEIGHTS=weights/NanoModel.pt
+CV_DETECT_WEIGHTS=weights/984_917_yolo12s.pt
 CV_ENCODER_WEIGHTS=weights/R4_cat_DINOv3_encoder.pth
 CV_GALLERY_PATH=weights/R4.5_cat_DINOv3_gallery.pt
 CV_CLF_IMGSZ=518

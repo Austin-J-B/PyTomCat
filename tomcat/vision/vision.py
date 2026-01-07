@@ -109,16 +109,20 @@ def _ensure_classifier() -> None:
             return
 
         #Load DINOv3 encoder (ViT-S/14 from torch.hub or similar)
-        try:
-            encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14', pretrained=False)
-        except Exception as hub_err:
-            log_action('viz_clf_load_warn', 'hub_load_failed', str(hub_err))
-            #Fallback: try loading with dinov2_vitb14 if vits14 fails
+        #Suppress noisy xFormers warnings from DINOv2
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning, message=".*xFormers.*")
             try:
-                encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14', pretrained=False)
-            except Exception:
-                log_action('viz_clf_load_error', 'hub_fallback_failed', 'could not load dinov2 model')
-                return
+                encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14', pretrained=False)
+            except Exception as hub_err:
+                log_action('viz_clf_load_warn', 'hub_load_failed', str(hub_err))
+                #Fallback: try loading with dinov2_vitb14 if vits14 fails
+                try:
+                    encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14', pretrained=False)
+                except Exception:
+                    log_action('viz_clf_load_error', 'hub_fallback_failed', 'could not load dinov2 model')
+                    return
 
         #Load encoder weights
         try:

@@ -93,25 +93,26 @@ on whether `nvidia-smi` is available (override with `--gpu` or `--cpu`).
    python scripts/install.py --clean-hf-cache --resume-model  #clear HF cache then redo the model stage
    ```
 
-3. **Add YOLO weights**
+3. **Add Vision weights**
    
    Place the following files in the `weights/` directory:
-   - `NanoModel.pt` - YOLO detector for CV detection
-   - `NanoClassifier.pt` - Cat classifier head
+   - `984_917_yolo12s.pt` - YOLOv12 detector
+   - `R4_cat_DINOv3_encoder.pth` - DINOv3 encoder
+   - `R4.5_cat_DINOv3_gallery.pt` - Embedding gallery for classification
+   - `deberta-v3-small-mnli.onnx` - NLP model (optional)
    
-   These files must be copied from an existing deployment or your training artifacts.
+   These files must be copied from an existing deployment or training artifacts.
 
 4. **Prepare configuration**
    - Copy `.env` (or create it) and fill in:
-     - `DISCORD_TOKEN`, `BOT_NAME`, `COMMAND_PREFIX`
+     - `DISCORD_TOKEN`, `BOT_USER_ID`, `COMMAND_PREFIX`
      - Channel IDs (`CH_FEEDING_TEAM`, `CH_TOMCAT_SANDBOX`, `CH_LOGGING`, etc.)
-     - Google spreadsheet IDs (`SHEET_MEGASHEET_ID`, `SHEET_CATABASE_ID`, …)
+     - Google spreadsheet IDs (`SHEET_MEGASHEET_ID`, `SHEET_CATABASE_ID`, etc.)
      - Gmail OAuth paths (credentials/token JSON)
      - Feeding schedule + user ID maps in `tomcat/config.py`
-   - Share your Google sheets with the service account email in
-     `GOOGLE_SERVICE_ACCOUNT_JSON`.
+   - Share your Google sheets with the service account email in `GOOGLE_SERVICE_ACCOUNT_JSON`.
 
-6. **Optional: configure Ultralytics cache**
+5. **Optional: configure Ultralytics cache**
    - `scripts/start.py` now sets `YOLO_CONFIG_DIR` to `./.ultra` automatically.
    - If you want to override it, set `YOLO_CONFIG_DIR` yourself:
    ```bash
@@ -119,7 +120,7 @@ on whether `nvidia-smi` is available (override with `--gpu` or `--cpu`).
    export YOLO_CONFIG_DIR=$PWD/.ultra  #or set in PowerShell: $env:YOLO_CONFIG_DIR = "$pwd\.ultra"
    ```
 
-7. **Run TomCat**
+6. **Run TomCat**
    ```bash
    python scripts/start.py
    ```
@@ -179,7 +180,7 @@ commands such as `TomCat, log the past 5 emails` or `TomCat, manual 8pm update`.
 | Bot silent everywhere | Check `.env` `DISCORD_TOKEN`, ensure silent mode is not enabled (`TomCat, silent mode off`). |
 | Gmail auth pending | Trigger `TomCat, check the last email`; follow the OAuth link and respond with the code. |
 | Sheets 403/worksheet missing | Share sheet with service account; verify tab names in `CHANNEL_SHEET_MAP`. |
-| CV requests fail | Make sure `weights/NanoModel.pt` & `weights/NanoClassifier.pt` exist and the GPU drivers are installed. |
+| CV requests fail | Make sure `weights/984_917_yolo12s.pt` & `weights/R4.5_cat_DINOv3_gallery.pt` exist and the GPU drivers are installed. |
 | NLP fallback disabled | Provide the DeBERTa ONNX/tokenizer pair in `weights/` or set `DUES_NLP_ENABLED=false`. |
 | Torch install fails | Update NVIDIA drivers; if still failing, fall back to CPU wheels (edit `requirements.txt`). |
 

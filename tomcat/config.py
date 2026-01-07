@@ -174,7 +174,7 @@ class Settings:
     #Paths (drop-and-play). Change these when you retrain/move weights.
     cv_detect_weights: str = os.getenv(
         "CV_DETECT_WEIGHTS",
-        os.path.join("weights", "NanoModel.pt"),
+        os.path.join("weights", "984_917_yolo12s.pt"),
     )
     cv_encoder_weights: str = os.getenv(
         "CV_ENCODER_WEIGHTS",

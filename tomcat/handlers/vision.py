@@ -79,12 +79,7 @@ async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         boxed = await asyncio.to_thread(V.detect, data)
 
         file = discord.File(io.BytesIO(boxed), filename="detected.jpg")
-        emb = discord.Embed(
-            title="Detected cat outlined below",
-            color=0x2F3136,  #same slate-gray as the other embeds
-        )
-        emb.set_image(url="attachment://detected.jpg")
-        await ch.send(embed=emb, file=file)
+        await ch.send("Detected cat(s) outlined below:", file=file)
 
 
     except ValueError as ve:
@@ -118,18 +113,13 @@ async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
 
         if len(crops) == 1:
             file = discord.File(io.BytesIO(crops[0]), filename="crop.jpg")
-            emb = discord.Embed(
-                title="Cropped photo",
-                color=0x2F3136
-            )
-            emb.set_image(url="attachment://crop.jpg")
-            await ch.send(embed=emb, file=file)
+            await ch.send("One cat detected, here is the crop:", file=file)
         else:
             files = [
                 discord.File(io.BytesIO(b), filename=f"crop_{i}.jpg")
                 for i, b in enumerate(crops, start=1)
             ]
-            await ch.send(f"Multiple cats detected ({len(crops)}). Here are the crops:", files=files)
+            await ch.send("Multiple cats detected, here are the crops:", files=files)
 
     except ValueError as ve:
         await ch.send(str(ve))

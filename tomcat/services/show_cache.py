@@ -379,7 +379,6 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
                     resp.raise_for_status()
                     raw = await resp.read()
                 if raw:
-                    log_action('show_cache_download_ok', url, f"sn={sn} attempt={attempt} size={len(raw)}")
                     break
             except Exception as e:
                 log_action('show_cache_download_fail', url, f"sn={sn} attempt={attempt} err={type(e).__name__}:{e}")

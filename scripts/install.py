@@ -27,7 +27,7 @@ ONNX_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.onnx"
 TOKENIZER_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.tokenizer.json"
 CONFIG_PATH = ROOT / "config.yml"
 
-REQUIRED_WEIGHTS = ["NanoModel.pt", "NanoClassifier.pt"]
+REQUIRED_WEIGHTS = ["NanoModel.pt", "R4_cat_DINOv3_encoder.pth", "R4.5_cat_DINOv3_gallery.pt"]
 
 #PyTorch specifications for CPU and GPU (CUDA 12.1)
 TORCH_CPU_SPEC = ["torch==2.4.1", "torchvision==0.19.1"]
@@ -85,7 +85,9 @@ MEMBERSHIP_WS_TITLE="Membership Application List"
 NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
 NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
 CV_DETECT_WEIGHTS=weights/NanoModel.pt
-CV_CLASSIFY_WEIGHTS=weights/NanoClassifier.pt
+CV_ENCODER_WEIGHTS=weights/R4_cat_DINOv3_encoder.pth
+CV_GALLERY_PATH=weights/R4.5_cat_DINOv3_gallery.pt
+CV_CLF_IMGSZ=518
 CV_MAX_DOWNLOAD_MB=0                  # Set to 0 to lift the max file size limit
 
 # ===== Gmail Ingestion =====

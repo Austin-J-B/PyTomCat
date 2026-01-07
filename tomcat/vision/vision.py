@@ -92,8 +92,51 @@ def _ensure_detector() -> None:
         pass
     _yolo = y
 
+
+#Scale layer for head.2 (temperature/scale)
+class ScaleLayer(torch.nn.Module):
+    def __init__(self, init_value=1.0):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.tensor([float(init_value)]))
+    def forward(self, x):
+        return x * self.weight
+
+class DINOv3Wrapper(torch.nn.Module):
+    """Wrapper around timm ViT to match the custom checkpoint structure."""
+    def __init__(self):
+        super().__init__()
+        try:
+            import timm
+        except ImportError:
+            raise RuntimeError("timm is required for CV. pip install timm")
+
+        # Create backbone using timm
+        # vit_base_patch14_reg4_dinov2.lvd142m matches the parameters: 4 registers, 768 dim.
+        # We override patch_size=16 and img_size=592 to match the fine-tuning.
+        self.backbone = timm.create_model(
+            'vit_base_patch14_reg4_dinov2.lvd142m',
+            pretrained=True,
+            img_size=592,
+            patch_size=16,
+            num_classes=0,       # Features only
+            global_pool='token', # Use CLS token for pooling
+        )
+        
+        # Reconstruct the Head (Linear -> BN -> Scale)
+        self.head = torch.nn.Sequential(
+            torch.nn.Linear(768, 512),
+            torch.nn.BatchNorm1d(512),
+            ScaleLayer(1.0)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # timm forward returns the pooled output (CLS token) because global_pool='token'
+        x = self.backbone(x)
+        x = self.head(x)
+        return x
+
 def _ensure_classifier() -> None:
-    """Load the DINOv3 encoder and gallery for nearest-neighbor classification."""
+    """Load the DINOv3 encoder (via timm) and gallery."""
     global _encoder, _gallery_emb, _gallery_labels, _idx_to_class
     _ensure_device_only()
     if _encoder is not None:
@@ -108,28 +151,77 @@ def _ensure_classifier() -> None:
             log_action('viz_clf_load_info', 'gallery_missing', str(gallery_path))
             return
 
-        #Load DINOv3 encoder (ViT-S/14 from torch.hub or similar)
-        #Suppress noisy xFormers warnings from DINOv2
-        import warnings
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning, message=".*xFormers.*")
-            try:
-                encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14', pretrained=False)
-            except Exception as hub_err:
-                log_action('viz_clf_load_warn', 'hub_load_failed', str(hub_err))
-                #Fallback: try loading with dinov2_vitb14 if vits14 fails
-                try:
-                    encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14', pretrained=False)
-                except Exception:
-                    log_action('viz_clf_load_error', 'hub_fallback_failed', 'could not load dinov2 model')
-                    return
+        try:
+            encoder = DINOv3Wrapper()
+        except Exception as init_err:
+            log_action('viz_clf_load_error', 'wrapper_init_failed', str(init_err))
+            return
 
-        #Load encoder weights
+        #Load encoder weights from file
         try:
             state = torch.load(encoder_path, map_location=_device, weights_only=True)
         except TypeError:
             state = torch.load(encoder_path, map_location=_device)
-        encoder.load_state_dict(state, strict=False)
+        
+        # Inspect model keys to guide remapping
+        model_keys = set(encoder.state_dict().keys())
+        use_ls = any('ls1.gamma' in k for k in model_keys)
+        use_reg_tokens = any('register_tokens' in k for k in model_keys)
+        use_reg_token = any('reg_token' in k for k in model_keys) and not use_reg_tokens
+
+        new_state = {}
+        for k, v in state.items():
+            # 1. Handle head keys
+            if k.startswith('head.'):
+                # File has head.0, head.1, head.2. Our model matches matches (Linear, BN, Scale).
+                # Just copy.
+                new_state[k] = v
+                continue
+            
+            # 2. Handle Backbone keys
+            # File keys start with 'backbone.'
+            if k.startswith('backbone.'):
+                # Strip prefix for timm mapping (timm model is in self.backbone, so prefix 'backbone.' is good IF loading into wrapper)
+                # ERROR: output of state_dict() on wrapper WILL have 'backbone.' prefix.
+                # So we KEEP the 'backbone.' prefix.
+                new_k = k
+                
+                # Remap LayerScale: gamma_1 -> ls1.gamma
+                if use_ls and 'gamma_1' in new_k:
+                    new_k = new_k.replace('gamma_1', 'ls1.gamma')
+                if use_ls and 'gamma_2' in new_k:
+                    new_k = new_k.replace('gamma_2', 'ls2.gamma')
+                
+                # Remap Registers: reg_token -> register_tokens (or vice versa)
+                if 'reg_token' in new_k:
+                    if use_reg_tokens:
+                        new_k = new_k.replace('reg_token', 'register_tokens')
+                    # else if model uses reg_token, keep it.
+                
+                new_state[new_k] = v
+        
+        msg = encoder.load_state_dict(new_state, strict=False)
+        
+        # Zero out QKV biases if missing (timm model has them, checkpoint does not)
+        if msg.missing_keys:
+            count_zeroed = 0
+            for k in msg.missing_keys:
+                if 'attn.qkv.bias' in k:
+                    try:
+                        # Traverse to find the parameter
+                        # k ex: backbone.blocks.0.attn.qkv.bias
+                        parts = k.split('.')
+                        obj = encoder
+                        for p in parts:
+                            obj = getattr(obj, p)
+                        with torch.no_grad():
+                            obj.zero_()
+                        count_zeroed += 1
+                    except AttributeError:
+                        pass
+            if count_zeroed > 0:
+                log_action('viz_clf_init', 'zero_bias', f"count={count_zeroed}")
+
         encoder.eval()
         encoder.to(_device)
         if _half:
@@ -314,18 +406,22 @@ def detect(image_bytes: bytes) -> bytes:
 def crop(image_bytes: bytes) -> List[bytes]:
     """Return cropped regions for each detected cat."""
     """Return list of JPEG crops expanded by pad_pct per v5.6."""
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    _enforce_max_dim(img)
-    dets = _run_yolo(img)
-    crops: List[bytes] = []
-    for d in dets:
-        x1, y1, x2, y2 = d.xyxy
-        cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, *img.size)
-        crop_img = img.crop((cx1, cy1, cx2, cy2))
-        crops.append(_jpeg_bytes(crop_img, quality=92))
-    if getattr(settings, 'cv_log_crop', True):
-        log_action("viz_crop", f"crops={len(crops)}", "ok")
-    return crops
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        _enforce_max_dim(img)
+        dets = _run_yolo(img)
+        crops: List[bytes] = []
+        for d in dets:
+            x1, y1, x2, y2 = d.xyxy
+            cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, *img.size)
+            crop_img = img.crop((cx1, cy1, cx2, cy2))
+            crops.append(_jpeg_bytes(crop_img, quality=92))
+        if getattr(settings, 'cv_log_crop', True):
+            log_action("viz_crop", f"crops={len(crops)}", "ok")
+        return crops
+    except Exception as e:
+        log_action("viz_crop_error", f"err={type(e).__name__}", str(e))
+        return []
 
 
 def _prep_tensor(pil: Image.Image) -> Tensor:

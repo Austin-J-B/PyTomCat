@@ -195,7 +195,7 @@ class Settings:
     cv_conf: float = float(os.getenv("CV_CONF", "0.552"))           #detector confidence
     cv_iou: float = float(os.getenv("CV_IOU", "0.45"))              #NMS IoU
     cv_detect_imgsz: int = int(os.getenv("CV_DETECT_IMGSZ", "640")) #YOLO inference size
-    cv_clf_imgsz: int = int(os.getenv("CV_CLF_IMGSZ", "518"))       #DINOv3 native input size
+    cv_clf_imgsz: int = int(os.getenv("CV_CLF_IMGSZ", "592"))       #Must be 37*16=592 to match pos_embed
     cv_pad_pct: float = float(os.getenv("CV_PAD_PCT", "0.03"))      #crop expansion
 
     #Safety/limits

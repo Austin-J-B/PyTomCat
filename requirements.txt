@@ -25,7 +25,7 @@ tokenizers==0.19.1
 
 #Computer vision helpers
 opencv-python-headless==4.10.0.84
-ultralytics==8.3.70
+ultralytics>=8.3.200
 
 #PyTorch (+cu121 for Windows/Nvidia)
 torch==2.4.1+cu121

@@ -44,6 +44,8 @@ _EXPENSE_TYPES = {
 
 _DUES_AMOUNT = 15.0
 _DUES_TOL = 0.75
+_PENDING_DUES_FILE = os.path.join(FINANCE_DIR, "pending_dues.jsonl")
+_PENDING_DUES_HOLD_DAYS = 3
 
 FOODS_GOODS_KEYWORDS = {
     "bake", "bakesale", "bake sale", "cookie", "cookies", "brownie", "brownies",
@@ -365,8 +367,10 @@ def _is_likely_dues(amount: Optional[float], text: str) -> bool:
     text_low = text.lower()
     if any(word in text_low for word in DEDUCTION_WORDS):
         return True
-    #Dues are usually exact or close to 15/20/25, but fundraisers can be small.
-    #We rely on keywords more than amount unless it's explicitly "Membership".
+    #Note: $15 payments without keywords are NOT automatically dues.
+    #They require corroborating evidence (dues portal message or membership form).
+    #The dues pipeline handles that cross-referencing; finance should log as income
+    #unless explicit keywords are present.
     return False
 
 
@@ -381,6 +385,83 @@ def _is_dues_email(amount: Optional[float], text: str, message_id: Optional[str]
         if message_id in _DUES_MESSAGE_IDS:
             return True
     return _is_likely_dues(amount, text)
+
+
+def _is_potential_dues_amount(amount: Optional[float]) -> bool:
+    """Check if amount is close to $15 (dues amount)."""
+    if amount is None:
+        return False
+    return abs(amount - _DUES_AMOUNT) <= _DUES_TOL
+
+
+def _load_pending_dues() -> List[dict]:
+    """Load pending dues payments from file."""
+    if not os.path.exists(_PENDING_DUES_FILE):
+        return []
+    records = []
+    try:
+        with open(_PENDING_DUES_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return records
+
+
+def _save_pending_dues(records: List[dict]) -> None:
+    """Save pending dues payments to file."""
+    try:
+        with open(_PENDING_DUES_FILE, "w", encoding="utf-8") as f:
+            for r in records:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    except Exception as e:
+        log_action("pending_dues_save_error", "", str(e))
+
+
+def _add_pending_due(event: "FinanceEvent") -> None:
+    """Add a $15 payment to pending dues for later corroboration check."""
+    from datetime import timedelta
+    records = _load_pending_dues()
+    #Skip if already pending
+    if any(r.get("email_id") == event.email_id for r in records):
+        return
+    expires = (event.ts + timedelta(days=_PENDING_DUES_HOLD_DAYS)).isoformat()
+    record = {
+        "email_id": event.email_id,
+        "counterparty": event.counterparty,
+        "amount": event.amount,
+        "provider": event.provider,
+        "note": event.note,
+        "ts": event.ts.isoformat(),
+        "expires": expires,
+        "raw_subject": event.raw_subject,
+        "raw_content": event.raw_content[:500] if event.raw_content else "",
+    }
+    records.append(record)
+    _save_pending_dues(records)
+    log_action("pending_dues_add", f"counterparty={event.counterparty}", f"expires={expires}")
+
+
+def _remove_pending_due(email_id: str, reason: str = "") -> None:
+    """Remove a pending due by email_id."""
+    records = _load_pending_dues()
+    new_records = [r for r in records if r.get("email_id") != email_id]
+    if len(new_records) < len(records):
+        _save_pending_dues(new_records)
+        log_action("pending_dues_remove", f"email_id={email_id}", reason)
+
+
+def _get_pending_due_ids() -> Set[str]:
+    """Return set of email_ids currently in pending dues."""
+    return {r.get("email_id") for r in _load_pending_dues() if r.get("email_id")}
+
+
 
 
 def _extract_note(text: str) -> str:
@@ -523,8 +604,9 @@ def _fingerprint(ev: "FinanceEvent") -> str:
     #Use minute-precision timestamp so 12:00 and 12:05 are distinct
     time_str = ts.strftime("%Y-%m-%dT%H:%M")
     
-    #Include cleaned note in fingerprint
+    #Include email_id and cleaned note in fingerprint for uniqueness
     base = "|".join([
+        ev.email_id,
         ev.direction,
         time_str,
         f"{ev.amount:.2f}",
@@ -1533,13 +1615,152 @@ def _classify_email(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     return None, "unsupported"
 
 
+async def _check_dues_corroboration(counterparty: str, provider: str, bot) -> bool:
+    """Check if there's corroborating evidence for a dues payment.
+    
+    Returns True if:
+    - A matching entry exists in the dues portal channel (recent messages)
+    - OR a matching membership application exists (unverified, current semester)
+    """
+    from . import dues as dues_module
+    from rapidfuzz import fuzz
+    
+    name_norm = (counterparty or "").strip().lower()
+    if not name_norm:
+        return False
+    
+    #Check membership application list for unverified entry matching this name
+    try:
+        rows = dues_module._load_membership_rows()
+        cur_sem = dues_module._current_semester_label()
+        cur_sem_norm = dues_module._norm_sem_label(cur_sem).lower()
+        
+        for row in rows:
+            #Only check current semester entries
+            row_sem = dues_module._norm_sem_label(row.get("semester", "")).lower()
+            if row_sem != cur_sem_norm:
+                continue
+            
+            #Match by name (fuzzy)
+            row_name = (row.get("full_name") or "").strip().lower()
+            if row_name and fuzz.ratio(name_norm, row_name) >= 80:
+                log_action("pending_dues_corroborate", f"name={counterparty}", "membership_match")
+                return True
+            
+            #Match by payment username if provided
+            pay_user = (row.get("payment_username") or "").strip().lower()
+            if pay_user and (pay_user in name_norm or name_norm in pay_user):
+                log_action("pending_dues_corroborate", f"name={counterparty}", "payment_user_match")
+                return True
+    except Exception as e:
+        log_action("pending_dues_corroborate_error", "membership", str(e))
+    
+    #Check dues portal channel for recent messages matching this name
+    try:
+        portal_ch_id = int(getattr(settings, "ch_due_portal", 0) or 0)
+        if portal_ch_id and bot:
+            ch = bot.get_channel(portal_ch_id)
+            if ch:
+                async for msg in ch.history(limit=200):
+                    content = (msg.content or "").strip().lower()
+                    #Check if counterparty name appears in message
+                    if name_norm in content or fuzz.partial_ratio(name_norm, content) >= 85:
+                        #Also verify provider if mentioned
+                        prov_norm = (provider or "").lower()
+                        if prov_norm in content or not prov_norm:
+                            log_action("pending_dues_corroborate", f"name={counterparty}", "portal_match")
+                            return True
+    except Exception as e:
+        log_action("pending_dues_corroborate_error", "portal", str(e))
+    
+    return False
+
+
+async def _process_pending_dues(bot) -> None:
+    """Process pending dues: check for corroboration or expiry.
+    
+    For each pending payment:
+    - If corroborated (portal message or membership app) → remove (dues pipeline handles)
+    - If expired (3+ days) → log as income donations, remove from pending
+    """
+    from datetime import timedelta
+    
+    records = _load_pending_dues()
+    if not records:
+        return
+    
+    now = datetime.now(timezone.utc)
+    processed = _load_index()
+    income_events: List[FinanceEvent] = []
+    to_remove: List[str] = []
+    
+    for rec in records:
+        email_id = rec.get("email_id")
+        if not email_id:
+            continue
+        
+        counterparty = rec.get("counterparty", "")
+        provider = rec.get("provider", "")
+        expires_str = rec.get("expires", "")
+        
+        #Parse expiry
+        try:
+            expires = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
+        except Exception:
+            expires = now + timedelta(days=1)  #Default to keeping if parse fails
+        
+        #Check if corroborated (found in dues portal or membership sheet)
+        corroborated = await _check_dues_corroboration(counterparty, provider, bot)
+        
+        if corroborated:
+            to_remove.append(email_id)
+            log_action("pending_dues_resolved", f"counterparty={counterparty}", "corroborated_as_dues")
+            continue
+        
+        #Check if expired
+        if now >= expires:
+            #Expired without corroboration → log as income
+            try:
+                ts = datetime.fromisoformat(rec.get("ts", "").replace("Z", "+00:00"))
+            except Exception:
+                ts = now
+            
+            event = FinanceEvent(
+                email_id=email_id,
+                provider=provider,
+                counterparty=counterparty,
+                note=rec.get("note", ""),
+                amount=float(rec.get("amount", 0.0)),
+                direction="income",
+                category=_DONATION_DEFAULT,
+                ts=ts,
+                raw_subject=rec.get("raw_subject", ""),
+                raw_content=rec.get("raw_content", ""),
+                message_blank=not bool(rec.get("note", "").strip()),
+            )
+            income_events.append(event)
+            to_remove.append(email_id)
+            log_action("pending_dues_resolved", f"counterparty={counterparty}", "expired_to_income")
+    
+    #Log expired payments as income
+    if income_events:
+        await _process_finance_events(bot, income_events, processed, notify=True)
+    
+    #Remove processed records
+    if to_remove:
+        remaining = [r for r in records if r.get("email_id") not in to_remove]
+        _save_pending_dues(remaining)
+
+
 async def process_financial_emails(bot) -> None:
     """Main entrypoint: read new email logs, file into Sheets, notify Discord."""
     async with FINANCE_LOCK:
         processed = _load_index()
         processed_ids = set(processed.keys())
         dues_ids = _load_dues_message_ids()
+        pending_ids = _get_pending_due_ids()
         events: List[FinanceEvent] = []
+        seen_this_batch: set[str] = set()  #Prevent same-batch duplicates
         for email in _iter_email_logs():
             email_id = email.get('id')
             if not email_id:
@@ -1548,13 +1769,32 @@ async def process_financial_emails(bot) -> None:
                 continue
             if email_id in dues_ids:
                 continue
+            if email_id in pending_ids:
+                continue
+            if email_id in seen_this_batch:
+                continue
+            seen_this_batch.add(email_id)
             event, status = _classify_email(email)
             if event is None:
                 continue
+            
+            #$15 income payments go to pending for corroboration check
+            if (event.direction == "income" and 
+                _is_potential_dues_amount(event.amount) and 
+                not _is_likely_dues(event.amount, f"{event.raw_subject} {event.note}")):
+                _add_pending_due(event)
+                continue
+            
             events.append(event)
-        if not events:
-            return
-        await _process_finance_events(bot, events, processed, notify=True)
+        
+        #Process immediate events
+        if events:
+            await _process_finance_events(bot, events, processed, notify=True)
+        
+        #Check pending dues for corroboration or expiry
+        await _process_pending_dues(bot)
+
+
 
 
 async def handle_log_recent_finances(intent, ctx) -> None:

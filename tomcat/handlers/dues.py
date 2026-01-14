@@ -2043,7 +2043,8 @@ def _provider_from_email(frm: str, subj: str, body: str) -> Optional[str]:
         if ('paid you' in s) or ('sent you' in s) or ('paid you' in b):
             return 'venmo'
     if 'cash.app' in f or 'squareup.com' in f or 'square.com' in f:
-        if ('paid you' in s) or ('sent you' in s) or ('paid you' in b):
+        #Cash App emails may have subject 'Payment received' and body 'You were sent $X by [Name]'
+        if ('paid you' in s) or ('sent you' in s) or ('paid you' in b) or ('payment received' in s) or ('you were sent' in b):
             return 'cashapp'
     if 'paypal.com' in f:
         if ("you've got money" in s) or ("sent you" in s) or ('payment received' in s) or ('paid you' in b):
@@ -2082,6 +2083,10 @@ def _payment_username_from_email(em: dict) -> str | None:
         m2 = re.search(r"\b([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})\b.*sent\s+you\s+\$?\d", body, re.I)
         if m2:
             return m2.group(1).strip()
+        #Handle 'You were sent $X by [Name]' format (common in newer Cash App emails)
+        m3 = re.search(r"you were sent\s+\$?[\d.,]+\s+by\s+([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})", body, re.I)
+        if m3:
+            return m3.group(1).strip()
     if prov == 'paypal':
         m = re.search(r"Note from\s+([^\n<]+)", body)
         if m:
@@ -2096,6 +2101,10 @@ def _payment_username_from_email(em: dict) -> str | None:
     m2 = re.search(r"\b([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})\b\s+paid\s+you\b", subj, re.I)
     if m2:
         return m2.group(1).strip()
+    #Generic fallback for 'You were sent $X by [Name]' format
+    m3 = re.search(r"you were sent\s+\$?[\d.,]+\s+by\s+([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})", body, re.I)
+    if m3:
+        return m3.group(1).strip()
     return None
 
 #--- NLP hooks (kept available, but not required for scoring) ---

@@ -335,6 +335,29 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
     have_serials = _existing_serials(cdir)
     if exclude_serials:
         have_serials = set(have_serials) | {str(s) for s in exclude_serials}
+
+    #Collect valid serials from current sheet data to detect stale cache entries
+    valid_serials = set()
+    for _, serial, _, _ in pairs:
+        sn = re.sub(r"[^0-9]", "", serial or "")
+        valid_serials.add(sn)
+
+    #Prune ghost files: remove cached images whose serials no longer exist in sheet
+    for sn in list(have_serials):
+        if sn not in valid_serials and sn not in (exclude_serials or set()):
+            base = f"sn{str(sn).zfill(4)}"
+            try:
+                p_jpg = os.path.join(cdir, f"{base}.jpg")
+                p_json = os.path.join(cdir, f"{base}.json")
+                if os.path.exists(p_jpg):
+                    os.remove(p_jpg)
+                if os.path.exists(p_json):
+                    os.remove(p_json)
+                have_serials.discard(sn)
+                log_action('show_cache_prune_ghost', base, f"cat={cid}")
+            except Exception as e:
+                log_action('show_cache_prune_ghost_error', base, str(e))
+
     total = len(existing)
     #Reuse a single HTTP session for downloads to cut overhead
     timeout = aiohttp.ClientTimeout(total=8.0)

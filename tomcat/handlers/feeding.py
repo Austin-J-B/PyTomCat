@@ -167,8 +167,42 @@ def _read_sub_file(path: str, month_key: Optional[str]) -> List[dict]:
                 row["log_month"] = month_key
             if row.get("station"):
                 row["station"] = _canonical_station(row.get("station")) or row.get("station")
+            stations_field = row.get("stations")
+            if stations_field:
+                if isinstance(stations_field, list):
+                    cleaned: List[str] = []
+                    for st in stations_field:
+                        canon = _canonical_station(st) or st
+                        if canon:
+                            cleaned.append(canon)
+                    if cleaned:
+                        row["stations"] = list(dict.fromkeys(cleaned))
+                elif isinstance(stations_field, str):
+                    parts = [p.strip() for p in stations_field.split(",") if p.strip()]
+                    cleaned = []
+                    for st in parts:
+                        canon = _canonical_station(st) or st
+                        if canon:
+                            cleaned.append(canon)
+                    if cleaned:
+                        row["stations"] = list(dict.fromkeys(cleaned))
             if row.get("dates"):
                 row["dates"] = _normalize_dates(row.get("dates"))
+            #Normalize requester/assignee ids to avoid int/str mismatches from UI logs
+            if "requester" in row:
+                row["requester"] = _coerce_uid(row.get("requester"))
+            if "assignee" in row:
+                row["assignee"] = _coerce_uid(row.get("assignee"))
+            if row.get("station") and not row.get("stations"):
+                if isinstance(row.get("station"), str) and "," in row.get("station"):
+                    parts = [p.strip() for p in row.get("station").split(",") if p.strip()]
+                    cleaned = []
+                    for st in parts:
+                        canon = _canonical_station(st) or st
+                        if canon:
+                            cleaned.append(canon)
+                    if cleaned:
+                        row["stations"] = list(dict.fromkeys(cleaned))
             out.append(row)
     return out
 
@@ -1190,10 +1224,20 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
         for feeder_id in original_feeders:
             feeder_request_id = None
             for req in subs:
-                req_station = _canonical_station(req.get("station")) or req.get("station")
+                req_stations: List[str] = []
+                if isinstance(req.get("stations"), list) and req.get("stations"):
+                    for st in req.get("stations") or []:
+                        canon = _canonical_station(st) or st
+                        if canon:
+                            req_stations.append(canon)
+                    req_stations = list(dict.fromkeys(req_stations))
+                elif req.get("station"):
+                    canon = _canonical_station(req.get("station")) or req.get("station")
+                    if canon:
+                        req_stations = [canon]
                 if (req.get("status") == "requested" 
                     and str(req.get("requester")) == str(feeder_id) 
-                    and req_station == station_canonical 
+                    and station_canonical in req_stations 
                     and today_iso in _normalize_dates(req.get("dates") or [])):
                     feeder_request_id = req.get("id")
                     break
@@ -1348,29 +1392,40 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> None:
     unfed = await _list_unfed_stations_today()
     from discord.abc import Messageable
 
-    if not unfed:
+    #choose who to ping: subs first, else default schedule
+    today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
+    weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
+    sched = _read_schedule_for_weekday(weekday, today)
+
+    assigned_unfed: List[str] = []
+    if unfed:
+        async with _SUBS_LOCK:
+            files = _load_sub_files(_recent_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
+            subs: List[dict] = []
+            for _, rows in files:
+                subs.extend(rows)
+        today_iso = today.isoformat()
+        request_map = _build_request_map(subs)
+        assigned_unfed = [st for st in unfed if _assignees_for_station(st, sched, subs, today_iso, request_map)]
+
+    if not assigned_unfed:
         msg = "All stations have been fed! Yippee!!!"
         try:
             if isinstance(ch, Messageable):
                 await safe_send(ch, msg)
-                log_action("feeding_8pm", "unfed=0", "celebrated")
+                log_action("feeding_8pm", f"assigned_unfed=0; total_unfed={len(unfed)}", "celebrated")
                 sent_or_logged = True
             else:
                 log_action("feeding_8pm", f"channel={channel_id}; type={type(ch).__name__}", "not_messageable")
                 sent_or_logged = True
         except Exception as e:
-            log_action("feeding_8pm_error", "unfed=0", str(e))
+            log_action("feeding_8pm_error", f"assigned_unfed=0; total_unfed={len(unfed)}", str(e))
         if not sent_or_logged:
             async with _FEEDING_8PM_LOCK:
                 if _LAST_FEEDING_ALERT_KEY == today_key:
                     _LAST_FEEDING_ALERT_KEY = None
                     _LAST_FEEDING_ALERT_TS = None
         return
-
-    #choose who to ping: subs first, else default schedule
-    today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
-    weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
-    sched = _read_schedule_for_weekday(weekday, today)
 
     #Build a message that pings the right people
     lines = await build_8pm_lines(bot, unfed=unfed, sched=sched, mention=True)
@@ -1392,6 +1447,70 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> None:
             if _LAST_FEEDING_ALERT_KEY == today_key:
                 _LAST_FEEDING_ALERT_KEY = None
                 _LAST_FEEDING_ALERT_TS = None
+
+def _build_request_map(subs: List[dict]) -> Dict[str, int | str]:
+    return {
+        r.get("id"): r.get("requester")
+        for r in subs
+        if r.get("status") == "requested" and r.get("id") and r.get("requester")
+    }
+
+
+def _assignees_for_station(
+    station: str,
+    sched: Dict[str, List[int | str]],
+    subs: List[dict],
+    today_iso: str,
+    request_map: Optional[Dict[str, int | str]] = None,
+) -> List[int | str]:
+    key = _canonical_station(station) or station
+    scheduled_ids = sched.get(key, [])
+    if not scheduled_ids:
+        #Check for subs for unassigned stations
+        for r in reversed(subs):
+            if r.get("status") != "accepted":
+                continue
+            rec_station = _canonical_station(r.get("station")) or r.get("station")
+            if rec_station != key:
+                continue
+            if today_iso not in _normalize_dates(r.get("dates") or []):
+                continue
+            assignee_id = r.get("assignee")
+            if assignee_id:
+                return [assignee_id]  #Return the sub, even if no one was scheduled
+        return []
+
+    final_assignees = list(scheduled_ids)
+    request_map = request_map or _build_request_map(subs)
+    processed_requesters = set()
+
+    for r in reversed(subs):
+        if r.get("status") != "accepted":
+            continue
+
+        rec_station = _canonical_station(r.get("station")) or r.get("station")
+        if rec_station != key:
+            continue
+
+        if today_iso not in _normalize_dates(r.get("dates") or []):
+            continue
+
+        parent_id = r.get("parent_id")
+        requester_id = request_map.get(parent_id)
+        assignee_id = r.get("assignee")
+
+        if not requester_id and r.get("id"):
+            parent_id = r.get("id")
+            requester_id = request_map.get(parent_id)
+
+        if requester_id and assignee_id and requester_id in final_assignees:
+            if requester_id in processed_requesters:
+                continue
+
+            final_assignees = [assignee_id if u == requester_id else u for u in final_assignees]
+            processed_requesters.add(requester_id)
+
+    return list(dict.fromkeys(final_assignees))
 
 async def build_8pm_lines(
     bot: Optional[discord.Client],
@@ -1418,60 +1537,10 @@ async def build_8pm_lines(
     today_iso = today.isoformat()
 
     sched = sched or {}
+    request_map = _build_request_map(subs)
 
     def _assignees_for(station: str) -> List[int | str]:
-        key = _canonical_station(station) or station
-        scheduled_ids = sched.get(key, [])
-        if not scheduled_ids:
-            #Check for subs for unassigned stations
-            for r in reversed(subs):
-                if r.get("status") != "accepted": continue
-                rec_station = _canonical_station(r.get("station")) or r.get("station")
-                if rec_station != key: continue
-                if today_iso not in _normalize_dates(r.get("dates") or []): continue
-                
-                assignee_id = r.get("assignee")
-                if assignee_id:
-                    return [assignee_id] #Return the sub, even if no one was scheduled
-            return []
-
-        final_assignees = list(scheduled_ids)
-
-        request_map: Dict[str, int] = {
-            r.get("id"): r.get("requester")
-            for r in subs
-            if r.get("status") == "requested" and r.get("id") and r.get("requester")
-        }
-
-        processed_requesters = set()
-
-        for r in reversed(subs):
-            if r.get("status") != "accepted":
-                continue
-                
-            rec_station = _canonical_station(r.get("station")) or r.get("station")
-            if rec_station != key:
-                continue
-
-            if today_iso not in _normalize_dates(r.get("dates") or []):
-                continue
-            
-            parent_id = r.get("parent_id")
-            requester_id = request_map.get(parent_id)
-            assignee_id = r.get("assignee")
-            
-            if not requester_id and r.get("id"):
-                parent_id = r.get("id")
-                requester_id = request_map.get(parent_id)
-
-            if requester_id and assignee_id and requester_id in final_assignees:
-                if requester_id in processed_requesters:
-                    continue
-                
-                final_assignees = [assignee_id if u == requester_id else u for u in final_assignees]
-                processed_requesters.add(requester_id)
-
-        return list(dict.fromkeys(final_assignees))
+        return _assignees_for_station(station, sched, subs, today_iso, request_map)
 
     def _format_station_line(station: str) -> str:
         assignees = _assignees_for(station)

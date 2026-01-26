@@ -59,7 +59,7 @@ def _load_from_csv() -> None:
                     if k in idx: return idx[k]
                 return -1
             i_full = col('fulllegalname','fullname','name','catdatabase','full')
-            i_img  = col('imageurl','image','photo','mostrecentimageurl')
+            i_img  = col('imageurl','image','photo','mostrecentimageurl','mostrecentimage','linkofmostrecentimage','linkofmostrecentimageurl')
             i_loc  = col('location')
             i_phys = col('physicaldescription')
             i_beh  = col('behavior')
@@ -142,7 +142,7 @@ def refresh_sync() -> int:
             if k in idx: return idx[k]
         return -1
     i_full = col('fulllegalname','fullname','name','catdatabase','full')
-    i_img  = col('imageurl','image','photo','mostrecentimageurl')
+    i_img  = col('imageurl','image','photo','mostrecentimageurl','mostrecentimage','linkofmostrecentimage','linkofmostrecentimageurl')
     i_loc  = col('location')
     i_phys = col('physicaldescription')
     i_beh  = col('behavior')
@@ -252,6 +252,17 @@ def get_profile(name: str) -> Optional[Dict[str, Any]]:
     if key in _CACHE:
         return _CACHE[key]
     #Try contains search
+    for k, v in _CACHE.items():
+        if key and key in k:
+            return v
+    return None
+
+def get_profile_local(name: str) -> Optional[Dict[str, Any]]:
+    """Fetch a profile dict from local cache only (no sheet refresh)."""
+    _ensure_loaded()
+    key = _norm(name)
+    if key in _CACHE:
+        return _CACHE[key]
     for k, v in _CACHE.items():
         if key and key in k:
             return v

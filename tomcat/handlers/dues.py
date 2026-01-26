@@ -8,6 +8,7 @@ import asyncio
 import json
 import discord
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 try:
     from zoneinfo import ZoneInfo  #py>=3.9
 except Exception:
@@ -45,6 +46,46 @@ from .gmail import (
 #============================
 #Time helpers
 #============================
+
+_DUES_SCHEDULER_LOCK = asyncio.Lock()
+_DUES_SCHEDULER_STARTED = False
+_LAST_DUES_RUN_KEY: Optional[str] = None
+_DUES_LOCK_DIR = Path("logs") / "dues" / "locks"
+
+def _dues_now() -> datetime:
+    tz = None
+    if ZoneInfo is not None:
+        try:
+            tz = ZoneInfo(getattr(settings, "timezone", "America/Chicago"))
+        except Exception:
+            tz = None
+    return datetime.now(tz) if tz else datetime.now()
+
+def _dues_run_key(now: Optional[datetime] = None) -> str:
+    now = now or _dues_now()
+    return now.date().isoformat()
+
+def _dues_lock_path(key: str) -> Path:
+    safe = re.sub(r"[^0-9\-]", "", key)
+    return _DUES_LOCK_DIR / f"{safe}.lock"
+
+def _acquire_dues_lock(key: str) -> bool:
+    """Best-effort cross-process guard to prevent duplicate daily runs."""
+    try:
+        _DUES_LOCK_DIR.mkdir(parents=True, exist_ok=True)
+        path = _dues_lock_path(key)
+        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            payload = f"pid={os.getpid()} started_at={_now_iso()}".encode("utf-8")
+            os.write(fd, payload)
+        finally:
+            os.close(fd)
+        return True
+    except FileExistsError:
+        return False
+    except Exception:
+        #If locking fails unexpectedly, fall back to in-process guard
+        return True
 
 def _now_iso() -> str:
     tz = None
@@ -2893,18 +2934,34 @@ async def start_dues_scheduler(bot) -> None:
     """Daily dues verification: score-based verification, role sync, MavOrgs invite tracking."""
     if not getattr(settings, 'dues_enabled', True):
         return
+
+    global _DUES_SCHEDULER_STARTED, _LAST_DUES_RUN_KEY
+    async with _DUES_SCHEDULER_LOCK:
+        if _DUES_SCHEDULER_STARTED:
+            log_action('dues_scheduler', 'already_started', 'skipped')
+            return
+        _DUES_SCHEDULER_STARTED = True
     
     target_h, target_m = 3, 0  #3:00 AM daily
     
     while True:
         #Sleep until target time
-        now = datetime.now()
+        now = _dues_now()
         nxt = now.replace(hour=target_h, minute=target_m, second=0, microsecond=0)
         if nxt <= now:
             nxt += timedelta(days=1)
         await asyncio.sleep((nxt - now).total_seconds())
         
         try:
+            run_key = _dues_run_key()
+            if _LAST_DUES_RUN_KEY == run_key:
+                log_action('dues_scheduler', f'date={run_key}', 'duplicate_skip')
+                continue
+            if not _acquire_dues_lock(run_key):
+                log_action('dues_scheduler', f'date={run_key}', 'duplicate_skip_lock')
+                _LAST_DUES_RUN_KEY = run_key
+                continue
+            _LAST_DUES_RUN_KEY = run_key
             await _run_daily_dues_job(bot)
         except Exception as e:
             log_action('dues_scheduler_error', '', str(e))

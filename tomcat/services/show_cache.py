@@ -543,6 +543,15 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
     """Return and remove one cached image entry, optionally refilling from Sheets."""
     cid = _cat_id_from_full(full_name)
     if cid is None:
+        #Try local profile cache first to avoid scanning cache dirs or hitting Sheets
+        try:
+            from . import profile_cache as PC
+            prof = PC.get_profile_local(full_name)
+            if isinstance(prof, dict):
+                cid = _cat_id_from_full(prof.get('actual_name') or '')
+        except Exception:
+            pass
+    if cid is None:
         cid = _resolve_cat_id(full_name)
     if cid is None and use_sheet:
         prof = await get_cat_profile(full_name)

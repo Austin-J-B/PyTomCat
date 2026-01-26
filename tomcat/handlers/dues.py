@@ -2037,16 +2037,63 @@ def _load_email_logs_between(start_dt: datetime, end_dt: datetime) -> List[dict]
 
 #--- Provider & payer extraction from emails ---
 
+def _extract_email_domain(frm: str) -> Optional[str]:
+    """
+    Best-effort extraction of the domain part from an email-like From header.
+    Returns the domain in lowercase, or None if it cannot be determined.
+    """
+    if not frm:
+        return None
+    s = frm.strip().lower()
+    # If there is a display name with angle brackets, keep only the address part.
+    if '<' in s and '>' in s:
+        start = s.rfind('<') + 1
+        end = s.find('>', start)
+        if end == -1:
+            end = len(s)
+        s = s[start:end].strip()
+    # At this point, s should be something like local@domain.
+    if '@' not in s:
+        return None
+    addr = s.split()[0].strip(',;')
+    _, _, domain = addr.partition('@')
+    domain = domain.strip().strip('>;,')
+    return domain or None
+
 def _provider_from_email(frm: str, subj: str, body: str) -> Optional[str]:
     f = (frm or '').lower(); s = (subj or '').lower(); b = (body or '').lower()
-    if 'venmo.com' in f:
+    domain = _extract_email_domain(frm)
+
+    venmo_match = (
+        (domain is not None and (domain == 'venmo.com' or domain.endswith('.venmo.com')))
+        or ('venmo.com' in f)
+    )
+    if venmo_match:
         if ('paid you' in s) or ('sent you' in s) or ('paid you' in b):
             return 'venmo'
-    if 'cash.app' in f or 'squareup.com' in f or 'square.com' in f:
-        #Cash App emails may have subject 'Payment received' and body 'You were sent $X by [Name]'
+
+    cashapp_match = (
+        (domain is not None and (domain == 'cash.app' or domain.endswith('.cash.app')))
+        or ('cash.app' in f)
+    )
+    squareup_match = (
+        (domain is not None and (domain == 'squareup.com' or domain.endswith('.squareup.com')))
+        or ('squareup.com' in f)
+    )
+    square_match = (
+        (domain is not None and (domain == 'square.com' or domain.endswith('.square.com')))
+        or ('square.com' in f)
+    )
+    if cashapp_match or squareup_match or square_match:
+        # Cash App emails may have subject 'Payment received' and body 'You were sent $X by [Name]'
         if ('paid you' in s) or ('sent you' in s) or ('paid you' in b) or ('payment received' in s) or ('you were sent' in b):
             return 'cashapp'
-    if 'paypal.com' in f:
+
+    paypal_match = (
+        (domain is not None and (domain == 'paypal.com' or domain.endswith('.paypal.com')))
+        or ('paypal.com' in f)
+    )
+    if paypal_match:
         if ("you've got money" in s) or ("sent you" in s) or ('payment received' in s) or ('paid you' in b):
             return 'paypal'
     return None

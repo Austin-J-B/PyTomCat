@@ -2872,11 +2872,21 @@ async def _run_daily_dues_job(bot) -> None:
     #3. Mark verified in sheet if we have emails
     if verified:
         try:
-            emails_to_verify = [(r.get('primary_email'), r.get('semester') or cur_sem) for r in verified if r.get('primary_email')]
+            emails_to_verify = [((r.get('primary_member') or {}).get('email', '').strip().lower(), (r.get('primary_member') or {}).get('semester') or r.get('semester') or cur_sem) for r in verified if (r.get('primary_member') or {}).get('email')]
             if emails_to_verify:
                 await _mark_verified_emails(emails_to_verify)
         except Exception as e:
             log_action('dues_mark_verified_error', '', str(e))
+    
+    #3b. Delete portal messages for verified entries
+    if verified:
+        try:
+            ids = [int(r.get('message_id') or 0) for r in verified if int(r.get('message_id') or 0)]
+            if ids:
+                deleted = await _delete_portal_messages(bot, ids)
+                log_action('dues_scheduler_cleanup', f'deleted={deleted}', '')
+        except Exception as e:
+            log_action('dues_portal_delete_error', '', str(e))
     
     #4. Log to CH_LOGGING (human readable)
     if log_ch and verified:

@@ -188,7 +188,7 @@ def _ensure_repo() -> None:
             "requirements.txt not found. Run this script from the repository root."
         )
 
-def _ensure_cloudflared() -> Path:
+def _ensure_cloudflared(force_update: bool = False) -> Path:
     _print_header("Checking Cloudflare Tunnel Binary")
     if os.name == "nt":
         filename = "cloudflared.exe"
@@ -198,16 +198,17 @@ def _ensure_cloudflared() -> Path:
         url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
 
     target_path = ROOT / filename
-    if target_path.exists():
+    if target_path.exists() and not force_update:
         print(f"{filename} is already present.")
         return target_path
 
-    print(f"Downloading {filename} from {url}...")
+    action = "Updating" if force_update else "Downloading"
+    print(f"{action} {filename} from {url}...")
     try:
         urllib.request.urlretrieve(url, target_path)
         if os.name != "nt":
             target_path.chmod(0o755)
-        print(f"Downloaded {filename} to {target_path}")
+        print(f"{action.replace('ing', 'ed')} {filename} to {target_path}")
         return target_path
     except Exception as exc:
         print(f"Failed to download cloudflared: {exc}")
@@ -453,6 +454,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--clean-hf-cache", action="store_true", help="clear HF caches")
     parser.add_argument("--tunnel-credentials", type=Path, help="path to CF credentials")
     parser.add_argument("--tunnel-name", help="name for new CF tunnel")
+    parser.add_argument("--update-cloudflared", action="store_true", help="force update cloudflared binary")
     return parser.parse_args()
 
 def main() -> None:
@@ -481,7 +483,7 @@ def main() -> None:
             raise InstallError(f"Python {sys.version_info.major}.{sys.version_info.minor} is unsupported. Install 3.12.")
 
     _ensure_repo()
-    cf_path = _ensure_cloudflared()
+    cf_path = _ensure_cloudflared(force_update=args.update_cloudflared)
     _ensure_cloudflared_auth(cf_path)
     _ensure_cloudflared_credentials(cf_path, args.tunnel_credentials.resolve() if args.tunnel_credentials else None, args.tunnel_name)
 

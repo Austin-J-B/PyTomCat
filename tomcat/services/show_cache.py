@@ -507,23 +507,14 @@ def rebuild_name_index() -> None:
     _build_name_index()
 
 def _fix_cached_reverse_index(meta: Optional[dict]) -> Optional[dict]:
-    """Translate legacy reverse_index (newest=1) to newest=total ordering for display."""
-    if not isinstance(meta, dict):
-        return meta
-    try:
-        ri_raw = meta.get("reverse_index")
-        tot_raw = meta.get("total_available")
-        ri = int(re.sub(r"[^0-9]", "", str(ri_raw))) if ri_raw is not None else 0
-        tot = int(re.sub(r"[^0-9]", "", str(tot_raw))) if tot_raw is not None else 0
-        if ri > 0 and tot > 0:
-            meta["reverse_index"] = max(1, tot - ri + 1)
-    except Exception:
-        pass
+    """Pass-through for backwards compatibility - indices are now stored correctly."""
+    #Legacy code inverted the index; the current storage format is already correct:
+    #oldest (lowest serial) = 1, newest (highest serial) = total_available
     return meta
 
 def _resolve_cat_id(query: str) -> Optional[int]:
     """Resolve a fuzzy cat query into an ID using the alias index."""
-    m = re.match(r"\s*(\d+)[\.|\s]", query or "")
+    m = re.match(r"\s*(\d+)[\.|\\s]", query or "")
     if m:
         try:
             return int(m.group(1))

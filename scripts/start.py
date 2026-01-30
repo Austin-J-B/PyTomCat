@@ -199,6 +199,11 @@ def main() -> None:
 
     tunnel_cmd = None
     if cloudflared_path.exists() and tunnel_uuid:
+        #Auto-update cloudflared before starting
+        try:
+            subprocess.run([str(cloudflared_path), "update"], check=False)
+        except Exception as exc:
+            print(f"[Tunnel] Update check failed: {exc}")
         tunnel_cmd = [
             str(cloudflared_path), "tunnel", 
             "--config", str(CONFIG_PATH), 

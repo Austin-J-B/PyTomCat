@@ -26,10 +26,11 @@ COL_URL = 6     #Picture Link
 COL_SERIAL = 7  #Serial number
 
 _TCB_ROWS: list[list[str]] | None = None
-_TCB_TS: float = 0.0
+_TCB_TS: float = 0.0  #monotonic for in-memory
 _TCB_SNAPSHOT = Path("cache") / "sheets" / "tcb_pics_formatted.json"
 
 def _load_tcb_snapshot() -> tuple[list[list[str]] | None, float]:
+    """Load snapshot from disk. Returns (rows, unix_timestamp)."""
     try:
         data = json.loads(_TCB_SNAPSHOT.read_text(encoding="utf-8"))
         rows = data.get("rows")
@@ -40,26 +41,44 @@ def _load_tcb_snapshot() -> tuple[list[list[str]] | None, float]:
         pass
     return None, 0.0
 
-def _write_tcb_snapshot(rows: list[list[str]], ts: float) -> None:
+def _write_tcb_snapshot(rows: list[list[str]]) -> None:
+    """Write snapshot to disk with current Unix timestamp."""
     try:
         _TCB_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
-        _TCB_SNAPSHOT.write_text(json.dumps({"ts": ts, "rows": rows}), encoding="utf-8")
+        _TCB_SNAPSHOT.write_text(json.dumps({"ts": time.time(), "rows": rows}), encoding="utf-8")
     except Exception:
         pass
+
+def force_refresh_tcb_cache() -> list[list[str]]:
+    """Force refresh the TCB pics cache from the live sheet, bypassing TTL."""
+    global _TCB_ROWS, _TCB_TS
+    try:
+        sid = settings.sheet_catabase_id
+        if not sid:
+            return []
+        gc = sheets_client()
+        ws = gc.open_by_key(sid).worksheet("TCB Pics Formatted")
+        rows = ws.get_all_values()
+        _TCB_ROWS, _TCB_TS = rows, time.monotonic()
+        _write_tcb_snapshot(rows)
+        return rows
+    except Exception:
+        return _TCB_ROWS or []
 
 def get_tcb_pics_rows(ttl_sec: int | None = None) -> list[list[str]]:
     """Fetch TCB Pics Formatted rows with in-memory + on-disk caching to reduce API reads."""
     global _TCB_ROWS, _TCB_TS
     ttl = int(ttl_sec if ttl_sec is not None else getattr(settings, "show_sheet_recentpics_ttl_sec", 300) or 300)
     ttl = max(1, ttl)
-    now = time.monotonic()
-    #In-memory cache
-    if _TCB_ROWS is not None and (now - _TCB_TS) < ttl:
+    now_mono = time.monotonic()
+    now_unix = time.time()
+    #In-memory cache (uses monotonic, session-only)
+    if _TCB_ROWS is not None and (now_mono - _TCB_TS) < ttl:
         return _TCB_ROWS
-    #On-disk snapshot
+    #On-disk snapshot (uses Unix epoch, survives restarts)
     snap_rows, snap_ts = _load_tcb_snapshot()
-    if snap_rows is not None and (now - snap_ts) < ttl:
-        _TCB_ROWS, _TCB_TS = snap_rows, snap_ts
+    if snap_rows is not None and (now_unix - snap_ts) < ttl:
+        _TCB_ROWS, _TCB_TS = snap_rows, now_mono
         return snap_rows
     #Fetch live sheet
     try:
@@ -69,13 +88,13 @@ def get_tcb_pics_rows(ttl_sec: int | None = None) -> list[list[str]]:
         gc = sheets_client()
         ws = gc.open_by_key(sid).worksheet("TCB Pics Formatted")
         rows = ws.get_all_values()
-        _TCB_ROWS, _TCB_TS = rows, now
-        _write_tcb_snapshot(rows, now)
+        _TCB_ROWS, _TCB_TS = rows, now_mono
+        _write_tcb_snapshot(rows)
         return rows
     except Exception:
         #Fallback to whatever snapshot we have
         if snap_rows is not None:
-            _TCB_ROWS, _TCB_TS = snap_rows, snap_ts
+            _TCB_ROWS, _TCB_TS = snap_rows, now_mono
             return snap_rows
         return []
 
@@ -84,8 +103,11 @@ async def _get_all_photos_long_format():
     rows = get_tcb_pics_rows()
     return rows[1:] if rows else []  #Skip header
 
-async def get_most_recent_photo(full_name: str) -> dict | str:
-    """Fetch the most recent photo row for a cat from the long-format list."""
+async def get_most_recent_photo(full_name: str, _retried: bool = False) -> dict | str:
+    """Fetch the most recent photo row for a cat from the long-format list.
+    
+    If no photos found, will force-refresh cache and retry once (smart recache).
+    """
     try:
         rows = await _get_all_photos_long_format()
     except Exception as e:
@@ -103,6 +125,10 @@ async def get_most_recent_photo(full_name: str) -> dict | str:
                 matches.append(r)
 
     if not matches:
+        #Smart recache: force refresh and retry once
+        if not _retried:
+            force_refresh_tcb_cache()
+            return await get_most_recent_photo(full_name, _retried=True)
         return f"No photos found for {full_name}."
 
     #Sort by Serial Number (descending)
@@ -124,8 +150,11 @@ async def get_most_recent_photo(full_name: str) -> dict | str:
     }
 
 #Optional: Update get_recent_photo to use the new source too
-async def get_recent_photo(full_name: str) -> dict | str:
-    """Pick a random recent photo from the full history."""
+async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str:
+    """Pick a random recent photo from the full history.
+    
+    If no photos found, will force-refresh cache and retry once (smart recache).
+    """
     try:
         rows = await _get_all_photos_long_format()
     except Exception as e:
@@ -135,17 +164,31 @@ async def get_recent_photo(full_name: str) -> dict | str:
     matches = [r for r in rows if len(r) > COL_SERIAL and norm_alnum_lower(r[COL_LABEL]) == key and r[COL_URL].startswith("http")]
 
     if not matches:
+        #Smart recache: force refresh and retry once
+        if not _retried:
+            force_refresh_tcb_cache()
+            return await get_recent_photo(full_name, _retried=True)
         return f"No recent photos for '{full_name}'."
 
     import random
+    
+    #Sort by serial ascending (oldest=lowest serial first)
+    def parse_serial(row):
+        try:
+            return int(re.sub(r"\D", "", row[COL_SERIAL]) or 0)
+        except:
+            return 0
+    
+    matches.sort(key=parse_serial)
     pick = random.choice(matches)
+    pick_idx = matches.index(pick)  #0-based position in sorted list
     
     return {
         "actual_name": pick[COL_LABEL],
         "url": pick[COL_URL],
         "serial": pick[COL_SERIAL],
         "total_available": len(matches),
-        "reverse_index": 0 #Not easily calculated in random fetch, simplified
+        "reverse_index": pick_idx + 1  #1-based: oldest=1, newest=total
     }
 
 

@@ -2443,14 +2443,18 @@ async def _analyze_dues(bot) -> List[dict]:
                     scored.append((r, mm))
             scored.sort(reverse=True)
             mem_candidates = [mm for r, mm in scored[:10]]
-        if not mem_candidates and an:
+        if not mem_candidates and an and len(an) >= 6:
             scored = []
             for mm in members:
                 dn = _norm_user(mm.get('discord_username'))
                 if not dn: continue
-                r = _ratio(an, dn)
-                if r >= 85:
-                    scored.append((r, mm))
+                #Containment match: if one is substring of the other (min 6 chars to avoid false positives)
+                if len(dn) >= 6 and (an in dn or dn in an):
+                    scored.append((95, mm))
+                else:
+                    r = _ratio(an, dn)
+                    if r >= 85:
+                        scored.append((r, mm))
             scored.sort(reverse=True)
             mem_candidates = [mm for r, mm in scored[:10]]
         if not mem_candidates:

@@ -68,3 +68,9 @@ CCC megasheet.xlsx
 .config/
 
 logs/1252026transfer
+LabelingApps/PreviousClassifierLabels
+LabelingApps/PreviousDetectorLabels
+LabelingApps/colab.py
+LabelingApps/CropperAndSorter.py
+
+Catabase-GoogleScript.GoogleScript

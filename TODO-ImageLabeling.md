@@ -1,0 +1,157 @@
+# TomCat Image Labeling Pipeline - Implementation TODO
+
+> **Created:** 2026-01-30  
+> **Status:** Planning Complete - Awaiting Execution  
+> **Context:** Web-based HITL labeling system for cat identification
+
+---
+
+## Quick Reference
+
+| Item | Value |
+|------|-------|
+| Sheet | TCB Pics Formatted |
+| New Columns | I: BoxCoordinates, J: BoxCatIDs, K: OfficerComments (shifted) |
+| Gallery Base | `weights/R4.5_cat_DINOv3_gallery.pt` (7,316 embeddings, 92 cats) |
+| Gallery Updates | `R4.5.1_cat_DINOv3_gallery.pt`, `R4.5.2_...`, etc. |
+| Quality Filter | ≥122,500 pixels (350p) + ≥4 images per cat |
+| Crop Padding | 5% |
+
+---
+
+## Architecture Overview
+
+```
+Website Labeling System
+├── Tab 1: Detector       → Draw/adjust bounding boxes
+├── Tab 2: Classifier     → Pick cat from top-9 DINOv3 predictions
+├── Tab 3: Manual Review  → Dropdown for NeedsReview crops + Add New Cat
+└── Tab 4: Cat Gallery    → Grid view of labeled crops by cat name
+
+Discord Integration
+├── "TomCat identify" → ✅ reaction → Cache crop for 4 AM gallery update
+└── "TomCat identify" → ❌ reaction → Queue for Manual Review tab
+```
+
+---
+
+## Execution Phases
+
+### Phase 1: Infrastructure
+- [ ] Update `install.py` to add SAM2 weights download
+- [ ] Add BoxCoordinates (I) and BoxCatIDs (J) columns to sheet schema
+- [ ] Extend `vision.py` with SAM loader and `detect_with_sam()`
+
+### Phase 2: Import Existing Labels
+- [ ] Create `scripts/import_labels.py`
+  - Find cutoff serial (highest in PreviousDetectorLabels)
+  - Parse .txt files for BoxCoordinates
+  - Parse known_cats/ and HITL_labeled_crops/ for BoxCatIDs
+  - Mark omitted serials ≤ cutoff as "Rejected"
+  - Mark "0. NotACat" rows as "Rejected"
+
+### Phase 3: Backend API
+- [ ] Create `tomcat/handlers/labeler.py`
+  - `/api/labeler/queue/detect` - Unlabeled serials
+  - `/api/labeler/queue/classify` - Serials with boxes but no labels
+  - `/api/labeler/queue/review` - NeedsReview crops
+  - `/api/labeler/image/<sn>` - Image + annotations
+  - `/api/labeler/detect` - YOLO + SAM
+  - `/api/labeler/identify` - DINOv3 top-9
+  - `/api/labeler/save` - Batch write to sheet
+  - `/api/labeler/cats` - All cat names
+  - `/api/labeler/add-cat` - Create CatDatabase row
+  - `/api/labeler/schedule-update` - Queue 4 AM job
+
+### Phase 4: Gallery Update Pipeline
+- [ ] Create `scripts/gallery_updater.py`
+  - Batch process new crops (100 at a time)
+  - Apply 350p + 4-image quality filter
+  - Run DINOv3 encoder → 512-dim embeddings
+  - Append to existing gallery (incremental update)
+  - Save as R4.5.{N+1}_cat_DINOv3_gallery.pt
+  - Post Discord notification to logging channel
+
+### Phase 5: Frontend UI
+- [ ] Create `UserInterface/labeler.js`
+  - Canvas with zoomable image
+  - Draggable/resizable boxes
+  - Keyboard shortcuts (WASD, arrows, 1-9, 0, X, Enter, Backspace)
+  - Local JSON caching with undo history
+  - Batch write every 60s
+- [ ] Create `UserInterface/labeler.css` (dark theme)
+- [ ] Add Detector tab to `index.html`
+- [ ] Add Classifier tab to `index.html`
+- [ ] Add Manual Review tab to `index.html`
+- [ ] Add Cat Gallery tab to `index.html`
+
+### Phase 6: Discord Feedback Integration
+- [ ] Update `tomcat/handlers/vision.py` to process ✅/❌ reactions
+  - ✅ → Cache crop + box + predicted cat to `cache/discord_verified/`
+  - ❌ → Queue to `cache/discord_disputed/` for Manual Review
+- [ ] At 4 AM, include verified crops in gallery update
+
+---
+
+## Cell Value Semantics
+
+### BoxCoordinates (Column I)
+| Value | Meaning |
+|-------|---------|
+| (empty) | Not yet labeled |
+| `Rejected` | No valid cats in image |
+| `0.5 0.3 0.4 0.6` | Single box (cx cy w h) |
+| `0.5 0.3 0.4 0.6\|0.2 0.7 0.3 0.2` | Multiple boxes, pipe-separated |
+
+### BoxCatIDs (Column J)
+| Value | Meaning |
+|-------|---------|
+| (empty) | Not yet classified |
+| `Twix` | Single cat |
+| `Twix\|Hershey` | Multiple cats, matching box order |
+| `Twix\|Rejected` | First box is Twix, second is invalid |
+| `NeedsReview` | Unknown cat, requires manual selection |
+
+---
+
+## Keyboard Shortcuts
+
+### Detector Tab
+| Key | Action |
+|-----|--------|
+| WASD | Nudge top-left corner |
+| Arrows | Nudge bottom-right corner |
+| 2 | Add new box |
+| X | Delete selected box |
+| E | Run SAM refinement |
+| Y/Enter | Save, advance |
+| N | Reject image |
+| Backspace | Undo |
+
+### Classifier Tab
+| Key | Action |
+|-----|--------|
+| 1-9 | Select prediction |
+| 0 | Mark NeedsReview |
+| X | Reject crop |
+| Enter | Confirm, advance |
+| Backspace | Undo |
+
+---
+
+## Discord Notification Format
+
+After 4 AM gallery update:
+```
+📊 Gallery updated to R4.5.3
+Added 127 embeddings for 45 cats
+Total: 7,443 embeddings across 94 cats
+```
+
+---
+
+## Future Enhancements (Phase 7+)
+- [ ] Full CatDatabase editor (location, description, birthday, etc.)
+- [ ] Bulk label correction tool
+- [ ] Training run scheduler for detector (if ever needed)
+- [ ] Mobile-friendly labeling interface

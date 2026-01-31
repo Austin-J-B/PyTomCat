@@ -27,7 +27,7 @@ ONNX_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.onnx"
 TOKENIZER_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.tokenizer.json"
 CONFIG_PATH = ROOT / "config.yml"
 
-REQUIRED_WEIGHTS = ["NanoModel.pt", "R4_cat_DINOv3_encoder.pth", "R4.5_cat_DINOv3_gallery.pt"]
+REQUIRED_WEIGHTS = ["R4_cat_DINOv3_encoder.pth", "R4.5_cat_DINOv3_gallery.pt"]
 
 #PyTorch specifications for CPU and GPU (CUDA 12.1)
 TORCH_CPU_SPEC = ["torch==2.4.1", "torchvision==0.19.1"]

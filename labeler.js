@@ -22,13 +22,15 @@
 (function () {
     'use strict';
 
-    const NUDGE_PX = 5; //Pixels per WASD/arrow press
+    const NUDGE_PX = 2; //Pixels per WASD/arrow press
     const CROP_PAD_PCT = 0.03;
     const ZOOM_MIN = 0.5;
     const ZOOM_MAX = 6.0;
     const ZOOM_STEP = 0.12;
-    const PREFETCH_AHEAD = 25;
+    const PREFETCH_AHEAD = 40;
     const PREFETCH_CONCURRENCY = 4;
+    const IMAGE_PREFETCH_AHEAD = 8;
+    const IMAGE_PREFETCH_MAX = 24;
 
     function getApiBase() {
         let base = '';
@@ -85,6 +87,7 @@
     let prefetchRequested = false;
     let predCacheEpoch = 0;
     let prefetchTimer = null;
+    let imagePrefetch = new Map();
 
     //DOM references (set after init)
     let containerEl = null;
@@ -378,7 +381,7 @@
         if (listEl) listEl.innerHTML = '';
 
         if (labelerMode === 'classify' && currentBoxes.length) {
-            const firstUnlabeled = currentLabels.findIndex(lbl => !lbl || !lbl.trim() || lbl.trim().toLowerCase() === 'needsreview');
+            const firstUnlabeled = currentLabels.findIndex(lbl => !lbl || !lbl.trim());
             if (firstUnlabeled >= 0) currentCropIdx = firstUnlabeled;
             const cached = predCache.get(getPredCacheKey(currentItem));
             if (cached) {
@@ -389,6 +392,7 @@
         updateInfo();
         loadImage(currentImageUrl);
         prefetchPredictions();
+        prefetchImages();
     }
 
     function togglePrefetchTimer(enabled) {
@@ -399,6 +403,7 @@
         if (enabled) {
             prefetchTimer = setInterval(() => {
                 prefetchPredictions();
+                prefetchImages();
             }, 3000);
         }
     }
@@ -409,6 +414,7 @@
         prefetchInFlight.clear();
         prefetchRunning = false;
         prefetchRequested = false;
+        imagePrefetch.clear();
     }
 
     function getPredCacheKey(item) {
@@ -462,7 +468,8 @@
 
         if (labelerMode === 'detect' && currentBoxes.length === 0) {
             console.log('[Labeler] Auto-detect mode, calling runDetection');
-            //Auto-detect
+            //Draw image first so there's no blank delay, then run detection
+            drawCanvas();
             runDetection();
         } else {
             console.log('[Labeler] Drawing canvas directly');
@@ -859,7 +866,7 @@
                 const info = typeof ref === 'string'
                     ? { img: ref, serial: null, crop: null }
                     : (ref || {});
-                const refImg = info.img || '';
+                const refImg = info.img || info.thumb || '';
                 const sn = info.serial != null ? `sn${info.serial}` : '';
                 const cropNum = Number(info.crop) || null;
                 const cropText = cropNum ? ` crop ${cropNum}` : '';
@@ -1028,6 +1035,30 @@
         const slots = Math.min(PREFETCH_CONCURRENCY, targets.length);
         for (let i = 0; i < slots; i++) {
             runNext();
+        }
+    }
+
+    function prefetchImages() {
+        const start = queueIndex + 1;
+        const end = Math.min(queue.length, start + IMAGE_PREFETCH_AHEAD);
+        for (let i = start; i < end; i++) {
+            const item = queue[i];
+            if (!item || !item.serial) continue;
+            const url = buildApiUrl(`/api/labeler/cached_image/${item.serial}`);
+            if (imagePrefetch.has(url)) continue;
+            const img = new Image();
+            img.decoding = 'async';
+            img.loading = 'eager';
+            img.src = url;
+            imagePrefetch.set(url, img);
+        }
+        if (imagePrefetch.size > IMAGE_PREFETCH_MAX) {
+            const overflow = imagePrefetch.size - IMAGE_PREFETCH_MAX;
+            const keys = imagePrefetch.keys();
+            for (let i = 0; i < overflow; i++) {
+                const key = keys.next().value;
+                if (key) imagePrefetch.delete(key);
+            }
         }
     }
 

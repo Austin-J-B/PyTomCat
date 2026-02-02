@@ -86,6 +86,8 @@ Discord Integration
   - ✅ → Cache crop + box + predicted cat to `cache/discord_verified/`
   - ❌ → Queue to `cache/discord_disputed/` for Manual Review
 - [ ] At 4 AM, include verified crops in gallery update HIGH PRIORITY
+- [ ] Sub feature of the above. Consider if it will be resource effective to have a 'refresh entire gallery' feature for when we find previous labels that were incorrect.
+    - For example, if, during classifier labeling, we see one image is incorrect, we can go back and update it for the proper label. Since this wouldn't update the gallery with the 4am schedule, we may need to update the entire gallery instead of just adding to it/updating it. If this isn't resource intensive in any concerning amount, we can just have the normal button/feature update the entire thing instead of topping it off.
 
 ---
 

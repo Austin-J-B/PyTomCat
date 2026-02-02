@@ -193,7 +193,7 @@ class Settings:
     )
 
     #Labeler reference cache (classifier UI)
-    labeler_ref_per_cat: int = int(os.getenv("LABELER_REF_PER_CAT", "150") or "150")
+    labeler_ref_per_cat: int = int(os.getenv("LABELER_REF_PER_CAT", "250") or "250")
     labeler_ref_thumb_size: int = int(os.getenv("LABELER_REF_THUMB_SIZE", "128") or "128")
 
     #Core knobs

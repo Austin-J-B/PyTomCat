@@ -5,6 +5,10 @@ import io
 import os
 import math
 import warnings
+import base64
+import asyncio
+import random
+import re
 from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Any, cast
@@ -20,9 +24,10 @@ os.environ.setdefault(
 )
 
 try:
-    from ultralytics import YOLO
+    from ultralytics import YOLO, SAM
 except Exception:
     YOLO = None
+    SAM = None
 
 from ..config import settings
 from ..logger import log_action
@@ -33,12 +38,34 @@ _DEFAULT_CONF = 0.552
 
 #---------- Internal State ----------
 _yolo: Optional[Any] = None
+_sam: Optional[Any] = None
 _clf: Optional[torch.nn.Module] = None
 _gallery_emb: Optional[Tensor] = None
 _gallery_names: List[str] = []
+_gallery_paths: List[str] = []
+_gallery_root_hints: Optional[List[Path]] = None
 _device: Optional[torch.device] = None
 _half: bool = False
 _font: Optional[Any] = None
+_labeler_ref_cache: dict[str, dict[str, Any]] = {}
+_labeler_ref_ready: bool = False
+_labeler_ref_building: bool = False
+_labeler_ref_task: Optional[asyncio.Task] = None
+
+#Sheet column indices (0-based) for TCB Pics Formatted
+COL_URL = 6
+COL_SERIAL = 7
+COL_BOX_COORDS = 8
+COL_BOX_CAT_IDS = 9
+SN_PATTERN = re.compile(r"sn(\d+)", re.IGNORECASE)
+
+def _parse_serial(val: str) -> Optional[int]:
+    m = SN_PATTERN.search(val or "")
+    if m:
+        return int(m.group(1))
+    if str(val or "").strip().isdigit():
+        return int(str(val).strip())
+    return None
 
 @dataclass
 class IdentifyResult:
@@ -97,9 +124,18 @@ def _ensure_detector() -> None:
     y: Any = YOLO(settings.cv_detect_weights)
     _yolo = y
 
+def _ensure_sam() -> None:
+    """Load SAM2 model for box refinement."""
+    global _sam
+    _ensure_device_only()
+    if _sam is not None: return
+    if SAM is None: raise RuntimeError("ultralytics SAM not available")
+    _sam = SAM(settings.cv_sam_weights)
+    log_action("viz_sam_load", "sam_ready", settings.cv_sam_weights)
+
 def _ensure_classifier() -> None:
     """Load the DINOv3 encoder and the .pt gallery."""
-    global _clf, _gallery_emb, _gallery_names
+    global _clf, _gallery_emb, _gallery_names, _gallery_paths
     _ensure_device_only()
     if _clf is not None and _gallery_emb is not None: return
 
@@ -126,6 +162,11 @@ def _ensure_classifier() -> None:
         
         idx_to_class = {v: k for k, v in gal_data['class_to_idx'].items()}
         _gallery_names = [idx_to_class[int(i)] for i in gal_data['label']]
+        raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
+        if isinstance(raw_paths, (list, tuple)) and len(raw_paths) == _gallery_emb.shape[0]:
+            _gallery_paths = [str(p) for p in raw_paths]
+        else:
+            _gallery_paths = []
         log_action("viz_clf_load_info", "reid_ready", f"cats={len(set(_gallery_names))}")
     except Exception as e:
         log_action("viz_clf_load_error", f"type={type(e).__name__}", str(e))
@@ -162,6 +203,76 @@ def _prep_tensor(pil: Image.Image) -> Tensor:
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
     return cast(Tensor, tfm(pil))
+
+def _get_gallery_root_hints() -> List[Path]:
+    """Return cached local roots to resolve gallery paths from training runs."""
+    global _gallery_root_hints
+    if _gallery_root_hints is not None:
+        return _gallery_root_hints
+    roots: List[Path] = []
+    env_root = os.getenv("CV_GALLERY_LOCAL_ROOT", "").strip()
+    if env_root:
+        p = Path(env_root)
+        if p.exists():
+            roots.append(p)
+    # Common local training data location used by the legacy classifier tool
+    docs_root = (
+        Path.home()
+        / "Documents"
+        / "TomCat VI Training"
+        / "ClassifierModelTraining"
+        / "ClassifierTrainingData"
+        / "sortedPics"
+        / "HITL_Crops"
+    )
+    if docs_root.exists():
+        roots.append(docs_root)
+    _gallery_root_hints = roots
+    return roots
+
+def _resolve_gallery_path(path: str) -> str:
+    """Map gallery paths saved in training to local filesystem paths."""
+    if not path:
+        return path
+    try:
+        if os.path.exists(path):
+            return path
+    except Exception:
+        pass
+    # Typical Colab root
+    if path.startswith("/content/"):
+        if "/content/reid_data/" in path:
+            suffix = path.split("/content/reid_data/", 1)[1]
+        else:
+            suffix = path.split("/content/", 1)[1]
+        for root in _get_gallery_root_hints():
+            candidate = root / suffix.replace("/", os.sep)
+            if candidate.exists():
+                return str(candidate)
+    return path
+
+def _thumb_b64(path: str, size: int = 96) -> Optional[str]:
+    """Load an image, generate a small JPEG thumbnail, and return base64."""
+    try:
+        resolved = _resolve_gallery_path(path)
+        img = Image.open(resolved).convert("RGB")
+        img.thumbnail((size, size))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=80)
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return None
+
+def _thumb_b64_from_pil(img: Image.Image, size: int = 96) -> Optional[str]:
+    """Generate a small JPEG thumbnail from a PIL image and return base64."""
+    try:
+        thumb = img.copy()
+        thumb.thumbnail((size, size))
+        buf = io.BytesIO()
+        thumb.save(buf, format="JPEG", quality=80)
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return None
 
 def _make_collage(crops: List[Image.Image]) -> Image.Image:
     """Combine multiple crops into a single grid image."""
@@ -289,6 +400,287 @@ def identify(image_bytes: bytes) -> IdentifyResult:
     annotated.save(buf, format="JPEG")
     return IdentifyResult(boxed_jpeg=buf.getvalue(), results=results)
 
+def identify_boxes(
+    image_bytes: bytes,
+    boxes: List[Tuple[float, float, float, float]],
+    *,
+    top_k: int = 9,
+    refs_per: int = 5,
+    thumb_size: int = 128,
+) -> IdentifyResult:
+    """Run DINOv3 identification on specific normalized boxes (cx, cy, w, h)."""
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    _enforce_max_dim(img)
+    _ensure_classifier()
+
+    if _clf is None or _gallery_emb is None or not boxes:
+        return IdentifyResult(boxed_jpeg=b"", results=[])
+
+    img_w, img_h = img.size
+    tiles: List[Tensor] = []
+    valid_boxes: List[Tuple[int, int, int, int]] = []
+
+    for box in boxes:
+        try:
+            cx, cy, w, h = [float(x) for x in box]
+        except Exception:
+            continue
+        if w <= 0 or h <= 0:
+            continue
+        x1 = (cx - w / 2) * img_w
+        y1 = (cy - h / 2) * img_h
+        x2 = (cx + w / 2) * img_w
+        y2 = (cy + h / 2) * img_h
+        cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
+        crop = img.crop((cx1, cy1, cx2, cy2))
+        tiles.append(_prep_tensor(crop))
+        valid_boxes.append((int(cx1), int(cy1), int(cx2), int(cy2)))
+
+    if not tiles:
+        return IdentifyResult(boxed_jpeg=b"", results=[])
+
+    batch = torch.stack(tiles).to(_device)
+    with torch.inference_mode():
+        query_embs = _clf(batch)
+        similarities = query_embs @ _gallery_emb.T
+
+    results: List[dict] = []
+    for i in range(similarities.shape[0]):
+        sims = similarities[i]
+        vals, idxs = torch.sort(sims, descending=True)
+
+        candidate_names: List[str] = []
+        candidate_scores: List[float] = []
+        seen: set[str] = set()
+
+        for j in range(len(_gallery_names)):
+            cat_idx = int(idxs[j])
+            cat_name = _gallery_names[cat_idx]
+            if cat_name in seen:
+                continue
+            candidate_names.append(cat_name)
+            candidate_scores.append(float(vals[j]))
+            seen.add(cat_name)
+            if len(candidate_names) >= top_k:
+                break
+
+        ref_lists: dict[str, List[str]] = {n: [] for n in candidate_names}
+        if _labeler_ref_ready:
+            for name in candidate_names:
+                ref_lists[name] = _get_labeler_refs_for_cat(name, query_embs[i], refs_per)
+        elif _gallery_paths:
+            done = 0
+            target_total = refs_per * len(candidate_names)
+            for j in range(len(_gallery_names)):
+                if done >= target_total:
+                    break
+                cat_idx = int(idxs[j])
+                cat_name = _gallery_names[cat_idx]
+                if cat_name not in ref_lists:
+                    continue
+                if len(ref_lists[cat_name]) >= refs_per:
+                    continue
+                if cat_idx < len(_gallery_paths):
+                    thumb = _thumb_b64(_gallery_paths[cat_idx], size=thumb_size)
+                    if thumb:
+                        ref_lists[cat_name].append(thumb)
+                        done += 1
+
+        candidates = []
+        for name, conf in zip(candidate_names, candidate_scores):
+            candidates.append({
+                "name": name,
+                "conf": conf,
+                "refs": ref_lists.get(name, []),
+            })
+
+        results.append({
+            "index": i + 1,
+            "box": valid_boxes[i] if i < len(valid_boxes) else None,
+            "candidates": candidates,
+        })
+
+    return IdentifyResult(boxed_jpeg=b"", results=results)
+
+def _normalize_cat_label(label: str, cat_map: dict[str, str]) -> Optional[str]:
+    lbl = (label or "").strip()
+    if not lbl:
+        return None
+    low = lbl.lower()
+    if low in {"needsreview", "rejected"}:
+        return None
+    if low in cat_map:
+        return cat_map[low]
+    # Strip numeric prefix like "1. Twix"
+    if "." in lbl:
+        prefix, rest = lbl.split(".", 1)
+        if prefix.strip().isdigit():
+            cand = rest.strip()
+            cand_low = cand.lower()
+            if cand_low in cat_map:
+                return cat_map[cand_low]
+    return None
+
+def _parse_yolo_box_str(box_str: str) -> Optional[Tuple[float, float, float, float]]:
+    try:
+        parts = [float(p) for p in box_str.strip().split()]
+    except Exception:
+        return None
+    if len(parts) != 4:
+        return None
+    return parts[0], parts[1], parts[2], parts[3]
+
+def _embed_crops(crops: List[Image.Image]) -> Tensor:
+    _ensure_classifier()
+    if _clf is None:
+        return torch.empty((0, 512))
+    tensors = [_prep_tensor(c) for c in crops]
+    if not tensors:
+        return torch.empty((0, 512))
+    batch_size = 32
+    out = []
+    for i in range(0, len(tensors), batch_size):
+        batch = torch.stack(tensors[i:i + batch_size]).to(_device)
+        with torch.inference_mode():
+            emb = _clf(batch)
+        out.append(emb.detach().cpu())
+    return torch.cat(out, dim=0) if out else torch.empty((0, 512))
+
+async def warm_labeler_refs(force: bool = False) -> dict:
+    """Warm per-cat reference cache from TCB Pics Formatted rows."""
+    global _labeler_ref_ready, _labeler_ref_building, _labeler_ref_task, _labeler_ref_cache
+    if _labeler_ref_building:
+        return {"ready": _labeler_ref_ready, "building": True, "cats": len(_labeler_ref_cache)}
+    if _labeler_ref_ready and not force:
+        return {"ready": True, "building": False, "cats": len(_labeler_ref_cache)}
+
+    async def _build() -> None:
+        global _labeler_ref_ready, _labeler_ref_building, _labeler_ref_cache
+        _labeler_ref_building = True
+        try:
+            await asyncio.to_thread(_ensure_classifier)
+            cat_list = await asyncio.to_thread(get_all_cats)
+            cat_map = {c.lower(): c for c in cat_list}
+            max_per_cat = int(getattr(settings, "labeler_ref_per_cat", 50) or 50)
+            thumb_size = int(getattr(settings, "labeler_ref_thumb_size", 96) or 96)
+
+            from ..services.catsheets import get_tcb_pics_rows
+            from ..services import labeler_cache
+
+            rows = get_tcb_pics_rows(ttl_sec=60)
+            samples: dict[str, List[Tuple[int, str, str]]] = {c: [] for c in cat_list}
+            counts: dict[str, int] = {c: 0 for c in cat_list}
+
+            for row in rows[1:]:
+                if len(row) <= COL_SERIAL:
+                    continue
+                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+                if sn is None:
+                    continue
+                url = row[COL_URL] if len(row) > COL_URL else ""
+                if not url.startswith("http"):
+                    continue
+                box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
+                box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
+                if not box_coords or not box_cat_ids:
+                    continue
+                if str(box_coords).strip().lower() == "rejected":
+                    continue
+                coords = [c for c in str(box_coords).split("|") if c.strip()]
+                labels = [l for l in str(box_cat_ids).split("|") if l.strip()]
+                if not coords or not labels:
+                    continue
+                limit = min(len(coords), len(labels))
+                for i in range(limit):
+                    cat = _normalize_cat_label(labels[i], cat_map)
+                    if not cat:
+                        continue
+                    counts[cat] += 1
+                    entry = (sn, url, coords[i])
+                    bucket = samples[cat]
+                    if len(bucket) < max_per_cat:
+                        bucket.append(entry)
+                    else:
+                        j = random.randint(1, counts[cat])
+                        if j <= max_per_cat:
+                            replace_idx = random.randrange(max_per_cat)
+                            bucket[replace_idx] = entry
+
+            new_cache: dict[str, dict[str, Any]] = {}
+            for cat, entries in samples.items():
+                if not entries:
+                    continue
+                crops: List[Image.Image] = []
+                thumbs: List[str] = []
+                for sn, url, coord_str in entries:
+                    coord = _parse_yolo_box_str(coord_str)
+                    if coord is None:
+                        continue
+                    data = await labeler_cache.get_or_download(sn, url)
+                    if not data:
+                        continue
+                    try:
+                        img = Image.open(io.BytesIO(data)).convert("RGB")
+                    except Exception:
+                        continue
+                    img_w, img_h = img.size
+                    cx, cy, w, h = coord
+                    x1 = (cx - w / 2) * img_w
+                    y1 = (cy - h / 2) * img_h
+                    x2 = (cx + w / 2) * img_w
+                    y2 = (cy + h / 2) * img_h
+                    cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
+                    crop = img.crop((cx1, cy1, cx2, cy2))
+                    thumb_b64 = _thumb_b64_from_pil(crop, size=thumb_size)
+                    if not thumb_b64:
+                        continue
+                    crops.append(crop)
+                    thumbs.append(thumb_b64)
+                if not crops:
+                    continue
+                emb = await asyncio.to_thread(_embed_crops, crops)
+                if emb.numel() == 0:
+                    continue
+                new_cache[cat] = {"emb": emb, "thumb": thumbs}
+
+            _labeler_ref_cache = new_cache
+            _labeler_ref_ready = True
+        except Exception as e:
+            log_action("labeler_ref_build_error", "error", str(e))
+            _labeler_ref_ready = False
+        finally:
+            _labeler_ref_building = False
+
+    _labeler_ref_task = asyncio.create_task(_build())
+    return {"ready": _labeler_ref_ready, "building": True, "cats": len(_labeler_ref_cache)}
+
+def labeler_ref_status() -> dict:
+    return {
+        "ready": _labeler_ref_ready,
+        "building": _labeler_ref_building,
+        "cats": len(_labeler_ref_cache),
+    }
+
+def _get_labeler_refs_for_cat(cat: str, query_emb: Tensor, refs_per: int) -> List[str]:
+    pack = _labeler_ref_cache.get(cat)
+    if not pack:
+        return []
+    emb: Tensor = pack.get("emb")
+    thumbs: List[str] = pack.get("thumb", [])
+    if emb is None or not thumbs or emb.numel() == 0:
+        return []
+    try:
+        # Ensure shapes
+        q = query_emb.detach().cpu().view(1, -1)
+        sims = (emb @ q.T).squeeze(1)
+        k = min(refs_per, sims.numel(), len(thumbs))
+        if k <= 0:
+            return []
+        topk = torch.topk(sims, k=k).indices.tolist()
+        return [thumbs[i] for i in topk if i < len(thumbs)]
+    except Exception:
+        return []
+
 #---------- Visualization Helpers ----------
 def _get_font(size: int) -> Any:
     global _font
@@ -310,3 +702,62 @@ def _draw_boxes(img: Image.Image, dets: List[Det]) -> Image.Image:
         draw.rectangle([x1, y1 - th, x1 + tw + 4, y1], fill=_PURPLE)
         draw.text((x1 + 2, y1 - th), text, fill="white", font=fnt)
     return img
+
+#---------- Labeler API Functions ----------
+@dataclass
+class DetectWithSamResult:
+    """Result of YOLO+SAM detection for the labeling tool."""
+    boxed_jpeg: bytes
+    boxes: List[Tuple[float, float, float, float]]  #YOLO-refined boxes (x1,y1,x2,y2)
+
+def _sam_refine_box(img_array: Any, prompt_box: List[float]) -> Tuple[float, float, float, float]:
+    """Use SAM to refine a bounding box based on mask fit."""
+    import numpy as np
+    _ensure_sam()
+    results = _sam(img_array, bboxes=[prompt_box], verbose=False)
+    if results and results[0].masks:
+        mask = results[0].masks.data[0].cpu().numpy().astype(bool)
+        h, w = mask.shape[-2:]
+        rows = np.any(mask, axis=1)
+        cols = np.any(mask, axis=0)
+        if np.any(rows) and np.any(cols):
+            rmin, rmax = np.where(rows)[0][[0, -1]]
+            cmin, cmax = np.where(cols)[0][[0, -1]]
+            #Add small margin
+            return (
+                max(0, float(cmin - 5)),
+                max(0, float(rmin - 5)),
+                min(w, float(cmax + 5)),
+                min(h, float(rmax + 5))
+            )
+    return tuple(prompt_box)
+
+def detect_with_sam(image_bytes: bytes) -> DetectWithSamResult:
+    """Run YOLO detection then refine each box with SAM segmentation."""
+    import numpy as np
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    _enforce_max_dim(img)
+    img_array = np.array(img)
+    
+    dets = _run_yolo(img)
+    refined_boxes = []
+    
+    for d in dets:
+        prompt_box = list(d.xyxy)
+        refined = _sam_refine_box(img_array, prompt_box)
+        refined_boxes.append(refined)
+    
+    #Draw refined boxes
+    refined_dets = [Det(xyxy=b, conf=1.0) for b in refined_boxes]
+    annotated = _draw_boxes(img.copy(), refined_dets)
+    
+    buf = io.BytesIO()
+    annotated.save(buf, format="JPEG")
+    return DetectWithSamResult(boxed_jpeg=buf.getvalue(), boxes=refined_boxes)
+
+def get_all_cats() -> List[str]:
+    """Return sorted list of all unique cat names from the gallery."""
+    _ensure_classifier()
+    if not _gallery_names:
+        return []
+    return sorted(set(_gallery_names))

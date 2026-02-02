@@ -144,6 +144,7 @@ class PhotoView(discord.ui.View):
         """Edit the original message when possible, else send a follow-up copy.
 
         Returns (delivery_mode, resulting_message_id).
+        If the webhook is fully expired, returns ("expired", None).
         """
         attachments = []
         if image_bytes is not None:
@@ -158,6 +159,10 @@ class PhotoView(discord.ui.View):
             )
             return "edit", interaction.message.id
         except NotFound:
+            pass  #Fall through to followup.send
+
+        #Try followup.send as fallback
+        try:
             files = None
             if image_bytes is not None:
                 files = [discord.File(io.BytesIO(image_bytes), filename=filename)]
@@ -169,6 +174,10 @@ class PhotoView(discord.ui.View):
             )
             sent_id = getattr(sent, "id", None)
             return "send", sent_id
+        except NotFound:
+            #Webhook fully expired (>15 min since original interaction)
+            log_action("photo_view_expired", "webhook", f"cat={self.cat_name}")
+            return "expired", None
 
     @discord.ui.button(label="Show me another", style=discord.ButtonStyle.primary)
     async def another(self, interaction: discord.Interaction, button: discord.ui.Button):

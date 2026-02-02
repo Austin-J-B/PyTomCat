@@ -1138,6 +1138,8 @@
                 Requests</a>
             <a href="#checklist" class="menu-item" data-view="checklist" id="menu-checklist"
                 onclick="setView('checklist'); toggleMenu();" style="display:none;">Feeding Settings</a>
+            <a href="#labeler" class="menu-item" data-view="labeler" id="menu-labeler"
+                onclick="setView('labeler'); toggleMenu();" style="display:none;">Image Labeler</a>
             <a href="https://github.com/austin-j-b/pytomcat" class="menu-item" target="_blank">TomCat VI Repository</a>
         </div>
     </div>
@@ -1374,11 +1376,325 @@
         </div> <!--/workspace-zoom-->
     </div>
 
+    <!-- Image Labeler Container -->
+    <div id="labeler-container" style="display:none; position:fixed; inset:0; z-index:5000; background:#1a1a1a;">
+    </div>
+
+    <style>
+        /* Image Labeler Dark Theme */
+        #labeler-container {
+            font-family: 'Montserrat', sans-serif;
+            color: #e0e0e0;
+            background: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .labeler-wrapper {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100%;
+        }
+
+        .labeler-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 12px 20px;
+            background: #202020;
+            border-bottom: 1px solid #2d2d2d;
+        }
+
+        .labeler-tabs {
+            display: flex;
+            gap: 8px;
+        }
+
+        .labeler-tab {
+            padding: 8px 16px;
+            border: none;
+            background: #2d2d2d;
+            color: #b5b5b5;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .labeler-tab:hover {
+            background: #3a3a3a;
+        }
+
+        .labeler-tab.active {
+            background: #4a9eff;
+            color: white;
+        }
+
+        .labeler-status {
+            flex: 1;
+            font-size: 0.9rem;
+            color: #b0b0b0;
+        }
+
+        .labeler-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .labeler-btn {
+            padding: 8px 16px;
+            background: #4a9eff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .labeler-btn:hover {
+            background: #3d8fe6;
+        }
+
+        .pending-count {
+            color: #b0b0b0;
+            font-size: 0.85rem;
+        }
+
+        .labeler-banner {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 6px 16px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #2d2d2d;
+        }
+
+        .labeler-banner .labeler-info {
+            min-width: 0;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 14px;
+            font-size: 0.78rem;
+        }
+
+        .labeler-banner .labeler-help {
+            flex: 1;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.78rem;
+        }
+
+        .labeler-banner .labeler-help h4 {
+            display: none;
+        }
+
+        .labeler-banner .labeler-help div {
+            padding: 0;
+        }
+
+        .labeler-banner .labeler-help div::after {
+            content: "•";
+            margin-left: 10px;
+            color: #333;
+        }
+
+        .labeler-banner .labeler-help div:last-child::after {
+            content: "";
+            margin: 0;
+        }
+
+        .labeler-banner .info-row {
+            padding: 0;
+            gap: 6px;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .labeler-banner .info-label {
+            color: #7f8a94;
+        }
+
+        .labeler-main {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            flex: 1;
+            overflow: hidden;
+            padding: 16px;
+        }
+
+        .labeler-canvas-area {
+            flex: 1;
+            display: flex;
+            align-items: stretch;
+            justify-content: stretch;
+            background: #101010;
+            border-radius: 12px;
+            border: 1px solid #2d2d2d;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        #labeler-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .labeler-sidebar {
+            width: 50vw;
+            max-width: 50vw;
+            min-width: 360px;
+            background: #1f1f1f;
+            padding: 16px;
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+            overflow-y: auto;
+            border-radius: 12px;
+            border: 1px solid #2d2d2d;
+            min-width: 0;
+        }
+
+        .labeler-info,
+        .labeler-predictions,
+        .labeler-help {
+            background: #262626;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #2f2f2f;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+
+        .info-label {
+            color: #9aa3ad;
+        }
+
+        .labeler-help h4,
+        .labeler-predictions h4 {
+            margin: 0 0 10px 0;
+            color: #4a9eff;
+            font-size: 0.9rem;
+        }
+
+        .labeler-help div {
+            font-size: 0.8rem;
+            padding: 3px 0;
+        }
+
+        kbd {
+            background: #111111;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            border: 1px solid #333;
+        }
+
+        .prediction-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 8px 10px;
+            background: #2a2a2a;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            border: 1px solid #333;
+        }
+
+        .prediction-item:hover {
+            background: #333333;
+        }
+
+        .prediction-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .pred-key {
+            color: #ffffff;
+            font-weight: bold;
+            background: #4a9eff;
+            border-radius: 6px;
+            padding: 2px 8px;
+        }
+
+        .pred-name {
+            flex: 1;
+        }
+
+        .pred-conf {
+            color: #9aa3ad;
+            font-size: 0.85rem;
+        }
+
+        .prediction-refs {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .prediction-refs img {
+            width: 110px;
+            height: 110px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #3a3a3a;
+        }
+
+        .no-predictions {
+            color: #9aa3ad;
+            font-size: 0.85rem;
+        }
+
+        #labeler-container.labeler-mode-classify .labeler-main {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+
+        #labeler-container.labeler-mode-classify .labeler-sidebar {
+            display: flex;
+        }
+
+        #labeler-container.labeler-mode-detect .labeler-sidebar {
+            display: none;
+        }
+
+        @media (max-width: 1100px) {
+            .labeler-main {
+                grid-template-columns: 1fr;
+            }
+            .labeler-sidebar {
+                width: 50vw;
+            }
+            .prediction-refs img {
+                width: 96px;
+                height: 96px;
+            }
+            #labeler-container.labeler-mode-classify .labeler-main {
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            }
+        }
+
+    </style>
+
+    <script src="labeler.js?v=20260202c"></script>
+
     <script>
         //--- CONFIG ---
         const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         let STATIONS = [];
-        const VIEWS = ["schedule", "sub", "claim", "checklist"];
+        const VIEWS = ["schedule", "sub", "claim", "checklist", "labeler"];
 
         //--- STATE ---
         let scheduleData = {};
@@ -1403,6 +1719,7 @@
         let requestTab = 'available';
         let appInitialized = false;
         let oauthNonce = null;
+        let authState = { token: null, user: null, permissions: {}, csrf: null };
         let scheduleReadOnly = false;
         let checklistDate = null;
         let checklistStatus = {};
@@ -1734,7 +2051,8 @@
                 }
                 availableWeeks = Array.from(weekSet).sort().reverse();
                 if (!selectedWeek && !requestedWeek) {
-                    selectedWeek = computeActiveWeek(serverWeeks, weekStartIso());
+                    //Default to current week, even if the latest saved schedule is older
+                    selectedWeek = weekStartIso();
                 } else {
                     selectedWeek = requestedWeek || selectedWeek || weekStartIso();
                 }
@@ -2280,7 +2598,7 @@
 
         function setView(view, opts = {}) {
             const nextView = VIEWS.includes(view) ? view : 'schedule';
-            if (nextView === 'checklist' && !(authState.permissions?.is_officer)) {
+            if ((nextView === 'checklist' || nextView === 'labeler') && !(authState.permissions?.is_officer)) {
                 //Non-officers are not allowed; redirect to schedule
                 updateUrlForView('schedule');
                 return setView('schedule', { skipUrlUpdate: true });
@@ -2290,6 +2608,8 @@
             document.getElementById('sub-container').style.display = nextView === 'sub' ? 'flex' : 'none';
             document.getElementById('claim-container').style.display = nextView === 'claim' ? 'flex' : 'none';
             document.getElementById('checklist-container').style.display = nextView === 'checklist' ? 'flex' : 'none';
+            document.getElementById('labeler-container').style.display = nextView === 'labeler' ? 'flex' : 'none';
+            if (nextView === 'labeler' && typeof initLabeler === 'function') initLabeler();
             if (nextView === 'sub') ensureOwnSubUserSelected();
             if (nextView === 'claim') {
                 ensureOwnClaimUser();
@@ -2300,7 +2620,7 @@
             }
             highlightMenu(nextView);
             if (!opts.skipUrlUpdate) updateUrlForView(nextView);
-            const viewTitles = { schedule: "Feeding Schedule", sub: "Request a Substitute", claim: "Substitute Requests", checklist: "Feeding Settings" };
+            const viewTitles = { schedule: "Feeding Schedule", sub: "Request a Substitute", claim: "Substitute Requests", checklist: "Feeding Settings", labeler: "Image Labeler" };
             document.title = `${viewTitles[nextView] || "TomCat"} | Campus Cat Coalition`;
             updateStickyHeights();
             applyZoom();
@@ -3141,8 +3461,6 @@
         //Strip search/hash to ensure this matches Discord Portal exactly
         const REDIRECT_URI = window.location.origin + window.location.pathname;
 
-        let authState = { token: null, user: null, permissions: {}, csrf: null };
-
         function rememberNonce(nonce) {
             oauthNonce = nonce;
             try {
@@ -3517,6 +3835,11 @@
             const checklistLink = document.getElementById('menu-checklist');
             if (checklistLink) {
                 checklistLink.style.display = isOfficer ? 'block' : 'none';
+            }
+            //2c. Officer-only menu item for labeler
+            const labelerLink = document.getElementById('menu-labeler');
+            if (labelerLink) {
+                labelerLink.style.display = isOfficer ? 'block' : 'none';
             }
 
             //2. Show/Hide Impersonation Controls

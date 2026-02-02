@@ -29,6 +29,7 @@ __pycache__/
 ## Ephemeral cache data regenerated on boot
 cache/catabase
 cache/show_photos
+cache/labeler
 !cache/feeding_schedule.json
 !cache/.gitkeep
 
@@ -74,3 +75,4 @@ LabelingApps/colab.py
 LabelingApps/CropperAndSorter.py
 
 Catabase-GoogleScript.GoogleScript
+Catabase - TCB Pics Formatted.csv

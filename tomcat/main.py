@@ -567,6 +567,7 @@ from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
 
 from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
+from .handlers.labeler import get_labeler_routes
 
 
 #--- Muted wrappers: run handlers but drop outbound sends ---
@@ -782,9 +783,21 @@ async def start_web_server(bot):
         """Serve the index.html file."""
         try:
             with open("index.html", "r", encoding="utf-8") as f:
-                return _with_cors(web.Response(text=f.read(), content_type="text/html"), request)
+                resp = web.Response(text=f.read(), content_type="text/html")
+                resp.headers["Cache-Control"] = "no-store"
+                return _with_cors(resp, request)
         except FileNotFoundError:
             return web.Response(text="index.html not found. Please upload it to the bot root.", status=404)
+
+    async def get_labeler_js(request):
+        """Serve the labeler.js file."""
+        try:
+            with open("labeler.js", "r", encoding="utf-8") as f:
+                resp = web.Response(text=f.read(), content_type="application/javascript")
+                resp.headers["Cache-Control"] = "no-store"
+                return _with_cors(resp, request)
+        except FileNotFoundError:
+            return web.Response(text="labeler.js not found", status=404)
 
     async def get_members(request):
         """Return JSON list of members allowed to be scheduled."""
@@ -1461,6 +1474,7 @@ async def start_web_server(bot):
 
     app.add_routes([
         web.get('/', get_index),
+        web.get('/labeler.js', get_labeler_js),
         web.get('/api/members', get_members),
         web.options('/api/members', options_members),
         web.post('/api/auth/token', auth_token_exchange),
@@ -1486,7 +1500,9 @@ async def start_web_server(bot):
         web.post('/api/subrequest/delete', delete_subrequest),
         web.options('/api/subrequest/delete', options_subrequest), 
         web.post('/api/activity/leave', leave_activity),
-        web.options('/api/activity/leave', options_subrequest)
+        web.options('/api/activity/leave', options_subrequest),
+        #Labeler API routes
+        *get_labeler_routes(),
     ])
 
     runner = web.AppRunner(app)

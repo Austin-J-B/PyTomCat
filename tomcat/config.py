@@ -186,6 +186,15 @@ class Settings:
         "CV_GALLERY_PATH",
         os.path.join("weights", "R4.5_cat_DINOv3_gallery_tta.pt"),
     )
+    #SAM2 weights for box refinement in labeling tool
+    cv_sam_weights: str = os.getenv(
+        "CV_SAM_WEIGHTS",
+        os.path.join("weights", "sam2_s.pt"),
+    )
+
+    #Labeler reference cache (classifier UI)
+    labeler_ref_per_cat: int = int(os.getenv("LABELER_REF_PER_CAT", "100") or "100")
+    labeler_ref_thumb_size: int = int(os.getenv("LABELER_REF_THUMB_SIZE", "128") or "128")
 
     #Core knobs
     cv_conf: float = float(os.getenv("CV_CONF", "0.552"))

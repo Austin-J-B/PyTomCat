@@ -1400,26 +1400,27 @@
         .labeler-header {
             display: flex;
             align-items: center;
-            gap: 20px;
-            padding: 12px 20px;
+            gap: 12px;
+            padding: 8px 12px;
             background: #202020;
             border-bottom: 1px solid #2d2d2d;
         }
 
         .labeler-tabs {
             display: flex;
-            gap: 8px;
+            gap: 6px;
         }
 
         .labeler-tab {
-            padding: 8px 16px;
+            padding: 6px 10px;
             border: none;
             background: #2d2d2d;
             color: #b5b5b5;
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
             font-weight: 600;
             transition: all 0.2s;
+            font-size: 0.85rem;
         }
 
         .labeler-tab:hover {
@@ -1433,24 +1434,25 @@
 
         .labeler-status {
             flex: 1;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             color: #b0b0b0;
         }
 
         .labeler-actions {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
         }
 
         .labeler-btn {
-            padding: 8px 16px;
+            padding: 6px 12px;
             background: #4a9eff;
             color: white;
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
             font-weight: 600;
+            font-size: 0.85rem;
         }
 
         .labeler-btn:hover {
@@ -1459,14 +1461,14 @@
 
         .pending-count {
             color: #b0b0b0;
-            font-size: 0.85rem;
+            font-size: 0.78rem;
         }
 
         .labeler-banner {
             display: flex;
             flex-direction: column;
-            gap: 4px;
-            padding: 6px 16px;
+            gap: 3px;
+            padding: 4px 12px;
             background: #1a1a1a;
             border-bottom: 1px solid #2d2d2d;
         }
@@ -1483,8 +1485,8 @@
             display: flex;
             flex-wrap: nowrap;
             align-items: center;
-            gap: 12px;
-            font-size: 0.78rem;
+            gap: 10px;
+            font-size: 0.74rem;
             line-height: 1.2;
             overflow-x: auto;
             overflow-y: hidden;
@@ -1493,8 +1495,8 @@
         .labeler-banner .labeler-help {
             display: flex;
             flex-direction: column;
-            gap: 4px;
-            font-size: 0.78rem;
+            gap: 2px;
+            font-size: 0.74rem;
             line-height: 1.2;
         }
 
@@ -1502,10 +1504,10 @@
             display: flex;
             flex-wrap: nowrap;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
             padding: 0;
             margin: 0;
-            font-size: 0.78rem;
+            font-size: 0.74rem;
             line-height: 1.2;
             overflow-x: auto;
             overflow-y: hidden;
@@ -1543,10 +1545,10 @@
         .labeler-main {
             display: grid;
             grid-template-columns: 1fr;
-            gap: 16px;
+            gap: 10px;
             flex: 1;
             overflow: hidden;
-            padding: 16px;
+            padding: 10px;
         }
 
         .labeler-canvas-area {
@@ -1555,7 +1557,7 @@
             align-items: stretch;
             justify-content: stretch;
             background: #101010;
-            border-radius: 12px;
+            border-radius: 8px;
             border: 1px solid #2d2d2d;
             overflow: hidden;
             min-width: 0;
@@ -1568,16 +1570,16 @@
         }
 
         .labeler-sidebar {
-            width: 50vw;
-            max-width: 50vw;
-            min-width: 360px;
+            width: auto;
+            max-width: none;
+            min-width: 320px;
             background: #1f1f1f;
-            padding: 16px;
+            padding: 10px;
             display: none;
             flex-direction: column;
-            gap: 16px;
+            gap: 10px;
             overflow-y: auto;
-            border-radius: 12px;
+            border-radius: 8px;
             border: 1px solid #2d2d2d;
             min-width: 0;
         }
@@ -1586,8 +1588,8 @@
         .labeler-predictions,
         .labeler-help {
             background: #262626;
-            padding: 12px;
-            border-radius: 8px;
+            padding: 8px;
+            border-radius: 6px;
             border: 1px solid #2f2f2f;
         }
 
@@ -1605,12 +1607,12 @@
         .labeler-predictions h4 {
             margin: 0 0 10px 0;
             color: #4a9eff;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
         }
 
         .labeler-help div {
-            font-size: 0.8rem;
-            padding: 3px 0;
+            font-size: 0.75rem;
+            padding: 2px 0;
         }
 
         kbd {
@@ -1624,11 +1626,11 @@
         .prediction-item {
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            padding: 8px 10px;
+            gap: 6px;
+            padding: 6px 8px;
             background: #2a2a2a;
-            border-radius: 10px;
-            margin-bottom: 8px;
+            border-radius: 8px;
+            margin-bottom: 6px;
             cursor: pointer;
             border: 1px solid #333;
         }
@@ -1640,15 +1642,16 @@
         .prediction-head {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
 
         .pred-key {
             color: #ffffff;
             font-weight: bold;
             background: #4a9eff;
-            border-radius: 6px;
+            border-radius: 4px;
             padding: 2px 8px;
+            font-size: 0.8rem;
         }
 
         .pred-name {
@@ -1657,23 +1660,58 @@
 
         .pred-conf {
             color: #9aa3ad;
-            font-size: 0.85rem;
+            font-size: 0.78rem;
         }
 
         .prediction-refs {
             display: grid;
             grid-template-columns: repeat(5, minmax(0, 1fr));
-            gap: 10px;
+            gap: 8px;
             align-items: start;
         }
 
-        .prediction-refs img {
+        .ref-frame {
+            width: 100%;
+            border-radius: 6px;
+            border: 1px solid #3a3a3a;
+            overflow: hidden;
+            background: #1b1b1b;
+        }
+
+        .ref-frame img {
             width: 100%;
             height: auto;
             object-fit: contain;
-            border-radius: 8px;
-            border: 1px solid #3a3a3a;
             display: block;
+        }
+
+        .ref-frame.clamp-wide,
+        .ref-frame.clamp-tall {
+            position: relative;
+        }
+
+        .ref-frame.clamp-wide {
+            aspect-ratio: 16 / 9;
+        }
+
+        .ref-frame.clamp-tall {
+            aspect-ratio: 9 / 16;
+        }
+
+        .ref-frame.clamp-wide img,
+        .ref-frame.clamp-tall img {
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .pred-desc {
+            color: #a8b0b8;
+            font-size: 0.74rem;
+            line-height: 1.25;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
         }
 
         .no-predictions {
@@ -1682,7 +1720,7 @@
         }
 
         #labeler-container.labeler-mode-classify .labeler-main {
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
         }
 
         #labeler-container.labeler-mode-classify .labeler-sidebar {
@@ -1709,13 +1747,13 @@
                 gap: 8px;
             }
             #labeler-container.labeler-mode-classify .labeler-main {
-                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                grid-template-columns: 1fr;
             }
         }
 
     </style>
 
-    <script src="labeler.js?v=20260202d"></script>
+    <script src="labeler.js?v=20260202e"></script>
 
     <script>
         //--- CONFIG ---

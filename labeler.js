@@ -827,20 +827,64 @@
         }
 
         listEl.innerHTML = (crop.candidates || []).slice(0, 9).map((c, i) => {
+            const safeName = escapeHtml(c.name);
+            const safeDesc = escapeHtml((c.desc || '').trim());
             const refs = (c.refs || []).map(r => `
-                <img src="data:image/jpeg;base64,${r}" alt="${c.name} ref ${i + 1}">
+                <div class="ref-frame"><img src="data:image/jpeg;base64,${r}" alt="${safeName} ref ${i + 1}"></div>
             `).join('');
             return `
                 <div class="prediction-item" data-idx="${i + 1}">
                     <div class="prediction-head">
                         <span class="pred-key">${i + 1}</span>
-                        <span class="pred-name">${c.name}</span>
+                        <span class="pred-name">${safeName}</span>
                         <span class="pred-conf">${(c.conf * 100).toFixed(1)}%</span>
                     </div>
+                    ${safeDesc ? `<div class="pred-desc">${safeDesc}</div>` : ''}
                     <div class="prediction-refs">${refs}</div>
                 </div>
             `;
         }).join('');
+        applyRefAspectClamp(listEl);
+    }
+
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"]/g, (ch) => {
+            switch (ch) {
+                case '&': return '&amp;';
+                case '<': return '&lt;';
+                case '>': return '&gt;';
+                case '"': return '&quot;';
+                default: return ch;
+            }
+        });
+    }
+
+    function applyRefAspectClamp(rootEl) {
+        if (!rootEl) return;
+        const maxWide = 16 / 9;
+        const maxTall = 9 / 16;
+        const imgs = rootEl.querySelectorAll('.prediction-refs img');
+        imgs.forEach(img => {
+            const frame = img.closest('.ref-frame');
+            const apply = () => {
+                if (!frame) return;
+                const w = img.naturalWidth || 0;
+                const h = img.naturalHeight || 0;
+                if (!w || !h) return;
+                const ratio = w / h;
+                frame.classList.remove('clamp-wide', 'clamp-tall');
+                if (ratio > maxWide) {
+                    frame.classList.add('clamp-wide');
+                } else if (ratio < maxTall) {
+                    frame.classList.add('clamp-tall');
+                }
+            };
+            if (img.complete) {
+                apply();
+            } else {
+                img.addEventListener('load', apply, { once: true });
+            }
+        });
     }
 
     function selectPrediction(num) {

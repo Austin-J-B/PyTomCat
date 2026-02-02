@@ -307,6 +307,23 @@ async def post_identify(request: web.Request) -> web.Response:
         #Run identify on provided boxes (normalized cx,cy,w,h)
         result = await asyncio.to_thread(V.identify_boxes, image_bytes, boxes)
 
+        #Enrich candidates with physical descriptions from local cache (if available)
+        try:
+            from ..services import profile_cache
+            for crop in result.results:
+                for cand in crop.get("candidates", []) or []:
+                    name = cand.get("name")
+                    if not name:
+                        continue
+                    prof = profile_cache.get_profile_local(str(name))
+                    if not prof:
+                        continue
+                    desc = prof.get("physical_description") or prof.get("physical")
+                    if desc:
+                        cand["desc"] = str(desc)
+        except Exception:
+            pass
+
         return _with_cors(web.json_response({"results": result.results}), request)
     except Exception as e:
         log_action("labeler_identify_error", "error", str(e))

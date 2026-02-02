@@ -336,27 +336,8 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
     if exclude_serials:
         have_serials = set(have_serials) | {str(s) for s in exclude_serials}
 
-    #Collect valid serials from current sheet data to detect stale cache entries
-    valid_serials = set()
-    for _, serial, _, _ in pairs:
-        sn = re.sub(r"[^0-9]", "", serial or "")
-        valid_serials.add(sn)
-
-    #Prune ghost files: remove cached images whose serials no longer exist in sheet
-    for sn in list(have_serials):
-        if sn not in valid_serials and sn not in (exclude_serials or set()):
-            base = f"sn{str(sn).zfill(4)}"
-            try:
-                p_jpg = os.path.join(cdir, f"{base}.jpg")
-                p_json = os.path.join(cdir, f"{base}.json")
-                if os.path.exists(p_jpg):
-                    os.remove(p_jpg)
-                if os.path.exists(p_json):
-                    os.remove(p_json)
-                have_serials.discard(sn)
-                log_action('show_cache_prune_ghost', base, f"cat={cid}")
-            except Exception as e:
-                log_action('show_cache_prune_ghost_error', base, str(e))
+    #Ghost pruning disabled - was causing excessive logging and isn't critical.
+    #If stale files accumulate, manual cleanup or a separate maintenance task can handle it.
 
     total = len(existing)
     #Reuse a single HTTP session for downloads to cut overhead
@@ -530,35 +511,11 @@ def _resolve_cat_id(query: str) -> Optional[int]:
             return vid
     return None
 
-async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Optional[bytes], Optional[dict]]:
-    """Return and remove one cached image entry, optionally refilling from Sheets."""
-    cid = _cat_id_from_full(full_name)
-    if cid is None:
-        #Try local profile cache first to avoid scanning cache dirs or hitting Sheets
-        try:
-            from . import profile_cache as PC
-            prof = PC.get_profile_local(full_name)
-            if isinstance(prof, dict):
-                cid = _cat_id_from_full(prof.get('actual_name') or '')
-        except Exception:
-            pass
-    if cid is None:
-        cid = _resolve_cat_id(full_name)
-    if cid is None and use_sheet:
-        prof = await get_cat_profile(full_name)
-        if isinstance(prof, dict):
-            cid = _cat_id_from_full(prof.get('actual_name') or '')
-    if cid is None:
-        return None, None
-    cdir = _cache_dir_for(cid)
-    if not os.path.isdir(cdir):
-        return None, None
-    files = [os.path.join(cdir, p) for p in os.listdir(cdir) if p.lower().endswith('.jpg')]
-    if not files:
-        return None, None
-    #Pick a random cached file to improve variety
+def _pop_from_files(files: list[str]) -> tuple[Optional[bytes], Optional[dict]]:
+    """Pop a random cached file (fast path, no async). Returns (bytes, meta)."""
+    from pathlib import Path
+    import random as _rand
     try:
-        import random as _rand
         path = _rand.choice(files)
     except Exception:
         path = sorted(files)[0]
@@ -589,6 +546,49 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
     except Exception:
         pass
     return data, meta
+
+async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Optional[bytes], Optional[dict]]:
+    """Return and remove one cached image entry, optionally refilling from Sheets.
+    
+    Optimized for instant cache hits: if cat ID resolves locally and files exist,
+    returns immediately without any sheet API calls.
+    """
+    cid = _cat_id_from_full(full_name)
+    if cid is None:
+        #Try local profile cache first to avoid scanning cache dirs or hitting Sheets
+        try:
+            from . import profile_cache as PC
+            prof = PC.get_profile_local(full_name)
+            if isinstance(prof, dict):
+                cid = _cat_id_from_full(prof.get('actual_name') or '')
+        except Exception:
+            pass
+    if cid is None:
+        cid = _resolve_cat_id(full_name)
+    
+    #Quick path: if we resolved cat ID, check for files before any sheet calls
+    if cid is not None:
+        cdir = _cache_dir_for(cid)
+        if os.path.isdir(cdir):
+            files = [os.path.join(cdir, p) for p in os.listdir(cdir) if p.lower().endswith('.jpg')]
+            if files:
+                #Fast path: files exist, skip sheet lookup entirely
+                return _pop_from_files(files)
+    
+    #Slow path: need sheet to resolve cat ID
+    if cid is None and use_sheet:
+        prof = await get_cat_profile(full_name)
+        if isinstance(prof, dict):
+            cid = _cat_id_from_full(prof.get('actual_name') or '')
+    if cid is None:
+        return None, None
+    cdir = _cache_dir_for(cid)
+    if not os.path.isdir(cdir):
+        return None, None
+    files = [os.path.join(cdir, p) for p in os.listdir(cdir) if p.lower().endswith('.jpg')]
+    if not files:
+        return None, None
+    return _pop_from_files(files)
 
 async def warm_cache_on_boot() -> None:
     """Background task that primes caches for frequently requested cats."""

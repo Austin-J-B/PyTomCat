@@ -1379,18 +1379,29 @@ async def handle_update_dues_members(intent, ctx) -> None:
     if review_lines:
         await safe_send(ch, "Manual review needed for:\n" + "\n".join(review_lines[:30]))
 
-async def _ensure_guild_members(guild) -> list:
+async def _ensure_guild_members(guild, force_fetch: bool = False) -> list:
+    members: list = []
     try:
-        members = list(getattr(guild, 'members', []) or [])
-        if members:
-            return members
-        #Try fetching if cache empty
+        if not force_fetch:
+            members = list(getattr(guild, 'members', []) or [])
+            if members:
+                return members
+        #Fetch full member list when syncing roles (avoid partial cache)
         out = []
         async for m in guild.fetch_members(limit=None):
             out.append(m)
-        return out or members
-    except Exception:
-        return list(getattr(guild, 'members', []) or [])
+        members = out or members
+    except Exception as e:
+        try:
+            log_action('dues_role_sync_members', 'fetch_error', str(e))
+        except Exception:
+            pass
+    if not members:
+        try:
+            members = list(getattr(guild, 'members', []) or [])
+        except Exception:
+            members = []
+    return members
 
 def _split_handle_candidates(text: str) -> list[str]:
     """Split a discord 'username' field from the sheet into plausible handle candidates.
@@ -2729,95 +2740,107 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
     #Load all membership rows
     rows = _load_membership_rows()
     
-    #Build username -> max expiry map for ADDING roles (simple matching)
-    user_max_expiry: dict = {}  #discord_name -> max expiry date
-    
-    #Also build a list of all verified rows with valid expiry for REMOVAL checks
-    verified_rows_with_expiry: list = []  #(row, expiry_date)
-    
+    #Build set of valid handles for members with non-expired, verified dues
+    valid_handle_keys: set[str] = set()
     for row in rows:
-        discord_name = (row.get('discord_username') or '').strip().lower()
-        full_name = (row.get('full_name') or '').strip()
-        
         if not row.get('verified'):
             continue
-        
         sem_label = row.get('semester', '')
         expiry = _get_semester_expiry(sem_label)
-        
-        #For additions: track max expiry by simple username match
-        if discord_name:
-            if discord_name not in user_max_expiry or expiry > user_max_expiry[discord_name]:
-                user_max_expiry[discord_name] = expiry
-        
-        #For removals: store all verified rows for fuzzy matching later
-        verified_rows_with_expiry.append((row, expiry))
-    
-    #Build set of usernames that SHOULD have the role (for additions)
-    should_have: set = set()
-    for discord_name, max_expiry in user_max_expiry.items():
-        if today_date <= max_expiry:
-            should_have.add(discord_name)
+        if today_date > expiry:
+            continue
+        raw_handle = (row.get('discord_username') or '').strip()
+        if not raw_handle:
+            continue
+        for cand in _expand_handle_variants(_split_handle_candidates(raw_handle) or [raw_handle]):
+            key = _norm_user_key(cand)
+            if key:
+                valid_handle_keys.add(key)
+    try:
+        log_action('dues_role_sync_valid', f'handles={len(valid_handle_keys)}', '')
+    except Exception:
+        pass
     
     added = []
     removed = []
     
-    #Get list of members as a list for _best_member_match
-    members_list = list(guild.members)
+    #Get full member list (avoid partial cache so role removals aren't skipped)
+    members_list = await _ensure_guild_members(guild, force_fetch=True)
+    try:
+        log_action('dues_role_sync_members', f'count={len(members_list)}', 'ok')
+    except Exception:
+        pass
     
+    def _member_keys(member) -> set[str]:
+        keys: set[str] = set()
+        raw_names: list[str] = []
+        try:
+            raw_names.extend([
+                getattr(member, 'name', '') or '',
+                getattr(member, 'display_name', '') or '',
+                getattr(member, 'global_name', '') or '',
+            ])
+        except Exception:
+            raw_names = []
+        for raw in raw_names:
+            if not raw:
+                continue
+            for cand in _expand_handle_variants([raw]):
+                k = _norm_user_key(cand)
+                if k:
+                    keys.add(k)
+        return keys
+
+    role_holder_count = 0
+    valid_role_holder_count = 0
+
     #Iterate guild members
     for member in members_list:
-        member_key = member.name.lower()
         has_role = role_obj in member.roles
+        member_keys = _member_keys(member)
+        member_has_valid_dues = bool(member_keys & valid_handle_keys)
+        if not member_has_valid_dues and member_keys and valid_handle_keys:
+            #Allow very small handle drift (1 edit) for reasonably long keys
+            for mk in member_keys:
+                if len(mk) < 6:
+                    continue
+                for vk in valid_handle_keys:
+                    if len(vk) < 6:
+                        continue
+                    if _edit_distance(mk, vk) <= 1:
+                        member_has_valid_dues = True
+                        break
+                if member_has_valid_dues:
+                    break
+        if has_role:
+            role_holder_count += 1
+            if member_has_valid_dues:
+                valid_role_holder_count += 1
         
-        #=== ROLE ADDITION (unchanged logic) ===
-        #Add role to verified members via simple username match
-        if member_key in should_have and not has_role:
+        #=== ROLE ADDITION ===
+        if member_has_valid_dues and not has_role:
             try:
                 await member.add_roles(role_obj, reason="TomCat: verified dues for current semester")
                 added.append(member)
             except Exception as e:
                 log_action('dues_role_add_error', f'uid={member.id}', str(e))
         
-        #=== ROLE REMOVAL (new robust logic) ===
-        #Only remove if member currently has the role AND we can't find ANY valid 
-        #verified entry that matches them via fuzzy matching
-        elif has_role:
-            #Check if this member matches ANY verified row with non-expired dues
-            member_has_valid_dues = False
-            
-            for row, expiry in verified_rows_with_expiry:
-                if today_date > expiry:
-                    #This entry is expired, skip it
-                    continue
-                
-                #Use the same robust matching as _best_member_match
-                sheet_username = row.get('discord_username') or ''
-                sheet_full_name = row.get('full_name') or ''
-                
-                if not sheet_username and not sheet_full_name:
-                    continue
-                
-                #Try to match this member against this row
-                matched_member, score, matched_form, mode = _best_member_match(
-                    sheet_username, 
-                    sheet_full_name, 
-                    [member]  #Only check against this one member
-                )
-                
-                #If we got a reasonable match (score >= 80), consider them valid
-                if matched_member and score >= 80:
-                    member_has_valid_dues = True
-                    break
-            
-            #Only remove if we checked all rows and found NO valid match
-            if not member_has_valid_dues:
-                try:
-                    await member.remove_roles(role_obj, reason="TomCat: dues expired, not renewed")
-                    removed.append(member)
-                except Exception as e:
-                    log_action('dues_role_remove_error', f'uid={member.id}', str(e))
+        #=== ROLE REMOVAL ===
+        elif has_role and not member_has_valid_dues:
+            try:
+                await member.remove_roles(role_obj, reason="TomCat: dues expired, not renewed")
+                removed.append(member)
+            except Exception as e:
+                log_action('dues_role_remove_error', f'uid={member.id}', str(e))
     
+    try:
+        log_action(
+            'dues_role_sync_stats',
+            f'role_holders={role_holder_count} valid={valid_role_holder_count}',
+            f'members={len(members_list)}'
+        )
+    except Exception:
+        pass
     return added, removed
 
 
@@ -2837,13 +2860,6 @@ async def _run_daily_dues_job(bot) -> None:
     if not guild:
         log_action('dues_scheduler', 'no_guild', 'skipped')
         return
-    
-    #Ensure members are cached
-    try:
-        async for _ in guild.fetch_members(limit=None):
-            pass
-    except Exception:
-        pass
     
     #Get channels
     log_ch_id = int(getattr(settings, 'ch_logging', 0) or 0)
@@ -2909,15 +2925,142 @@ async def _run_daily_dues_job(bot) -> None:
     added, removed = await _sync_dues_roles(bot, guild, cur_sem, today_date)
     
     if log_ch and (added or removed):
+        def _names(members: list) -> list[str]:
+            out: list[str] = []
+            for m in members:
+                try:
+                    name = getattr(m, 'name', '') or getattr(m, 'display_name', '') or str(getattr(m, 'id', ''))
+                    if name:
+                        out.append(name)
+                except Exception:
+                    continue
+            #De-dupe, keep stable sort for readability
+            return sorted({n.strip() for n in out if n.strip()}, key=lambda s: s.lower())
+
         role_lines = []
         if added:
-            role_lines.append(f"Roles added: {len(added)}")
+            added_names = _names(added)
+            role_lines.append(f"Roles added: {len(added_names)}")
+            role_lines.extend([f"-{n}" for n in added_names])
         if removed:
-            role_lines.append(f"Roles removed (expired): {len(removed)}")
+            removed_names = _names(removed)
+            role_lines.append(f"Roles removed (expired): {len(removed_names)}")
+            role_lines.extend([f"-{n}" for n in removed_names])
         try:
             await safe_send(log_ch, '\n'.join(role_lines))
         except Exception:
             pass
+
+    #5b. Report notable users without dues (feeding schedule + officers)
+    if log_ch:
+        try:
+            #Resolve dues role
+            role_id = int(getattr(settings, 'role_due_paying_id', 0) or 0)
+            if not role_id:
+                role_id = int(getattr(settings, 'role_dues_perks_id', 0) or 0)
+            role_obj = guild.get_role(role_id) if role_id else None
+
+            #Build member maps
+            members_list = await _ensure_guild_members(guild, force_fetch=False)
+            id_to_member = {}
+            key_to_member = {}
+            for m in members_list:
+                try:
+                    mid = int(getattr(m, 'id', 0) or 0)
+                    if mid:
+                        id_to_member[mid] = m
+                except Exception:
+                    pass
+                try:
+                    raw_names = [
+                        getattr(m, 'name', '') or '',
+                        getattr(m, 'display_name', '') or '',
+                        getattr(m, 'global_name', '') or '',
+                    ]
+                except Exception:
+                    raw_names = []
+                for raw in raw_names:
+                    if not raw:
+                        continue
+                    for cand in _expand_handle_variants([raw]):
+                        k = _norm_user_key(cand)
+                        if k and k not in key_to_member:
+                            key_to_member[k] = m
+
+            def _member_name(m) -> str:
+                try:
+                    return getattr(m, 'name', '') or getattr(m, 'display_name', '') or str(getattr(m, 'id', ''))
+                except Exception:
+                    return str(getattr(m, 'id', 'unknown'))
+
+            def _has_dues(m) -> bool:
+                if not m or not role_obj:
+                    return False
+                try:
+                    return role_obj in getattr(m, 'roles', [])
+                except Exception:
+                    return False
+
+            #Feeding schedule for current week
+            sched_no_dues: list[str] = []
+            try:
+                from .feeding import _resolve_schedule_for_date, _coerce_uid
+                resolved = _resolve_schedule_for_date(today_date)
+                sched = resolved.get("schedule", {}) or {}
+                assignee_ids = []
+                for seq in sched.values():
+                    if not isinstance(seq, list):
+                        continue
+                    for raw in seq:
+                        uid = _coerce_uid(raw)
+                        if uid:
+                            assignee_ids.append(uid)
+                assignee_ids = list(dict.fromkeys(assignee_ids))
+
+                for uid in assignee_ids:
+                    member = None
+                    if isinstance(uid, int):
+                        member = id_to_member.get(uid) or guild.get_member(uid)
+                    else:
+                        key = _norm_user_key(str(uid))
+                        member = key_to_member.get(key) if key else None
+                    if member and not _has_dues(member):
+                        sched_no_dues.append(_member_name(member))
+            except Exception:
+                pass
+
+            #Officers without dues
+            officers_no_dues: list[str] = []
+            try:
+                off_id = int(getattr(settings, 'officer_role_id', 0) or 0)
+                off_role = guild.get_role(off_id) if off_id else None
+                if off_role:
+                    for m in list(getattr(off_role, 'members', []) or []):
+                        if not _has_dues(m):
+                            officers_no_dues.append(_member_name(m))
+            except Exception:
+                pass
+
+            #Format message
+            sched_no_dues = sorted({n.strip() for n in sched_no_dues if n.strip()}, key=lambda s: s.lower())
+            officers_no_dues = sorted({n.strip() for n in officers_no_dues if n.strip()}, key=lambda s: s.lower())
+
+            if sched_no_dues or officers_no_dues:
+                lines = ["Notable users without dues:"]
+                if sched_no_dues:
+                    lines.append(f"Feeding schedule (current week): {len(sched_no_dues)}")
+                    lines.extend([f"-{n}" for n in sched_no_dues])
+                if officers_no_dues:
+                    lines.append(f"Officers: {len(officers_no_dues)}")
+                    lines.extend([f"-{n}" for n in officers_no_dues])
+            else:
+                lines = ["Notable users without dues: none"]
+            await safe_send(log_ch, "\n".join(lines))
+        except Exception as e:
+            try:
+                log_action('dues_notable_no_dues_error', '', str(e))
+            except Exception:
+                pass
     
     #6. Output MavOrgs invite list (UTA emails only)
     uninvited = _get_uninvited_uta_emails(cur_sem)

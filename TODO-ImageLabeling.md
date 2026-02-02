@@ -38,12 +38,12 @@ Discord Integration
 ## Execution Phases
 
 ### Phase 1: Infrastructure
-- [ ] Update `install.py` to add SAM2 weights download
-- [ ] Add BoxCoordinates (I) and BoxCatIDs (J) columns to sheet schema
-- [ ] Extend `vision.py` with SAM loader and `detect_with_sam()`
+- [x] Update `install.py` to add SAM2 weights download
+- [x] Add BoxCoordinates (I) and BoxCatIDs (J) columns to sheet schema
+- [x] Extend `vision.py` with SAM loader and `detect_with_sam()`
 
 ### Phase 2: Import Existing Labels
-- [ ] Create `scripts/import_labels.py`
+- [x] Create `scripts/import_labels.py`
   - Find cutoff serial (highest in PreviousDetectorLabels)
   - Parse .txt files for BoxCoordinates
   - Parse known_cats/ and HITL_labeled_crops/ for BoxCatIDs
@@ -51,17 +51,15 @@ Discord Integration
   - Mark "0. NotACat" rows as "Rejected"
 
 ### Phase 3: Backend API
-- [ ] Create `tomcat/handlers/labeler.py`
-  - `/api/labeler/queue/detect` - Unlabeled serials
-  - `/api/labeler/queue/classify` - Serials with boxes but no labels
-  - `/api/labeler/queue/review` - NeedsReview crops
-  - `/api/labeler/image/<sn>` - Image + annotations
-  - `/api/labeler/detect` - YOLO + SAM
-  - `/api/labeler/identify` - DINOv3 top-9
-  - `/api/labeler/save` - Batch write to sheet
-  - `/api/labeler/cats` - All cat names
-  - `/api/labeler/add-cat` - Create CatDatabase row
-  - `/api/labeler/schedule-update` - Queue 4 AM job
+- [x] Create `handlers/labeler.py`
+  - GET  /api/labeler/queue/detect (serials needing boxes)
+  - GET  /api/labeler/queue/classify (serials with incomplete labels)
+  - GET  /api/labeler/image/{sn} (image + annotations)
+  - POST /api/labeler/detect (YOLO+SAM → boxes)
+  - POST /api/labeler/identify (DINOv3 → top-N)
+  - POST /api/labeler/save (batch write to sheet)
+  - GET  /api/labeler/cats (dropdown list)
+- [x] Register routes in `main.py`
 
 ### Phase 4: Gallery Update Pipeline
 - [ ] Create `scripts/gallery_updater.py`
@@ -73,17 +71,15 @@ Discord Integration
   - Post Discord notification to logging channel
 
 ### Phase 5: Frontend UI
-- [ ] Create `UserInterface/labeler.js`
-  - Canvas with zoomable image
-  - Draggable/resizable boxes
-  - Keyboard shortcuts (WASD, arrows, 1-9, 0, X, Enter, Backspace)
-  - Local JSON caching with undo history
-  - Batch write every 60s
-- [ ] Create `UserInterface/labeler.css` (dark theme)
-- [ ] Add Detector tab to `index.html`
-- [ ] Add Classifier tab to `index.html`
-- [ ] Add Manual Review tab to `index.html`
-- [ ] Add Cat Gallery tab to `index.html`
+- [x] Create `labeler.js` (root folder)
+  - Canvas with image display
+  - Keyboard shortcuts (WASD, arrows, 1-9, 0, X, Enter, Backspace, Tab)
+  - API integration for queue, detect, identify, save
+  - Batch pending updates
+- [x] Add dark theme CSS to `index.html`
+- [x] Add Detector/Classifier tabs via mode switcher
+- [x] Add labeler view to VIEWS array and setView()
+- [x] Officer-only access control
 
 ### Phase 6: Discord Feedback Integration
 - [ ] Update `tomcat/handlers/vision.py` to process ✅/❌ reactions

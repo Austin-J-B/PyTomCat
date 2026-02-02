@@ -83,7 +83,7 @@ async def get_queue_detect(request: web.Request) -> web.Response:
         return _with_cors(web.json_response({"queue": queue[:500], "total": total}), request)
     except Exception as e:
         log_action("labeler_queue_detect_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _with_cors(web.Response(status=500, text="Internal server error"), request)
 
 
 async def get_queue_classify(request: web.Request) -> web.Response:

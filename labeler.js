@@ -27,6 +27,8 @@
     const ZOOM_MIN = 0.5;
     const ZOOM_MAX = 6.0;
     const ZOOM_STEP = 0.12;
+    const PREFETCH_AHEAD = 10;
+    const PREFETCH_CONCURRENCY = 2;
 
     function getApiBase() {
         let base = '';
@@ -75,6 +77,11 @@
     let isPanning = false;
     let lastPan = { x: 0, y: 0 };
     let refPollId = null;
+    let predCache = new Map();
+    let prefetchInFlight = new Set();
+    let prefetchRunning = false;
+    let prefetchRequested = false;
+    let predCacheEpoch = 0;
 
     //DOM references (set after init)
     let containerEl = null;
@@ -118,26 +125,26 @@
                         <div class="info-row"><span class="info-label">Zoom:</span> <span id="info-zoom">100%</span></div>
                     </div>
                     <div class="labeler-help">
-                        <h4>Keyboard Shortcuts</h4>
-                        <div id="shortcuts-detect">
-                            <div><kbd>WASD</kbd> Move top-left</div>
-                            <div><kbd>Arrows</kbd> Move bottom-right</div>
-                            <div><kbd>2</kbd> Add box</div>
-                            <div><kbd>X</kbd> Delete box</div>
-                            <div><kbd>E</kbd> SAM refine</div>
-                            <div><kbd>Y</kbd> Save & next</div>
-                            <div><kbd>N</kbd> Reject</div>
-                            <div><kbd>Tab</kbd>/<kbd>Space</kbd> Next box</div>
+                        <div id="shortcuts-detect" class="shortcuts-row">
+                            <span class="shortcut-item"><kbd>WASD</kbd> Move top-left</span>
+                            <span class="shortcut-item"><kbd>Arrows</kbd> Move bottom-right</span>
+                            <span class="shortcut-item"><kbd>2</kbd> Add box</span>
+                            <span class="shortcut-item"><kbd>X</kbd> Delete box</span>
+                            <span class="shortcut-item"><kbd>E</kbd> SAM refine</span>
+                            <span class="shortcut-item"><kbd>Y</kbd> Save & next</span>
+                            <span class="shortcut-item"><kbd>N</kbd> Reject</span>
+                            <span class="shortcut-item"><kbd>Tab</kbd>/<kbd>Space</kbd> Next box</span>
+                            <span class="shortcut-item"><kbd>Backspace</kbd> Undo</span>
+                            <span class="shortcut-item"><kbd>Wheel</kbd> Zoom</span>
+                            <span class="shortcut-item"><kbd>Right-drag</kbd> Pan</span>
                         </div>
-                        <div id="shortcuts-classify" style="display:none">
-                            <div><kbd>1-9</kbd> Pick prediction</div>
-                            <div><kbd>0</kbd> NeedsReview</div>
-                            <div><kbd>X</kbd> Reject crop</div>
-                            <div><kbd>Enter</kbd> Next crop</div>
+                        <div id="shortcuts-classify" class="shortcuts-row" style="display:none">
+                            <span class="shortcut-item"><kbd>1-9</kbd> Pick prediction</span>
+                            <span class="shortcut-item"><kbd>0</kbd> Needs Review</span>
+                            <span class="shortcut-item"><kbd>X</kbd> Reject crop</span>
+                            <span class="shortcut-item"><kbd>Enter</kbd> Next crop</span>
+                            <span class="shortcut-item"><kbd>Backspace</kbd> Undo</span>
                         </div>
-                        <div><kbd>Backspace</kbd> Undo</div>
-                        <div><kbd>Wheel</kbd> Zoom</div>
-                        <div><kbd>Right-drag</kbd> Pan</div>
                     </div>
                 </div>
                 
@@ -261,8 +268,10 @@
                 if (status && status.ready) {
                     clearInterval(refPollId);
                     refPollId = null;
+                    resetPredCache();
                     if (labelerMode === 'classify') {
                         loadPredictions(true);
+                        prefetchPredictions();
                     }
                 }
             } catch (e) {
@@ -312,6 +321,7 @@
             queue = data.queue || [];
             queueTotal = typeof data.total === 'number' ? data.total : queue.length;
             queueIndex = 0;
+            resetPredCache();
             setStatus(`Queue: ${queueTotal} items`);
             if (queue.length > 0) {
                 loadCurrentItem();
@@ -366,10 +376,28 @@
         if (labelerMode === 'classify' && currentBoxes.length) {
             const firstUnlabeled = currentLabels.findIndex(lbl => !lbl || !lbl.trim() || lbl.trim().toLowerCase() === 'needsreview');
             if (firstUnlabeled >= 0) currentCropIdx = firstUnlabeled;
+            const cached = predCache.get(getPredCacheKey(currentItem));
+            if (cached) {
+                currentPredictions = cached;
+            }
         }
 
         updateInfo();
         loadImage(currentImageUrl);
+        prefetchPredictions();
+    }
+
+    function resetPredCache() {
+        predCacheEpoch += 1;
+        predCache.clear();
+        prefetchInFlight.clear();
+        prefetchRunning = false;
+        prefetchRequested = false;
+    }
+
+    function getPredCacheKey(item) {
+        if (!item) return '';
+        return `${item.serial || ''}|${item.boxes || ''}`;
     }
 
     function parseYoloBoxes(boxStr) {
@@ -425,7 +453,7 @@
             drawCanvas();
             setStatus(`Ready - sn${currentSerial}`);
             if (labelerMode === 'classify') {
-                loadPredictions(true);
+                loadPredictions();
             }
         }
     }
@@ -750,20 +778,37 @@
 
     async function loadPredictions(force = false) {
         if (currentBoxes.length === 0) return;
-        if (currentPredictions.length && !force) {
-            renderPredictions();
-            return;
+        if (!force) {
+            if (currentPredictions.length) {
+                renderPredictions();
+                return;
+            }
+            const cached = predCache.get(getPredCacheKey(currentItem));
+            if (cached) {
+                currentPredictions = cached;
+                renderPredictions();
+                return;
+            }
         }
 
         setStatus('Running classifier...');
         try {
+            const requestSerial = currentSerial;
+            const requestKey = getPredCacheKey(currentItem);
             const data = await apiPost('/api/labeler/identify', {
                 serial: currentSerial,
                 url: currentImageUrl,
                 boxes: currentBoxes.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
             });
 
+            if (requestSerial !== currentSerial || requestKey !== getPredCacheKey(currentItem)) {
+                return;
+            }
             currentPredictions = data.results || [];
+            const key = getPredCacheKey(currentItem);
+            if (key) {
+                predCache.set(key, currentPredictions);
+            }
             renderPredictions();
             setStatus(`Ready - sn${currentSerial}`);
         } catch (e) {
@@ -826,12 +871,80 @@
             //All crops labeled
             saveAndAdvance();
         } else {
-            if (currentPredictions.length) {
-                renderPredictions();
-            } else {
-                loadPredictions(true);
-            }
+            loadPredictions();
             drawCanvas();
+        }
+    }
+
+    function prefetchPredictions() {
+        if (labelerMode !== 'classify') return;
+        if (prefetchRunning) {
+            prefetchRequested = true;
+            return;
+        }
+        const epoch = predCacheEpoch;
+        const start = queueIndex + 1;
+        const end = Math.min(queue.length, start + PREFETCH_AHEAD);
+        const targets = [];
+        for (let i = start; i < end; i++) {
+            const item = queue[i];
+            if (!item || !item.boxes) continue;
+            const key = getPredCacheKey(item);
+            if (!key || predCache.has(key) || prefetchInFlight.has(key)) continue;
+            targets.push({ item, key });
+        }
+        if (!targets.length) return;
+
+        prefetchRunning = true;
+        let idx = 0;
+        let active = 0;
+
+        const runNext = async () => {
+            if (idx >= targets.length) {
+                if (active === 0) {
+                    prefetchRunning = false;
+                    if (prefetchRequested) {
+                        prefetchRequested = false;
+                        prefetchPredictions();
+                    }
+                }
+                return;
+            }
+            const target = targets[idx++];
+            active++;
+            prefetchInFlight.add(target.key);
+            try {
+                const parsed = parseYoloBoxes(target.item.boxes);
+                if (!parsed.length) {
+                    return;
+                }
+                const data = await apiPost('/api/labeler/identify', {
+                    serial: target.item.serial,
+                    url: target.item.url || null,
+                    boxes: parsed.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
+                });
+                if (epoch === predCacheEpoch) {
+                    predCache.set(target.key, data.results || []);
+                }
+            } catch (e) {
+                //Ignore prefetch failures
+            } finally {
+                prefetchInFlight.delete(target.key);
+                active--;
+                runNext();
+                if (idx >= targets.length && active === 0) {
+                    prefetchRunning = false;
+                    if (prefetchRequested) {
+                        prefetchRequested = false;
+                        prefetchPredictions();
+                    }
+                }
+            }
+        };
+
+        const slots = Math.min(PREFETCH_CONCURRENCY, targets.length);
+        for (let i = 0; i < slots; i++) {
+            runNext();
         }
     }
 

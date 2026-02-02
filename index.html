@@ -1465,45 +1465,66 @@
         .labeler-banner {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 4px;
             padding: 6px 16px;
             background: #1a1a1a;
             border-bottom: 1px solid #2d2d2d;
         }
 
-        .labeler-banner .labeler-info {
-            min-width: 0;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 14px;
-            font-size: 0.78rem;
-        }
-
+        .labeler-banner .labeler-info,
         .labeler-banner .labeler-help {
-            flex: 1;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 12px;
-            font-size: 0.78rem;
-        }
-
-        .labeler-banner .labeler-help h4 {
-            display: none;
-        }
-
-        .labeler-banner .labeler-help div {
+            background: transparent;
+            border: none;
             padding: 0;
         }
 
-        .labeler-banner .labeler-help div::after {
+        .labeler-banner .labeler-info {
+            min-width: 0;
+            display: flex;
+            flex-wrap: nowrap;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.78rem;
+            line-height: 1.2;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .labeler-banner .labeler-help {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 0.78rem;
+            line-height: 1.2;
+        }
+
+        .labeler-banner .shortcuts-row {
+            display: flex;
+            flex-wrap: nowrap;
+            align-items: center;
+            gap: 10px;
+            padding: 0;
+            margin: 0;
+            font-size: 0.78rem;
+            line-height: 1.2;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .labeler-banner .shortcut-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .labeler-banner .shortcut-item::after {
             content: "•";
-            margin-left: 10px;
+            margin-left: 8px;
             color: #333;
         }
 
-        .labeler-banner .labeler-help div:last-child::after {
+        .labeler-banner .shortcut-item:last-child::after {
             content: "";
             margin: 0;
         }
@@ -1640,17 +1661,19 @@
         }
 
         .prediction-refs {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
             gap: 10px;
-            flex-wrap: wrap;
+            align-items: start;
         }
 
         .prediction-refs img {
-            width: 110px;
-            height: 110px;
-            object-fit: cover;
+            width: 100%;
+            height: auto;
+            object-fit: contain;
             border-radius: 8px;
             border: 1px solid #3a3a3a;
+            display: block;
         }
 
         .no-predictions {
@@ -1664,6 +1687,8 @@
 
         #labeler-container.labeler-mode-classify .labeler-sidebar {
             display: flex;
+            width: 100%;
+            max-width: none;
         }
 
         #labeler-container.labeler-mode-detect .labeler-sidebar {
@@ -1675,11 +1700,13 @@
                 grid-template-columns: 1fr;
             }
             .labeler-sidebar {
-                width: 50vw;
+                width: 100%;
+                max-width: none;
+                min-width: 0;
             }
-            .prediction-refs img {
-                width: 96px;
-                height: 96px;
+            .prediction-refs {
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+                gap: 8px;
             }
             #labeler-container.labeler-mode-classify .labeler-main {
                 grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1688,7 +1715,7 @@
 
     </style>
 
-    <script src="labeler.js?v=20260202c"></script>
+    <script src="labeler.js?v=20260202d"></script>
 
     <script>
         //--- CONFIG ---

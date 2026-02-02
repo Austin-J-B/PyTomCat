@@ -1663,11 +1663,29 @@
             font-size: 0.78rem;
         }
 
+        .pred-conf.conf-high {
+            color: #78cfa2;
+        }
+
+        .pred-conf.conf-med {
+            color: #e0c36a;
+        }
+
+        .pred-conf.conf-low {
+            color: #d98989;
+        }
+
         .prediction-refs {
             display: grid;
             grid-template-columns: repeat(5, minmax(0, 1fr));
             gap: 8px;
             align-items: start;
+        }
+
+        .ref-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
 
         .ref-frame {
@@ -1702,6 +1720,12 @@
         .ref-frame.clamp-tall img {
             height: 100%;
             object-fit: cover;
+        }
+
+        .ref-caption {
+            font-size: 0.68rem;
+            color: #8b939b;
+            text-align: center;
         }
 
         .pred-desc {
@@ -1753,7 +1777,7 @@
 
     </style>
 
-    <script src="labeler.js?v=20260202e"></script>
+    <script src="labeler.js?v=20260202f"></script>
 
     <script>
         //--- CONFIG ---

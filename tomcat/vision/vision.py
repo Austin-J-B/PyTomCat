@@ -23,6 +23,8 @@ os.environ.setdefault(
     str(Path(__file__).resolve().parents[2] / ".ultra"),
 )
 
+warnings.filterwarnings("ignore", message=".*Torch was not compiled with flash attention.*")
+
 try:
     from ultralytics import YOLO, SAM
 except Exception:
@@ -464,7 +466,7 @@ def identify_boxes(
             if len(candidate_names) >= top_k:
                 break
 
-        ref_lists: dict[str, List[str]] = {n: [] for n in candidate_names}
+        ref_lists: dict[str, List[dict]] = {n: [] for n in candidate_names}
         if _labeler_ref_ready:
             for name in candidate_names:
                 ref_lists[name] = _get_labeler_refs_for_cat(name, query_embs[i], refs_per)
@@ -483,7 +485,7 @@ def identify_boxes(
                 if cat_idx < len(_gallery_paths):
                     thumb = _thumb_b64(_gallery_paths[cat_idx], size=thumb_size)
                     if thumb:
-                        ref_lists[cat_name].append(thumb)
+                        ref_lists[cat_name].append({"img": thumb, "serial": None, "crop": None})
                         done += 1
 
         candidates = []
@@ -568,7 +570,7 @@ async def warm_labeler_refs(force: bool = False) -> dict:
             from ..services import labeler_cache
 
             rows = get_tcb_pics_rows(ttl_sec=60)
-            samples: dict[str, List[Tuple[int, str, str]]] = {c: [] for c in cat_list}
+            samples: dict[str, List[Tuple[int, str, str, int]]] = {c: [] for c in cat_list}
             counts: dict[str, int] = {c: 0 for c in cat_list}
 
             for row in rows[1:]:
@@ -596,7 +598,7 @@ async def warm_labeler_refs(force: bool = False) -> dict:
                     if not cat:
                         continue
                     counts[cat] += 1
-                    entry = (sn, url, coords[i])
+                    entry = (sn, url, coords[i], i + 1)
                     bucket = samples[cat]
                     if len(bucket) < max_per_cat:
                         bucket.append(entry)
@@ -611,8 +613,8 @@ async def warm_labeler_refs(force: bool = False) -> dict:
                 if not entries:
                     continue
                 crops: List[Image.Image] = []
-                thumbs: List[str] = []
-                for sn, url, coord_str in entries:
+                refs: List[dict] = []
+                for sn, url, coord_str, crop_idx in entries:
                     coord = _parse_yolo_box_str(coord_str)
                     if coord is None:
                         continue
@@ -635,13 +637,13 @@ async def warm_labeler_refs(force: bool = False) -> dict:
                     if not thumb_b64:
                         continue
                     crops.append(crop)
-                    thumbs.append(thumb_b64)
+                    refs.append({"img": thumb_b64, "serial": sn, "crop": crop_idx})
                 if not crops:
                     continue
                 emb = await asyncio.to_thread(_embed_crops, crops)
                 if emb.numel() == 0:
                     continue
-                new_cache[cat] = {"emb": emb, "thumb": thumbs}
+                new_cache[cat] = {"emb": emb, "refs": refs}
 
             _labeler_ref_cache = new_cache
             _labeler_ref_ready = True
@@ -666,18 +668,22 @@ def _get_labeler_refs_for_cat(cat: str, query_emb: Tensor, refs_per: int) -> Lis
     if not pack:
         return []
     emb: Tensor = pack.get("emb")
-    thumbs: List[str] = pack.get("thumb", [])
-    if emb is None or not thumbs or emb.numel() == 0:
+    refs: List[dict] = pack.get("refs", []) or []
+    if not refs:
+        thumbs: List[str] = pack.get("thumb", []) or []
+        if thumbs:
+            refs = [{"img": t, "serial": None, "crop": None} for t in thumbs]
+    if emb is None or not refs or emb.numel() == 0:
         return []
     try:
         # Ensure shapes
         q = query_emb.detach().cpu().view(1, -1)
         sims = (emb @ q.T).squeeze(1)
-        k = min(refs_per, sims.numel(), len(thumbs))
+        k = min(refs_per, sims.numel(), len(refs))
         if k <= 0:
             return []
         topk = torch.topk(sims, k=k).indices.tolist()
-        return [thumbs[i] for i in topk if i < len(thumbs)]
+        return [refs[i] for i in topk if i < len(refs)]
     except Exception:
         return []
 

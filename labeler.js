@@ -27,8 +27,8 @@
     const ZOOM_MIN = 0.5;
     const ZOOM_MAX = 6.0;
     const ZOOM_STEP = 0.12;
-    const PREFETCH_AHEAD = 10;
-    const PREFETCH_CONCURRENCY = 2;
+    const PREFETCH_AHEAD = 25;
+    const PREFETCH_CONCURRENCY = 4;
 
     function getApiBase() {
         let base = '';
@@ -75,6 +75,8 @@
     let panY = 0;
     let baseScale = 1.0;
     let isPanning = false;
+    let panMoved = false;
+    let suppressClick = false;
     let lastPan = { x: 0, y: 0 };
     let refPollId = null;
     let predCache = new Map();
@@ -82,6 +84,7 @@
     let prefetchRunning = false;
     let prefetchRequested = false;
     let predCacheEpoch = 0;
+    let prefetchTimer = null;
 
     //DOM references (set after init)
     let containerEl = null;
@@ -136,7 +139,7 @@
                             <span class="shortcut-item"><kbd>Tab</kbd>/<kbd>Space</kbd> Next box</span>
                             <span class="shortcut-item"><kbd>Backspace</kbd> Undo</span>
                             <span class="shortcut-item"><kbd>Wheel</kbd> Zoom</span>
-                            <span class="shortcut-item"><kbd>Right-drag</kbd> Pan</span>
+                            <span class="shortcut-item"><kbd>Left-drag</kbd> Pan</span>
                         </div>
                         <div id="shortcuts-classify" class="shortcuts-row" style="display:none">
                             <span class="shortcut-item"><kbd>1-9</kbd> Pick prediction</span>
@@ -248,6 +251,7 @@
         predictionsEl.style.display = mode === 'classify' ? 'block' : 'none';
         if (cropDisplayEl) cropDisplayEl.style.display = 'none';
 
+        togglePrefetchTimer(mode === 'classify');
         loadQueue();
     }
 
@@ -385,6 +389,18 @@
         updateInfo();
         loadImage(currentImageUrl);
         prefetchPredictions();
+    }
+
+    function togglePrefetchTimer(enabled) {
+        if (prefetchTimer) {
+            clearInterval(prefetchTimer);
+            prefetchTimer = null;
+        }
+        if (enabled) {
+            prefetchTimer = setInterval(() => {
+                prefetchPredictions();
+            }, 3000);
+        }
     }
 
     function resetPredCache() {
@@ -829,15 +845,38 @@
         listEl.innerHTML = (crop.candidates || []).slice(0, 9).map((c, i) => {
             const safeName = escapeHtml(c.name);
             const safeDesc = escapeHtml((c.desc || '').trim());
-            const refs = (c.refs || []).map(r => `
-                <div class="ref-frame"><img src="data:image/jpeg;base64,${r}" alt="${safeName} ref ${i + 1}"></div>
-            `).join('');
+            const confPct = Math.max(0, Math.min(100, (c.conf || 0) * 100));
+            let confLabel = 'Low Confidence';
+            let confClass = 'conf-low';
+            if (confPct >= 75) {
+                confLabel = 'High Confidence';
+                confClass = 'conf-high';
+            } else if (confPct >= 50) {
+                confLabel = 'Medium Confidence';
+                confClass = 'conf-med';
+            }
+            const refs = (c.refs || []).map((ref, refIdx) => {
+                const info = typeof ref === 'string'
+                    ? { img: ref, serial: null, crop: null }
+                    : (ref || {});
+                const refImg = info.img || '';
+                const sn = info.serial != null ? `sn${info.serial}` : '';
+                const cropNum = Number(info.crop) || null;
+                const cropText = cropNum ? ` crop ${cropNum}` : '';
+                const caption = sn || cropNum ? `${sn}${cropText}`.trim() : '';
+                return `
+                    <div class="ref-item">
+                        <div class="ref-frame"><img src="data:image/jpeg;base64,${refImg}" alt="${safeName} ref ${refIdx + 1}"></div>
+                        ${caption ? `<div class="ref-caption">${escapeHtml(caption)}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
             return `
                 <div class="prediction-item" data-idx="${i + 1}">
                     <div class="prediction-head">
                         <span class="pred-key">${i + 1}</span>
                         <span class="pred-name">${safeName}</span>
-                        <span class="pred-conf">${(c.conf * 100).toFixed(1)}%</span>
+                        <span class="pred-conf ${confClass}">${confLabel} (${confPct.toFixed(1)}%)</span>
                     </div>
                     ${safeDesc ? `<div class="pred-desc">${safeDesc}</div>` : ''}
                     <div class="prediction-refs">${refs}</div>
@@ -996,6 +1035,10 @@
 
     function onCanvasClick(e) {
         if (labelerMode !== 'detect') return;
+        if (suppressClick) {
+            suppressClick = false;
+            return;
+        }
         if (currentBoxes.length === 0) return;
 
         const rect = canvasEl.getBoundingClientRect();
@@ -1061,8 +1104,9 @@
 
     function onCanvasMouseDown(e) {
         if (labelerMode !== 'detect') return;
-        if (e.button !== 2) return;
+        if (e.button !== 0) return;
         isPanning = true;
+        panMoved = false;
         lastPan = { x: e.clientX, y: e.clientY };
     }
 
@@ -1071,6 +1115,9 @@
         const dx = e.clientX - lastPan.x;
         const dy = e.clientY - lastPan.y;
         lastPan = { x: e.clientX, y: e.clientY };
+        if (Math.abs(dx) + Math.abs(dy) > 1) {
+            panMoved = true;
+        }
         panX += dx;
         panY += dy;
         const imgW = imageElement.naturalWidth || 1;
@@ -1082,8 +1129,11 @@
     }
 
     function onCanvasMouseUp(e) {
-        if (e.button !== 2) return;
+        if (e.button !== 0) return;
         isPanning = false;
+        if (panMoved) {
+            suppressClick = true;
+        }
     }
 
     function onKeyDown(e) {

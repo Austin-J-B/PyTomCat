@@ -107,7 +107,7 @@ async def get_queue_classify(request: web.Request) -> web.Response:
             #Count boxes vs labels
             num_boxes = len(box_coords.split("|"))
             labels = box_cat_ids.split("|") if box_cat_ids else []
-            num_labeled = sum(1 for lbl in labels if lbl.strip() and lbl.strip().lower() != "needsreview")
+            num_labeled = sum(1 for lbl in labels if lbl.strip())
             
             if num_labeled < num_boxes:
                 url = row[COL_URL] if len(row) > COL_URL else ""

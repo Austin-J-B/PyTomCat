@@ -85,7 +85,7 @@ Discord Integration
 - [ ] Update `tomcat/handlers/vision.py` to process ✅/❌ reactions
   - ✅ → Cache crop + box + predicted cat to `cache/discord_verified/`
   - ❌ → Queue to `cache/discord_disputed/` for Manual Review
-- [ ] At 4 AM, include verified crops in gallery update
+- [ ] At 4 AM, include verified crops in gallery update HIGH PRIORITY
 
 ---
 
@@ -151,3 +151,4 @@ Total: 7,443 embeddings across 94 cats
 - [ ] Bulk label correction tool
 - [ ] Training run scheduler for detector (if ever needed)
 - [ ] Mobile-friendly labeling interface
+- [ ] Update the column A 'CatID' column to include the names/IDs of the cats identified in BoxCatIDs column J

@@ -5,6 +5,7 @@ import io
 import os
 import math
 import warnings
+import threading
 import base64
 import asyncio
 import random
@@ -41,6 +42,8 @@ _DEFAULT_CONF = 0.552
 #---------- Internal State ----------
 _yolo: Optional[Any] = None
 _sam: Optional[Any] = None
+_sam_lock = threading.Lock()
+_sam_failed: bool = False
 _clf: Optional[torch.nn.Module] = None
 _gallery_emb: Optional[Tensor] = None
 _gallery_names: List[str] = []
@@ -130,10 +133,21 @@ def _ensure_sam() -> None:
     """Load SAM2 model for box refinement."""
     global _sam
     _ensure_device_only()
-    if _sam is not None: return
-    if SAM is None: raise RuntimeError("ultralytics SAM not available")
-    _sam = SAM(settings.cv_sam_weights)
-    log_action("viz_sam_load", "sam_ready", settings.cv_sam_weights)
+    global _sam_failed
+    if _sam is not None or _sam_failed:
+        return
+    with _sam_lock:
+        if _sam is not None or _sam_failed:
+            return
+        try:
+            if SAM is None:
+                raise RuntimeError("ultralytics SAM not available")
+            _sam = SAM(settings.cv_sam_weights)
+            log_action("viz_sam_load", "sam_ready", settings.cv_sam_weights)
+        except Exception as e:
+            _sam_failed = True
+            log_action("viz_sam_load_error", "error", str(e))
+            _sam = None
 
 def _ensure_classifier() -> None:
     """Load the DINOv3 encoder and the .pt gallery."""
@@ -554,7 +568,16 @@ async def warm_labeler_refs(force: bool = False) -> dict:
     if _labeler_ref_building:
         return {"ready": _labeler_ref_ready, "building": True, "cats": len(_labeler_ref_cache)}
     if _labeler_ref_ready and not force:
-        return {"ready": True, "building": False, "cats": len(_labeler_ref_cache)}
+        needs_upgrade = False
+        try:
+            for pack in _labeler_ref_cache.values():
+                if isinstance(pack, dict) and "refs" not in pack:
+                    needs_upgrade = True
+                    break
+        except Exception:
+            needs_upgrade = True
+        if not needs_upgrade:
+            return {"ready": True, "building": False, "cats": len(_labeler_ref_cache)}
 
     async def _build() -> None:
         global _labeler_ref_ready, _labeler_ref_building, _labeler_ref_cache
@@ -720,7 +743,12 @@ def _sam_refine_box(img_array: Any, prompt_box: List[float]) -> Tuple[float, flo
     """Use SAM to refine a bounding box based on mask fit."""
     import numpy as np
     _ensure_sam()
-    results = _sam(img_array, bboxes=[prompt_box], verbose=False)
+    if _sam is None:
+        return tuple(prompt_box)
+    try:
+        results = _sam(img_array, bboxes=[prompt_box], verbose=False)
+    except Exception:
+        return tuple(prompt_box)
     if results and results[0].masks:
         mask = results[0].masks.data[0].cpu().numpy().astype(bool)
         h, w = mask.shape[-2:]

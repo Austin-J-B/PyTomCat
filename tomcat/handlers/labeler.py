@@ -409,7 +409,13 @@ async def get_cats(request: web.Request) -> web.Response:
 async def post_refs_warm(request: web.Request) -> web.Response:
     """Warm the per-cat reference cache for classifier refs."""
     try:
-        status = await V.warm_labeler_refs()
+        force = False
+        try:
+            body = await request.json()
+            force = bool(body.get("force"))
+        except Exception:
+            force = False
+        status = await V.warm_labeler_refs(force=force)
         return _with_cors(web.json_response(status), request)
     except Exception as e:
         log_action("labeler_refs_warm_error", "error", str(e))

@@ -1682,14 +1682,9 @@
             align-items: start;
         }
 
-        .ref-item {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
         .ref-frame {
             width: 100%;
+            position: relative;
             border-radius: 6px;
             border: 1px solid #3a3a3a;
             overflow: hidden;
@@ -1722,9 +1717,15 @@
             object-fit: cover;
         }
 
-        .ref-caption {
+        .ref-overlay {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.55);
+            color: #d6dbe0;
             font-size: 0.68rem;
-            color: #8b939b;
+            padding: 2px 4px;
             text-align: center;
         }
 
@@ -1777,7 +1778,7 @@
 
     </style>
 
-    <script src="labeler.js?v=20260202g"></script>
+    <script src="labeler.js?v=20260202i"></script>
 
     <script>
         //--- CONFIG ---

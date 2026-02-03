@@ -31,6 +31,10 @@
     const PREFETCH_CONCURRENCY = 4;
     const IMAGE_PREFETCH_AHEAD = 8;
     const IMAGE_PREFETCH_MAX = 24;
+    const DETECT_PREFETCH_AHEAD = 4;
+    const DETECT_PREFETCH_CONCURRENCY = 1;
+    const DETECT_PREFETCH_COOLDOWN_MS = 8000;
+    const REF_CACHE_VERSION = 'refs_v2';
 
     function getApiBase() {
         let base = '';
@@ -88,6 +92,13 @@
     let predCacheEpoch = 0;
     let prefetchTimer = null;
     let imagePrefetch = new Map();
+    let detectPrefetch = new Map();
+    let detectPrefetchInFlight = new Set();
+    let detectPrefetchRunning = false;
+    let detectPrefetchRequested = false;
+    let detectPrefetchEpoch = 0;
+    let lastDetectPrefetch = 0;
+    let pressedKeys = new Set();
 
     //DOM references (set after init)
     let containerEl = null;
@@ -213,6 +224,7 @@
 
         //Keyboard
         document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
 
         if (canvasAreaEl) {
             resizeCanvasToContainer();
@@ -254,13 +266,27 @@
         predictionsEl.style.display = mode === 'classify' ? 'block' : 'none';
         if (cropDisplayEl) cropDisplayEl.style.display = 'none';
 
-        togglePrefetchTimer(mode === 'classify');
+        pressedKeys.clear();
+
+        togglePrefetchTimer(true);
         loadQueue();
     }
 
     async function warmRefCache() {
         try {
-            await apiPost('/api/labeler/refs/warm', {});
+            const needsForce = (() => {
+                try {
+                    return localStorage.getItem('labelerRefCacheVersion') !== REF_CACHE_VERSION;
+                } catch (e) {
+                    return true;
+                }
+            })();
+            await apiPost('/api/labeler/refs/warm', { force: needsForce });
+            try {
+                localStorage.setItem('labelerRefCacheVersion', REF_CACHE_VERSION);
+            } catch (e) {
+                //ignore storage errors
+            }
             startRefPoll();
         } catch (e) {
             console.warn('[Labeler] Ref cache warm failed:', e);
@@ -393,6 +419,7 @@
         loadImage(currentImageUrl);
         prefetchPredictions();
         prefetchImages();
+        prefetchDetection();
     }
 
     function togglePrefetchTimer(enabled) {
@@ -404,6 +431,7 @@
             prefetchTimer = setInterval(() => {
                 prefetchPredictions();
                 prefetchImages();
+                prefetchDetection();
             }, 3000);
         }
     }
@@ -415,6 +443,11 @@
         prefetchRunning = false;
         prefetchRequested = false;
         imagePrefetch.clear();
+        detectPrefetchEpoch += 1;
+        detectPrefetch.clear();
+        detectPrefetchInFlight.clear();
+        detectPrefetchRunning = false;
+        detectPrefetchRequested = false;
     }
 
     function getPredCacheKey(item) {
@@ -470,7 +503,15 @@
             console.log('[Labeler] Auto-detect mode, calling runDetection');
             //Draw image first so there's no blank delay, then run detection
             drawCanvas();
-            runDetection();
+            const cached = detectPrefetch.get(String(currentSerial));
+            if (cached) {
+                currentBoxes = parseYoloBoxes(cached);
+                drawCanvas();
+                setStatus(`Found ${currentBoxes.length} box(es)`);
+                updateInfo();
+            } else {
+                runDetection();
+            }
         } else {
             console.log('[Labeler] Drawing canvas directly');
             drawCanvas();
@@ -655,8 +696,30 @@
         //Convert px nudge to normalized coords
         const { imgW, imgH, scale } = getDrawParams();
         if (!imgW || !imgH || !scale) return;
-        const ndx = dx / (imgW * scale);
-        const ndy = dy / (imgH * scale);
+        let ndx = dx / (imgW * scale);
+        let ndy = dy / (imgH * scale);
+        const minSize = 0.01;
+
+        const x1 = box.cx - box.w / 2;
+        const y1 = box.cy - box.h / 2;
+        const x2 = box.cx + box.w / 2;
+        const y2 = box.cy + box.h / 2;
+
+        if (corner === 'tl') {
+            const minDx = -x1;
+            const maxDx = (x2 - minSize) - x1;
+            const minDy = -y1;
+            const maxDy = (y2 - minSize) - y1;
+            ndx = Math.max(minDx, Math.min(maxDx, ndx));
+            ndy = Math.max(minDy, Math.min(maxDy, ndy));
+        } else {
+            const minDx = (x1 + minSize) - x2;
+            const maxDx = 1 - x2;
+            const minDy = (y1 + minSize) - y2;
+            const maxDy = 1 - y2;
+            ndx = Math.max(minDx, Math.min(maxDx, ndx));
+            ndy = Math.max(minDy, Math.min(maxDy, ndy));
+        }
 
         if (corner === 'tl') {
             //Top-left: adjust position and shrink
@@ -668,8 +731,6 @@
             box.cy = newY1 + box.h / 2;
         } else {
             //Bottom-right: adjust size with top-left anchored
-            const x1 = box.cx - box.w / 2;
-            const y1 = box.cy - box.h / 2;
             const newX2 = x1 + box.w + ndx;
             const newY2 = y1 + box.h + ndy;
             box.w = newX2 - x1;
@@ -679,8 +740,8 @@
         }
 
         //Clamp
-        box.w = Math.max(0.01, Math.min(1, box.w));
-        box.h = Math.max(0.01, Math.min(1, box.h));
+        box.w = Math.max(minSize, Math.min(1, box.w));
+        box.h = Math.max(minSize, Math.min(1, box.h));
         box.cx = Math.max(box.w / 2, Math.min(1 - box.w / 2, box.cx));
         box.cy = Math.max(box.h / 2, Math.min(1 - box.h / 2, box.cy));
 
@@ -867,14 +928,15 @@
                     ? { img: ref, serial: null, crop: null }
                     : (ref || {});
                 const refImg = info.img || info.thumb || '';
+                if (!refImg) return '';
                 const sn = info.serial != null ? `sn${info.serial}` : '';
                 const cropNum = Number(info.crop) || null;
                 const cropText = cropNum ? ` crop ${cropNum}` : '';
                 const caption = sn || cropNum ? `${sn}${cropText}`.trim() : '';
                 return `
-                    <div class="ref-item">
-                        <div class="ref-frame"><img src="data:image/jpeg;base64,${refImg}" alt="${safeName} ref ${refIdx + 1}"></div>
-                        ${caption ? `<div class="ref-caption">${escapeHtml(caption)}</div>` : ''}
+                    <div class="ref-frame">
+                        <img src="data:image/jpeg;base64,${refImg}" alt="${safeName} ref ${refIdx + 1}">
+                        ${caption ? `<div class="ref-overlay">${escapeHtml(caption)}</div>` : ''}
                     </div>
                 `;
             }).join('');
@@ -1062,6 +1124,76 @@
         }
     }
 
+    function prefetchDetection() {
+        if (labelerMode !== 'detect') return;
+        const now = Date.now();
+        if (now - lastDetectPrefetch < DETECT_PREFETCH_COOLDOWN_MS) return;
+        lastDetectPrefetch = now;
+        if (detectPrefetchRunning) {
+            detectPrefetchRequested = true;
+            return;
+        }
+        const epoch = detectPrefetchEpoch;
+        const start = queueIndex + 1;
+        const end = Math.min(queue.length, start + DETECT_PREFETCH_AHEAD);
+        const targets = [];
+        for (let i = start; i < end; i++) {
+            const item = queue[i];
+            if (!item || !item.serial) continue;
+            const key = String(item.serial);
+            if (detectPrefetch.has(key) || detectPrefetchInFlight.has(key)) continue;
+            targets.push({ item, key });
+        }
+        if (!targets.length) return;
+
+        detectPrefetchRunning = true;
+        let idx = 0;
+        let active = 0;
+
+        const runNext = async () => {
+            if (idx >= targets.length) {
+                if (active === 0) {
+                    detectPrefetchRunning = false;
+                    if (detectPrefetchRequested) {
+                        detectPrefetchRequested = false;
+                        prefetchDetection();
+                    }
+                }
+                return;
+            }
+            const target = targets[idx++];
+            active++;
+            detectPrefetchInFlight.add(target.key);
+            try {
+                const data = await apiPost('/api/labeler/detect', {
+                    serial: target.item.serial,
+                    url: target.item.url || null,
+                });
+                if (epoch === detectPrefetchEpoch && data && data.boxes_yolo) {
+                    detectPrefetch.set(target.key, data.boxes_yolo);
+                }
+            } catch (e) {
+                //Ignore prefetch failures
+            } finally {
+                detectPrefetchInFlight.delete(target.key);
+                active--;
+                runNext();
+                if (idx >= targets.length && active === 0) {
+                    detectPrefetchRunning = false;
+                    if (detectPrefetchRequested) {
+                        detectPrefetchRequested = false;
+                        prefetchDetection();
+                    }
+                }
+            }
+        };
+
+        const slots = Math.min(DETECT_PREFETCH_CONCURRENCY, targets.length);
+        for (let i = 0; i < slots; i++) {
+            runNext();
+        }
+    }
+
     //---------- Events ----------
 
     function onCanvasClick(e) {
@@ -1176,6 +1308,16 @@
             key = 'space';
         }
 
+        const movementKeys = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+        if (labelerMode === 'detect' && movementKeys.has(key)) {
+            if (key.startsWith('arrow')) e.preventDefault();
+            pressedKeys.add(key);
+            applyMovement();
+            return;
+        }
+
+        if (e.repeat) return;
+
         //Common
         if (key === 'backspace') {
             e.preventDefault();
@@ -1190,16 +1332,37 @@
         }
     }
 
+    function onKeyUp(e) {
+        let key = e.key.toLowerCase();
+        if (e.code === 'Space' || key === ' ') {
+            key = 'space';
+        }
+        const movementKeys = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+        if (labelerMode === 'detect' && movementKeys.has(key)) {
+            pressedKeys.delete(key);
+        }
+    }
+
+    function applyMovement() {
+        if (pressedKeys.size === 0) return;
+        let dxTL = 0;
+        let dyTL = 0;
+        let dxBR = 0;
+        let dyBR = 0;
+        if (pressedKeys.has('w')) dyTL -= NUDGE_PX;
+        if (pressedKeys.has('s')) dyTL += NUDGE_PX;
+        if (pressedKeys.has('a')) dxTL -= NUDGE_PX;
+        if (pressedKeys.has('d')) dxTL += NUDGE_PX;
+        if (pressedKeys.has('arrowup')) dyBR -= NUDGE_PX;
+        if (pressedKeys.has('arrowdown')) dyBR += NUDGE_PX;
+        if (pressedKeys.has('arrowleft')) dxBR -= NUDGE_PX;
+        if (pressedKeys.has('arrowright')) dxBR += NUDGE_PX;
+        if (dxTL || dyTL) nudgeBox('tl', dxTL, dyTL);
+        if (dxBR || dyBR) nudgeBox('br', dxBR, dyBR);
+    }
+
     function handleDetectorKey(e, key) {
         switch (key) {
-            case 'w': nudgeBox('tl', 0, -NUDGE_PX); break;
-            case 'a': nudgeBox('tl', -NUDGE_PX, 0); break;
-            case 's': nudgeBox('tl', 0, NUDGE_PX); break;
-            case 'd': nudgeBox('tl', NUDGE_PX, 0); break;
-            case 'arrowup': e.preventDefault(); nudgeBox('br', 0, -NUDGE_PX); break;
-            case 'arrowdown': e.preventDefault(); nudgeBox('br', 0, NUDGE_PX); break;
-            case 'arrowleft': e.preventDefault(); nudgeBox('br', -NUDGE_PX, 0); break;
-            case 'arrowright': e.preventDefault(); nudgeBox('br', NUDGE_PX, 0); break;
             case '2': addBox(); break;
             case 'x': deleteSelectedBox(); break;
             case 'e': runDetection(); break;

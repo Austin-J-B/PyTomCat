@@ -1195,6 +1195,7 @@
                 const data = await apiPost('/api/labeler/detect', {
                     serial: target.item.serial,
                     url: target.item.url || null,
+                    fast: true,
                 });
                 if (epoch === detectPrefetchEpoch && data && data.boxes_yolo) {
                     detectPrefetch.set(target.key, data.boxes_yolo);

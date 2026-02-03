@@ -266,6 +266,69 @@ async def post_detect(request: web.Request) -> web.Response:
         return _with_cors(web.Response(status=500, text=str(e)), request)
 
 
+async def post_refine(request: web.Request) -> web.Response:
+    """Refine provided boxes using SAM."""
+    try:
+        data = await request.json()
+        serial = data.get("serial")
+        url = data.get("url")
+        boxes_raw = data.get("boxes", [])
+
+        image_bytes = None
+        if serial:
+            image_bytes = labeler_cache.get_cached_image(int(serial))
+
+        if serial and not image_bytes and not url:
+            rows = get_tcb_pics_rows(ttl_sec=60)
+            for row in rows[1:]:
+                if len(row) <= COL_SERIAL:
+                    continue
+                row_sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+                if row_sn == int(serial):
+                    url = row[COL_URL] if len(row) > COL_URL else ""
+                    break
+
+        if not image_bytes and url:
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout) as sess:
+                async with sess.get(url) as resp:
+                    resp.raise_for_status()
+                    image_bytes = await resp.read()
+
+        if not image_bytes:
+            return _with_cors(web.Response(status=400, text="No image available"), request)
+
+        boxes: List[Tuple[float, float, float, float]] = []
+        for b in boxes_raw:
+            try:
+                parts = [float(p) for p in str(b).strip().split()]
+            except Exception:
+                continue
+            if len(parts) == 4:
+                boxes.append((parts[0], parts[1], parts[2], parts[3]))
+
+        refined = await asyncio.to_thread(V.refine_boxes, image_bytes, boxes)
+
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes))
+        iw, ih = img.size
+        yolo_boxes = []
+        for (x1, y1, x2, y2) in refined:
+            cx = (x1 + x2) / 2 / iw
+            cy = (y1 + y2) / 2 / ih
+            w = (x2 - x1) / iw
+            h = (y2 - y1) / ih
+            yolo_boxes.append(f"{cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+
+        return _with_cors(web.json_response({
+            "boxes": yolo_boxes,
+            "boxes_yolo": "|".join(yolo_boxes),
+        }), request)
+    except Exception as e:
+        log_action("labeler_refine_error", "error", str(e))
+        return _with_cors(web.Response(status=500, text=str(e)), request)
+
+
 async def post_identify(request: web.Request) -> web.Response:
     """Run DINOv3 identification on crops from an image."""
     try:
@@ -449,6 +512,7 @@ def get_labeler_routes() -> List:
         web.get("/api/labeler/image/{sn}", get_image),
         web.get("/api/labeler/cached_image/{sn}", get_cached_image),
         web.post("/api/labeler/detect", post_detect),
+        web.post("/api/labeler/refine", post_refine),
         web.post("/api/labeler/identify", post_identify),
         web.post("/api/labeler/save", post_save),
         web.get("/api/labeler/cats", get_cats),
@@ -460,6 +524,7 @@ def get_labeler_routes() -> List:
         web.options("/api/labeler/image/{sn}", options_handler),
         web.options("/api/labeler/cached_image/{sn}", options_handler),
         web.options("/api/labeler/detect", options_handler),
+        web.options("/api/labeler/refine", options_handler),
         web.options("/api/labeler/identify", options_handler),
         web.options("/api/labeler/save", options_handler),
         web.options("/api/labeler/cats", options_handler),

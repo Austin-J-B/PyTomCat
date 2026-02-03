@@ -99,6 +99,7 @@
     let detectPrefetchEpoch = 0;
     let lastDetectPrefetch = 0;
     let pressedKeys = new Set();
+    let moveIntervalId = null;
 
     //DOM references (set after init)
     let containerEl = null;
@@ -267,6 +268,10 @@
         if (cropDisplayEl) cropDisplayEl.style.display = 'none';
 
         pressedKeys.clear();
+        if (moveIntervalId !== null) {
+            clearInterval(moveIntervalId);
+            moveIntervalId = null;
+        }
 
         togglePrefetchTimer(true);
         loadQueue();
@@ -544,6 +549,28 @@
             updateInfo();
         } catch (e) {
             setStatus(`Detection failed: ${e.message}`);
+        }
+    }
+
+    async function runSamRefine() {
+        if (!currentBoxes.length) {
+            runDetection();
+            return;
+        }
+        setStatus('Refining boxes...');
+        try {
+            const data = await apiPost('/api/labeler/refine', {
+                serial: currentSerial,
+                url: currentItem?.url || null,
+                boxes: currentBoxes.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
+            });
+            currentBoxes = parseYoloBoxes(data.boxes_yolo || '');
+            selectedBoxIdx = Math.min(selectedBoxIdx, Math.max(0, currentBoxes.length - 1));
+            drawCanvas();
+            setStatus(`Refined ${currentBoxes.length} box(es)`);
+            updateInfo();
+        } catch (e) {
+            setStatus(`Refine failed: ${e.message}`);
         }
     }
 
@@ -1312,6 +1339,11 @@
         if (labelerMode === 'detect' && movementKeys.has(key)) {
             if (key.startsWith('arrow')) e.preventDefault();
             pressedKeys.add(key);
+            if (moveIntervalId === null) {
+                moveIntervalId = setInterval(() => {
+                    applyMovement();
+                }, 50);
+            }
             applyMovement();
             return;
         }
@@ -1340,6 +1372,10 @@
         const movementKeys = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
         if (labelerMode === 'detect' && movementKeys.has(key)) {
             pressedKeys.delete(key);
+            if (pressedKeys.size === 0 && moveIntervalId !== null) {
+                clearInterval(moveIntervalId);
+                moveIntervalId = null;
+            }
         }
     }
 
@@ -1365,7 +1401,7 @@
         switch (key) {
             case '2': addBox(); break;
             case 'x': deleteSelectedBox(); break;
-            case 'e': runDetection(); break;
+            case 'e': runSamRefine(); break;
             case 'y':
             case 'enter': e.preventDefault(); saveAndAdvance(); break;
             case 'n': rejectImage(); break;

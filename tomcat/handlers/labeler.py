@@ -235,12 +235,19 @@ async def post_detect(request: web.Request) -> web.Response:
         if not image_bytes:
             return _with_cors(web.Response(status=400, text="No image available"), request)
         
-        #Run detection with SAM
-        result = await asyncio.to_thread(V.detect_with_sam, image_bytes)
+        #Run detection (fast mode skips SAM)
+        if fast:
+            result = await asyncio.to_thread(V.detect, image_bytes)
+        else:
+            try:
+                result = await asyncio.wait_for(asyncio.to_thread(V.detect_with_sam, image_bytes), timeout=25)
+            except Exception:
+                #Fallback to YOLO-only if SAM fails or times out
+                result = await asyncio.to_thread(V.detect, image_bytes)
         
         #Encode boxed image as base64
         import base64
-        boxed_b64 = base64.b64encode(result.boxed_jpeg).decode("ascii")
+        boxed_b64 = base64.b64encode(result.boxed_jpeg).decode("ascii") if result.boxed_jpeg else ""
         
         #Convert boxes to YOLO normalized format (cx, cy, w, h)
         #detect_with_sam returns absolute coords (x1,y1,x2,y2), need to normalize
@@ -249,7 +256,10 @@ async def post_detect(request: web.Request) -> web.Response:
         iw, ih = img.size
         
         yolo_boxes = []
-        for (x1, y1, x2, y2) in result.boxes:
+        raw_boxes = getattr(result, "boxes", None) or []
+        if not raw_boxes and getattr(result, "results", None):
+            raw_boxes = [r.get("box") for r in result.results if r.get("box")]
+        for (x1, y1, x2, y2) in raw_boxes:
             cx = (x1 + x2) / 2 / iw
             cy = (y1 + y2) / 2 / ih
             w = (x2 - x1) / iw
@@ -272,6 +282,7 @@ async def post_refine(request: web.Request) -> web.Response:
         data = await request.json()
         serial = data.get("serial")
         url = data.get("url")
+        fast = bool(data.get("fast"))
         boxes_raw = data.get("boxes", [])
 
         image_bytes = None
@@ -307,7 +318,20 @@ async def post_refine(request: web.Request) -> web.Response:
             if len(parts) == 4:
                 boxes.append((parts[0], parts[1], parts[2], parts[3]))
 
-        refined = await asyncio.to_thread(V.refine_boxes, image_bytes, boxes)
+        try:
+            refined = await asyncio.wait_for(asyncio.to_thread(V.refine_boxes, image_bytes, boxes), timeout=25)
+        except Exception:
+            #Fallback to original boxes if SAM refine fails or times out
+            from PIL import Image
+            img = Image.open(io.BytesIO(image_bytes))
+            iw, ih = img.size
+            refined = []
+            for (cx, cy, w, h) in boxes:
+                x1 = (cx - w / 2) * iw
+                y1 = (cy - h / 2) * ih
+                x2 = (cx + w / 2) * iw
+                y2 = (cy + h / 2) * ih
+                refined.append((x1, y1, x2, y2))
 
         from PIL import Image
         img = Image.open(io.BytesIO(image_bytes))

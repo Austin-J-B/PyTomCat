@@ -789,7 +789,12 @@ def detect_with_sam(image_bytes: bytes) -> DetectWithSamResult:
     annotated.save(buf, format="JPEG")
     return DetectWithSamResult(boxed_jpeg=buf.getvalue(), boxes=refined_boxes)
 
-def refine_boxes(image_bytes: bytes, boxes: List[Tuple[float, float, float, float]]) -> List[Tuple[float, float, float, float]]:
+def refine_boxes(
+    image_bytes: bytes,
+    boxes: List[Tuple[float, float, float, float]],
+    *,
+    passes: int = 1,
+) -> List[Tuple[float, float, float, float]]:
     """Refine provided YOLO-normalized boxes with SAM; returns absolute xyxy boxes."""
     import numpy as np
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -808,8 +813,11 @@ def refine_boxes(image_bytes: bytes, boxes: List[Tuple[float, float, float, floa
         y1 = (cy - h / 2) * img_h
         x2 = (cx + w / 2) * img_w
         y2 = (cy + h / 2) * img_h
-        prompt = [x1, y1, x2, y2]
-        rx1, ry1, rx2, ry2 = _sam_refine_box(img_array, prompt)
+        rx1, ry1, rx2, ry2 = x1, y1, x2, y2
+        for _ in range(max(1, passes)):
+            prompt = [rx1, ry1, rx2, ry2]
+            nrx1, nry1, nrx2, nry2 = _sam_refine_box(img_array, prompt)
+            rx1, ry1, rx2, ry2 = nrx1, nry1, nrx2, nry2
         #Clamp and normalize ordering
         rx1 = max(0.0, min(float(img_w), float(rx1)))
         ry1 = max(0.0, min(float(img_h), float(ry1)))

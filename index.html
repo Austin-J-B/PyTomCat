@@ -310,6 +310,10 @@
             color: #d4a017;
         }
 
+        .role-labeler {
+            color: #4a9eff;
+        }
+
         /*Gold Crown*/
         .role-user {
             color: var(--site-accent);
@@ -1377,7 +1381,7 @@
     </div>
 
     <!-- Image Labeler Container -->
-    <div id="labeler-container" style="display:none; position:fixed; inset:0; z-index:5000; background:#1a1a1a;">
+    <div id="labeler-container" style="display:none; position:fixed; inset:0; z-index:1900; background:#1a1a1a;">
     </div>
 
     <style>
@@ -1404,6 +1408,44 @@
             padding: 8px 12px;
             background: #202020;
             border-bottom: 1px solid #2d2d2d;
+        }
+
+        .labeler-nav {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-right: 8px;
+        }
+
+        .labeler-menu-btn {
+            background: none;
+            border: 1px solid #2d2d2d;
+            border-radius: 6px;
+            padding: 4px 6px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .labeler-menu-btn span {
+            display: block;
+            width: 18px;
+            height: 2px;
+            background: #e0e0e0;
+            border-radius: 2px;
+        }
+
+        .labeler-menu-btn:hover {
+            background: #2a2a2a;
+        }
+
+        .labeler-nav-title {
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: #e0e0e0;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
         }
 
         .labeler-tabs {
@@ -1778,7 +1820,7 @@
 
     </style>
 
-    <script src="labeler.js?v=20260203b"></script>
+    <script src="labeler.js?v=20260203d"></script>
 
     <script>
         //--- CONFIG ---
@@ -2688,8 +2730,14 @@
 
         function setView(view, opts = {}) {
             const nextView = VIEWS.includes(view) ? view : 'schedule';
-            if ((nextView === 'checklist' || nextView === 'labeler') && !(authState.permissions?.is_officer)) {
+            const canLabeler = !!(authState.permissions?.is_officer || authState.permissions?.can_label_photos);
+            if (nextView === 'checklist' && !(authState.permissions?.is_officer)) {
                 //Non-officers are not allowed; redirect to schedule
+                updateUrlForView('schedule');
+                return setView('schedule', { skipUrlUpdate: true });
+            }
+            if (nextView === 'labeler' && !canLabeler) {
+                //Non-labelers are not allowed; redirect to schedule
                 updateUrlForView('schedule');
                 return setView('schedule', { skipUrlUpdate: true });
             }
@@ -3899,6 +3947,14 @@
 
             const isOfficer = authState.permissions.is_officer;
             const canEditSchedule = !!authState.permissions.can_edit_schedule;
+            const canLabelPhotos = !!authState.permissions.can_label_photos;
+
+            //3. Camera: TomCat helper
+            const ICON_CAMERA = `
+    <svg viewBox="0 0 24 24">
+        <path d="M4 7h4l2-2h4l2 2h4a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"></path>
+        <circle cx="12" cy="13" r="4"></circle>
+    </svg>`;
 
             //1. Update Header Profile
             const pDisplay = document.getElementById('profile-display');
@@ -3914,6 +3970,10 @@
                     pIcon.innerHTML = ICON_CROWN;
                     pIcon.className = "profile-icon role-officer";
                     pDisplay.title = "Officer Account";
+                } else if (canLabelPhotos) {
+                    pIcon.innerHTML = ICON_CAMERA;
+                    pIcon.className = "profile-icon role-labeler";
+                    pDisplay.title = "TomCat Helper";
                 } else {
                     pIcon.innerHTML = ICON_USER;
                     pIcon.className = "profile-icon role-user";
@@ -3929,7 +3989,7 @@
             //2c. Officer-only menu item for labeler
             const labelerLink = document.getElementById('menu-labeler');
             if (labelerLink) {
-                labelerLink.style.display = isOfficer ? 'block' : 'none';
+                labelerLink.style.display = (isOfficer || canLabelPhotos) ? 'block' : 'none';
             }
 
             //2. Show/Hide Impersonation Controls

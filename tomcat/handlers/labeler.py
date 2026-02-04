@@ -206,6 +206,7 @@ async def post_detect(request: web.Request) -> web.Response:
         data = await request.json()
         serial = data.get("serial")
         url = data.get("url")
+        fast = bool(data.get("fast"))
         
         image_bytes = None
         
@@ -282,8 +283,8 @@ async def post_refine(request: web.Request) -> web.Response:
         data = await request.json()
         serial = data.get("serial")
         url = data.get("url")
-        fast = bool(data.get("fast"))
         boxes_raw = data.get("boxes", [])
+        passes = int(data.get("passes") or 1)
 
         image_bytes = None
         if serial:
@@ -319,7 +320,10 @@ async def post_refine(request: web.Request) -> web.Response:
                 boxes.append((parts[0], parts[1], parts[2], parts[3]))
 
         try:
-            refined = await asyncio.wait_for(asyncio.to_thread(V.refine_boxes, image_bytes, boxes), timeout=25)
+            refined = await asyncio.wait_for(
+                asyncio.to_thread(V.refine_boxes, image_bytes, boxes, passes=passes),
+                timeout=25,
+            )
         except Exception:
             #Fallback to original boxes if SAM refine fails or times out
             from PIL import Image

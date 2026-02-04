@@ -34,7 +34,10 @@
     const DETECT_PREFETCH_AHEAD = 4;
     const DETECT_PREFETCH_CONCURRENCY = 1;
     const DETECT_PREFETCH_COOLDOWN_MS = 8000;
+    const DETECT_REFINE_PREFETCH_AHEAD = 2;
+    const DETECT_REFINE_COOLDOWN_MS = 12000;
     const REF_CACHE_VERSION = 'refs_v2';
+    const ACTION_COOLDOWN_MS = 250;
 
     function getApiBase() {
         let base = '';
@@ -98,8 +101,12 @@
     let detectPrefetchRequested = false;
     let detectPrefetchEpoch = 0;
     let lastDetectPrefetch = 0;
+    let lastDetectRefinePrefetch = 0;
+    let detectRefineInFlight = new Set();
+    let boxesTouched = false;
     let pressedKeys = new Set();
     let moveIntervalId = null;
+    let actionCooldowns = new Map();
 
     //DOM references (set after init)
     let containerEl = null;
@@ -123,6 +130,14 @@
         containerEl.innerHTML = `
             <div class="labeler-wrapper">
                 <div class="labeler-header">
+                    <div class="labeler-nav">
+                        <button class="labeler-menu-btn" id="labeler-menu-btn" title="Open Menu" type="button">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </button>
+                        <div class="labeler-nav-title">Campus Cat Coalition</div>
+                    </div>
                     <div class="labeler-tabs">
                         <button class="labeler-tab active" data-mode="detect">Detector</button>
                         <button class="labeler-tab" data-mode="classify">Classifier</button>
@@ -205,6 +220,14 @@
         });
 
         //Event listeners
+        const menuBtn = document.getElementById('labeler-menu-btn');
+        if (menuBtn) {
+            menuBtn.addEventListener('click', () => {
+                if (typeof window.toggleMenu === 'function') {
+                    window.toggleMenu();
+                }
+            });
+        }
         containerEl.querySelectorAll('.labeler-tab').forEach(tab => {
             tab.addEventListener('click', () => switchMode(tab.dataset.mode));
         });
@@ -272,6 +295,7 @@
             clearInterval(moveIntervalId);
             moveIntervalId = null;
         }
+        actionCooldowns.clear();
 
         togglePrefetchTimer(true);
         loadQueue();
@@ -408,6 +432,7 @@
         selectedBoxIdx = 0;
         currentCropIdx = 0;
         currentPredictions = [];
+        boxesTouched = false;
         const listEl = document.getElementById('predictions-list');
         if (listEl) listEl.innerHTML = '';
 
@@ -425,6 +450,7 @@
         prefetchPredictions();
         prefetchImages();
         prefetchDetection();
+        prefetchDetectionRefine();
     }
 
     function togglePrefetchTimer(enabled) {
@@ -437,6 +463,7 @@
                 prefetchPredictions();
                 prefetchImages();
                 prefetchDetection();
+                prefetchDetectionRefine();
             }, 3000);
         }
     }
@@ -453,6 +480,7 @@
         detectPrefetchInFlight.clear();
         detectPrefetchRunning = false;
         detectPrefetchRequested = false;
+        detectRefineInFlight.clear();
     }
 
     function getPredCacheKey(item) {
@@ -509,11 +537,17 @@
             //Draw image first so there's no blank delay, then run detection
             drawCanvas();
             const cached = detectPrefetch.get(String(currentSerial));
-            if (cached) {
-                currentBoxes = parseYoloBoxes(cached);
+            if (cached && cached.refined) {
+                currentBoxes = parseYoloBoxes(cached.refined);
                 drawCanvas();
                 setStatus(`Found ${currentBoxes.length} box(es)`);
                 updateInfo();
+            } else if (cached && cached.raw) {
+                currentBoxes = parseYoloBoxes(cached.raw);
+                drawCanvas();
+                setStatus(`Found ${currentBoxes.length} box(es)`);
+                updateInfo();
+                autoRefineCurrent(true);
             } else {
                 runDetection();
             }
@@ -544,6 +578,10 @@
             });
             currentBoxes = parseYoloBoxes(data.boxes_yolo || '');
             selectedBoxIdx = 0;
+            detectPrefetch.set(String(currentSerial), {
+                raw: data.boxes_yolo || '',
+                refined: data.boxes_yolo || '',
+            });
             drawCanvas();
             setStatus(`Found ${currentBoxes.length} box(es)`);
             updateInfo();
@@ -563,14 +601,44 @@
                 serial: currentSerial,
                 url: currentItem?.url || null,
                 boxes: currentBoxes.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
+                passes: 2,
             });
             currentBoxes = parseYoloBoxes(data.boxes_yolo || '');
             selectedBoxIdx = Math.min(selectedBoxIdx, Math.max(0, currentBoxes.length - 1));
+            detectPrefetch.set(String(currentSerial), {
+                raw: data.boxes_yolo || '',
+                refined: data.boxes_yolo || '',
+            });
             drawCanvas();
             setStatus(`Refined ${currentBoxes.length} box(es)`);
             updateInfo();
         } catch (e) {
             setStatus(`Refine failed: ${e.message}`);
+        }
+    }
+
+    async function autoRefineCurrent(runSecondPass = false) {
+        if (boxesTouched || labelerMode !== 'detect') return;
+        if (!currentBoxes.length) return;
+        const serial = currentSerial;
+        try {
+            const data = await apiPost('/api/labeler/refine', {
+                serial,
+                url: currentItem?.url || null,
+                boxes: currentBoxes.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
+                passes: runSecondPass ? 2 : 1,
+            });
+            if (serial !== currentSerial || boxesTouched) return;
+            const refined = data.boxes_yolo || '';
+            if (refined) {
+                currentBoxes = parseYoloBoxes(refined);
+                detectPrefetch.set(String(serial), { raw: refined, refined });
+                drawCanvas();
+                setStatus(`Found ${currentBoxes.length} box(es)`);
+                updateInfo();
+            }
+        } catch (e) {
+            //silent auto refine failure
         }
     }
 
@@ -719,6 +787,7 @@
         if (currentBoxes.length === 0) return;
         const box = currentBoxes[selectedBoxIdx];
         if (!box) return;
+        boxesTouched = true;
 
         //Convert px nudge to normalized coords
         const { imgW, imgH, scale } = getDrawParams();
@@ -779,6 +848,7 @@
         //Add a small box in center
         currentBoxes.push({ cx: 0.5, cy: 0.5, w: 0.2, h: 0.2 });
         selectedBoxIdx = currentBoxes.length - 1;
+        boxesTouched = true;
         drawCanvas();
         setStatus('Added new box');
     }
@@ -789,6 +859,7 @@
         currentLabels.splice(selectedBoxIdx, 1);
         selectedBoxIdx = Math.min(selectedBoxIdx, currentBoxes.length - 1);
         if (selectedBoxIdx < 0) selectedBoxIdx = 0;
+        boxesTouched = true;
         drawCanvas();
         setStatus('Deleted box');
     }
@@ -1198,7 +1269,7 @@
                     fast: true,
                 });
                 if (epoch === detectPrefetchEpoch && data && data.boxes_yolo) {
-                    detectPrefetch.set(target.key, data.boxes_yolo);
+                    detectPrefetch.set(target.key, { raw: data.boxes_yolo, refined: null });
                 }
             } catch (e) {
                 //Ignore prefetch failures
@@ -1219,6 +1290,37 @@
         const slots = Math.min(DETECT_PREFETCH_CONCURRENCY, targets.length);
         for (let i = 0; i < slots; i++) {
             runNext();
+        }
+    }
+
+    function prefetchDetectionRefine() {
+        if (labelerMode !== 'detect') return;
+        const now = Date.now();
+        if (now - lastDetectRefinePrefetch < DETECT_REFINE_COOLDOWN_MS) return;
+        lastDetectRefinePrefetch = now;
+        const start = queueIndex + 1;
+        const end = Math.min(queue.length, start + DETECT_REFINE_PREFETCH_AHEAD);
+        for (let i = start; i < end; i++) {
+            const item = queue[i];
+            if (!item || !item.serial) continue;
+            const key = String(item.serial);
+            const entry = detectPrefetch.get(key);
+            if (!entry || !entry.raw || entry.refined || detectRefineInFlight.has(key)) continue;
+            detectRefineInFlight.add(key);
+            apiPost('/api/labeler/refine', {
+                serial: item.serial,
+                url: item.url || null,
+                boxes: parseYoloBoxes(entry.raw).map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
+                passes: 1,
+            }).then((data) => {
+                if (data && data.boxes_yolo) {
+                    detectPrefetch.set(key, { raw: entry.raw, refined: data.boxes_yolo });
+                }
+            }).catch(() => {
+                //ignore
+            }).finally(() => {
+                detectRefineInFlight.delete(key);
+            });
         }
     }
 
@@ -1349,12 +1451,15 @@
             return;
         }
 
-        if (e.repeat) return;
+        const actionKeys = new Set(['backspace', 'y', 'enter', 'n', 'x', 'tab', 'space', '0', '1','2','3','4','5','6','7','8','9']);
+        if (e.repeat && actionKeys.has(key)) return;
 
         //Common
         if (key === 'backspace') {
             e.preventDefault();
-            undoLast();
+            if (throttleAction('undo')) {
+                undoLast();
+            }
             return;
         }
 
@@ -1400,28 +1505,55 @@
 
     function handleDetectorKey(e, key) {
         switch (key) {
-            case '2': addBox(); break;
-            case 'x': deleteSelectedBox(); break;
-            case 'e': runSamRefine(); break;
+            case '2': if (throttleAction('addBox')) addBox(); break;
+            case 'x': if (throttleAction('deleteBox')) deleteSelectedBox(); break;
+            case 'e': if (throttleAction('refine')) runSamRefine(); break;
             case 'y':
-            case 'enter': e.preventDefault(); saveAndAdvance(); break;
-            case 'n': rejectImage(); break;
+            case 'enter':
+                e.preventDefault();
+                if (throttleAction('saveAdvance')) saveAndAdvance();
+                break;
+            case 'n':
+                if (throttleAction('reject')) rejectImage();
+                break;
             case 'tab':
-            case 'space': e.preventDefault(); selectNextBox(); break;
+            case 'space':
+                e.preventDefault();
+                if (throttleAction('nextBox')) selectNextBox();
+                break;
         }
     }
 
     function handleClassifierKey(e, key) {
         if (key >= '1' && key <= '9') {
-            selectPrediction(parseInt(key));
+            if (throttleAction(`pred-${key}`)) {
+                selectPrediction(parseInt(key));
+            }
             return;
         }
 
         switch (key) {
-            case '0': markNeedsReview(); break;
-            case 'x': rejectCrop(); break;
-            case 'enter': e.preventDefault(); advanceCrop(); break;
+            case '0':
+                if (throttleAction('needsReview')) markNeedsReview();
+                break;
+            case 'x':
+                if (throttleAction('rejectCrop')) rejectCrop();
+                break;
+            case 'enter':
+                e.preventDefault();
+                if (throttleAction('advanceCrop')) advanceCrop();
+                break;
         }
+    }
+
+    function throttleAction(actionKey) {
+        const now = Date.now();
+        const last = actionCooldowns.get(actionKey) || 0;
+        if (now - last < ACTION_COOLDOWN_MS) {
+            return false;
+        }
+        actionCooldowns.set(actionKey, now);
+        return true;
     }
 
     //---------- Expose to global ----------

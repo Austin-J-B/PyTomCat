@@ -7,6 +7,7 @@ import csv
 import asyncio
 import json
 import discord
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 try:
@@ -202,6 +203,9 @@ _EMAIL_LOG_LOCK = asyncio.Lock()
 DUES_DIR = os.path.join("logs", "dues")
 os.makedirs(DUES_DIR, exist_ok=True)
 DUES_INDEX = os.path.join(DUES_DIR, "index.jsonl")
+_DUES_PROCESSED_EMOJI = os.getenv("DUES_PROCESSED_EMOJI", "✅")
+_DUES_INDEX_CACHE: Optional[set[str]] = None
+_DUES_INDEX_TS: float = 0.0
 
 #----------- Normalization & Regexes -----------
 _PROVIDER_RE = re.compile(
@@ -585,6 +589,174 @@ def _current_semester_label() -> str:
 
 def _norm_sem_label(s: str) -> str:
     return re.sub(r"\s+", " ", (s or '').strip().title())
+
+def _normalize_paid_where(s: str) -> str:
+    t = (s or '').strip().lower()
+    if "cash app" in t or "cashapp" in t or "cash-app" in t:
+        return "cashapp"
+    if "paypal" in t:
+        return "paypal"
+    if "venmo" in t:
+        return "venmo"
+    if "zelle" in t or "zelled" in t:
+        return "zelle"
+    if "cash" in t or "in person" in t or "irl" in t:
+        return "cash"
+    return ""
+
+def _parse_member_date(s: str) -> Optional[datetime]:
+    if not s:
+        return None
+    raw = str(s).strip()
+    if not raw:
+        return None
+    #ISO-ish fallback
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        pass
+    fmts = [
+        "%m/%d/%Y",
+        "%m/%d/%y",
+        "%m/%d/%Y %H:%M:%S",
+        "%m/%d/%Y %I:%M:%S %p",
+        "%m/%d/%y %I:%M:%S %p",
+    ]
+    for fmt in fmts:
+        try:
+            return datetime.strptime(raw, fmt)
+        except Exception:
+            continue
+    return None
+
+def _load_dues_index_ids() -> set[str]:
+    """Load processed portal message IDs to avoid reprocessing."""
+    global _DUES_INDEX_CACHE, _DUES_INDEX_TS
+    ttl = int(getattr(settings, 'dues_index_ttl_sec', 300) or 300)
+    now = time.time()
+    if _DUES_INDEX_CACHE is not None and (now - _DUES_INDEX_TS) < ttl:
+        return set(_DUES_INDEX_CACHE)
+    ids: set[str] = set()
+    try:
+        if os.path.exists(DUES_INDEX):
+            with open(DUES_INDEX, 'r', encoding='utf-8') as f:
+                for line in f:
+                    try:
+                        obj = json.loads(line.strip())
+                        mid = str(obj.get('message_id') or '')
+                        if mid:
+                            ids.add(mid)
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    _DUES_INDEX_CACHE = set(ids)
+    _DUES_INDEX_TS = now
+    return ids
+
+def _prep_emails_between(start_dt: datetime, end_dt: datetime) -> list[dict]:
+    raw_emails = _load_email_logs_between(start_dt, end_dt)
+    prepped: list[dict] = []
+    for e in raw_emails:
+        subj, body, frm = (e.get('subject','') or ''), (e.get('content','') or ''), (e.get('from','') or '')
+        provider = _provider_from_email(frm, subj, body) or ''
+        text = subj + ' ' + body
+        amount = _extract_amount(text)
+        payer_name = _payment_username_from_email({'subject': subj, 'content': body, 'from': frm}) or ''
+        ts_utc = None
+        try:
+            ts_utc = datetime.fromisoformat((e.get('ts_received') or e.get('ts_logged')).replace('Z','+00:00'))
+        except Exception:
+            ts_utc = None
+        prepped.append({
+            'id': str(e.get('id') or ''),
+            'provider': provider,
+            'amount': amount,
+            'payer_name': payer_name,
+            'ts_utc': ts_utc,
+            'raw': e,
+        })
+    return prepped
+
+def _email_only_candidates(rows: list[dict], cur_sem: str) -> list[tuple[str, str]]:
+    """Fallback: verify by membership row + payment email when portal message is missing."""
+    cur_sem_norm = _norm_sem_label(cur_sem)
+    base_due = float(getattr(settings, 'dues_base_amount', 15.0) or 15.0)
+    tol = float(getattr(settings, 'dues_amount_tolerance', 0.01) or 0.01)
+    backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
+    now = _dues_now()
+    def _align_dt(dt: Optional[datetime]) -> Optional[datetime]:
+        if dt is None:
+            return None
+        if now.tzinfo is None:
+            return dt.replace(tzinfo=None)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=now.tzinfo)
+        return dt.astimezone(now.tzinfo)
+    start = now - timedelta(days=backfill_days)
+    end = now + timedelta(days=1)
+    prepped_emails = _prep_emails_between(start, end)
+    if not prepped_emails:
+        return []
+    out: list[tuple[str, str]] = []
+    for r in rows:
+        if r.get('verified'):
+            continue
+        sem = _norm_sem_label(r.get('semester',''))
+        if cur_sem_norm and sem and sem != cur_sem_norm:
+            continue
+        email = (r.get('email') or '').strip().lower()
+        if not email:
+            continue
+        kind = (r.get('kind') or '').lower()
+        if 'donat' in kind and 'dues' not in kind and 'verif' not in kind:
+            continue
+        provider = _normalize_paid_where(r.get('paid_where') or '')
+        if provider not in {'venmo','cashapp','paypal'}:
+            continue
+        r_dt = _align_dt(_parse_member_date(r.get('date') or ''))
+        if r_dt and (now - r_dt).days > backfill_days:
+            continue
+        best_score = 0.0
+        best = None
+        for E in prepped_emails:
+            if E.get('provider') != provider:
+                continue
+            amt = E.get('amount')
+            if amt is None:
+                continue
+            if amt + tol < base_due:
+                continue
+            subj = (E.get('raw') or {}).get('subject','')
+            body = (E.get('raw') or {}).get('content','')
+            text = f"{subj} {body}"
+            has_dues_word = bool(_DUES_WORD_RE.search(text))
+            if amt > base_due + tol and not has_dues_word:
+                continue
+            ets = _align_dt(E.get('ts_utc'))
+            if ets and (now - ets).days > backfill_days:
+                continue
+            name_pool = [n for n in [(r.get('full_name') or '').strip(), (r.get('payment_username') or '').strip()] if n]
+            if not name_pool or not E.get('payer_name'):
+                continue
+            overlap = max(_jaccard_tokens(E['payer_name'], n) for n in name_pool)
+            if overlap < 0.60:
+                continue
+            if overlap > best_score:
+                best_score = overlap
+                best = E
+        if best:
+            out.append((email, sem or cur_sem))
+    #Deduplicate
+    seen: set[tuple[str, str]] = set()
+    uniq: list[tuple[str, str]] = []
+    for e, s in out:
+        key = (e, s or '')
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append((e, s))
+    return uniq
 
 def _get_semester_expiry(semester_label: str) -> date:
     """Return the expiration date for a semester's dues role.
@@ -1144,11 +1316,155 @@ async def _delete_portal_messages(bot, ids: list[int]) -> int:
     for mid in ids:
         try:
             msg = await ch.fetch_message(int(mid))
-            if msg:
-                await msg.delete()
-                deleted += 1
         except Exception:
             continue
+        if not msg:
+            continue
+        try:
+            await msg.delete()
+            deleted += 1
+            continue
+        except Exception:
+            try:
+                await msg.add_reaction(_DUES_PROCESSED_EMOJI)
+            except Exception:
+                pass
+            continue
+    return deleted
+
+async def _cleanup_portal_messages_for_emails(bot, rows: list[dict], emails_with_sem: list[tuple[str, str | None]]) -> int:
+    """Attempt to delete portal messages for verified emails, even when verified via email-only fallback."""
+    if not emails_with_sem:
+        return 0
+    deleted = 0
+    try:
+        log_ids = _dues_log_message_ids_for_emails(emails_with_sem)
+        if log_ids:
+            deleted += await _delete_portal_messages(bot, log_ids)
+    except Exception:
+        pass
+    targets: set[str] = set()
+    for email, sem in emails_with_sem:
+        email_norm = (email or '').strip().lower()
+        if not email_norm:
+            continue
+        sem_norm = _norm_sem_label(sem or '') if sem else ''
+        for r in rows:
+            if (r.get('email') or '').strip().lower() != email_norm:
+                continue
+            if sem_norm:
+                r_sem = _norm_sem_label(r.get('semester') or '')
+                if r_sem and r_sem != sem_norm:
+                    continue
+            handle = r.get('discord_username') or ''
+            key = _norm_user_key(handle)
+            if key:
+                targets.add(key)
+    if not targets:
+        return deleted
+    cleanup_limit = int(getattr(settings, 'dues_cleanup_scan_limit', 0) or 0)
+    msgs = await _fetch_portal_messages(
+        bot,
+        include_processed=True,
+        limit_override=cleanup_limit if cleanup_limit > 0 else None,
+    )
+    if not msgs:
+        return deleted
+    now = _dues_now()
+    backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
+    ids: list[int] = []
+    for m in msgs:
+        p = _parse_portal_message(m)
+        if not _is_explicit_payment_message(p.get('content','')):
+            continue
+        ts = p.get('ts')
+        if isinstance(ts, datetime):
+            if now.tzinfo is None:
+                ts_cmp = ts.replace(tzinfo=None)
+            elif ts.tzinfo is None:
+                ts_cmp = ts.replace(tzinfo=now.tzinfo)
+            else:
+                ts_cmp = ts.astimezone(now.tzinfo)
+            if (now - ts_cmp).days > backfill_days:
+                continue
+        au = _norm_user_key(p.get('author_name') or '')
+        ad = _norm_user_key(p.get('author_display') or '')
+        if au in targets or ad in targets:
+            mid = int(getattr(m, 'id', 0) or 0)
+            if mid:
+                ids.append(mid)
+    if not ids:
+        return deleted
+    #Deduplicate ids before delete
+    ids = list(dict.fromkeys(ids))
+    deleted += await _delete_portal_messages(bot, ids)
+    return deleted
+
+async def _cleanup_portal_messages_for_verified_rows(bot, rows: list[dict], cur_sem: str) -> int:
+    """Delete portal messages for members already verified in the current semester."""
+    cur_sem_norm = _norm_sem_label(cur_sem)
+    emails_with_sem: list[tuple[str, str | None]] = []
+    targets: set[str] = set()
+    for r in rows:
+        if not r.get('verified'):
+            continue
+        if cur_sem_norm:
+            sem = _norm_sem_label(r.get('semester') or '')
+            if sem and sem != cur_sem_norm:
+                continue
+        raw_handle = r.get('discord_username') or ''
+        email = (r.get('email') or '').strip().lower()
+        if email:
+            emails_with_sem.append((email, r.get('semester') or None))
+        for cand in _split_handle_candidates(raw_handle):
+            key = _norm_user_key(cand)
+            if key:
+                targets.add(key)
+    deleted = 0
+    if emails_with_sem:
+        try:
+            log_ids = _dues_log_message_ids_for_emails(emails_with_sem)
+            if log_ids:
+                deleted += await _delete_portal_messages(bot, log_ids)
+        except Exception:
+            pass
+    if not targets:
+        return deleted
+    cleanup_limit = int(getattr(settings, 'dues_cleanup_scan_limit', 0) or 0)
+    msgs = await _fetch_portal_messages(
+        bot,
+        include_processed=True,
+        limit_override=cleanup_limit if cleanup_limit > 0 else None,
+    )
+    if not msgs:
+        return deleted
+    now = _dues_now()
+    backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
+    ids: list[int] = []
+    for m in msgs:
+        p = _parse_portal_message(m)
+        if not _is_explicit_payment_message(p.get('content','')):
+            continue
+        ts = p.get('ts')
+        if isinstance(ts, datetime):
+            if now.tzinfo is None:
+                ts_cmp = ts.replace(tzinfo=None)
+            elif ts.tzinfo is None:
+                ts_cmp = ts.replace(tzinfo=now.tzinfo)
+            else:
+                ts_cmp = ts.astimezone(now.tzinfo)
+            if (now - ts_cmp).days > backfill_days:
+                continue
+        au = _norm_user_key(p.get('author_name') or '')
+        ad = _norm_user_key(p.get('author_display') or '')
+        if au in targets or ad in targets:
+            mid = int(getattr(m, 'id', 0) or 0)
+            if mid:
+                ids.append(mid)
+    if not ids:
+        return deleted
+    ids = list(dict.fromkeys(ids))
+    deleted += await _delete_portal_messages(bot, ids)
     return deleted
 
 async def handle_update_dues_members(intent, ctx) -> None:
@@ -1227,6 +1543,13 @@ async def handle_update_dues_members(intent, ctx) -> None:
     except Exception:
         placeholder = None
     rows = await _analyze_dues(bot)
+    cur_sem = _current_semester_label()
+    cur_sem_norm = _norm_sem_label(cur_sem)
+    def _is_current_verified(mem: dict) -> bool:
+        if not mem or not mem.get('verified'):
+            return False
+        sem = _norm_sem_label(mem.get('semester', ''))
+        return bool(sem and cur_sem_norm and sem == cur_sem_norm)
     def _conf_label(score: float) -> str:
         if score >= 1.20: return 'high confidence'
         if score >= 0.90: return 'medium-high'
@@ -1235,6 +1558,8 @@ async def handle_update_dues_members(intent, ctx) -> None:
     lines = []
     for rec in rows[-15:]:
         best_mem = rec.get('primary_member') or {}
+        if _is_current_verified(best_mem):
+            continue
         best_email = rec.get('primary_email')
         auth = rec.get('author') or ''
         disp = rec.get('author_display') or auth
@@ -1250,10 +1575,11 @@ async def handle_update_dues_members(intent, ctx) -> None:
         score = float(rec.get('score_total') or 0.0)
         lines.append(f"- Discord: {auth} ({disp}), Real Name: {name}, Payment App Username: {pay_from_email}, Score = {score:.2f} ({_conf_label(score)})")
     header = "Recent dues check results:\n"
+    summary_text = header + ("\n".join(lines[:15]) if lines else "")
     if placeholder:
-        await placeholder.edit(content=header + ("\n".join(lines[:15]) if lines else ""))
+        await placeholder.edit(content=summary_text)
     else:
-        await safe_send(ch, header + ("\n".join(lines[:15]) if lines else ""))
+        await safe_send(ch, summary_text)
 
     #2) Auto-verify high-confidence entries and delete their portal messages
     eligible: list[dict] = []
@@ -1331,6 +1657,51 @@ async def handle_update_dues_members(intent, ctx) -> None:
         #Invalidate membership cache so perks sees fresh Verified flags
         _MEMBERSHIP_ROWS_CACHE = None
         _MEMBERSHIP_ROWS_TS = 0.0
+    #Fallback: email-only verification when portal messages are missing
+    rows_for_fallback: list[dict] = []
+    extra: list[tuple[str, str]] = []
+    try:
+        rows_for_fallback = _load_membership_rows()
+        extra = _email_only_candidates(rows_for_fallback, cur_sem)
+        if extra:
+            ok2, msg2 = await _mark_verified_emails(extra)
+            try:
+                log_action('dues_auto_verify', f"fallback={len(extra)}", msg2)
+            except Exception:
+                pass
+            if ok2:
+                _MEMBERSHIP_ROWS_CACHE = None
+                _MEMBERSHIP_ROWS_TS = 0.0
+    except Exception:
+        pass
+    if extra:
+        name_map: dict[str, str] = {}
+        for r in rows_for_fallback:
+            em = (r.get('email') or '').strip().lower()
+            if not em:
+                continue
+            if em not in name_map or not name_map[em]:
+                name_map[em] = (r.get('full_name') or '').strip()
+        fallback_lines: list[str] = []
+        for em, sem in extra:
+            name = name_map.get(em) or '(unknown)'
+            sem_label = sem or cur_sem
+            fallback_lines.append(f"- {name} ({em}, {sem_label})")
+        fallback_text = "Email-only verified:\n" + "\n".join(fallback_lines)
+        if placeholder:
+            try:
+                await placeholder.edit(content=summary_text + "\n" + fallback_text)
+            except Exception:
+                await safe_send(ch, fallback_text)
+        else:
+            await safe_send(ch, fallback_text)
+    if extra:
+        try:
+            deleted_fallback = await _cleanup_portal_messages_for_emails(bot, rows_for_fallback, extra)
+            if deleted_fallback:
+                log_action('dues_auto_cleanup', f'fallback_deleted={deleted_fallback}', '')
+        except Exception:
+            pass
 
     #Delete portal messages for eligible
     ids = [int(rec.get('message_id') or 0) for rec in eligible if int(rec.get('message_id') or 0)]
@@ -1352,6 +1723,14 @@ async def handle_update_dues_members(intent, ctx) -> None:
             _MEMBERSHIP_ROWS_CACHE = None
             _MEMBERSHIP_ROWS_TS = 0.0
 
+    #2b) Cleanup portal messages for already-verified members
+    try:
+        verified_cleanup = await _cleanup_portal_messages_for_verified_rows(bot, _load_membership_rows(), cur_sem)
+        if verified_cleanup:
+            log_action('dues_auto_cleanup', f'verified_deleted={verified_cleanup}', '')
+    except Exception:
+        pass
+
     #3) Run the standard dues perks flow (emails list, usernames, roles, invite prompt)
     try:
         await handle_run_dues_perks(intent, ctx)
@@ -1366,6 +1745,9 @@ async def handle_update_dues_members(intent, ctx) -> None:
     for rec in rows:
         sc = float(rec.get('score_total') or 0.0)
         if rec in eligible:
+            continue
+        best_mem = rec.get('primary_member') or {}
+        if _is_current_verified(best_mem):
             continue
         reason = None
         if rec.get('flag_reason') in {'cash','donation'}:
@@ -2045,6 +2427,14 @@ _MONTH_NAMES = {
     7: "Jul", 8: "Aug", 9: "Sept", 10: "Oct", 11: "Nov", 12: "Dec",
 }
 
+def _to_utc_naive(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt
+    try:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    except Exception:
+        return dt.replace(tzinfo=None)
+
 def _email_month_paths_between(start_dt: datetime, end_dt: datetime) -> List[str]:
     files = []
     seen = set()
@@ -2061,6 +2451,8 @@ def _email_month_paths_between(start_dt: datetime, end_dt: datetime) -> List[str
     return files
 
 def _load_email_logs_between(start_dt: datetime, end_dt: datetime) -> List[dict]:
+    start_dt = _to_utc_naive(start_dt)
+    end_dt = _to_utc_naive(end_dt)
     paths = _email_month_paths_between(start_dt, end_dt)
     out: List[dict] = []
     for p in paths:
@@ -2303,7 +2695,7 @@ def _score_email(D: dict, S: Optional[dict], E: dict, ets: Optional[datetime]) -
 #Portal fetch & main analysis
 #============================
 
-async def _fetch_portal_messages(bot) -> list:
+async def _fetch_portal_messages(bot, include_processed: bool = False, limit_override: Optional[int] = None) -> list:
     ch_id = getattr(settings, 'ch_due_portal', None)
     if not ch_id:
         log_action('dues_portal', 'missing_channel', '')
@@ -2313,10 +2705,12 @@ async def _fetch_portal_messages(bot) -> list:
         log_action('dues_portal', 'channel_not_found', str(ch_id))
         return []
     msgs = []
-    skip = max(0, int(getattr(settings,'dues_scan_skip_oldest',3) or 0))
     conf_limit = int(getattr(settings,'dues_scan_limit',0) or 0)
     #Bound history read to keep the command snappy. If DUES_SCAN_LIMIT=0, default to 500.
-    limit = conf_limit if conf_limit > 0 else 500
+    if limit_override is not None and int(limit_override) > 0:
+        limit = int(limit_override)
+    else:
+        limit = conf_limit if conf_limit > 0 else 500
     try:
         #Fetch newest-first then reverse to chronological for downstream logic
         fetched = []
@@ -2326,10 +2720,26 @@ async def _fetch_portal_messages(bot) -> list:
     except Exception as e:
         log_action('dues_portal_history_error', f'ch={ch_id}', str(e))
         return []
-    if len(msgs) <= skip:
-        return []
-    msgs = msgs[skip:]
-    return msgs
+    if include_processed:
+        return msgs
+    #Skip messages already marked as processed (reaction fallback when delete fails)
+    processed_ids = _load_dues_index_ids()
+    processed = []
+    for m in msgs:
+        try:
+            mid = str(getattr(m, 'id', '') or '')
+            if mid and mid in processed_ids:
+                continue
+        except Exception:
+            pass
+        try:
+            reactions = getattr(m, 'reactions', []) or []
+            if any(str(r.emoji) == _DUES_PROCESSED_EMOJI and getattr(r, 'me', False) for r in reactions):
+                continue
+        except Exception:
+            pass
+        processed.append(m)
+    return processed
 
 #---- main ----
 
@@ -2348,6 +2758,10 @@ async def _analyze_dues(bot) -> List[dict]:
 
     if not parsed_msgs:
         return []
+    #Optionally skip a few oldest messages, but only when there are plenty of payments
+    skip = max(0, int(getattr(settings,'dues_scan_skip_oldest',3) or 0))
+    if skip and len(parsed_msgs) > max(20, skip):
+        parsed_msgs = parsed_msgs[skip:]
 
     #Restrict member rows by earliest message timestamp (with buffer)
     oldest_ts = parsed_msgs[0][1]['ts']
@@ -2890,13 +3304,59 @@ async def _run_daily_dues_job(bot) -> None:
                        json.dumps({k: v for k, v in rec.items() if k.startswith('score_') or k in ['author', 'provider', 'semester']}))
     
     #3. Mark verified in sheet if we have emails
-    if verified:
+    try:
+        emails_to_verify: list[tuple[str, str]] = []
+        if verified:
+            emails_to_verify.extend([
+                (
+                    (r.get('primary_member') or {}).get('email', '').strip().lower(),
+                    (r.get('primary_member') or {}).get('semester') or r.get('semester') or cur_sem
+                )
+                for r in verified
+                if (r.get('primary_member') or {}).get('email')
+            ])
+        #Add fallback email-only matches so portal messages are not required
+        rows_for_fallback: list[dict] = []
+        extra: list[tuple[str, str]] = []
         try:
-            emails_to_verify = [((r.get('primary_member') or {}).get('email', '').strip().lower(), (r.get('primary_member') or {}).get('semester') or r.get('semester') or cur_sem) for r in verified if (r.get('primary_member') or {}).get('email')]
-            if emails_to_verify:
-                await _mark_verified_emails(emails_to_verify)
-        except Exception as e:
-            log_action('dues_mark_verified_error', '', str(e))
+            rows_for_fallback = _load_membership_rows()
+            extra = _email_only_candidates(rows_for_fallback, cur_sem)
+            if extra:
+                emails_to_verify.extend(extra)
+        except Exception:
+            pass
+        #Deduplicate
+        seen = set()
+        deduped: list[tuple[str, str]] = []
+        for e, s in emails_to_verify:
+            if not e:
+                continue
+            key = (e, s or '')
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append((e, s))
+        emails_to_verify = deduped
+        if emails_to_verify:
+            ok, msg = await _mark_verified_emails(emails_to_verify)
+            if ok:
+                _MEMBERSHIP_ROWS_CACHE = None
+                _MEMBERSHIP_ROWS_TS = 0.0
+        if extra:
+            try:
+                deleted_fallback = await _cleanup_portal_messages_for_emails(bot, rows_for_fallback, extra)
+                if deleted_fallback:
+                    log_action('dues_scheduler_cleanup', f'fallback_deleted={deleted_fallback}', '')
+            except Exception:
+                pass
+        try:
+            verified_cleanup = await _cleanup_portal_messages_for_verified_rows(bot, _load_membership_rows(), cur_sem)
+            if verified_cleanup:
+                log_action('dues_scheduler_cleanup', f'verified_deleted={verified_cleanup}', '')
+        except Exception:
+            pass
+    except Exception as e:
+        log_action('dues_mark_verified_error', '', str(e))
     
     #3b. Delete portal messages for verified entries
     if verified:
@@ -3239,6 +3699,77 @@ def _dues_month_path(dt: datetime) -> str:
     mon = _MONTH_NAMES.get(dt.month, f"{dt.month:02d}")
     return os.path.join(DUES_DIR, f"{dt.year}-{mon}.ndjson")
 
+def _dues_month_paths_between(start_dt: datetime, end_dt: datetime) -> list[str]:
+    start_dt = _to_utc_naive(start_dt)
+    end_dt = _to_utc_naive(end_dt)
+    files: list[str] = []
+    seen: set[str] = set()
+    cur = datetime(start_dt.year, start_dt.month, 1)
+    while cur <= end_dt:
+        p = _dues_month_path(cur)
+        if p not in seen:
+            files.append(p)
+            seen.add(p)
+        if cur.month == 12:
+            cur = datetime(cur.year + 1, 1, 1)
+        else:
+            cur = datetime(cur.year, cur.month + 1, 1)
+    return files
+
+def _dues_log_message_ids_for_emails(emails_with_sem: list[tuple[str, str | None]]) -> list[int]:
+    """Look up portal message IDs from dues logs for the provided emails/semester."""
+    emails_with_sem = [((e or '').strip().lower(), _norm_sem_label(s or '') if s else '') for e, s in emails_with_sem if e]
+    if not emails_with_sem:
+        return []
+    lookup: dict[str, set[str]] = {}
+    for e, s in emails_with_sem:
+        lookup.setdefault(e, set()).add(s or '')
+    backfill_days = int(getattr(settings, 'dues_cleanup_log_backfill_days', 120) or 120)
+    now = _dues_now()
+    start = now - timedelta(days=backfill_days)
+    end = now + timedelta(days=1)
+    paths = _dues_month_paths_between(start, end)
+    best: dict[tuple[str, str], tuple[float, datetime, int]] = {}
+    for p in paths:
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except Exception:
+                        continue
+                    if obj.get('event') != 'dues_portal_analysis':
+                        continue
+                    pm = obj.get('primary_member') or {}
+                    email = (pm.get('email') or '').strip().lower()
+                    if not email or email not in lookup:
+                        continue
+                    sem = _norm_sem_label(pm.get('semester') or '')
+                    want = lookup.get(email) or {''}
+                    if want and '' not in want and sem and sem not in want:
+                        continue
+                    mid = int(obj.get('message_id') or 0)
+                    if not mid:
+                        continue
+                    score = float(obj.get('score_total') or 0.0)
+                    ts_raw = obj.get('ts') or ''
+                    try:
+                        ts = datetime.fromisoformat(str(ts_raw).replace('Z', '+00:00'))
+                    except Exception:
+                        ts = now
+                    key = (email, sem or '')
+                    prev = best.get(key)
+                    if prev is None or (score > prev[0]) or (score == prev[0] and ts > prev[1]):
+                        best[key] = (score, ts, mid)
+        except Exception:
+            continue
+    ids = [v[2] for v in best.values()]
+    return list(dict.fromkeys(ids))
 
 async def _append_dues_log(row: dict):
     ts = row.get('ts')

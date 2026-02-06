@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import time
 import secrets
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 from collections import deque
 from datetime import datetime
 
@@ -65,6 +65,15 @@ def _week_start_iso(dt: datetime | None = None) -> str:
 RATE_LIMIT_MAX_REQUESTS = 200
 RATE_LIMIT_WINDOW_SECONDS = 60
 _rate_limit_counters: dict[str, deque] = {}
+_background_tasks: dict[str, asyncio.Task] = {}
+
+
+def _start_background_task(name: str, coro_factory: Callable[[], Any]) -> None:
+    """Start a named background task once; restart only if previous finished/failed."""
+    existing = _background_tasks.get(name)
+    if existing and not existing.done():
+        return
+    _background_tasks[name] = asyncio.create_task(coro_factory())
 
 #Define your Role IDs for permissions
 ROLES = {
@@ -321,9 +330,11 @@ async def _resolve_member(user_id: int) -> tuple[Optional[discord.Guild], Option
 def _build_permissions(user_roles: list[int]) -> dict:
     """Calculate permissions based on Discord roles."""
     is_officer = OFFICER_ROLE_ID in user_roles
+    photo_labeler_role = int(ROLES.get("PHOTO_LABELER") or getattr(settings, "role_photo_labeler", 0) or 0)
+    can_label_photos = is_officer or (photo_labeler_role in user_roles if photo_labeler_role else False)
     return {
         "can_edit_schedule": is_officer,
-        "can_label_photos": ROLES.get("PHOTO_LABELER") in user_roles,
+        "can_label_photos": can_label_photos,
         "can_view": True,
         "is_officer": is_officer,
     }
@@ -568,6 +579,7 @@ from .handlers.misc import handle_misc as _handle_misc_raw
 
 from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
 from .handlers.labeler import get_labeler_routes
+from .utils.permissions import is_officer
 
 
 #--- Muted wrappers: run handlers but drop outbound sends ---
@@ -757,6 +769,14 @@ def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResp
 @web.middleware
 async def rate_limit_middleware(request: web.Request, handler):
     """Limit requests per client to reduce abuse of the web API."""
+    if request.path.startswith("/api/labeler") and request.method != "OPTIONS":
+        session = _get_session_from_request(request)
+        if not session:
+            return _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
+        perms = session.get("permissions", {}) or {}
+        if not (perms.get("is_officer") or perms.get("can_label_photos")):
+            return _with_cors(web.Response(status=403, text="Not authorized for labeler"), request)
+
     client_ip = request.remote
     if not client_ip:
         peername = request.transport.get_extra_info("peername") if request.transport else None
@@ -1552,7 +1572,7 @@ async def on_ready():
         except Exception as e:
             log_event({"event":"health","component":"feeding_tab","status":"error","error": str(e)})
 
-    asyncio.create_task(_health_checks())
+    _start_background_task("health_checks", lambda: _health_checks())
 
     #Seed invite caches for all guilds (for join attribution)
     try:
@@ -1563,27 +1583,27 @@ async def on_ready():
                 pass
     except Exception:
         pass
-    asyncio.create_task(start_web_server(bot))
-    asyncio.create_task(start_profile_scheduler(bot))
+    _start_background_task("web_server", lambda: start_web_server(bot))
+    _start_background_task("profile_scheduler", lambda: start_profile_scheduler(bot))
     #Warm the show-photo cache in background
     try:
-        asyncio.create_task(warm_cache_on_boot())
+        _start_background_task("show_cache_warm", lambda: warm_cache_on_boot())
     except Exception:
         pass
     #start feeding scheduler after the bot is ready and loop is running
-    asyncio.create_task(start_feeding_scheduler(bot))
-    asyncio.create_task(start_morning_scheduler(bot))
+    _start_background_task("feeding_scheduler", lambda: start_feeding_scheduler(bot))
+    _start_background_task("morning_scheduler", lambda: start_morning_scheduler(bot))
     #Start Gmail logging scheduler if enabled
     try:
         if getattr(settings, "gmail_enabled", False):
-            asyncio.create_task(start_gmail_logging_scheduler(bot))
+            _start_background_task("gmail_scheduler", lambda: start_gmail_logging_scheduler(bot))
         if getattr(settings, "dues_enabled", True):
-            asyncio.create_task(start_dues_scheduler(bot))
+            _start_background_task("dues_scheduler", lambda: start_dues_scheduler(bot))
     except Exception:
         pass
     #Start catabase profile cache scheduler
     try:
-        asyncio.create_task(start_profile_cache_scheduler())
+        _start_background_task("profile_cache_scheduler", lambda: start_profile_cache_scheduler())
     except Exception:
         pass
 
@@ -1636,8 +1656,8 @@ async def on_message(message: discord.Message):
                 if not ch:
                     ch = bot.get_channel(int(log_ch_id))
                 if ch and hasattr(ch, 'send'):
-                    alert_uid = getattr(settings, 'spam_alert_user_id', None) or (getattr(settings, 'admin_ids', []) or [None])[0]
-                    mention = f"<@{int(alert_uid)}>" if alert_uid else ""
+                    officer_role_id = getattr(settings, 'officer_role_id', None)
+                    mention = f"<@&{int(officer_role_id)}>" if officer_role_id else ""
                     uname = f"@{getattr(message.author,'name','unknown-user')}"
                     body = (
                         "Spam Message Detected\n"
@@ -1770,23 +1790,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         member = None
     if not member:
         return
-    admin_ids = {int(x) for x in (getattr(settings, 'admin_ids', []) or [])}
-    can_ban = False
-    if payload.user_id in admin_ids:
-        can_ban = True
-    else:
-        ban_role_tokens = [s.lower() for s in (getattr(settings, 'spam_ban_role_names', []) or [])]
-        ban_role_ids = set(getattr(settings, 'spam_ban_role_ids', []) or [])
-        officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
-        for role in getattr(member, 'roles', []) or []:
-            try:
-                rid = int(getattr(role, "id", 0) or 0)
-            except Exception:
-                rid = 0
-            rname = str(getattr(role, 'name', '')).lower()
-            if any(tok in rname for tok in ban_role_tokens) or (rid and (rid in ban_role_ids or rid == officer_role_id)):
-                can_ban = True
-                break
+    can_ban = is_officer(member, settings)
     if not can_ban:
         log_action("spam_ban_denied", f"user={payload.user_id}", f"emoji={emoji_str}")
         return

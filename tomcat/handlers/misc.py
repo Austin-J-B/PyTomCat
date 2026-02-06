@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 import re, random
+import json
+import hashlib
 import discord
 import asyncio
 from typing import Any, Dict, cast
@@ -9,6 +11,7 @@ from ..logger import log_action
 from ..config import settings
 from ..services.catsheets import build_profile_embed
 from ..services.sheets_client import sheets_client
+from ..utils.permissions import is_officer
 import datetime as dt
 from discord.abc import Messageable
 
@@ -34,6 +37,23 @@ TRIGGERS: list[tuple[re.Pattern, Callable[[], str]]] = [
 
 _COOLDOWN = {}
 _COOLDOWN_SECONDS = 1
+_profiles_update_lock = asyncio.Lock()
+_missing_profile_ids: set[str] = set()
+_profile_embed_hashes: dict[str, str] = {}
+
+
+def _embed_digest(embed_dict: dict) -> str:
+    """Stable digest for comparing profile embeds between scheduler runs."""
+    try:
+        blob = json.dumps(embed_dict, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    except Exception:
+        blob = str(embed_dict)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()
+
+
+def _is_unknown_message_error(exc: Exception) -> bool:
+    txt = str(exc).lower()
+    return ("unknown message" in txt) or ("10008" in txt)
 
 def _cool(user_id: int, now: float) -> bool:
     last = _COOLDOWN.get(user_id, 0.0)
@@ -92,8 +112,8 @@ async def handle_profiles_create(intent, ctx):
     """TomCat, create profile(s) <startId> [through <endId>]"""
     msg: discord.Message = ctx["message"]
     author = ctx["author"]
-    if not getattr(getattr(author, "guild_permissions", None), "administrator", False):
-        return  #admin-only, quiet
+    if not is_officer(author, settings):
+        return
 
     start_id = int(intent.data.get("start_id"))
     end_id = int(intent.data.get("end_id") or start_id)
@@ -168,7 +188,7 @@ async def handle_profile_update_one(intent, ctx):
     """TomCat, update profile <id>"""
     msg: discord.Message = ctx["message"]
     author = ctx["author"]
-    if not getattr(getattr(author, "guild_permissions", None), "administrator", False):
+    if not is_officer(author, settings):
         return
 
     cat_id = str(intent.data.get("cat_id"))
@@ -190,6 +210,8 @@ async def handle_profile_update_one(intent, ctx):
     try:
         m = await ch.fetch_message(int(msg_id))
     except Exception as e:
+        if _is_unknown_message_error(e):
+            _missing_profile_ids.add(cat_id)
         log_action("profile_update_error", f"id={cat_id}", f"fetch:{e}")
         try:
             await msg.clear_reactions(); await msg.add_reaction("❌")
@@ -220,6 +242,7 @@ async def handle_profile_update_one(intent, ctx):
             raise RuntimeError(embed_dict)
         embed = discord.Embed.from_dict(embed_dict)
         await m.edit(embed=embed)
+        _profile_embed_hashes[cat_id] = _embed_digest(embed_dict)
         await msg.clear_reactions(); await msg.add_reaction("✅")
     except Exception as e:
         log_action("profile_update_error", f"id={cat_id}", str(e))
@@ -233,7 +256,7 @@ async def handle_profiles_update_all(intent, ctx):
     """TomCat, update all profiles"""
     msg: discord.Message = ctx["message"]
     author = ctx["author"]
-    if not getattr(getattr(author, "guild_permissions", None), "administrator", False):
+    if not is_officer(author, settings):
         return
     ch = await _profiles_channel(msg,ctx)
     if not ch:
@@ -258,22 +281,37 @@ async def handle_profiles_update_all(intent, ctx):
         log_action("profiles_error", "sheet_read", str(e))
         return
 
+    if _profiles_update_lock.locked():
+        log_action("profiles_scheduler_skip", "update_all", "already_running")
+        return
+
     failed = []
-    for cat_id, msg_id in settings.profile_messages.items():
-        r = by_id.get(str(cat_id))
-        if not r:
-            failed.append(str(cat_id)); continue
-        cat_name = r[0].split(".", 1)[-1].strip()
-        try:
-            embed_dict = await build_profile_embed(cat_name)
-            if isinstance(embed_dict, str):
-                failed.append(str(cat_id)); continue
-            embed = discord.Embed.from_dict(embed_dict)
-            m = await ch.fetch_message(int(msg_id))
-            await m.edit(embed=embed)
-        except Exception as e:
-            failed.append(str(cat_id))
-            log_action("profile_update_error", f"id={cat_id}", str(e))
+    async with _profiles_update_lock:
+        for cat_id, msg_id in settings.profile_messages.items():
+            cat_key = str(cat_id)
+            if cat_key in _missing_profile_ids:
+                continue
+            r = by_id.get(cat_key)
+            if not r:
+                failed.append(cat_key); continue
+            cat_name = r[0].split(".", 1)[-1].strip()
+            try:
+                embed_dict = await build_profile_embed(cat_name)
+                if isinstance(embed_dict, str):
+                    failed.append(cat_key); continue
+                digest = _embed_digest(embed_dict)
+                if _profile_embed_hashes.get(cat_key) == digest:
+                    continue
+                embed = discord.Embed.from_dict(embed_dict)
+                m = await ch.fetch_message(int(msg_id))
+                await m.edit(embed=embed)
+                _profile_embed_hashes[cat_key] = digest
+                await asyncio.sleep(0.25)
+            except Exception as e:
+                failed.append(cat_key)
+                if _is_unknown_message_error(e):
+                    _missing_profile_ids.add(cat_key)
+                log_action("profile_update_error", f"id={cat_id}", str(e))
 
     try:
         await msg.clear_reactions()
@@ -295,8 +333,11 @@ async def start_profile_scheduler(bot):
             nxt += dt.timedelta(days=1)
         await asyncio.sleep((nxt - now).total_seconds())
         try:
-            #fabricate a tiny ctx using the bot and a dummy author; channel is resolved inside
-            dummy_ctx = {"bot": bot, "message": type("X", (), {"add_reaction": lambda *_: None})(), "author": type("Y", (), {"guild_permissions": type("Z", (), {"administrator": True})()})()}
+            #fabricate a tiny ctx using the bot and a dummy officer author; channel is resolved inside
+            off_role_id = int(getattr(settings, "officer_role_id", 0) or 0)
+            dummy_role = type("R", (), {"id": off_role_id})()
+            dummy_author = type("Y", (), {"roles": [dummy_role], "guild_permissions": type("Z", (), {"administrator": False})()})()
+            dummy_ctx = {"bot": bot, "message": type("X", (), {"add_reaction": lambda *_: None})(), "author": dummy_author}
             await handle_profiles_update_all(type("Intent", (), {"data": {}}), dummy_ctx)
             log_action("profiles_scheduler", "update_all", "ran")
         except Exception as e:

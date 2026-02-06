@@ -1820,7 +1820,7 @@
 
     </style>
 
-    <script src="labeler.js?v=20260203d"></script>
+    <script src="labeler.js?v=20260206b"></script>
 
     <script>
         //--- CONFIG ---
@@ -2740,6 +2740,9 @@
                 //Non-labelers are not allowed; redirect to schedule
                 updateUrlForView('schedule');
                 return setView('schedule', { skipUrlUpdate: true });
+            }
+            if (activeView === 'labeler' && nextView !== 'labeler' && typeof window.teardownLabeler === 'function') {
+                window.teardownLabeler();
             }
             activeView = nextView;
             document.getElementById('sheet-container').style.display = nextView === 'schedule' ? 'flex' : 'none';

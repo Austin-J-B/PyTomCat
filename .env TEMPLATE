@@ -10,11 +10,6 @@ COMMAND_PREFIX=!                      # Command prefix used by commands.Bot
 TOMCAT_WAKE=TomCat
 TIMEZONE=America/Chicago
 
-# Comma-separated admin user IDs who can run privileged commands
-ADMIN_IDS=
-# Comma-separated role IDs that can ban spammers via reaction
-SPAM_BAN_ROLE_IDS=
-
 # ===== Channels (Discord snowflakes) =====
 CH_FEEDING_TEAM=
 CH_TOMCAT_SANDBOX=
@@ -27,9 +22,6 @@ CH_MEMBER_NAMES=
 TARGET_GUILD_ID=
 CHANNEL_SHEET_MAP=CH_PICTURES_OF_CATS:TCBPicsInput, CH_REPORT_NEW_CATS:TCBPicsInput, CH_TOMCAT_SANDBOX:TCBPicsInput, CH_CATDOCDUMP:TCBVetBillInput
 allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
-
-# Ping target when a spam message is detected
-SPAM_ALERT_USER_ID=
 
 # ===== Google Service Account =====
 GOOGLE_SERVICE_ACCOUNT_JSON=./credentials/service_account.json
@@ -46,6 +38,11 @@ NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
 CV_DETECT_WEIGHTS=weights/NanoModel.pt
 CV_CLASSIFY_WEIGHTS=weights/NanoClassifier.pt
 CV_MAX_DOWNLOAD_MB=0                  # Set to 0 to lift the max file size limit
+SHOW_CACHE_WARM_CONCURRENCY=1         # Reduce boot-time cache warm load
+SHOW_CACHE_CROP_ON_FILL=false         # Skip CV crop during cache fill to avoid event-loop stalls
+LABELER_IDENTIFY_CONCURRENCY=2        # Bound concurrent classifier requests
+LABELER_IDENTIFY_TIMEOUT_SEC=45       # Timeout for interactive classifier calls
+LABELER_IDENTIFY_PREFETCH_TIMEOUT_SEC=20 # Shorter timeout for background prefetch
 
 # ===== Gmail Ingestion =====
 GMAIL_ENABLED=true                    # Toggle Gmail integration; disable to skip email polling entirely

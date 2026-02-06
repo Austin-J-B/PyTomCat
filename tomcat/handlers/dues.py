@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional, List, Tuple
 
 from ..logger import log_event, log_action
 from ..config import settings
+from ..utils.permissions import is_officer
 from ..utils.payments import detect_provider
 from . import finance
 
@@ -142,7 +143,7 @@ async def handle_check_last_email(intent, ctx) -> None:
         log_action("gmail_error", type(e).__name__, str(e))
 
 async def handle_gmail_auth_code(intent, ctx) -> None:
-    """Complete the OAuth flow after an admin pastes the Gmail auth code."""
+    """Complete the OAuth flow after an officer pastes the Gmail auth code."""
     ch = ctx["channel"]
     user = ctx.get("author")
     raw = (intent.data or {}).get("auth") or ""
@@ -2168,10 +2169,9 @@ async def handle_run_dues_perks(intent, ctx) -> None:
     ch = ctx.get('channel')
     bot = ctx.get('bot')
     author = ctx.get('author')
-    is_admin = int(getattr(author, 'id', 0) or 0) in (getattr(settings, 'admin_ids', []) or []) or \
-               getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+    is_admin = is_officer(author, settings)
     if not is_admin:
-        log_action("dues_perks_denied", f"user={getattr(author,'id',0)}", "not_admin")
+        log_action("dues_perks_denied", f"user={getattr(author,'id',0)}", "not_officer")
         return
     if not ch or not bot:
         return
@@ -2595,19 +2595,24 @@ def _debug(name: str, trigger: str = "", output: str = ""):
 def _officer_name_tokens(bot) -> set[str]:
     toks: set[str] = set()
     try:
-        ids = getattr(settings, 'admin_ids', []) or []
-        for gid in ids:
-            member = None
-            for g in getattr(bot, 'guilds', []) or []:
-                member = g.get_member(int(gid)) or member
-            user = member or getattr(bot, 'get_user', lambda _id: None)(int(gid))
-            nm = getattr(getattr(user, 'name', None), 'lower', lambda: "")() or (str(getattr(user,'name',''))).lower()
-            dn = (getattr(user, 'display_name', '') or '').lower()
-            for s in (nm, dn):
-                if not s: continue
-                toks.add(s)
-                first = s.split()[0]
-                if first: toks.add(first)
+        officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
+        if not officer_role_id:
+            return toks
+        for g in getattr(bot, 'guilds', []) or []:
+            for member in getattr(g, 'members', []) or []:
+                try:
+                    roles = getattr(member, 'roles', []) or []
+                    if not any(int(getattr(r, 'id', 0) or 0) == officer_role_id for r in roles):
+                        continue
+                except Exception:
+                    continue
+                nm = getattr(getattr(member, 'name', None), 'lower', lambda: "")() or (str(getattr(member,'name',''))).lower()
+                dn = (getattr(member, 'display_name', '') or '').lower()
+                for s in (nm, dn):
+                    if not s: continue
+                    toks.add(s)
+                    first = s.split()[0]
+                    if first: toks.add(first)
     except Exception:
         pass
     return toks

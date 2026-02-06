@@ -1,4 +1,4 @@
-﻿"""Parse inbound Discord messages into structured intents for handlers."""
+"""Parse inbound Discord messages into structured intents for handlers."""
 
 #tomcat/intent_router.py
 from __future__ import annotations
@@ -17,6 +17,7 @@ import discord
 
 #---- config / logging --------------------------------------------------------
 from .config import settings
+from .utils.permissions import is_officer
 from .logger import log_action, log_intent
 try:
     #Use the common safe sender that respects silent mode
@@ -320,7 +321,7 @@ class IntentRouter:
         self._pending_clarify: Dict[int, Dict[str, Any]] = {}
         #pending CV follow-ups: (channel_id,user_id) -> {intent, requested_ts_iso, expires_ts_iso, message_id}
         self._pending_cv: Dict[Tuple[int,int], Dict[str, Any]] = {}
-        #pending FEED follow-ups: station mention ↔ image pairing
+        #pending FEED follow-ups: station mention ? image pairing
         self._pending_feed: Dict[Tuple[int,int], Dict[str, Any]] = {}
         #decision traces for logging: message_id -> [steps]
         self._traces: Dict[int, List[str]] = {}
@@ -485,12 +486,12 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            #Admin-only: "check the last email"
+            #Officer-only: "check the last email"
             if CHECK_LAST_EMAIL_RE.search(text_wo):
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="gmail_check_last", confidence=0.99,
@@ -498,13 +499,13 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            #Admin-only: "log the past N emails"
+            #Officer-only: "log the past N emails"
             m_log = LOG_PAST_EMAILS_RE.search(text_wo)
             if m_log:
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="gmail_log_recent", confidence=0.99,
@@ -512,12 +513,12 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            #Admin-only: "check emails" / "log emails" / "scan emails" (default 99)
+            #Officer-only: "check emails" / "log emails" / "scan emails" (default 99)
             if CHECK_EMAILS_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["check emails", "check our email", "log emails", "scan emails", "read emails"]):
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="gmail_check_emails", confidence=0.99,
@@ -525,13 +526,13 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            #Admin-only: "log last N finances"
+            #Officer-only: "log last N finances"
             m_fin = LOG_LAST_FINANCES_RE.search(text_wo)
             if m_fin:
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="finance_log_recent", confidence=0.99,
@@ -543,9 +544,9 @@ class IntentRouter:
             m_auth = AUTH_CODE_RE.search(text_wo)
             if m_auth:
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="gmail_auth_code", confidence=0.99,
@@ -554,12 +555,12 @@ class IntentRouter:
                     #slot: reuse cat_name to carry code? better: we don't change dataclass, pass via text, we can reparse in handler
                 )
 
-            #Admin-only dues check
+            #Officer-only dues check
             if DUE_CHECK_RE.search(text_wo):
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="dues_check", confidence=0.99,
@@ -570,9 +571,9 @@ class IntentRouter:
             #Dues perks: run perks (emails + usernames)
             if DUES_PERKS_RE.search(text_wo):
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="dues_perks", confidence=0.99,
@@ -580,12 +581,12 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            #Admin-only: update due paying members (check + auto-verify + perks)
+            #Officer-only: update due paying members (check + auto-verify + perks)
             if DUES_UPDATE_RE.search(text_wo):
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="dues_update", confidence=0.99,
@@ -593,12 +594,12 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            #Admin-only: run dues job (manual trigger for daily scheduler)
+            #Officer-only: run dues job (manual trigger for daily scheduler)
             if RUN_DUES_JOB_RE.search(text_wo):
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="dues_run_job", confidence=0.99,
@@ -606,13 +607,13 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            #Admin-only: remove a specific role from everyone
+            #Officer-only: remove a specific role from everyone
             m_role = REMOVE_ROLE_RE.search(text_wo)
             if m_role:
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="role_remove_all", confidence=0.99,
@@ -620,12 +621,12 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            #Admin-only: export dues portal (full channel dump)
+            #Officer-only: export dues portal (full channel dump)
             if EXPORT_DUES_RE.search(text_wo):
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="dues_export_portal", confidence=0.99,
@@ -633,12 +634,12 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            #Admin-only: recache catabase profiles/names (check this BEFORE show-photo recache)
+            #Officer-only: recache catabase profiles/names (check this BEFORE show-photo recache)
             if RECACHE_CATABASE_RE.search(text_wo):
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="recache_catabase", confidence=0.99,
@@ -669,14 +670,14 @@ class IntentRouter:
                 )
 
 
-            #Admin-only: recache show-photo cache (all or one cat)
+            #Officer-only: recache show-photo cache (all or one cat)
             m_all = RECACHE_ALL_RE.search(text_wo)
             m_one = RECACHE_ONE_RE.search(text_wo)
             if m_all or RECACHE_SHOW_RE.search(text_wo) or m_one:
                 author = message.author
-                is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+                is_admin = is_officer(author, settings)
                 if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_admin"]
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 #Explicit "recache all photos" or generic "recache show photos" => recache everything
                 if m_all or RECACHE_SHOW_RE.search(text_wo):
@@ -690,7 +691,7 @@ class IntentRouter:
                     cat_name=name
                 )
 
-            #"who is this?" → prefer attached/reply image; else last 30s; else set pending and stay quiet
+            #"who is this?" ? prefer attached/reply image; else last 30s; else set pending and stay quiet
             if WHO_THIS_RE.search(text_wo):
                 if has_image or getattr(message, "reference", None):
                     ev = IntentEvent(
@@ -718,7 +719,7 @@ class IntentRouter:
                 self._traces[row["message_id"]] = trace + ["pending:cv_identify"]
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-            #"feeding update" → status listing (requires addressing)
+            #"feeding update" ? status listing (requires addressing)
             if FEEDING_UPDATE_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["feeding update"]):
                 ev = IntentEvent(
                     type="feeding_status", confidence=0.95,
@@ -752,7 +753,7 @@ class IntentRouter:
                     self._traces[row["message_id"]] = trace
                     return ev
 
-            #Admin-only manual 8pm preview
+            #Officer-only manual 8pm preview
             if MANUAL_8PM_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["manual 8 pm update", "preview 8 pm"]):
                 ev = IntentEvent(
                     type="manual_8pm", confidence=0.99,
@@ -1131,7 +1132,7 @@ class IntentRouter:
             from .handlers.glossary import handle_function_glossary
             author = message.author
             #Check if user is admin or has officer role
-            is_admin = int(getattr(author, 'id', 0) or 0) in (getattr(settings, 'admin_ids', []) or [])
+            is_admin = is_officer(author, settings)
             is_officer = False
             try:
                 officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
@@ -1286,7 +1287,7 @@ class IntentRouter:
             return
 
         if event.type == "show_cache_recache":
-            #Admin-only handler to recache show photos
+            #Officer-only handler to recache show photos
             from .handlers.admin import handle_recache_show_cache
             args = {}
             if hasattr(event, 'cat_name') and event.cat_name:
@@ -1308,10 +1309,9 @@ class IntentRouter:
             return
 
         if event.type == "silent_mode":
-            #Admin-only; acknowledge with 👍 so the user knows it was applied.
+            #Officer-only; acknowledge with ?? so the user knows it was applied.
             author = message.author
-            is_admin = (int(getattr(author, 'id', 0)) in (getattr(settings, 'admin_ids', []) or [])) or \
-                       getattr(getattr(author, "guild_permissions", None), "administrator", False)
+            is_admin = is_officer(author, settings)
             m = SILENT_CMD.search(self._strip_wake_tokens(event.text or "", message))
             on_str = m.group(1).lower() if m else ""
             on = (on_str == "on")
@@ -1319,19 +1319,19 @@ class IntentRouter:
                 settings.silent_mode = on
                 log_action("silent_mode", f"by={author.id}", "on" if on else "off")
                 try:
-                    await message.add_reaction("👍")
+                    await message.add_reaction("??")
                 except Exception:
                     pass
             else:
-                log_action("silent_mode_denied", f"by={author.id}", "not_admin")
+                log_action("silent_mode_denied", f"by={author.id}", "not_officer")
             return
 
         if event.type == "manual_8pm":
-            #Admin-only via settings.admin_ids or guild admin
+            #Officer-only
             author = message.author
-            is_admin = int(getattr(author,'id',0)) in (getattr(settings,'admin_ids',[]) or []) or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+            is_admin = is_officer(author, settings)
             if not is_admin:
-                log_action("manual_8pm_denied", f"by={getattr(author,'id',0)}", "not_admin")
+                log_action("manual_8pm_denied", f"by={getattr(author,'id',0)}", "not_officer")
                 return
             from .handlers.feeding import handle_manual_8pm_preview
             await handle_manual_8pm_preview(_intent("manual_8pm", {}), {**ctx, "bot": ctx.get("bot")})
@@ -1437,7 +1437,7 @@ class IntentRouter:
         *,
         allow_stopword_aliases: bool = False,
     ) -> List[str]:
-        #Stations: use alias resolver so aliases like "west" → "West Hall" work
+        #Stations: use alias resolver so aliases like "west" ? "West Hall" work
         if want == "station":
             try:
                 from .aliases import resolve_stations as _resolve_stations
@@ -1552,7 +1552,7 @@ class IntentRouter:
         m2 = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s*(?:to|-)\s*(\d{1,2})(?:st|nd|rd|th)?\b", text)
         if m2:
             d1 = int(m2.group(1)); d2 = int(m2.group(2))
-            #if today ≤ 20 assume this month; if today ≥ 22 assume next month; 21/22 edge okay
+            #if today = 20 assume this month; if today = 22 assume next month; 21/22 edge okay
             base = today
             if today.day >= 22:
                 #roll to next month
@@ -1846,3 +1846,4 @@ class IntentRouter:
 
 def _intent(name: str, data: Dict[str, Any]) -> Intent:
     return Intent(name, data)
+

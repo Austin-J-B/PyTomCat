@@ -119,9 +119,6 @@ class Settings:
     dm_image_tab: str = os.getenv("DM_IMAGE_TAB", "TCBPicsInput")
     dm_image_sheet_id: str | None = os.getenv("DM_IMAGE_SHEET_ID") or None
     #Admins
-    admin_ids: list[int] = field(default_factory=lambda: [
-        int(x) for x in _get_env_list("ADMIN_IDS") if x.strip().lstrip("-").isdigit()
-    ])
     silent_mode: bool = field(default_factory=lambda: _get_env_bool("SILENT_MODE", False))
 
     #Channels
@@ -264,15 +261,10 @@ class Settings:
     trusted_role_names: list[str] = field(default_factory=lambda: [
         "due paying members", "server booster", "officers", "active feeders"
     ])
-    spam_ban_role_names: list[str] = field(default_factory=lambda: [
-        "officers"
-    ])
     #Minimum account age in days to skip spam checks
     spam_min_account_days: int = int(os.getenv("SPAM_MIN_ACCOUNT_DAYS", "30"))
     #NLP spam threshold if ONNX model is configured
     spam_nlp_conf: float = float(os.getenv("SPAM_NLP_CONF", "0.9"))
-    #Optional: user to ping on spam alerts (falls back to first admin)
-    spam_alert_user_id: int | None = int(os.getenv("SPAM_ALERT_USER_ID", "0")) or None
 
     #======== Gmail / Email logging ========
     gmail_enabled: bool = _get_env_bool("GMAIL_ENABLED", False)

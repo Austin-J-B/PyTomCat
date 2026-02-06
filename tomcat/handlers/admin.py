@@ -10,11 +10,12 @@ from ..services.show_cache import ensure_cat_cache
 from ..services.catsheets import sheets_client  #type: ignore
 from ..services import profile_cache as PC
 from .. import aliases as ALIAS
+from ..utils.permissions import is_officer
 
 
 async def handle_silent_mode(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
     author = ctx["author"]
-    if int(author.id) not in settings.admin_ids:
+    if not is_officer(author, settings):
         log_action("silent_mode_denied", f"user={author.id}", "unauthorized")
         return
 
@@ -31,7 +32,7 @@ async def handle_silent_mode(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
 #Guild-scoped admin actions target the primary CCC server (configurable via TARGET_GUILD_ID).
 
 async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
-    """Admin-only: remove a specific role from all guild members.
+    """Officer-only: remove a specific role from all guild members.
     Only removes the single role; does not modify any other roles.
     args = {"role_id": int}
     """
@@ -40,9 +41,7 @@ async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any])
     role_id = int(args.get("role_id") or 0)
 
     #Admin guard
-    is_admin = int(getattr(author, 'id', 0)) in (getattr(settings, 'admin_ids', []) or []) or \
-               getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
-    if not is_admin:
+    if not is_officer(author, settings):
         log_action("role_remove_all_denied", f"user={author.id}", "unauthorized")
         return
 
@@ -107,14 +106,12 @@ async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any])
 
 
 async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
-    """Admin-only: Clear and re-download SHOW_CACHE_PER_CAT images per cat from RecentPics.
+    """Officer-only: Clear and re-download SHOW_CACHE_PER_CAT images per cat from RecentPics.
     Scans RecentPics to get the cat list, wipes existing cached files per cat, and refills.
     """
     message: discord.Message = ctx["message"]
     author = ctx["author"]
-    is_admin = int(getattr(author, 'id', 0)) in (getattr(settings, 'admin_ids', []) or []) or \
-               getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
-    if not is_admin:
+    if not is_officer(author, settings):
         log_action("recache_denied", f"user={author.id}", "unauthorized")
         return
 
@@ -270,14 +267,12 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
 
 
 async def handle_recache_catabase(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
-    """Admin-only: Refresh the Catabase cache and write the CSV snapshot.
+    """Officer-only: Refresh the Catabase cache and write the CSV snapshot.
     Also refreshes the dynamic alias map so new names resolve immediately.
     """
     message: discord.Message = ctx["message"]
     author = ctx["author"]
-    is_admin = int(getattr(author, 'id', 0)) in (getattr(settings, 'admin_ids', []) or []) or \
-               getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
-    if not is_admin:
+    if not is_officer(author, settings):
         log_action("recache_catabase_denied", f"user={author.id}", "unauthorized")
         return
     try:

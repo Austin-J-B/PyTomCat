@@ -17,6 +17,7 @@ from gspread.exceptions import APIError
 
 from ..config import settings
 from ..logger import log_action
+from ..utils.permissions import is_officer
 from ..services.sheets_client import sheets_client
 from ..aliases import resolve_station_or_cat
 from ..stations import station_names
@@ -969,8 +970,9 @@ async def handle_sub_request_event(event, ctx: Dict[str, Any]) -> None:
         all_files = _load_sub_files(_all_sub_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
 
         allowed_requesters = _authorized_requesters_for_sub(station, dates, all_files)
-        admin_ids = set(getattr(settings, "admin_ids", []) or [])
-        if allowed_requesters and event.user_id not in allowed_requesters and event.user_id not in admin_ids:
+        author = ctx.get('author')
+        is_officer_user = is_officer(author, settings) if author else False
+        if allowed_requesters and event.user_id not in allowed_requesters and not is_officer_user:
             allowed_str = ",".join(str(uid) for uid in sorted(allowed_requesters))
             log_action(
                 "sub_request_denied",
@@ -1651,11 +1653,10 @@ async def build_schedule_for_date(
     return "\n".join(lines)
 
 async def handle_manual_8pm_preview(intent, ctx: Dict[str, Any]) -> None:
-    """Admin-only: post a dry-run of the 8pm message to the current channel (no pings)."""
+    """Officer-only: post a dry-run of the 8pm message to the current channel (no pings)."""
     author = ctx["author"]
-    uid = int(getattr(author, 'id', 0))
-    if uid not in (getattr(settings, 'admin_ids', []) or []):
-        log_action("manual_8pm_denied", f"user={uid}", "not_admin")
+    if not is_officer(author, settings):
+        log_action("manual_8pm_denied", f"user={int(getattr(author, 'id', 0))}", "not_officer")
         return
     bot = ctx.get("bot")
     msg = await build_8pm_lines(bot, mention=False)

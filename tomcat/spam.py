@@ -5,6 +5,7 @@ from collections import defaultdict
 from typing import Optional, Tuple
 
 from .logger import log_action
+from .utils.permissions import is_officer
 
 SPAM_PATTERNS = [
     re.compile(r"free\s+.*(mac\s*book|macbook|iphone|ps\s*5|playstation)\b", re.I),
@@ -100,21 +101,8 @@ def _is_trusted_member(message, settings, *, prior_count: int = 0) -> Optional[s
         member = getattr(message, 'author', None)
         if not member:
             return False
-        try:
-            if getattr(member, 'guild_permissions', None):
-                perms = member.guild_permissions
-                if getattr(perms, 'administrator', False):
-                    return "trusted_admin"
-                if getattr(perms, 'manage_guild', False) or getattr(perms, 'ban_members', False):
-                    return "trusted_moderator"
-        except Exception:  #permissions check failed; fall through to other checks
-            pass
-        admin_ids = {int(x) for x in (getattr(settings, 'admin_ids', []) or [])}
-        try:
-            if admin_ids and int(getattr(member, 'id', 0)) in admin_ids:
-                return "trusted_admin"
-        except Exception:  #admin_ids lookup failed; assume not admin
-            pass
+        if is_officer(member, settings):
+            return "trusted_officer"
         msg_threshold = int(getattr(settings, 'spam_trust_message_threshold', 50) or 50)
         if prior_count >= msg_threshold:
             return "trusted_message_count"

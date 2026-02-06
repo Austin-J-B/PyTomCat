@@ -390,11 +390,14 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
                 await asyncio.sleep(0.15 * attempt)
         if not raw:
             continue
-        #Optional crop during fill
+        #Optional crop during fill; run CV work off the event loop.
         data = raw
         try:
             if bool(getattr(settings, 'show_cache_crop_on_fill', True)):
-                cropped = _maybe_crop_single(raw)
+                cropped = await asyncio.wait_for(
+                    asyncio.to_thread(_maybe_crop_single, raw),
+                    timeout=12.0,
+                )
                 data = cropped or raw
         except Exception:
             data = raw

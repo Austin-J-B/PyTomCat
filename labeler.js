@@ -27,17 +27,23 @@
     const ZOOM_MIN = 0.5;
     const ZOOM_MAX = 6.0;
     const ZOOM_STEP = 0.12;
-    const PREFETCH_AHEAD = 40;
-    const PREFETCH_CONCURRENCY = 4;
-    const IMAGE_PREFETCH_AHEAD = 8;
-    const IMAGE_PREFETCH_MAX = 24;
-    const DETECT_PREFETCH_AHEAD = 4;
+    const PREFETCH_AHEAD = 25;
+    const PREFETCH_CONCURRENCY = 2;
+    const IMAGE_PREFETCH_AHEAD = 25;
+    const IMAGE_PREFETCH_MAX = 80;
+    const DETECT_PREFETCH_AHEAD = 25;
     const DETECT_PREFETCH_CONCURRENCY = 1;
     const DETECT_PREFETCH_COOLDOWN_MS = 8000;
-    const DETECT_REFINE_PREFETCH_AHEAD = 2;
+    const DETECT_REFINE_PREFETCH_AHEAD = 25;
     const DETECT_REFINE_COOLDOWN_MS = 12000;
     const REF_CACHE_VERSION = 'refs_v2';
     const ACTION_COOLDOWN_MS = 250;
+    const API_POST_TIMEOUT_MS = 45000;
+    const API_PREFETCH_TIMEOUT_MS = 15000;
+    const SESSION_WARM_TARGET = 25;
+    const SESSION_WARM_TICK_MS = 1500;
+    const SESSION_REFRESH_QUEUES_MS = 30000;
+    const DETECTOR_PREFETCH_REFINE_PASSES = 2;
 
     function getApiBase() {
         let base = '';
@@ -107,6 +113,19 @@
     let pressedKeys = new Set();
     let moveIntervalId = null;
     let actionCooldowns = new Map();
+    let labelerInitialized = false;
+    let labelerActive = false;
+    let warmTimer = null;
+    let warmLoopRunning = false;
+    let lastQueueRefreshTs = 0;
+    let queueRefreshPromise = null;
+    let detectQueue = [];
+    let detectQueueTotal = 0;
+    let classifyQueue = [];
+    let classifyQueueTotal = 0;
+    let modePositions = { detect: 0, classify: 0 };
+    let detectWarmInFlight = new Set();
+    let classifyWarmInFlight = new Set();
 
     //DOM references (set after init)
     let containerEl = null;
@@ -123,6 +142,15 @@
             console.warn('[Labeler] No labeler-container found');
             return;
         }
+        if (labelerInitialized) {
+            labelerActive = true;
+            togglePrefetchTimer(true);
+            startWarmLoop();
+            loadQueue({ forceRefresh: false });
+            return;
+        }
+        labelerInitialized = true;
+        labelerActive = true;
         containerEl.classList.remove('labeler-mode-detect', 'labeler-mode-classify');
         containerEl.classList.add('labeler-mode-detect');
 
@@ -269,9 +297,11 @@
         //Load cat list for classifier dropdown
         loadCatList();
         warmRefCache();
+        togglePrefetchTimer(true);
+        startWarmLoop();
 
         //Load initial queue
-        loadQueue();
+        loadQueue({ forceRefresh: true });
     }
 
     //---------- Mode Switching ----------
@@ -298,7 +328,8 @@
         actionCooldowns.clear();
 
         togglePrefetchTimer(true);
-        loadQueue();
+        startWarmLoop();
+        loadQueue({ forceRefresh: false });
     }
 
     async function warmRefCache() {
@@ -352,15 +383,28 @@
         return resp.json();
     }
 
-    async function apiPost(endpoint, data) {
-        const resp = await fetch(buildApiUrl(endpoint), {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
-        });
-        if (!resp.ok) throw new Error(`API error: ${resp.status}`);
-        return resp.json();
+    async function apiPost(endpoint, data, opts = {}) {
+        const timeoutMs = Number(opts.timeoutMs || API_POST_TIMEOUT_MS);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const resp = await fetch(buildApiUrl(endpoint), {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+                signal: controller.signal,
+            });
+            if (!resp.ok) throw new Error(`API error: ${resp.status}`);
+            return resp.json();
+        } catch (e) {
+            if (e && e.name === 'AbortError') {
+                throw new Error(`API timeout: ${timeoutMs}ms`);
+            }
+            throw e;
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     async function loadCatList() {
@@ -373,19 +417,77 @@
         }
     }
 
-    async function loadQueue() {
+    function queueForMode(mode) {
+        return mode === 'detect' ? detectQueue : classifyQueue;
+    }
+
+    function queueTotalForMode(mode) {
+        return mode === 'detect' ? detectQueueTotal : classifyQueueTotal;
+    }
+
+    async function refreshQueues(force = false) {
+        const now = Date.now();
+        const stale = (now - lastQueueRefreshTs) > SESSION_REFRESH_QUEUES_MS;
+        if (!force && !stale && detectQueue.length && classifyQueue.length) {
+            return;
+        }
+        if (queueRefreshPromise) {
+            await queueRefreshPromise;
+            return;
+        }
+        queueRefreshPromise = (async () => {
+            const [detectData, classifyData] = await Promise.all([
+                apiGet('/api/labeler/queue/detect'),
+                apiGet('/api/labeler/queue/classify'),
+            ]);
+            detectQueue = detectData.queue || [];
+            detectQueueTotal = typeof detectData.total === 'number' ? detectData.total : detectQueue.length;
+            classifyQueue = classifyData.queue || [];
+            classifyQueueTotal = typeof classifyData.total === 'number' ? classifyData.total : classifyQueue.length;
+            lastQueueRefreshTs = Date.now();
+        })();
+        try {
+            await queueRefreshPromise;
+        } finally {
+            queueRefreshPromise = null;
+        }
+    }
+
+    function applyModeQueue() {
+        queue = queueForMode(labelerMode);
+        queueTotal = queueTotalForMode(labelerMode);
+        const savedPos = Number(modePositions[labelerMode] || 0);
+        queueIndex = Math.max(0, Math.min(savedPos, Math.max(0, queue.length - 1)));
+        modePositions[labelerMode] = queueIndex;
+    }
+
+    async function primeCurrentItemForMode() {
+        const item = queue[queueIndex];
+        if (!item) return;
+        prefetchImageSerial(item.serial);
+        try {
+            if (labelerMode === 'detect' && !item.boxes) {
+                setStatus('Warming detector cache...');
+                await ensureDetectItemReady(item, true);
+            } else if (labelerMode === 'classify' && item.boxes) {
+                setStatus('Warming classifier cache...');
+                await ensureClassifyItemReady(item, true);
+            }
+        } catch (e) {
+            //Prime failures should not block the UI from showing current item.
+        }
+    }
+
+    async function loadQueue(opts = {}) {
+        const forceRefresh = !!opts.forceRefresh;
         setStatus('Loading queue...');
         try {
-            const endpoint = labelerMode === 'detect'
-                ? '/api/labeler/queue/detect'
-                : '/api/labeler/queue/classify';
-            const data = await apiGet(endpoint);
-            queue = data.queue || [];
-            queueTotal = typeof data.total === 'number' ? data.total : queue.length;
-            queueIndex = 0;
-            resetPredCache();
+            await refreshQueues(forceRefresh);
+            applyModeQueue();
             setStatus(`Queue: ${queueTotal} items`);
             if (queue.length > 0) {
+                startWarmLoop();
+                await primeCurrentItemForMode();
                 loadCurrentItem();
             } else {
                 setStatus('Queue empty - all done!');
@@ -403,6 +505,7 @@
             setStatus('Queue complete!');
             return;
         }
+        modePositions[labelerMode] = queueIndex;
 
         const item = queue[queueIndex];
         console.log('[Labeler] Loading item:', item);
@@ -417,6 +520,12 @@
             currentBoxes = parseYoloBoxes(item.boxes);
         } else {
             currentBoxes = [];
+            if (labelerMode === 'detect') {
+                const cachedDet = detectPrefetch.get(String(currentSerial));
+                if (cachedDet && cachedDet.refined) {
+                    currentBoxes = parseYoloBoxes(cachedDet.refined);
+                }
+            }
         }
 
         //Parse existing labels
@@ -498,6 +607,187 @@
 
     function formatYoloBoxes(boxes) {
         return boxes.map(b => `${b.cx.toFixed(6)} ${b.cy.toFixed(6)} ${b.w.toFixed(6)} ${b.h.toFixed(6)}`).join('|');
+    }
+
+    function prefetchImageSerial(serial) {
+        if (!serial) return;
+        const url = buildApiUrl(`/api/labeler/cached_image/${serial}`);
+        if (imagePrefetch.has(url)) return;
+        const img = new Image();
+        img.decoding = 'async';
+        img.loading = 'eager';
+        img.src = url;
+        imagePrefetch.set(url, img);
+        if (imagePrefetch.size > IMAGE_PREFETCH_MAX) {
+            const overflow = imagePrefetch.size - IMAGE_PREFETCH_MAX;
+            const keys = imagePrefetch.keys();
+            for (let i = 0; i < overflow; i++) {
+                const key = keys.next().value;
+                if (key) imagePrefetch.delete(key);
+            }
+        }
+    }
+
+    function warmWindowForMode(mode) {
+        const q = queueForMode(mode);
+        const start = Math.max(0, Number(modePositions[mode] || 0));
+        return q.slice(start, start + SESSION_WARM_TARGET);
+    }
+
+    async function _waitFor(predicate, timeoutMs = 30000, stepMs = 120) {
+        const end = Date.now() + timeoutMs;
+        while (Date.now() < end) {
+            if (predicate()) return true;
+            await new Promise((resolve) => setTimeout(resolve, stepMs));
+        }
+        return false;
+    }
+
+    async function ensureDetectItemReady(item, waitForInFlight = false) {
+        if (!item || !item.serial) return false;
+        const key = String(item.serial);
+        const cached = detectPrefetch.get(key);
+        if (cached && cached.refined) return true;
+
+        if (detectWarmInFlight.has(key)) {
+            return waitForInFlight
+                ? _waitFor(() => {
+                    const hit = detectPrefetch.get(key);
+                    return !!(hit && hit.refined);
+                })
+                : false;
+        }
+
+        detectWarmInFlight.add(key);
+        try {
+            prefetchImageSerial(item.serial);
+            let raw = (cached && cached.raw) ? cached.raw : '';
+            if (!raw) {
+                const det = await apiPost('/api/labeler/detect', {
+                    serial: item.serial,
+                    url: item.url || null,
+                    fast: false,
+                    prefetch: true,
+                }, { timeoutMs: API_POST_TIMEOUT_MS });
+                raw = det.boxes_yolo || '';
+            }
+
+            let refined = raw;
+            const parsed = parseYoloBoxes(raw || '');
+            if (parsed.length) {
+                const ref = await apiPost('/api/labeler/refine', {
+                    serial: item.serial,
+                    url: item.url || null,
+                    boxes: parsed.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
+                    passes: DETECTOR_PREFETCH_REFINE_PASSES,
+                    prefetch: true,
+                }, { timeoutMs: API_POST_TIMEOUT_MS });
+                refined = ref.boxes_yolo || raw;
+            }
+
+            detectPrefetch.set(key, { raw: raw || refined || '', refined: refined || raw || '' });
+            return !!(refined || raw);
+        } catch (e) {
+            return false;
+        } finally {
+            detectWarmInFlight.delete(key);
+        }
+    }
+
+    async function ensureClassifyItemReady(item, waitForInFlight = false) {
+        if (!item || !item.boxes) return false;
+        const key = getPredCacheKey(item);
+        if (!key) return false;
+        if (predCache.has(key)) return true;
+        if (classifyWarmInFlight.has(key)) {
+            return waitForInFlight ? _waitFor(() => predCache.has(key)) : false;
+        }
+
+        classifyWarmInFlight.add(key);
+        try {
+            prefetchImageSerial(item.serial);
+            const parsed = parseYoloBoxes(item.boxes || '');
+            if (!parsed.length) return false;
+            const data = await apiPost('/api/labeler/identify', {
+                serial: item.serial,
+                url: item.url || null,
+                boxes: parsed.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
+                prefetch: true,
+            }, { timeoutMs: API_POST_TIMEOUT_MS });
+            predCache.set(key, data.results || []);
+            return true;
+        } catch (e) {
+            return false;
+        } finally {
+            classifyWarmInFlight.delete(key);
+        }
+    }
+
+    async function runWarmTick() {
+        if (!labelerActive || warmLoopRunning) return;
+        warmLoopRunning = true;
+        try {
+            await refreshQueues(false);
+            const detectTargets = warmWindowForMode('detect');
+            const classifyTargets = warmWindowForMode('classify');
+            detectTargets.forEach((item) => prefetchImageSerial(item.serial));
+            classifyTargets.forEach((item) => prefetchImageSerial(item.serial));
+
+            const detectTodo = detectTargets.filter((item) => {
+                const key = String(item.serial || '');
+                const cached = detectPrefetch.get(key);
+                return !!item.serial && !(cached && cached.refined) && !detectWarmInFlight.has(key);
+            }).slice(0, DETECT_PREFETCH_CONCURRENCY);
+
+            const classifyTodo = classifyTargets.filter((item) => {
+                const key = getPredCacheKey(item);
+                return !!key && !predCache.has(key) && !classifyWarmInFlight.has(key);
+            }).slice(0, PREFETCH_CONCURRENCY);
+
+            const tasks = [];
+            detectTodo.forEach((item) => tasks.push(ensureDetectItemReady(item, false)));
+            classifyTodo.forEach((item) => tasks.push(ensureClassifyItemReady(item, false)));
+            if (tasks.length) {
+                await Promise.all(tasks);
+            }
+        } catch (e) {
+            //Warm loop failures should not interrupt labeling.
+        } finally {
+            warmLoopRunning = false;
+        }
+    }
+
+    function startWarmLoop() {
+        stopWarmLoop();
+        if (!labelerActive) return;
+        warmTimer = setInterval(() => { runWarmTick(); }, SESSION_WARM_TICK_MS);
+        runWarmTick();
+    }
+
+    function stopWarmLoop() {
+        if (warmTimer) {
+            clearInterval(warmTimer);
+            warmTimer = null;
+        }
+    }
+
+    function teardownLabeler() {
+        labelerActive = false;
+        stopWarmLoop();
+        togglePrefetchTimer(false);
+        if (refPollId) {
+            clearInterval(refPollId);
+            refPollId = null;
+        }
+        resetPredCache();
+        detectWarmInFlight.clear();
+        classifyWarmInFlight.clear();
+        detectQueue = [];
+        classifyQueue = [];
+        detectQueueTotal = 0;
+        classifyQueueTotal = 0;
+        queue = [];
+        queueTotal = 0;
     }
 
     function loadImage(url) {
@@ -913,6 +1203,7 @@
 
     function advanceQueue() {
         queueIndex++;
+        modePositions[labelerMode] = queueIndex;
         if (queueIndex < queue.length) {
             loadCurrentItem();
         } else {
@@ -934,6 +1225,7 @@
 
         //Go back
         queueIndex = Math.max(0, queueIndex - 1);
+        modePositions[labelerMode] = queueIndex;
         loadCurrentItem();
         setStatus('Undone');
         updateInfo();
@@ -1140,7 +1432,7 @@
             const item = queue[i];
             if (!item || !item.boxes) continue;
             const key = getPredCacheKey(item);
-            if (!key || predCache.has(key) || prefetchInFlight.has(key)) continue;
+            if (!key || predCache.has(key) || prefetchInFlight.has(key) || classifyWarmInFlight.has(key)) continue;
             targets.push({ item, key });
         }
         if (!targets.length) return;
@@ -1163,6 +1455,7 @@
             const target = targets[idx++];
             active++;
             prefetchInFlight.add(target.key);
+            classifyWarmInFlight.add(target.key);
             try {
                 const parsed = parseYoloBoxes(target.item.boxes);
                 if (!parsed.length) {
@@ -1172,7 +1465,8 @@
                     serial: target.item.serial,
                     url: target.item.url || null,
                     boxes: parsed.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
-                });
+                    prefetch: true,
+                }, { timeoutMs: API_PREFETCH_TIMEOUT_MS });
                 if (epoch === predCacheEpoch) {
                     predCache.set(target.key, data.results || []);
                 }
@@ -1180,6 +1474,7 @@
                 //Ignore prefetch failures
             } finally {
                 prefetchInFlight.delete(target.key);
+                classifyWarmInFlight.delete(target.key);
                 active--;
                 runNext();
                 if (idx >= targets.length && active === 0) {
@@ -1204,21 +1499,7 @@
         for (let i = start; i < end; i++) {
             const item = queue[i];
             if (!item || !item.serial) continue;
-            const url = buildApiUrl(`/api/labeler/cached_image/${item.serial}`);
-            if (imagePrefetch.has(url)) continue;
-            const img = new Image();
-            img.decoding = 'async';
-            img.loading = 'eager';
-            img.src = url;
-            imagePrefetch.set(url, img);
-        }
-        if (imagePrefetch.size > IMAGE_PREFETCH_MAX) {
-            const overflow = imagePrefetch.size - IMAGE_PREFETCH_MAX;
-            const keys = imagePrefetch.keys();
-            for (let i = 0; i < overflow; i++) {
-                const key = keys.next().value;
-                if (key) imagePrefetch.delete(key);
-            }
+            prefetchImageSerial(item.serial);
         }
     }
 
@@ -1239,7 +1520,7 @@
             const item = queue[i];
             if (!item || !item.serial) continue;
             const key = String(item.serial);
-            if (detectPrefetch.has(key) || detectPrefetchInFlight.has(key)) continue;
+            if (detectPrefetch.has(key) || detectPrefetchInFlight.has(key) || detectWarmInFlight.has(key)) continue;
             targets.push({ item, key });
         }
         if (!targets.length) return;
@@ -1262,11 +1543,13 @@
             const target = targets[idx++];
             active++;
             detectPrefetchInFlight.add(target.key);
+            detectWarmInFlight.add(target.key);
             try {
                 const data = await apiPost('/api/labeler/detect', {
                     serial: target.item.serial,
                     url: target.item.url || null,
-                    fast: true,
+                    fast: false,
+                    prefetch: true,
                 });
                 if (epoch === detectPrefetchEpoch && data && data.boxes_yolo) {
                     detectPrefetch.set(target.key, { raw: data.boxes_yolo, refined: null });
@@ -1275,6 +1558,7 @@
                 //Ignore prefetch failures
             } finally {
                 detectPrefetchInFlight.delete(target.key);
+                detectWarmInFlight.delete(target.key);
                 active--;
                 runNext();
                 if (idx >= targets.length && active === 0) {
@@ -1295,6 +1579,7 @@
 
     function prefetchDetectionRefine() {
         if (labelerMode !== 'detect') return;
+        if (DETECT_REFINE_PREFETCH_AHEAD <= 0) return;
         const now = Date.now();
         if (now - lastDetectRefinePrefetch < DETECT_REFINE_COOLDOWN_MS) return;
         lastDetectRefinePrefetch = now;
@@ -1311,7 +1596,8 @@
                 serial: item.serial,
                 url: item.url || null,
                 boxes: parseYoloBoxes(entry.raw).map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
-                passes: 1,
+                passes: DETECTOR_PREFETCH_REFINE_PASSES,
+                prefetch: true,
             }).then((data) => {
                 if (data && data.boxes_yolo) {
                     detectPrefetch.set(key, { raw: entry.raw, refined: data.boxes_yolo });
@@ -1559,7 +1845,9 @@
     //---------- Expose to global ----------
 
     window.initLabeler = initLabeler;
+    window.teardownLabeler = teardownLabeler;
     window.labelerSwitchMode = switchMode;
+    window.addEventListener('beforeunload', teardownLabeler);
 
     //Auto-init when labeler view is shown
     document.addEventListener('DOMContentLoaded', () => {

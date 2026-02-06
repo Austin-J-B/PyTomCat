@@ -13,6 +13,7 @@ Routes:
 from __future__ import annotations
 import io
 import re
+import os
 import asyncio
 import aiohttp
 from pathlib import Path
@@ -36,6 +37,10 @@ COL_BOX_CAT_IDS = 9  #J: BoxCatIDs
 
 #Regex for serial extraction
 SN_PATTERN = re.compile(r"sn(\d+)", re.IGNORECASE)
+_IDENTIFY_CONCURRENCY = max(1, int(os.getenv("LABELER_IDENTIFY_CONCURRENCY", "2") or "2"))
+_IDENTIFY_TIMEOUT_SEC = float(os.getenv("LABELER_IDENTIFY_TIMEOUT_SEC", "45") or "45")
+_IDENTIFY_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_IDENTIFY_PREFETCH_TIMEOUT_SEC", "20") or "20")
+_identify_sem = asyncio.Semaphore(_IDENTIFY_CONCURRENCY)
 
 
 def _parse_serial(val: str) -> Optional[int]:
@@ -363,6 +368,7 @@ async def post_identify(request: web.Request) -> web.Response:
         data = await request.json()
         serial = data.get("serial")
         url = data.get("url")
+        prefetch = bool(data.get("prefetch"))
         boxes_raw = data.get("boxes", [])  #List of "cx cy w h" strings
 
         image_bytes = None
@@ -395,8 +401,31 @@ async def post_identify(request: web.Request) -> web.Response:
             if len(parts) == 4:
                 boxes.append((parts[0], parts[1], parts[2], parts[3]))
 
-        #Run identify on provided boxes (normalized cx,cy,w,h)
-        result = await asyncio.to_thread(V.identify_boxes, image_bytes, boxes)
+        #Run identify on provided boxes (normalized cx,cy,w,h).
+        #Prefetch requests should never monopolize worker capacity.
+        acquired = False
+        try:
+            if prefetch:
+                try:
+                    await asyncio.wait_for(_identify_sem.acquire(), timeout=0.05)
+                    acquired = True
+                except asyncio.TimeoutError:
+                    return _with_cors(web.Response(status=429, text="Busy"), request)
+            else:
+                await _identify_sem.acquire()
+                acquired = True
+
+            timeout_sec = _IDENTIFY_PREFETCH_TIMEOUT_SEC if prefetch else _IDENTIFY_TIMEOUT_SEC
+            result = await asyncio.wait_for(
+                asyncio.to_thread(V.identify_boxes, image_bytes, boxes),
+                timeout=timeout_sec,
+            )
+        except asyncio.TimeoutError:
+            log_action("labeler_identify_timeout", f"serial={serial}", f"prefetch={prefetch}")
+            return _with_cors(web.Response(status=504, text="Identify timed out"), request)
+        finally:
+            if acquired:
+                _identify_sem.release()
 
         #Enrich candidates with physical descriptions from local cache (if available)
         try:

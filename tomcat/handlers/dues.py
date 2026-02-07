@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional, List, Tuple
 
 from ..logger import log_event, log_action
 from ..config import settings
-from ..utils.permissions import is_officer
+from ..utils.permissions import is_officer, officer_role_ids
 from ..utils.payments import detect_provider
 from . import finance
 
@@ -897,12 +897,9 @@ class InvitesConfirmView(discord.ui.View):
             #Allow original author
             if int(user.id) == self.author_id:
                 return True
-            #Allow any officer (by role)
-            officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
-            if officer_role_id and hasattr(user, 'roles'):
-                for role in user.roles:
-                    if int(getattr(role, 'id', 0)) == officer_role_id:
-                        return True
+            #Allow any officer role
+            if is_officer(user, settings):
+                return True
             await interaction.response.send_message("Only officers can confirm.", ephemeral=True)
         except Exception:
             pass
@@ -2595,14 +2592,14 @@ def _debug(name: str, trigger: str = "", output: str = ""):
 def _officer_name_tokens(bot) -> set[str]:
     toks: set[str] = set()
     try:
-        officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
-        if not officer_role_id:
+        officer_ids = set(officer_role_ids(settings))
+        if not officer_ids:
             return toks
         for g in getattr(bot, 'guilds', []) or []:
             for member in getattr(g, 'members', []) or []:
                 try:
                     roles = getattr(member, 'roles', []) or []
-                    if not any(int(getattr(r, 'id', 0) or 0) == officer_role_id for r in roles):
+                    if not any(int(getattr(r, 'id', 0) or 0) in officer_ids for r in roles):
                         continue
                 except Exception:
                     continue
@@ -3497,10 +3494,18 @@ async def _run_daily_dues_job(bot) -> None:
             #Officers without dues
             officers_no_dues: list[str] = []
             try:
-                off_id = int(getattr(settings, 'officer_role_id', 0) or 0)
-                off_role = guild.get_role(off_id) if off_id else None
-                if off_role:
+                officer_ids = set(officer_role_ids(settings))
+                seen_member_ids: set[int] = set()
+                for off_id in officer_ids:
+                    off_role = guild.get_role(int(off_id)) if off_id else None
+                    if not off_role:
+                        continue
                     for m in list(getattr(off_role, 'members', []) or []):
+                        mid = int(getattr(m, "id", 0) or 0)
+                        if mid and mid in seen_member_ids:
+                            continue
+                        if mid:
+                            seen_member_ids.add(mid)
                         if not _has_dues(m):
                             officers_no_dues.append(_member_name(m))
             except Exception:

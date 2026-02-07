@@ -42,7 +42,16 @@ _ALLOWED_ORIGINS = {
 _AUTH_DEBUG = os.getenv("UI_AUTH_DEBUG", "false").lower() == "true"
 
 #Officer/guild/role IDs are configured via settings/env only (no code defaults).
-OFFICER_ROLE_ID = int(getattr(settings, "officer_role_id", 0) or 0)
+OFFICER_ROLE_IDS: list[int] = []
+for _rid in (getattr(settings, "officer_role_ids", []) or []):
+    _rid = int(_rid or 0)
+    if _rid and _rid not in OFFICER_ROLE_IDS:
+        OFFICER_ROLE_IDS.append(_rid)
+_OFFICER_ROLE_ID_FALLBACK = int(getattr(settings, "officer_role_id", 0) or 0)
+if _OFFICER_ROLE_ID_FALLBACK and _OFFICER_ROLE_ID_FALLBACK not in OFFICER_ROLE_IDS:
+    OFFICER_ROLE_IDS.append(_OFFICER_ROLE_ID_FALLBACK)
+OFFICER_ROLE_IDS_SET = set(OFFICER_ROLE_IDS)
+OFFICER_ROLE_ID = OFFICER_ROLE_IDS[0] if OFFICER_ROLE_IDS else 0
 
 
 def _debug(msg: str) -> None:
@@ -329,7 +338,7 @@ async def _resolve_member(user_id: int) -> tuple[Optional[discord.Guild], Option
 
 def _build_permissions(user_roles: list[int]) -> dict:
     """Calculate permissions based on Discord roles."""
-    is_officer = OFFICER_ROLE_ID in user_roles
+    is_officer = any(int(role_id or 0) in OFFICER_ROLE_IDS_SET for role_id in user_roles)
     photo_labeler_role = int(ROLES.get("PHOTO_LABELER") or getattr(settings, "role_photo_labeler", 0) or 0)
     can_label_photos = is_officer or (photo_labeler_role in user_roles if photo_labeler_role else False)
     return {
@@ -573,6 +582,7 @@ from .handlers.feeding import start_feeding_scheduler, start_morning_scheduler, 
 #Dues: no background scheduler; admin-only Gmail test is routed directly from the router
 from .handlers.dues import start_dues_scheduler
 from .handlers.gmail import start_gmail_logging_scheduler
+from .services.gallery_retrain import start_gallery_retrain_scheduler
 
 from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
@@ -773,6 +783,7 @@ async def rate_limit_middleware(request: web.Request, handler):
         session = _get_session_from_request(request)
         if not session:
             return _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
+        request["tc_session"] = session
         perms = session.get("permissions", {}) or {}
         if not (perms.get("is_officer") or perms.get("can_label_photos")):
             return _with_cors(web.Response(status=403, text="Not authorized for labeler"), request)
@@ -1606,6 +1617,11 @@ async def on_ready():
         _start_background_task("profile_cache_scheduler", lambda: start_profile_cache_scheduler())
     except Exception:
         pass
+    #Start opt-in gallery retrain scheduler (runs only when explicitly scheduled via UI)
+    try:
+        _start_background_task("gallery_retrain_scheduler", lambda: start_gallery_retrain_scheduler())
+    except Exception:
+        pass
 
 
 #------- Message entrypoint -------
@@ -1656,7 +1672,7 @@ async def on_message(message: discord.Message):
                 if not ch:
                     ch = bot.get_channel(int(log_ch_id))
                 if ch and hasattr(ch, 'send'):
-                    officer_role_id = getattr(settings, 'officer_role_id', None)
+                    officer_role_id = OFFICER_ROLE_ID
                     mention = f"<@&{int(officer_role_id)}>" if officer_role_id else ""
                     uname = f"@{getattr(message.author,'name','unknown-user')}"
                     body = (

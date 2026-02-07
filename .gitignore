@@ -32,6 +32,7 @@ __pycache__/
 cache/catabase
 cache/show_photos
 cache/labeler
+cache/gallery_retrain
 !cache/feeding_schedule.json
 !cache/.gitkeep
 
@@ -78,3 +79,4 @@ LabelingApps/CropperAndSorter.py
 
 Catabase-GoogleScript.GoogleScript
 Catabase - TCB Pics Formatted.csv
+R4_5_cat_DINOv3(notebook).ipynb

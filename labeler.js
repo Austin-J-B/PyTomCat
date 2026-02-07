@@ -40,6 +40,7 @@
     const ACTION_COOLDOWN_MS = 250;
     const API_POST_TIMEOUT_MS = 45000;
     const API_PREFETCH_TIMEOUT_MS = 15000;
+    const CLAIM_HEARTBEAT_MS = 15000;
     const SESSION_WARM_TARGET = 25;
     const SESSION_WARM_TICK_MS = 1500;
     const SESSION_REFRESH_QUEUES_MS = 30000;
@@ -117,6 +118,9 @@
     let labelerActive = false;
     let warmTimer = null;
     let warmLoopRunning = false;
+    let currentClaim = null;
+    let claimTimer = null;
+    let retrainPollId = null;
     let lastQueueRefreshTs = 0;
     let queueRefreshPromise = null;
     let detectQueue = [];
@@ -144,6 +148,7 @@
         }
         if (labelerInitialized) {
             labelerActive = true;
+            startRetrainStatusPoll();
             togglePrefetchTimer(true);
             startWarmLoop();
             loadQueue({ forceRefresh: false });
@@ -173,7 +178,9 @@
                     <div class="labeler-status" id="labeler-status">Loading...</div>
                     <div class="labeler-actions">
                         <button class="labeler-btn" id="btn-save-all" title="Save pending annotations">Save All</button>
+                        <button class="labeler-btn" id="btn-retrain-4am" title="Queue full gallery retrain for next 4 AM">Tonight 4 AM Retrain</button>
                         <span class="pending-count" id="pending-count">0 pending</span>
+                        <span class="retrain-status" id="retrain-status">Retrain: not scheduled</span>
                     </div>
                 </div>
 
@@ -261,6 +268,7 @@
         });
 
         document.getElementById('btn-save-all').addEventListener('click', saveAllPending);
+        document.getElementById('btn-retrain-4am').addEventListener('click', scheduleRetrain4am);
 
         imageElement.addEventListener('load', onImageLoad);
         imageElement.addEventListener('error', onImageError);
@@ -297,6 +305,7 @@
         //Load cat list for classifier dropdown
         loadCatList();
         warmRefCache();
+        startRetrainStatusPoll();
         togglePrefetchTimer(true);
         startWarmLoop();
 
@@ -307,6 +316,7 @@
     //---------- Mode Switching ----------
 
     function switchMode(mode) {
+        void releaseCurrentClaim();
         labelerMode = mode;
         containerEl.querySelectorAll('.labeler-tab').forEach(tab => {
             tab.classList.toggle('active', tab.dataset.mode === mode);
@@ -407,6 +417,113 @@
         }
     }
 
+    function stopClaimHeartbeat() {
+        if (claimTimer) {
+            clearInterval(claimTimer);
+            claimTimer = null;
+        }
+    }
+
+    function formatRetrainStatus(status) {
+        if (!status) return 'Retrain: unknown';
+        if (status.running) return 'Retrain: running now';
+        const date = status.scheduled_date || '';
+        if (status.enabled && date) return `Retrain: scheduled ${date} at 4:00 AM`;
+        if (status.last_run_date) return `Retrain: last run ${status.last_run_date}`;
+        return 'Retrain: not scheduled';
+    }
+
+    async function refreshRetrainStatus() {
+        const el = document.getElementById('retrain-status');
+        if (!el) return;
+        try {
+            const status = await apiGet('/api/labeler/gallery_retrain/status');
+            el.textContent = formatRetrainStatus(status);
+        } catch (e) {
+            el.textContent = 'Retrain: status unavailable';
+        }
+    }
+
+    function startRetrainStatusPoll() {
+        if (retrainPollId) return;
+        void refreshRetrainStatus();
+        retrainPollId = setInterval(() => { void refreshRetrainStatus(); }, 30000);
+    }
+
+    function stopRetrainStatusPoll() {
+        if (retrainPollId) {
+            clearInterval(retrainPollId);
+            retrainPollId = null;
+        }
+    }
+
+    async function scheduleRetrain4am() {
+        setStatus('Scheduling 4 AM retrain...');
+        try {
+            const status = await apiPost('/api/labeler/gallery_retrain/schedule', {});
+            const el = document.getElementById('retrain-status');
+            if (el) el.textContent = formatRetrainStatus(status);
+            setStatus('Retrain scheduled.');
+        } catch (e) {
+            setStatus(`Retrain schedule failed: ${e.message}`);
+        }
+    }
+
+    function startClaimHeartbeat() {
+        stopClaimHeartbeat();
+        claimTimer = setInterval(() => {
+            void heartbeatCurrentClaim();
+        }, CLAIM_HEARTBEAT_MS);
+    }
+
+    async function heartbeatCurrentClaim() {
+        if (!currentClaim) return;
+        try {
+            await apiPost('/api/labeler/claim', {
+                action: 'heartbeat',
+                mode: currentClaim.mode,
+                serial: currentClaim.serial,
+            }, { timeoutMs: 6000 });
+        } catch (e) {
+            //Ignore heartbeat errors; TTL expiry is the backstop.
+        }
+    }
+
+    async function releaseCurrentClaim() {
+        stopClaimHeartbeat();
+        const claim = currentClaim;
+        currentClaim = null;
+        if (!claim) return;
+        try {
+            await apiPost('/api/labeler/claim', {
+                action: 'release',
+                mode: claim.mode,
+                serial: claim.serial,
+            }, { timeoutMs: 6000 });
+        } catch (e) {
+            //Ignore release failures; server TTL will expire stale claims.
+        }
+    }
+
+    async function claimQueueItem(item, mode) {
+        if (!item || !item.serial) return false;
+        try {
+            const data = await apiPost('/api/labeler/claim', {
+                action: 'acquire',
+                mode,
+                serial: item.serial,
+            }, { timeoutMs: 8000 });
+            if (data && data.granted) {
+                currentClaim = { mode, serial: item.serial };
+                startClaimHeartbeat();
+                return true;
+            }
+            return false;
+        } catch (e) {
+            return false;
+        }
+    }
+
     async function loadCatList() {
         try {
             const data = await apiGet('/api/labeler/cats');
@@ -488,8 +605,9 @@
             if (queue.length > 0) {
                 startWarmLoop();
                 await primeCurrentItemForMode();
-                loadCurrentItem();
+                await loadCurrentItem();
             } else {
+                await releaseCurrentClaim();
                 setStatus('Queue empty - all done!');
                 clearCanvas();
             }
@@ -499,67 +617,79 @@
         }
     }
 
-    function loadCurrentItem() {
+    async function loadCurrentItem() {
         console.log('[Labeler] loadCurrentItem called, queueIndex:', queueIndex, 'queue.length:', queue.length);
-        if (queueIndex >= queue.length) {
-            setStatus('Queue complete!');
-            return;
-        }
-        modePositions[labelerMode] = queueIndex;
+        let skippedClaims = 0;
+        while (queueIndex < queue.length) {
+            modePositions[labelerMode] = queueIndex;
+            const item = queue[queueIndex];
+            if (!item) break;
+            const claimed = await claimQueueItem(item, labelerMode);
+            if (!claimed) {
+                queueIndex++;
+                skippedClaims++;
+                continue;
+            }
+            console.log('[Labeler] Loading item:', item);
+            currentItem = item;
+            currentSerial = item.serial;
+            //Use cached endpoint for fast loading (falls back to Google Drive if not cached)
+            currentImageUrl = buildApiUrl(`/api/labeler/cached_image/${item.serial}`);
+            console.log('[Labeler] Built cached URL:', currentImageUrl);
 
-        const item = queue[queueIndex];
-        console.log('[Labeler] Loading item:', item);
-        currentItem = item;
-        currentSerial = item.serial;
-        //Use cached endpoint for fast loading (falls back to Google Drive if not cached)
-        currentImageUrl = buildApiUrl(`/api/labeler/cached_image/${item.serial}`);
-        console.log('[Labeler] Built cached URL:', currentImageUrl);
-
-        //Parse existing boxes if any (for classifier mode)
-        if (item.boxes) {
-            currentBoxes = parseYoloBoxes(item.boxes);
-        } else {
-            currentBoxes = [];
-            if (labelerMode === 'detect') {
-                const cachedDet = detectPrefetch.get(String(currentSerial));
-                if (cachedDet && cachedDet.refined) {
-                    currentBoxes = parseYoloBoxes(cachedDet.refined);
+            //Parse existing boxes if any (for classifier mode)
+            if (item.boxes) {
+                currentBoxes = parseYoloBoxes(item.boxes);
+            } else {
+                currentBoxes = [];
+                if (labelerMode === 'detect') {
+                    const cachedDet = detectPrefetch.get(String(currentSerial));
+                    if (cachedDet && cachedDet.refined) {
+                        currentBoxes = parseYoloBoxes(cachedDet.refined);
+                    }
                 }
             }
-        }
 
-        //Parse existing labels
-        if (item.labels) {
-            currentLabels = item.labels.split('|');
-        } else {
-            currentLabels = [];
-        }
-        while (currentLabels.length < currentBoxes.length) {
-            currentLabels.push('');
-        }
-
-        selectedBoxIdx = 0;
-        currentCropIdx = 0;
-        currentPredictions = [];
-        boxesTouched = false;
-        const listEl = document.getElementById('predictions-list');
-        if (listEl) listEl.innerHTML = '';
-
-        if (labelerMode === 'classify' && currentBoxes.length) {
-            const firstUnlabeled = currentLabels.findIndex(lbl => !lbl || !lbl.trim());
-            if (firstUnlabeled >= 0) currentCropIdx = firstUnlabeled;
-            const cached = predCache.get(getPredCacheKey(currentItem));
-            if (cached) {
-                currentPredictions = cached;
+            //Parse existing labels
+            if (item.labels) {
+                currentLabels = item.labels.split('|');
+            } else {
+                currentLabels = [];
             }
-        }
+            while (currentLabels.length < currentBoxes.length) {
+                currentLabels.push('');
+            }
 
-        updateInfo();
-        loadImage(currentImageUrl);
-        prefetchPredictions();
-        prefetchImages();
-        prefetchDetection();
-        prefetchDetectionRefine();
+            selectedBoxIdx = 0;
+            currentCropIdx = 0;
+            currentPredictions = [];
+            boxesTouched = false;
+            const listEl = document.getElementById('predictions-list');
+            if (listEl) listEl.innerHTML = '';
+
+            if (labelerMode === 'classify' && currentBoxes.length) {
+                const firstUnlabeled = currentLabels.findIndex(lbl => !lbl || !lbl.trim());
+                if (firstUnlabeled >= 0) currentCropIdx = firstUnlabeled;
+                const cached = predCache.get(getPredCacheKey(currentItem));
+                if (cached) {
+                    currentPredictions = cached;
+                }
+            }
+            updateInfo();
+            loadImage(currentImageUrl);
+            prefetchPredictions();
+            prefetchImages();
+            prefetchDetection();
+            prefetchDetectionRefine();
+            return;
+        }
+        await releaseCurrentClaim();
+        if (skippedClaims > 0) {
+            setStatus('No unlocked items right now. Try again shortly.');
+        } else {
+            setStatus('Queue complete!');
+        }
+        clearCanvas();
     }
 
     function togglePrefetchTimer(enabled) {
@@ -773,6 +903,8 @@
 
     function teardownLabeler() {
         labelerActive = false;
+        void releaseCurrentClaim();
+        stopRetrainStatusPoll();
         stopWarmLoop();
         togglePrefetchTimer(false);
         if (refPollId) {
@@ -1202,10 +1334,11 @@
     }
 
     function advanceQueue() {
+        void releaseCurrentClaim();
         queueIndex++;
         modePositions[labelerMode] = queueIndex;
         if (queueIndex < queue.length) {
-            loadCurrentItem();
+            void loadCurrentItem();
         } else {
             setStatus('Queue complete! Save pending changes.');
             clearCanvas();
@@ -1224,9 +1357,10 @@
         if (idx >= 0) pendingUpdates.splice(idx, 1);
 
         //Go back
+        void releaseCurrentClaim();
         queueIndex = Math.max(0, queueIndex - 1);
         modePositions[labelerMode] = queueIndex;
-        loadCurrentItem();
+        void loadCurrentItem();
         setStatus('Undone');
         updateInfo();
     }

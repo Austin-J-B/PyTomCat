@@ -62,6 +62,27 @@ def _parse_channel_list_env(key: str) -> list[int]:
             continue
     return out
 
+def _parse_role_id_list_env(key: str) -> list[int]:
+    """Parse comma-separated role IDs from env into a deduplicated int list."""
+    raw = (os.getenv(key, "") or "").strip()
+    if not raw:
+        return []
+    out: list[int] = []
+    seen: set[int] = set()
+    for tok in raw.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        val = os.getenv(tok, tok)
+        try:
+            rid = int(str(val).strip())
+        except Exception:
+            continue
+        if rid and rid not in seen:
+            seen.add(rid)
+            out.append(rid)
+    return out
+
 def _build_channel_sheet_map() -> dict[int, str]:
     """
     Build channel->sheetTab map from env.
@@ -134,6 +155,7 @@ class Settings:
     #UI/Auth: guild + roles used by the web UI permissions
     ui_guild_id: int | None = int(os.getenv("UI_GUILD_ID", "0") or "0") or None
     officer_role_id: int | None = int(os.getenv("OFFICER_ROLE_ID", "0") or "0") or None
+    officer_role_ids: list[int] = field(default_factory=lambda: _parse_role_id_list_env("OFFICER_ROLE_IDS"))
     role_feeding_manager_id: int | None = int(os.getenv("ROLE_FEEDING_MANAGER", "0") or "0") or None
     role_photo_labeler_id: int | None = int(os.getenv("ROLE_PHOTO_LABELER", "0") or "0") or None
     role_viewer_id: int | None = int(os.getenv("ROLE_VIEWER", "0") or "0") or None

@@ -1131,17 +1131,8 @@ class IntentRouter:
         if event.type == "function_glossary":
             from .handlers.glossary import handle_function_glossary
             author = message.author
-            #Check if user is admin or has officer role
-            is_admin = is_officer(author, settings)
-            is_officer = False
-            try:
-                officer_role_id = int(getattr(settings, 'officer_role_id', 0) or 0)
-                if officer_role_id:
-                    roles = getattr(author, 'roles', []) or []
-                    is_officer = any(int(getattr(r, 'id', 0) or 0) == officer_role_id for r in roles)
-            except Exception:
-                pass
-            is_privileged = is_admin or is_officer or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
+            has_officer_role = is_officer(author, settings)
+            is_privileged = has_officer_role or getattr(getattr(author, 'guild_permissions', None), 'administrator', False)
             await handle_function_glossary(_intent("function_glossary", {}), ctx, is_privileged)
             return
 

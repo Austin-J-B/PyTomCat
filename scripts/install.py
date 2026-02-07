@@ -86,6 +86,16 @@ SHOW_CACHE_CROP_ON_FILL=false         # Skip CV crop during cache fill to avoid 
 LABELER_IDENTIFY_CONCURRENCY=2        # Bound concurrent classifier requests
 LABELER_IDENTIFY_TIMEOUT_SEC=45       # Timeout for interactive classifier calls
 LABELER_IDENTIFY_PREFETCH_TIMEOUT_SEC=20 # Shorter timeout for background prefetch
+LABELER_CLAIM_TTL_SEC=180             # Per-photo lock TTL for concurrent labeling
+LABELER_RERANK_ENABLED=1              # Enable rotation rerank on top classifier candidates
+LABELER_RERANK_TOP_N=15               # Number of candidate cats considered for rerank
+LABELER_RERANK_ANGLES=-10,0,10        # Rotation angles (degrees) used for rerank variants
+LABELER_RERANK_HFLIP=1                # Include horizontal-flip variants during rerank
+GALLERY_MIN_PIXELS=122500             # Minimum crop area for gallery training (350x350)
+GALLERY_MIN_PER_CAT=4                 # Minimum eligible crops required per cat
+GALLERY_EMBED_BATCH_SIZE=32           # Encoder batch size during gallery rebuild
+GALLERY_TTA_HFLIP=1                   # Apply horizontal-flip TTA when embedding crops
+GALLERY_KEEP_WORKDIR=0                # Set 1 to keep intermediate crops in cache/gallery_retrain/work
 
 # ===== Gmail Ingestion =====
 GMAIL_ENABLED=true                    # Toggle Gmail integration; disable to skip email polling entirely
@@ -115,6 +125,7 @@ FINANCE_SHEET_THROTTLE_SEC=0.5        # When finances are requested, it waits th
 # ===== UI / Role IDs =====
 UITEST_ACTIVITY_APP_ID=               # For the user interface to work
 OFFICER_ROLE_ID=                      # Required: officer role for UI/admin actions
+OFFICER_ROLE_IDS=                     # Optional: comma-separated officer roles (e.g. prod,test)
 ROLE_FEEDING_MANAGER=                 # Feeding manager role ID
 ROLE_PHOTO_LABELER=                   # Photo labeler role ID
 ROLE_VIEWER=                          # Basic viewer role ID

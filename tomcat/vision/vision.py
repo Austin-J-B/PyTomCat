@@ -48,6 +48,7 @@ _clf: Optional[torch.nn.Module] = None
 _gallery_emb: Optional[Tensor] = None
 _gallery_names: List[str] = []
 _gallery_paths: List[str] = []
+_gallery_cat_indices: dict[str, Tensor] = {}
 _gallery_root_hints: Optional[List[Path]] = None
 _device: Optional[torch.device] = None
 _half: bool = False
@@ -63,6 +64,39 @@ COL_SERIAL = 7
 COL_BOX_COORDS = 8
 COL_BOX_CAT_IDS = 9
 SN_PATTERN = re.compile(r"sn(\d+)", re.IGNORECASE)
+_RERANK_ENABLED = str(os.getenv("LABELER_RERANK_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+_RERANK_TOP_N = max(1, int(os.getenv("LABELER_RERANK_TOP_N", "15") or "15"))
+_RERANK_HFLIP = str(os.getenv("LABELER_RERANK_HFLIP", "1")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_rerank_angles() -> List[float]:
+    raw = str(os.getenv("LABELER_RERANK_ANGLES", "-10,0,10") or "").strip()
+    if not raw:
+        return [0.0]
+    out: List[float] = []
+    seen: set[float] = set()
+    for tok in raw.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            v = float(tok)
+        except Exception:
+            continue
+        key = round(v, 4)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(v)
+    if not out:
+        out = [0.0]
+    has_zero = any(abs(x) < 1e-6 for x in out)
+    if not has_zero:
+        out.append(0.0)
+    return out
+
+
+_RERANK_ANGLES = _parse_rerank_angles()
 
 def _parse_serial(val: str) -> Optional[int]:
     m = SN_PATTERN.search(val or "")
@@ -71,6 +105,23 @@ def _parse_serial(val: str) -> Optional[int]:
     if str(val or "").strip().isdigit():
         return int(str(val).strip())
     return None
+
+
+def _rebuild_gallery_cat_indices() -> None:
+    """Build name -> embedding-index tensor lookup for fast per-cat rerank scoring."""
+    global _gallery_cat_indices
+    if _gallery_emb is None or not _gallery_names:
+        _gallery_cat_indices = {}
+        return
+    by_cat: dict[str, List[int]] = {}
+    for idx, name in enumerate(_gallery_names):
+        by_cat.setdefault(str(name), []).append(int(idx))
+    device = _gallery_emb.device
+    _gallery_cat_indices = {
+        name: torch.tensor(idxs, dtype=torch.long, device=device)
+        for name, idxs in by_cat.items()
+        if idxs
+    }
 
 @dataclass
 class IdentifyResult:
@@ -183,6 +234,7 @@ def _ensure_classifier() -> None:
             _gallery_paths = [str(p) for p in raw_paths]
         else:
             _gallery_paths = []
+        _rebuild_gallery_cat_indices()
         log_action("viz_clf_load_info", "reid_ready", f"cats={len(set(_gallery_names))}")
     except Exception as e:
         log_action("viz_clf_load_error", f"type={type(e).__name__}", str(e))
@@ -219,6 +271,55 @@ def _prep_tensor(pil: Image.Image) -> Tensor:
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
     return cast(Tensor, tfm(pil))
+
+
+def _rerank_variant_tensors(crop: Image.Image) -> List[Tensor]:
+    """Build rotation/hflip variants for rerank embedding."""
+    variants: List[Tensor] = []
+    for angle in _RERANK_ANGLES:
+        if abs(float(angle)) < 1e-6:
+            rotated = crop
+        else:
+            try:
+                rotated = crop.rotate(
+                    float(angle),
+                    resample=Image.Resampling.BICUBIC,
+                    expand=False,
+                    fillcolor=(0, 0, 0),
+                )
+            except Exception:
+                rotated = crop.rotate(float(angle), expand=False)
+        base = _prep_tensor(rotated)
+        variants.append(base)
+        if _RERANK_HFLIP:
+            variants.append(torch.flip(base, dims=[2]))
+    return variants
+
+
+def _rerank_scores_for_crop(crop: Image.Image, candidate_names: List[str]) -> dict[str, float]:
+    """Return max similarity per candidate cat across rotation variants."""
+    if not candidate_names:
+        return {}
+    if _clf is None or _gallery_emb is None:
+        return {}
+
+    variants = _rerank_variant_tensors(crop)
+    if not variants:
+        return {}
+
+    batch = torch.stack(variants).to(_device)
+    with torch.inference_mode():
+        q = _clf(batch)
+
+    out: dict[str, float] = {}
+    for name in candidate_names:
+        idxs = _gallery_cat_indices.get(name)
+        if idxs is None or idxs.numel() == 0:
+            continue
+        cat_emb = _gallery_emb.index_select(0, idxs)
+        sim = q @ cat_emb.T
+        out[name] = float(torch.max(sim).item())
+    return out
 
 def _get_gallery_root_hints() -> List[Path]:
     """Return cached local roots to resolve gallery paths from training runs."""
@@ -434,6 +535,7 @@ def identify_boxes(
 
     img_w, img_h = img.size
     tiles: List[Tensor] = []
+    tile_crops: List[Image.Image] = []
     valid_boxes: List[Tuple[int, int, int, int]] = []
 
     for box in boxes:
@@ -450,6 +552,7 @@ def identify_boxes(
         cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
         crop = img.crop((cx1, cy1, cx2, cy2))
         tiles.append(_prep_tensor(crop))
+        tile_crops.append(crop)
         valid_boxes.append((int(cx1), int(cy1), int(cx2), int(cy2)))
 
     if not tiles:
@@ -465,6 +568,7 @@ def identify_boxes(
         sims = similarities[i]
         vals, idxs = torch.sort(sims, descending=True)
 
+        base_limit = max(int(top_k), int(_RERANK_TOP_N if _RERANK_ENABLED else top_k))
         candidate_names: List[str] = []
         candidate_scores: List[float] = []
         seen: set[str] = set()
@@ -477,9 +581,26 @@ def identify_boxes(
             candidate_names.append(cat_name)
             candidate_scores.append(float(vals[j]))
             seen.add(cat_name)
-            if len(candidate_names) >= top_k:
+            if len(candidate_names) >= base_limit:
                 break
 
+        base_score_map = {n: float(s) for n, s in zip(candidate_names, candidate_scores)}
+        if _RERANK_ENABLED and candidate_names and i < len(tile_crops):
+            rerank_pool = candidate_names[: min(len(candidate_names), int(_RERANK_TOP_N))]
+            reranked = _rerank_scores_for_crop(tile_crops[i], rerank_pool)
+            if reranked:
+                combined: List[Tuple[str, float, float]] = []
+                for name in candidate_names:
+                    base_conf = base_score_map.get(name, 0.0)
+                    score = float(reranked.get(name, base_conf))
+                    combined.append((name, score, base_conf))
+                combined.sort(key=lambda x: x[1], reverse=True)
+                candidate_names = [n for (n, _, _) in combined]
+                candidate_scores = [float(s) for (_, s, _) in combined]
+                base_score_map = {n: float(b) for (n, _, b) in combined}
+
+        candidate_names = candidate_names[: int(top_k)]
+        candidate_scores = candidate_scores[: int(top_k)]
         ref_lists: dict[str, List[dict]] = {n: [] for n in candidate_names}
         if _labeler_ref_ready:
             for name in candidate_names:
@@ -507,6 +628,7 @@ def identify_boxes(
             candidates.append({
                 "name": name,
                 "conf": conf,
+                "conf_base": float(base_score_map.get(name, conf)),
                 "refs": ref_lists.get(name, []),
             })
 
@@ -836,3 +958,48 @@ def get_all_cats() -> List[str]:
     if not _gallery_names:
         return []
     return sorted(set(_gallery_names))
+
+
+def refresh_gallery(path: Optional[str] = None) -> dict:
+    """Reload gallery tensors from disk without waiting for process restart."""
+    global _gallery_emb, _gallery_names, _gallery_paths, _labeler_ref_cache, _labeler_ref_ready, _labeler_ref_task
+    _ensure_device_only()
+    try:
+        if path:
+            settings.cv_gallery_path = str(path)
+        target = settings.cv_gallery_path
+        try:
+            gal_data = torch.load(target, map_location=_device, weights_only=False)
+        except Exception:
+            gal_data = torch.load(target, map_location=_device)
+
+        emb = gal_data["emb"].to(_device)
+        emb = torch.nn.functional.normalize(emb, p=2, dim=1)
+        idx_to_class = {v: k for k, v in gal_data["class_to_idx"].items()}
+        labels = gal_data["label"]
+        names = [idx_to_class[int(i)] for i in labels]
+        raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
+        paths: List[str]
+        if isinstance(raw_paths, (list, tuple)) and len(raw_paths) == emb.shape[0]:
+            paths = [str(p) for p in raw_paths]
+        else:
+            paths = []
+
+        _gallery_emb = emb
+        _gallery_names = names
+        _gallery_paths = paths
+        _rebuild_gallery_cat_indices()
+        # Force ref cache rebuild against newest gallery.
+        _labeler_ref_cache = {}
+        _labeler_ref_ready = False
+        _labeler_ref_task = None
+
+        return {
+            "ok": True,
+            "path": str(target),
+            "embeddings": int(emb.shape[0]),
+            "cats": int(len(set(names))),
+        }
+    except Exception as e:
+        log_action("viz_gallery_refresh_error", "error", str(e))
+        return {"ok": False, "error": str(e)}

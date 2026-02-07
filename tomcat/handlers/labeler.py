@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import re
 import os
+import time
 import asyncio
 import aiohttp
 from pathlib import Path
@@ -24,9 +25,10 @@ from aiohttp import web
 from ..config import settings
 from ..logger import log_action
 from ..vision import vision as V
-from ..services.catsheets import get_tcb_pics_rows
+from ..services.catsheets import get_tcb_pics_rows, force_refresh_tcb_cache
 from ..services.sheets_client import sheets_client
 from ..services import labeler_cache
+from ..services.gallery_retrain import get_gallery_retrain_status, schedule_gallery_retrain
 
 #Column indices in TCB Pics Formatted (0-indexed)
 COL_CAT_ID = 0       #A: CatID (e.g., "1. Twix")
@@ -41,16 +43,118 @@ _IDENTIFY_CONCURRENCY = max(1, int(os.getenv("LABELER_IDENTIFY_CONCURRENCY", "2"
 _IDENTIFY_TIMEOUT_SEC = float(os.getenv("LABELER_IDENTIFY_TIMEOUT_SEC", "45") or "45")
 _IDENTIFY_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_IDENTIFY_PREFETCH_TIMEOUT_SEC", "20") or "20")
 _identify_sem = asyncio.Semaphore(_IDENTIFY_CONCURRENCY)
+_LABELER_CLAIM_TTL_SEC = max(30, int(os.getenv("LABELER_CLAIM_TTL_SEC", "180") or "180"))
+_claim_lock = asyncio.Lock()
+_active_claims: Dict[Tuple[str, int], Dict[str, Any]] = {}
 
 
 def _parse_serial(val: str) -> Optional[int]:
     """Parse serial from string like 'sn1234' or just '1234'."""
-    m = SN_PATTERN.search(val)
+    sval = str(val or "").strip()
+    m = SN_PATTERN.search(sval)
     if m:
         return int(m.group(1))
-    if val.strip().isdigit():
-        return int(val.strip())
+    if sval.isdigit():
+        return int(sval)
     return None
+
+
+def _normalize_header_token(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(text or "").strip().lower())
+
+
+def _find_header_col(headers: List[str], candidates: List[str]) -> Optional[int]:
+    if not headers:
+        return None
+    wanted = {_normalize_header_token(c) for c in candidates}
+    for idx, header in enumerate(headers):
+        if _normalize_header_token(header) in wanted:
+            return idx
+    return None
+
+
+def _col_to_a1(col_index_1_based: int) -> str:
+    n = int(col_index_1_based)
+    out = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        out = chr(ord("A") + rem) + out
+    return out
+
+
+def _merge_labeled_by(existing: str, actor: str) -> str:
+    actor_clean = str(actor or "").strip()
+    if not actor_clean:
+        return str(existing or "").strip()
+    names: List[str] = []
+    seen = set()
+    for tok in str(existing or "").split(","):
+        name = tok.strip()
+        if not name:
+            continue
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        names.append(name)
+    if actor_clean.casefold() not in seen:
+        names.append(actor_clean)
+    return ", ".join(names)
+
+
+def _actor_from_request(request: web.Request) -> Tuple[str, str]:
+    session = request.get("tc_session") or {}
+    user_id = str(session.get("user_id") or "").strip()
+    username = str(session.get("username") or "").strip()
+    global_name = str(session.get("global_name") or "").strip()
+    actor = username or global_name or user_id or "unknown"
+    return user_id, actor
+
+
+def _purge_expired_claims(now_mono: float) -> None:
+    expired = [
+        key
+        for key, claim in _active_claims.items()
+        if float(claim.get("expires_at") or 0.0) <= now_mono
+    ]
+    for key in expired:
+        _active_claims.pop(key, None)
+
+
+async def _claims_snapshot() -> Dict[Tuple[str, int], Dict[str, Any]]:
+    now_mono = time.monotonic()
+    async with _claim_lock:
+        _purge_expired_claims(now_mono)
+        return {k: dict(v) for k, v in _active_claims.items()}
+
+
+async def _acquire_claim(mode: str, serial: int, user_id: str, username: str) -> Tuple[bool, Dict[str, Any]]:
+    now_mono = time.monotonic()
+    key = (mode, int(serial))
+    async with _claim_lock:
+        _purge_expired_claims(now_mono)
+        current = _active_claims.get(key)
+        if current and str(current.get("user_id") or "") != str(user_id or ""):
+            return False, dict(current)
+        claim = {
+            "user_id": str(user_id or ""),
+            "username": str(username or ""),
+            "expires_at": now_mono + float(_LABELER_CLAIM_TTL_SEC),
+        }
+        _active_claims[key] = claim
+        return True, dict(claim)
+
+
+async def _release_claim(mode: str, serial: int, user_id: str) -> bool:
+    key = (mode, int(serial))
+    async with _claim_lock:
+        current = _active_claims.get(key)
+        if not current:
+            return False
+        if str(current.get("user_id") or "") != str(user_id or ""):
+            return False
+        _active_claims.pop(key, None)
+        return True
 
 
 def _with_cors(resp: web.Response, request: web.Request) -> web.Response:
@@ -69,6 +173,8 @@ async def get_queue_detect(request: web.Request) -> web.Response:
     """Return list of serials needing detector labels (empty BoxCoordinates)."""
     try:
         rows = get_tcb_pics_rows(ttl_sec=60)
+        user_id, _ = _actor_from_request(request)
+        claims = await _claims_snapshot()
         queue = []
         for row in rows[1:]:  #Skip header
             if len(row) <= COL_SERIAL:
@@ -76,15 +182,19 @@ async def get_queue_detect(request: web.Request) -> web.Response:
             sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
             if sn is None:
                 continue
+            claim = claims.get(("detect", int(sn)))
+            if claim and str(claim.get("user_id") or "") != user_id:
+                continue
             box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
             if not box_coords.strip():
                 url = row[COL_URL] if len(row) > COL_URL else ""
                 if url.startswith("http"):
                     queue.append({"serial": sn, "url": url})
+        queue.sort(key=lambda item: int(item.get("serial") or 0))
         total = len(queue)
-        #Trigger background cache fill for first 15 images
+        #Trigger background cache fill for first images in queue
         if queue:
-            asyncio.create_task(labeler_cache.ensure_cache_filled(queue[:15]))
+            asyncio.create_task(labeler_cache.ensure_cache_filled(queue[:25]))
         return _with_cors(web.json_response({"queue": queue[:500], "total": total}), request)
     except Exception as e:
         log_action("labeler_queue_detect_error", "error", str(e))
@@ -95,12 +205,17 @@ async def get_queue_classify(request: web.Request) -> web.Response:
     """Return serials with boxes but incomplete cat IDs."""
     try:
         rows = get_tcb_pics_rows(ttl_sec=60)
+        user_id, _ = _actor_from_request(request)
+        claims = await _claims_snapshot()
         queue = []
         for row in rows[1:]:
             if len(row) <= COL_SERIAL:
                 continue
             sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
             if sn is None:
+                continue
+            claim = claims.get(("classify", int(sn)))
+            if claim and str(claim.get("user_id") or "") != user_id:
                 continue
             box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
             box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
@@ -125,10 +240,11 @@ async def get_queue_classify(request: web.Request) -> web.Response:
                         "num_boxes": num_boxes,
                         "num_labeled": num_labeled,
                     })
+        queue.sort(key=lambda item: int(item.get("serial") or 0))
         total = len(queue)
-        #Trigger background cache fill for first 15 images
+        #Trigger background cache fill for first images in queue
         if queue:
-            asyncio.create_task(labeler_cache.ensure_cache_filled(queue[:15]))
+            asyncio.create_task(labeler_cache.ensure_cache_filled(queue[:25]))
         return _with_cors(web.json_response({"queue": queue[:500], "total": total}), request)
     except Exception as e:
         log_action("labeler_queue_classify_error", "error", str(e))
@@ -200,6 +316,49 @@ async def get_cached_image(request: web.Request) -> web.Response:
         return _with_cors(resp, request)
     except Exception as e:
         log_action("labeler_cached_image_error", "error", str(e))
+        return _with_cors(web.Response(status=500, text=str(e)), request)
+
+
+async def post_claim(request: web.Request) -> web.Response:
+    """Acquire/heartbeat/release a claim for a queue item in detect/classify mode."""
+    try:
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        mode = str(data.get("mode") or "detect").strip().lower()
+        if mode not in {"detect", "classify"}:
+            return _with_cors(web.Response(status=400, text="Invalid mode"), request)
+
+        serial = _parse_serial(str(data.get("serial") or ""))
+        if serial is None:
+            return _with_cors(web.Response(status=400, text="Invalid serial"), request)
+
+        action = str(data.get("action") or "acquire").strip().lower()
+        user_id, username = _actor_from_request(request)
+        if not user_id:
+            return _with_cors(web.Response(status=401, text="Missing session user"), request)
+
+        if action == "release":
+            released = await _release_claim(mode, int(serial), user_id)
+            return _with_cors(web.json_response({
+                "ok": True,
+                "released": bool(released),
+                "mode": mode,
+                "serial": int(serial),
+            }), request)
+
+        granted, owner = await _acquire_claim(mode, int(serial), user_id, username)
+        return _with_cors(web.json_response({
+            "ok": True,
+            "granted": bool(granted),
+            "mode": mode,
+            "serial": int(serial),
+            "claimed_by": owner.get("username") if owner else None,
+            "claim_ttl_sec": _LABELER_CLAIM_TTL_SEC,
+        }), request)
+    except Exception as e:
+        log_action("labeler_claim_error", "error", str(e))
         return _with_cors(web.Response(status=500, text=str(e)), request)
 
 
@@ -457,6 +616,7 @@ async def post_save(request: web.Request) -> web.Response:
     try:
         data = await request.json()
         updates = data.get("updates", [])  #List of {serial, box_coords, box_cat_ids}
+        _, actor_name = _actor_from_request(request)
         
         if not updates:
             return _with_cors(web.Response(status=400, text="No updates"), request)
@@ -468,30 +628,61 @@ async def post_save(request: web.Request) -> web.Response:
         
         #Build serial -> row index mapping
         rows = ws.get_all_values()
+        headers = rows[0] if rows else []
+        col_labeled_by = _find_header_col(
+            headers,
+            [
+                "LabeledBy",
+                "LabelledBy",
+                "Labeled By",
+                "Labelled By",
+                "labeled_by",
+                "labelled_by",
+            ],
+        )
         serial_to_row = {}
+        serial_to_labeled_by: Dict[int, str] = {}
         for idx, row in enumerate(rows[1:], start=2):  #1-indexed, skip header
             if len(row) > COL_SERIAL:
                 sn = _parse_serial(row[COL_SERIAL])
                 if sn is not None:
                     serial_to_row[sn] = idx
+                    if col_labeled_by is not None:
+                        serial_to_labeled_by[sn] = row[col_labeled_by] if len(row) > col_labeled_by else ""
         
         #Build cell updates
-        import time
+        import time as _time
         cells_to_update = []
+        labeled_by_serials: set[int] = set()
         for upd in updates:
-            sn = upd.get("serial")
+            sn = _parse_serial(str(upd.get("serial") or ""))
             if sn not in serial_to_row:
                 continue
             row_num = serial_to_row[sn]
+            touched = False
             if "box_coords" in upd:
                 cells_to_update.append({
                     "range": f"I{row_num}",
                     "values": [[upd["box_coords"]]]
                 })
+                touched = True
             if "box_cat_ids" in upd:
                 cells_to_update.append({
                     "range": f"J{row_num}",
                     "values": [[upd["box_cat_ids"]]]
+                })
+                touched = True
+            if (
+                touched
+                and col_labeled_by is not None
+                and sn not in labeled_by_serials
+            ):
+                merged = _merge_labeled_by(serial_to_labeled_by.get(sn, ""), actor_name)
+                serial_to_labeled_by[sn] = merged
+                labeled_by_serials.add(sn)
+                cells_to_update.append({
+                    "range": f"{_col_to_a1(col_labeled_by + 1)}{row_num}",
+                    "values": [[merged]],
                 })
         
         #Batch update with throttling
@@ -500,9 +691,15 @@ async def post_save(request: web.Request) -> web.Response:
             chunk = cells_to_update[i:i + chunk_size]
             ws.batch_update(chunk)
             if i + chunk_size < len(cells_to_update):
-                time.sleep(1)
+                _time.sleep(1)
+
+        #Refresh local sheet cache so queues reflect updates quickly.
+        try:
+            force_refresh_tcb_cache()
+        except Exception:
+            pass
         
-        log_action("labeler_save", "saved", f"{len(updates)} annotations")
+        log_action("labeler_save", "saved", f"{len(updates)} annotations by {actor_name}")
         return _with_cors(web.json_response({
             "status": "ok",
             "saved": len(updates),
@@ -551,6 +748,28 @@ async def get_refs_status(request: web.Request) -> web.Response:
         return _with_cors(web.Response(status=500, text=str(e)), request)
 
 
+async def get_gallery_retrain_status_api(request: web.Request) -> web.Response:
+    """Read current 4AM gallery retrain schedule/status."""
+    try:
+        status = await get_gallery_retrain_status()
+        return _with_cors(web.json_response(status), request)
+    except Exception as e:
+        log_action("gallery_retrain_status_error", "error", str(e))
+        return _with_cors(web.Response(status=500, text=str(e)), request)
+
+
+async def post_gallery_retrain_schedule_api(request: web.Request) -> web.Response:
+    """Schedule the next 4AM full gallery retrain run."""
+    try:
+        user_id, actor_name = _actor_from_request(request)
+        requester = actor_name if actor_name else (user_id or "unknown")
+        status = await schedule_gallery_retrain(requested_by=requester)
+        return _with_cors(web.json_response(status), request)
+    except Exception as e:
+        log_action("gallery_retrain_schedule_error", "error", str(e))
+        return _with_cors(web.Response(status=500, text=str(e)), request)
+
+
 #---------- OPTIONS handlers for CORS ----------
 
 async def options_handler(request: web.Request) -> web.Response:
@@ -566,6 +785,7 @@ def get_labeler_routes() -> List:
     return [
         web.get("/api/labeler/queue/detect", get_queue_detect),
         web.get("/api/labeler/queue/classify", get_queue_classify),
+        web.post("/api/labeler/claim", post_claim),
         web.get("/api/labeler/image/{sn}", get_image),
         web.get("/api/labeler/cached_image/{sn}", get_cached_image),
         web.post("/api/labeler/detect", post_detect),
@@ -575,9 +795,12 @@ def get_labeler_routes() -> List:
         web.get("/api/labeler/cats", get_cats),
         web.post("/api/labeler/refs/warm", post_refs_warm),
         web.get("/api/labeler/refs/status", get_refs_status),
+        web.get("/api/labeler/gallery_retrain/status", get_gallery_retrain_status_api),
+        web.post("/api/labeler/gallery_retrain/schedule", post_gallery_retrain_schedule_api),
         #CORS preflight
         web.options("/api/labeler/queue/detect", options_handler),
         web.options("/api/labeler/queue/classify", options_handler),
+        web.options("/api/labeler/claim", options_handler),
         web.options("/api/labeler/image/{sn}", options_handler),
         web.options("/api/labeler/cached_image/{sn}", options_handler),
         web.options("/api/labeler/detect", options_handler),
@@ -587,4 +810,6 @@ def get_labeler_routes() -> List:
         web.options("/api/labeler/cats", options_handler),
         web.options("/api/labeler/refs/warm", options_handler),
         web.options("/api/labeler/refs/status", options_handler),
+        web.options("/api/labeler/gallery_retrain/status", options_handler),
+        web.options("/api/labeler/gallery_retrain/schedule", options_handler),
     ]

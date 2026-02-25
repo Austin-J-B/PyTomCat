@@ -59,6 +59,7 @@ _REFINE_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_REFINE_PREFETCH_TIMEOUT_
 _DETECT_INLINE_SAM_TIMEOUT_SEC = float(
     os.getenv("LABELER_DETECT_INLINE_SAM_TIMEOUT_SEC", "8") or "8"
 )
+_DETECT_INLINE_SAM_PASSES = max(1, int(os.getenv("LABELER_DETECT_INLINE_SAM_PASSES", "2") or "2"))
 _identify_sem = asyncio.Semaphore(_IDENTIFY_CONCURRENCY)
 _manual_sem = asyncio.Semaphore(_MANUAL_CONCURRENCY)
 _detect_sem = asyncio.Semaphore(_DETECT_CONCURRENCY)
@@ -1256,6 +1257,19 @@ def _hash_cache_key(*parts: Any) -> str:
         h.update(str(part).encode("utf-8", errors="ignore"))
         h.update(b"\x1f")
     return h.hexdigest()
+
+
+def _kickoff_force_refresh_tcb_cache() -> None:
+    """Refresh sheet cache in a worker thread so the aiohttp/discord loop is not blocked."""
+    async def _run() -> None:
+        try:
+            await asyncio.to_thread(force_refresh_tcb_cache)
+        except Exception as e:
+            log_action("labeler_force_refresh_tcb_cache_error", "error", f"{type(e).__name__}: {e!r}")
+    try:
+        asyncio.create_task(_run())
+    except Exception:
+        pass
 
 
 def _identify_should_trace(prefetch: bool) -> bool:
@@ -2569,7 +2583,12 @@ async def post_detect(request: web.Request) -> web.Response:
                 try:
                     sam_timeout = max(1.0, float(_DETECT_INLINE_SAM_TIMEOUT_SEC))
                     refined_boxes_abs = await asyncio.wait_for(
-                        asyncio.to_thread(V.refine_boxes, image_bytes, yolo_boxes, passes=1),
+                        asyncio.to_thread(
+                            V.refine_boxes,
+                            image_bytes,
+                            yolo_boxes,
+                            passes=max(1, int(_DETECT_INLINE_SAM_PASSES)),
+                        ),
                         timeout=sam_timeout,
                     )
                     sam_refined = True
@@ -3453,11 +3472,9 @@ async def post_save(request: web.Request) -> web.Response:
             if _discard_flagged_ref_serial(int(sn)):
                 cleared_ref_blacklist_serials.append(int(sn))
 
-        #Refresh local sheet cache so queues reflect updates quickly.
-        try:
-            force_refresh_tcb_cache()
-        except Exception:
-            pass
+        # Refresh local sheet cache in background to avoid blocking the event loop
+        # (gspread/requests is synchronous and can stall Discord heartbeats).
+        _kickoff_force_refresh_tcb_cache()
         _manual_sheet_ref_cache = {}
         _manual_sheet_ref_built_mono = 0.0
         _sheet_crop_index_cache = {}
@@ -3562,10 +3579,7 @@ async def post_flag_incorrect(request: web.Request) -> web.Response:
         if updates:
             ws.batch_update(updates)
 
-        try:
-            force_refresh_tcb_cache()
-        except Exception:
-            pass
+        _kickoff_force_refresh_tcb_cache()
 
         # Invalidate in-memory quality/candidate caches after label clears.
         _classify_quality_cache.pop(int(serial), None)

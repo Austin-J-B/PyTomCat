@@ -447,6 +447,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
 
     #Try cache first without hitting Sheets
     cached_bytes2, cached_meta2 = await pop_one_cached(name, use_sheet=False)
+    full_for_button = name
     if cached_bytes2:
         ex2 = set()
         try:
@@ -455,7 +456,8 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
                 ex2.add(_re.sub(r"[^0-9]", "", str(cached_meta2['serial'])))
         except Exception:
             pass
-        asyncio.create_task(ensure_cat_cache(cached_meta2.get('full_name') if isinstance(cached_meta2, dict) else name, settings.show_cache_per_cat, exclude_serials=ex2))
+        full_for_button = (cached_meta2.get('full_name') if isinstance(cached_meta2, dict) else None) or name
+        asyncio.create_task(ensure_cat_cache(full_for_button, settings.show_cache_per_cat, exclude_serials=ex2))
         img_url = None
         img_bytes_for_embed: Optional[bytes] = cached_bytes2
         tmp: Optional[str] = None
@@ -471,6 +473,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
             return
         actual = profile["actual_name"]
         display = _single_display_name(actual, name)
+        full_for_button = actual
         pick = await get_random_photo(actual)
         if isinstance(pick, str):
             await ch.send(pick)
@@ -521,13 +524,11 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
     if img_bytes_for_embed:
         file = discord.File(io.BytesIO(img_bytes_for_embed), filename="crop.jpg")
         embed.set_image(url="attachment://crop.jpg")
-        #Pass FULL_NAME: use cached_meta's full_name when cached, else actual
-        full_for_button = (cached_meta2.get('full_name') if isinstance(cached_meta2, dict) else None) or (actual if not cached_bytes2 else name)
         await ch.send(embed=embed, file=file, view=PhotoView(full_for_button))
     else:
         if img_url:
             embed.set_image(url=img_url)
-        await ch.send(embed=embed, view=PhotoView(actual))
+        await ch.send(embed=embed, view=PhotoView(full_for_button))
 
 
 

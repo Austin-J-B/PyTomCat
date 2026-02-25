@@ -73,6 +73,8 @@ def _week_start_iso(dt: datetime | None = None) -> str:
 #Rate limiting constants for the web API
 RATE_LIMIT_MAX_REQUESTS = 200
 RATE_LIMIT_WINDOW_SECONDS = 60
+LABELER_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_RATE_LIMIT_MAX_REQUESTS", "700") or "700")
+LABELER_IMAGE_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_IMAGE_RATE_LIMIT_MAX_REQUESTS", "1800") or "1800")
 _rate_limit_counters: dict[str, deque] = {}
 _background_tasks: dict[str, asyncio.Task] = {}
 
@@ -582,7 +584,7 @@ from .handlers.feeding import start_feeding_scheduler, start_morning_scheduler, 
 #Dues: no background scheduler; admin-only Gmail test is routed directly from the router
 from .handlers.dues import start_dues_scheduler
 from .handlers.gmail import start_gmail_logging_scheduler
-from .services.gallery_retrain import start_gallery_retrain_scheduler
+from .services.gallery_retrain import start_gallery_retrain_scheduler, set_gallery_retrain_notifier
 
 from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
@@ -779,11 +781,14 @@ def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResp
 @web.middleware
 async def rate_limit_middleware(request: web.Request, handler):
     """Limit requests per client to reduce abuse of the web API."""
-    if request.path.startswith("/api/labeler") and request.method != "OPTIONS":
+    is_labeler_api = request.path.startswith("/api/labeler") and request.method != "OPTIONS"
+    labeler_session: dict | None = None
+    if is_labeler_api:
         session = _get_session_from_request(request)
         if not session:
             return _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
         request["tc_session"] = session
+        labeler_session = session
         perms = session.get("permissions", {}) or {}
         if not (perms.get("is_officer") or perms.get("can_label_photos")):
             return _with_cors(web.Response(status=403, text="Not authorized for labeler"), request)
@@ -796,11 +801,19 @@ async def rate_limit_middleware(request: web.Request, handler):
         elif isinstance(peername, str):
             client_ip = peername
     client_id = client_ip or "unknown"
+    max_requests = RATE_LIMIT_MAX_REQUESTS
+    if is_labeler_api:
+        user_id = str((labeler_session or {}).get("user_id") or "").strip() or client_id
+        client_id = f"labeler:{user_id}"
+        if request.path.startswith("/api/labeler/cached_image/"):
+            max_requests = LABELER_IMAGE_RATE_LIMIT_MAX_REQUESTS
+        else:
+            max_requests = LABELER_RATE_LIMIT_MAX_REQUESTS
     now = time.time()
     bucket = _rate_limit_counters.setdefault(client_id, deque())
     while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
         bucket.popleft()
-    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+    if len(bucket) >= max_requests:
         return _with_cors(web.Response(status=429, text="Too many requests"), request)
     bucket.append(now)
     return await handler(request)
@@ -1572,16 +1585,6 @@ async def on_ready():
                     log_event({"event":"health","component":"image_tab","status":"error","channel_id": ch_id, "tab": tab, "error": str(e)})
         except Exception as e:
             log_event({"event":"health","component":"image_tab","status":"error","error": str(e)})
-        try:
-            #Check feeding checklist tab
-            from .handlers.feeding import _open_feeding_ws
-            ws = _open_feeding_ws()
-            if ws:
-                log_event({"event":"health","component":"feeding_tab","status":"ok"})
-            else:
-                log_event({"event":"health","component":"feeding_tab","status":"missing"})
-        except Exception as e:
-            log_event({"event":"health","component":"feeding_tab","status":"error","error": str(e)})
 
     _start_background_task("health_checks", lambda: _health_checks())
 
@@ -1615,6 +1618,32 @@ async def on_ready():
     #Start catabase profile cache scheduler
     try:
         _start_background_task("profile_cache_scheduler", lambda: start_profile_cache_scheduler())
+    except Exception:
+        pass
+    #Wire gallery retrain notifications into CH_LOGGING.
+    async def _notify_gallery_retrain(msg: str) -> None:
+        text = str(msg or "").strip()
+        if not text:
+            return
+        ch_id = int(getattr(settings, "ch_logging", 0) or 0)
+        if ch_id <= 0:
+            return
+        ch = bot.get_channel(ch_id)
+        if ch is None:
+            try:
+                ch = await bot.fetch_channel(ch_id)
+            except Exception as e:
+                log_action("gallery_retrain_notify_error", f"fetch_ch={ch_id}", str(e))
+                return
+        if not hasattr(ch, "send"):
+            log_action("gallery_retrain_notify_error", f"ch={ch_id}", "not_messageable")
+            return
+        try:
+            await ch.send(text[:1900])
+        except Exception as e:
+            log_action("gallery_retrain_notify_error", f"ch={ch_id}", str(e))
+    try:
+        set_gallery_retrain_notifier(_notify_gallery_retrain)
     except Exception:
         pass
     #Start opt-in gallery retrain scheduler (runs only when explicitly scheduled via UI)
@@ -1772,6 +1801,21 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         })
     except Exception:
         pass
+    #CV identify feedback reactions (✅/❌) are persisted for gallery retrain + manual dispute queue.
+    try:
+        from .services.vision_feedback import process_identify_reaction
+        reactor_name = _user_label(getattr(payload, "member", None)) or str(payload.user_id)
+        handled_cv_feedback = await asyncio.to_thread(
+            process_identify_reaction,
+            reply_message_id=int(payload.message_id),
+            emoji=str(payload.emoji),
+            reactor_user_id=int(payload.user_id),
+            reactor_name=reactor_name,
+        )
+        if handled_cv_feedback:
+            return
+    except Exception as e:
+        log_action("viz_feedback_reaction_error", f"msg={payload.message_id}", str(e))
     data = SPAM_ALERTS.get(payload.message_id)
     if not data:
         return

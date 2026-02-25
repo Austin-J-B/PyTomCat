@@ -6,8 +6,12 @@ have to wait for Google Drive on every image load.
 from __future__ import annotations
 import asyncio
 import aiohttp
+import os
+import time
+import re
+import html as html_lib
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 from urllib.parse import urlparse, parse_qs
 
 from ..config import settings
@@ -16,10 +20,133 @@ from ..logger import log_action
 #Cache config
 LABELER_CACHE_DIR = Path("cache") / "labeler"
 CACHE_SIZE = getattr(settings, "labeler_cache_size", 15)
+_CACHE_VERBOSE = str(os.getenv("LABELER_CACHE_VERBOSE_LOGS", "0")).strip().lower() in {"1", "true", "yes", "on"}
+_CACHE_MAX_FILES = max(CACHE_SIZE, int(os.getenv("LABELER_CACHE_MAX_FILES", "300") or "300"))
+_DOWNLOAD_BACKOFF_BASE_SEC = max(
+    1.0, float(os.getenv("LABELER_CACHE_DOWNLOAD_BACKOFF_BASE_SEC", "5") or "5")
+)
+_DOWNLOAD_BACKOFF_MAX_SEC = max(
+    _DOWNLOAD_BACKOFF_BASE_SEC,
+    float(os.getenv("LABELER_CACHE_DOWNLOAD_BACKOFF_MAX_SEC", "60") or "60"),
+)
+_URL_BACKOFF_BASE_SEC = max(
+    1.0, float(os.getenv("LABELER_CACHE_URL_BACKOFF_BASE_SEC", "12") or "12")
+)
+_URL_BACKOFF_MAX_SEC = max(
+    _URL_BACKOFF_BASE_SEC,
+    float(os.getenv("LABELER_CACHE_URL_BACKOFF_MAX_SEC", "300") or "300"),
+)
+_ERROR_LOG_COOLDOWN_SEC = max(
+    1.0, float(os.getenv("LABELER_CACHE_ERROR_LOG_COOLDOWN_SEC", "45") or "45")
+)
+_ERROR_LOG_WINDOW_SEC = max(
+    _ERROR_LOG_COOLDOWN_SEC,
+    float(os.getenv("LABELER_CACHE_ERROR_LOG_WINDOW_SEC", "60") or "60"),
+)
+_ERROR_LOG_MAX_PER_WINDOW = max(
+    1, int(os.getenv("LABELER_CACHE_ERROR_LOG_MAX_PER_WINDOW", "6") or "6")
+)
 
 #In-memory tracking of what's currently cached
 _cached_serials: set[int] = set()
 _fill_lock = asyncio.Lock()
+_download_fail_streak: int = 0
+_download_backoff_until_mono: float = 0.0
+_url_fail_streak: dict[str, int] = {}
+_url_backoff_until_mono: dict[str, float] = {}
+_error_log_next_mono: dict[str, float] = {}
+_error_window_start_mono: float = 0.0
+_error_window_logged: int = 0
+_error_window_suppressed: int = 0
+_download_inflight_lock = asyncio.Lock()
+_download_inflight: Dict[int, asyncio.Task] = {}
+
+
+def _record_download_success() -> None:
+    global _download_fail_streak, _download_backoff_until_mono
+    _download_fail_streak = 0
+    _download_backoff_until_mono = 0.0
+
+
+def _record_download_failure() -> None:
+    global _download_fail_streak, _download_backoff_until_mono
+    _download_fail_streak += 1
+    if _download_fail_streak < 3:
+        return
+    step = min(8, _download_fail_streak - 3)
+    delay = min(_DOWNLOAD_BACKOFF_MAX_SEC, _DOWNLOAD_BACKOFF_BASE_SEC * (2 ** step))
+    _download_backoff_until_mono = max(_download_backoff_until_mono, time.monotonic() + float(delay))
+
+
+def _download_backoff_key(url: str) -> str:
+    drive_id = _extract_drive_id(url)
+    if drive_id:
+        return f"drive:{drive_id}"
+    u = str(url or "").strip()
+    if len(u) > 220:
+        return u[:220]
+    return u
+
+
+def _record_url_download_success(url: str) -> None:
+    key = _download_backoff_key(url)
+    if not key:
+        return
+    _url_fail_streak.pop(key, None)
+    _url_backoff_until_mono.pop(key, None)
+
+
+def _record_url_download_failure(url: str) -> None:
+    key = _download_backoff_key(url)
+    if not key:
+        return
+    streak = int(_url_fail_streak.get(key, 0)) + 1
+    _url_fail_streak[key] = streak
+    step = min(8, max(0, streak - 1))
+    delay = min(_URL_BACKOFF_MAX_SEC, _URL_BACKOFF_BASE_SEC * (2 ** step))
+    _url_backoff_until_mono[key] = max(
+        float(_url_backoff_until_mono.get(key, 0.0)),
+        time.monotonic() + float(delay),
+    )
+
+
+def _is_url_backoff_active(url: str) -> bool:
+    key = _download_backoff_key(url)
+    if not key:
+        return False
+    until = float(_url_backoff_until_mono.get(key, 0.0))
+    now = time.monotonic()
+    if until <= now:
+        _url_backoff_until_mono.pop(key, None)
+        return False
+    return True
+
+
+def _log_download_error_throttled(url: str, error: Exception) -> None:
+    global _error_window_start_mono, _error_window_logged, _error_window_suppressed
+    now = time.monotonic()
+    if _error_window_start_mono <= 0.0:
+        _error_window_start_mono = now
+    elapsed = now - float(_error_window_start_mono)
+    if elapsed >= float(_ERROR_LOG_WINDOW_SEC):
+        if _error_window_suppressed > 0:
+            log_action(
+                "labeler_cache_download_error_suppressed",
+                "window",
+                f"suppressed={_error_window_suppressed}; window_s={int(round(elapsed))}",
+            )
+        _error_window_start_mono = now
+        _error_window_logged = 0
+        _error_window_suppressed = 0
+
+    key = _download_backoff_key(url) or "unknown"
+    next_allowed = float(_error_log_next_mono.get(key, 0.0))
+    if now < next_allowed or _error_window_logged >= int(_ERROR_LOG_MAX_PER_WINDOW):
+        _error_window_suppressed += 1
+        return
+    _error_log_next_mono[key] = now + float(_ERROR_LOG_COOLDOWN_SEC)
+    _error_window_logged += 1
+    log_action("labeler_cache_download_error", url[:50], f"{type(error).__name__}: {error!r}")
 
 
 def _cache_path(serial: int) -> Path:
@@ -43,6 +170,51 @@ def _extract_drive_id(url: str) -> Optional[str]:
         if idx + 1 < len(parts):
             return parts[idx + 1]
     return None
+
+
+def _extract_drive_html_image_url(page_html: str) -> Optional[str]:
+    """Best-effort parse for direct image URL from Google Drive HTML pages."""
+    text = str(page_html or "")
+    if not text:
+        return None
+    patterns = [
+        r'<meta[^>]+property=["\\\']og:image["\\\'][^>]+content=["\\\']([^"\\\']+)["\\\']',
+        r'"(https?:\\\\/\\\\/[^"\\\']*googleusercontent[^"\\\']+)"',
+        r"'(https?:\\\\/\\\\/[^\"']*googleusercontent[^\"']+)'",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if not m:
+            continue
+        url = m.group(1)
+        url = html_lib.unescape(str(url or "").strip())
+        url = url.replace("\\\\/", "/").replace("\\u003d", "=").replace("\\u0026", "&")
+        if url.startswith("http"):
+            return url
+    return None
+
+
+def _is_drive_quota_page(page_html: str) -> bool:
+    """Detect Drive quota/abuse interstitial pages that are not direct images."""
+    text = str(page_html or "").lower()
+    if not text:
+        return False
+    return (
+        "quota exceeded" in text
+        or "too many users have viewed or downloaded this file" in text
+        or "can't view or download this file at this time" in text
+    )
+
+
+def _drive_thumbnail_candidates(drive_id: str) -> List[str]:
+    """Fallback endpoints that often remain fetchable when uc/export links are throttled."""
+    did = str(drive_id or "").strip()
+    if not did:
+        return []
+    return [
+        f"https://drive.google.com/thumbnail?id={did}&sz=w2560",
+        f"https://lh3.googleusercontent.com/d/{did}=w2560",
+    ]
 
 
 def _looks_like_image(data: bytes, content_type: str | None = None) -> bool:
@@ -78,6 +250,45 @@ def _scan_cache() -> set[int]:
     return serials
 
 
+def _evict_if_needed(max_files: int, keep_serials: set[int]) -> int:
+    """Evict oldest cached files until count <= max_files, preferring non-kept serials."""
+    try:
+        if not LABELER_CACHE_DIR.is_dir():
+            return 0
+        entries = []
+        for p in LABELER_CACHE_DIR.iterdir():
+            if p.suffix.lower() != ".jpg" or not p.stem.startswith("sn"):
+                continue
+            try:
+                sn = int(p.stem[2:])
+            except Exception:
+                continue
+            try:
+                mt = p.stat().st_mtime
+            except Exception:
+                mt = 0.0
+            entries.append((sn, mt, p))
+        if len(entries) <= int(max_files):
+            return 0
+
+        # Prefer evicting files not in the active desired queue first.
+        non_keep = sorted([e for e in entries if e[0] not in keep_serials], key=lambda t: t[1])
+        keep = sorted([e for e in entries if e[0] in keep_serials], key=lambda t: t[1])
+        ordered = non_keep + keep
+        need = max(0, len(entries) - int(max_files))
+        removed = 0
+        for sn, _, p in ordered[:need]:
+            try:
+                p.unlink(missing_ok=True)
+                _cached_serials.discard(sn)
+                removed += 1
+            except Exception:
+                pass
+        return removed
+    except Exception:
+        return 0
+
+
 def clear_cache() -> int:
     """Clear all cached images. Returns count removed."""
     global _cached_serials
@@ -104,8 +315,27 @@ def get_cached_image(serial: int) -> Optional[bytes]:
     return None
 
 
-async def _download_image(url: str, timeout_sec: float = 10.0) -> Optional[bytes]:
+def has_cached_image(serial: int) -> bool:
+    """Return True if cached bytes exist on disk for this serial."""
+    try:
+        return _cache_path(int(serial)).is_file()
+    except Exception:
+        return False
+
+
+async def _download_image(
+    url: str,
+    timeout_sec: float = 10.0,
+    *,
+    log_errors: bool = _CACHE_VERBOSE,
+    bypass_backoff: bool = False,
+    max_attempts: int = 2,
+) -> Optional[bytes]:
     """Download image from URL (typically Google Drive)."""
+    if not bypass_backoff and _is_url_backoff_active(url):
+        return None
+    if not bypass_backoff and time.monotonic() < float(_download_backoff_until_mono):
+        return None
     try:
         timeout = aiohttp.ClientTimeout(total=timeout_sec)
         headers = {"User-Agent": "TomCatLabeler/1.0"}
@@ -114,25 +344,80 @@ async def _download_image(url: str, timeout_sec: float = 10.0) -> Optional[bytes
             drive_id = _extract_drive_id(url)
             if drive_id:
                 candidates.extend([
+                    *_drive_thumbnail_candidates(drive_id),
                     f"https://drive.google.com/uc?export=download&id={drive_id}",
                     f"https://drive.google.com/uc?export=view&id={drive_id}",
                     f"https://drive.usercontent.google.com/download?id={drive_id}&export=download",
+                    f"https://drive.usercontent.google.com/download?id={drive_id}&export=view",
                 ])
 
             seen = set()
+            uniq_candidates = []
             for candidate in candidates:
-                if not candidate or candidate in seen:
-                    continue
-                seen.add(candidate)
-                async with sess.get(candidate, allow_redirects=True) as resp:
-                    if resp.status != 200:
+                if candidate and candidate not in seen:
+                    seen.add(candidate)
+                    uniq_candidates.append(candidate)
+
+            attempts = max(1, int(max_attempts))
+            last_error: Optional[Exception] = None
+            for attempt in range(1, attempts + 1):
+                for candidate in uniq_candidates:
+                    try:
+                        async with sess.get(candidate, allow_redirects=True) as resp:
+                            if resp.status != 200:
+                                continue
+                            data = await resp.read()
+                            if _looks_like_image(data, resp.headers.get("Content-Type")):
+                                _record_download_success()
+                                _record_url_download_success(candidate)
+                                return data
+                            # Some Drive "view" links return HTML wrappers.
+                            ctype = str(resp.headers.get("Content-Type") or "").lower()
+                            if "text/html" in ctype:
+                                try:
+                                    page = data.decode("utf-8", errors="ignore")
+                                except Exception:
+                                    page = ""
+                                img_url = _extract_drive_html_image_url(page)
+                                if img_url:
+                                    try:
+                                        async with sess.get(img_url, allow_redirects=True) as img_resp:
+                                            if img_resp.status == 200:
+                                                img_data = await img_resp.read()
+                                                if _looks_like_image(img_data, img_resp.headers.get("Content-Type")):
+                                                    _record_download_success()
+                                                    _record_url_download_success(candidate)
+                                                    return img_data
+                                    except Exception as e2:
+                                        last_error = e2
+                                if drive_id and _is_drive_quota_page(page):
+                                    for thumb_url in _drive_thumbnail_candidates(drive_id):
+                                        try:
+                                            async with sess.get(thumb_url, allow_redirects=True) as thumb_resp:
+                                                if thumb_resp.status != 200:
+                                                    continue
+                                                thumb_data = await thumb_resp.read()
+                                                if _looks_like_image(thumb_data, thumb_resp.headers.get("Content-Type")):
+                                                    _record_download_success()
+                                                    _record_url_download_success(thumb_url)
+                                                    return thumb_data
+                                        except Exception as e3:
+                                            last_error = e3
+                    except Exception as e:
+                        last_error = e
                         continue
-                    data = await resp.read()
-                    if _looks_like_image(data, resp.headers.get("Content-Type")):
-                        return data
+                if attempt < attempts:
+                    await asyncio.sleep(0.2 * attempt)
+        _record_download_failure()
+        _record_url_download_failure(url)
+        if log_errors and last_error is not None:
+            _log_download_error_throttled(url, last_error)
         return None
     except Exception as e:
-        log_action("labeler_cache_download_error", url[:50], str(e))
+        _record_download_failure()
+        _record_url_download_failure(url)
+        if log_errors:
+            _log_download_error_throttled(url, e)
         return None
 
 
@@ -157,52 +442,94 @@ async def ensure_cache_filled(queue: list[dict], target_count: Optional[int] = N
         #Refresh in-memory set from disk
         _cached_serials = _scan_cache()
         
-        #Remove cached images not in current queue (stale)
-        queue_serials = {item["serial"] for item in queue if isinstance(item.get("serial"), int)}
-        for sn in list(_cached_serials):
-            if sn not in queue_serials:
-                try:
-                    _cache_path(sn).unlink(missing_ok=True)
-                    _cached_serials.discard(sn)
-                except Exception:
-                    pass
-        
+        removed_stale = 0
+
         #Download missing images up to target
+        desired_serials: set[int] = set()
         to_download = []
         for item in queue[:target]:
             sn = item.get("serial")
             url = item.get("url")
+            if isinstance(sn, int):
+                desired_serials.add(sn)
             if sn and url and sn not in _cached_serials:
                 to_download.append((sn, url))
+
+        downloaded_ok = 0
+        bytes_downloaded = 0
+        download_failed = 0
+        write_failed = 0
+        fail_serials: list[str] = []
         
         #Download concurrently (but limit to 5 at a time)
         async def download_one(sn: int, url: str):
-            data = await _download_image(url)
+            nonlocal downloaded_ok, bytes_downloaded, download_failed, write_failed
+            data = await _download_image(url, log_errors=_CACHE_VERBOSE)
             if data:
                 try:
                     _cache_path(sn).write_bytes(data)
                     _cached_serials.add(sn)
-                    log_action("labeler_cache_ok", f"sn{sn}", f"len={len(data)}")
+                    downloaded_ok += 1
+                    bytes_downloaded += len(data)
                 except Exception as e:
+                    write_failed += 1
                     log_action("labeler_cache_write_error", f"sn{sn}", str(e))
+            else:
+                download_failed += 1
+                if len(fail_serials) < 8:
+                    fail_serials.append(f"sn{sn}")
         
         #Process in batches of 5
         for i in range(0, len(to_download), 5):
             batch = to_download[i:i+5]
             await asyncio.gather(*[download_one(sn, url) for sn, url in batch])
-        
+
+        # Only evict when cache grows too large; do not churn on queue changes.
+        removed_stale += _evict_if_needed(_CACHE_MAX_FILES, desired_serials)
+
         return len(_cached_serials)
 
 
-async def get_or_download(serial: int, url: str) -> Optional[bytes]:
+async def get_or_download(
+    serial: int,
+    url: str,
+    *,
+    bypass_backoff: bool = False,
+    max_attempts: int = 2,
+) -> Optional[bytes]:
     """Get image from cache, or download and cache it."""
     #Try cache first
     data = get_cached_image(serial)
     if data:
         return data
-    
-    #Download and cache
-    data = await _download_image(url)
+
+    owner = False
+    task: Optional[asyncio.Task] = None
+    serial_i = int(serial)
+    async with _download_inflight_lock:
+        existing = _download_inflight.get(serial_i)
+        if existing and not existing.done():
+            task = existing
+        else:
+            task = asyncio.create_task(
+                _download_image(
+                    url,
+                    bypass_backoff=bypass_backoff,
+                    max_attempts=max_attempts,
+                )
+            )
+            _download_inflight[serial_i] = task
+            owner = True
+
+    try:
+        data = await task
+    finally:
+        if owner:
+            async with _download_inflight_lock:
+                current = _download_inflight.get(serial_i)
+                if current is task:
+                    _download_inflight.pop(serial_i, None)
+
     if data:
         try:
             LABELER_CACHE_DIR.mkdir(parents=True, exist_ok=True)

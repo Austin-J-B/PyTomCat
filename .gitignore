@@ -67,6 +67,8 @@ logs/human/
 logs/machine/
 logs/dues/
 
+cache
+
 CCC megasheet.xlsxcsv
 CCC megasheet.xlsx
 .config/

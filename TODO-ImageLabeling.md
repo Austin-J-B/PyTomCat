@@ -62,7 +62,7 @@ Discord Integration
 - [x] Register routes in `main.py`
 
 ### Phase 4: Gallery Update Pipeline
-- [ ] Create `scripts/gallery_updater.py`
+- [x] Create `scripts/gallery_updater.py`
   - Batch process new crops (100 at a time)
   - Apply 350p + 4-image quality filter
   - Run DINOv3 encoder → 512-dim embeddings
@@ -80,14 +80,30 @@ Discord Integration
 - [x] Add Detector/Classifier tabs via mode switcher
 - [x] Add labeler view to VIEWS array and setView()
 - [x] Officer-only access control
+- [x] Add detector/classifier background warm loop and prefetch cache
+- [x] Add first-load detector warm gate (10 ready minimum from first 25)
+- [x] Add loading/progress overlay for warm-up and catch-up waits
+- [x] Show gallery retrain controls only in classifier mode
+- [x] Performance hardening (no feature cuts)
+  - Keep full detector behavior (`/detect` uses YOLO+SAM; no downgrade to detect-only mode)
+  - Remove redundant SAM re-refine on first detect result to avoid duplicate work
+  - Add transient API retry handling in `labeler.js` for 421/429/5xx + network timeout failures
+  - Keep prefetch retries conservative to avoid overload while foreground requests recover
+  - Add backend short-TTL response caches for detect/refine/identify to reuse repeated serial+box requests
+  - Add classifier warm progress overlay while prediction options are loading
+  - Mitigate classifier 429 bursts with prefetch backoff + in-flight reuse
+  - Raise labeler API rate-limit headroom (per-user buckets, higher cap for cached image fetches)
 
 ### Phase 6: Discord Feedback Integration
-- [ ] Update `tomcat/handlers/vision.py` to process ✅/❌ reactions
-  - ✅ → Cache crop + box + predicted cat to `cache/discord_verified/`
-  - ❌ → Queue to `cache/discord_disputed/` for Manual Review
-- [ ] (phase 4) At 4 AM, include verified crops in gallery update HIGH PRIORITY
-- [ ] Sub feature of the above. Consider if it will be resource effective to have a 'refresh entire gallery' feature for when we find previous labels that were incorrect.
-    - For example, if, during classifier labeling, we see one image is incorrect, we can go back and update it for the proper label. Since this wouldn't update the gallery with the 4am schedule, we may need to update the entire gallery instead of just adding to it/updating it. If this isn't resource intensive in any concerning amount, we can just have the normal button/feature update the entire thing instead of topping it off.
+- [x] Update `tomcat/handlers/vision.py` to process check/cross reactions
+  - check -> Cache crop + predicted cat to `cache/discord/correct/` and write auto-labels to sheet
+  - cross -> Cache to `cache/discord/incorrect/` and clear labels in sheet so it re-enters normal detector/classifier flow
+  - Every identify image is upserted into `TCB Pics Formatted` immediately, so next 4 AM rebuilds include it from sheet history.
+  - Reactions are persisted from CV identify replies via `tomcat/services/vision_feedback.py`.
+- [x] (phase 4) At 4 AM, include verified crops in gallery update HIGH PRIORITY
+  - 4 AM gallery rebuild now ingests `cache/discord/correct/records` and includes these crops even when min-per-cat would otherwise filter them out.
+- [x] Sub feature of the above. Consider if it will be resource effective to have a 'refresh entire gallery' feature for when we find previous labels that were incorrect.
+    - Gallery retrain now always runs a full rebuild (`run_gallery_update` coerces mode to `full`), so corrected historical labels are picked up automatically on the next run.
 
 ---
 
@@ -149,8 +165,25 @@ Total: 7,443 embeddings across 94 cats
 ---
 
 ## Future Enhancements (Phase 7+)
+- [ ] Add a small/targeted gallery update path for corrected labels
+  - Keep the nightly full rebuild as the source of truth.
+  - Add an optional fast path that re-embeds only recently corrected/flagged serials, then refreshes those entries in the active gallery.
+  - Ensure this still handles older corrected labels (from incorrect-label flags) without requiring users to wait for the next full sweep.
 - [ ] Full CatDatabase editor (location, description, birthday, etc.)
-- [ ] Bulk label correction tool
-- [ ] Training run scheduler for detector (if ever needed)
-- [ ] Mobile-friendly labeling interface
-- [ ] Update the column A 'CatID' column to include the names/IDs of the cats identified in BoxCatIDs column J
+  - If not feasible/pretty/realistic, add a 'new cat' button with a simple dropdown of like "name, physical description, location(s)" that integrates with the CatDatabase tab.
+  -Currently considering if this makes sense as an option. it may just be easier to use the google sheet itself and add a new row there since there are less than 200 currently. If we wanted to 'add new cat' in the website, we'd have to figure out a way to drag/drop the rows of the catabase and also update the data validation.
+
+- [x] Update column A `CatID` from classifier labels in column J using CatDatabase ID-name format
+- [x] Build Manual Review tab (lighter all-cat reviewer for `NeedsReview` crops)
+    - Added `Manual Review` mode + `/api/labeler/queue/manual` for rows containing `NeedsReview`
+    - Added lightweight manual cache path (default `LABELER_MANUAL_REF_PER_CAT=50`) + warm/status endpoints
+    - Added all-cat candidate panel with one representative ref image per cat and Cat ID display
+    - Added manual search box (ID/name) that auto-scrolls/highlights matching cat cards
+    - Added click-to-select labeling flow for manual mode (numeric selection intentionally disabled)
+    - Moved manual search into fixed header so it stays visible while manual candidate cards scroll
+    - Manual keyboard behavior: `Enter` in search input runs find; global `Enter` now defers to next photo
+    - Added keyed manual candidate cache + ahead-of-time prefetch for upcoming manual queue photos
+- [x] Add a 'incorrect label' flag button. 
+  - Cursor toggles into red-flag mode (minesweeper-style) while active.
+  - Clicking a reference photo clears prior sheet labels for that serial (CatID + box columns) so it re-enters normal labeling flow.
+

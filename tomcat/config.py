@@ -147,7 +147,8 @@ class Settings:
     ch_feeding_team: int | None = int(os.getenv("CH_FEEDING_TEAM", "0")) or None
     ch_pictures_of_cats: int | None = int(os.getenv("CH_PICTURES_OF_CATS", "0")) or None
     ch_report_new_cats: int | None = int(os.getenv("CH_REPORT_NEW_CATS", "0")) or None
-    ch_member_names: int | None = int(os.getenv("CH_MEMBER_NAMES", "0")) or None
+    ch_member_names: int | None = int(os.getenv("CH_MEMBER_NAMES", os.getenv("CH_CATS_ON_CAMPUS", "0")) or "0") or None
+    ch_cats_on_campus: int | None = int(os.getenv("CH_CATS_ON_CAMPUS", "0")) or None
     ch_logging: int | None = int(os.getenv("CH_LOGGING", "0")) or None
     ch_sandbox: int | None = int(os.getenv("CH_TOMCAT_SANDBOX", "0")) or None
     #Primary guild (server) used for admin tasks
@@ -214,6 +215,8 @@ class Settings:
     #Labeler reference cache (classifier UI)
     labeler_ref_per_cat: int = int(os.getenv("LABELER_REF_PER_CAT", "250") or "250")
     labeler_ref_thumb_size: int = int(os.getenv("LABELER_REF_THUMB_SIZE", "128") or "128")
+    #Manual-review cache (lighter all-cat candidate view)
+    labeler_manual_ref_per_cat: int = int(os.getenv("LABELER_MANUAL_REF_PER_CAT", "50") or "50")
 
     #Core knobs
     cv_conf: float = float(os.getenv("CV_CONF", "0.552"))
@@ -311,6 +314,7 @@ class Settings:
     #Cat aliases/profile TTLs
     cat_aliases_ttl_sec: int = int(os.getenv("CAT_ALIASES_TTL_SEC", "7200") or "7200")
     cat_profile_ttl_sec: int = int(os.getenv("CAT_PROFILE_TTL_SEC", "3600") or "3600")
+    profile_update_edit_delay_sec: float = float(os.getenv("PROFILE_UPDATE_EDIT_DELAY_SEC", "1.5") or "1.5")
     dues_member_max_candidates: int = int(os.getenv("DUES_MEMBER_MAX_CANDIDATES", "300"))
 
     #Roles & Guilds

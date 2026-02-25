@@ -6,19 +6,16 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
 import discord
-from gspread.exceptions import APIError
 
 from ..config import settings
 from ..logger import log_action
 from ..utils.permissions import is_officer
-from ..services.sheets_client import sheets_client
 from ..aliases import resolve_station_or_cat
 from ..stations import station_names
 from ..utils.sender import safe_send
@@ -609,70 +606,8 @@ def _canonical_station(station: Optional[str]) -> Optional[str]:
         return resolved
     return text
 
-#------------- Google Sheets glue (safe stubs) ---
-#Sheets calls are cached and retried on 429 to stay within API quotas.
-def _get_feeding_checklist_sheet_id() -> Optional[str]:
-    #We store the checklist in the Vision sheet under tab "FeedingStationChecklist"
-    return getattr(settings, "sheet_vision_id", None) or getattr(settings, "aux_spreadsheet_id", None)
-
-_FEED_WS_CACHE: Tuple[Any, float] | None = None
-#TTL slightly under 60s to avoid race with external cron jobs hitting the sheet.
-_FEED_WS_TTL_SEC = 55.0
-
-def _open_feeding_ws():
-    """Open the FeedingStationChecklist worksheet with short TTL caching and 429 backoff."""
-    global _FEED_WS_CACHE
-    now = time.monotonic()
-    if _FEED_WS_CACHE:
-        ws, ts = _FEED_WS_CACHE
-        if now - ts < _FEED_WS_TTL_SEC:
-            return ws
-
-    sid = _get_feeding_checklist_sheet_id()
-    if not sid:
-        log_action("feeding_sheet", "missing_sheet_id", "")
-        return None
-    sid_str = str(sid)
-    last_err = None
-    for attempt in range(3):
-        try:
-            gc = sheets_client()
-            sh = gc.open_by_key(sid_str)
-            ws = sh.worksheet("FeedingStationChecklist")
-            _FEED_WS_CACHE = (ws, now)
-            return ws
-        except APIError as e:
-            last_err = e
-            status = getattr(getattr(e, "response", None), "status_code", None)
-            if status == 429 and attempt < 2:
-                delay = 1.5 * (attempt + 1)
-                log_action("feeding_sheet", "open_retry_429", f"sleep={delay}")
-                time.sleep(delay)
-                continue
-            break
-        except Exception as e:  #pragma: no cover - defensive
-            last_err = e
-            break
-    log_action("feeding_sheet", "open_error", str(last_err))
-    return None
-
-def _station_header_map(ws) -> Dict[str, int]:
-    """Return {display_name: col_index_1based} from header row (Row 1)."""
-    try:
-        header = ws.row_values(1)
-    except Exception as e:
-        log_action("feeding_sheet", "header_error", str(e))
-        return {}
-    out: Dict[str, int] = {}
-    for i, name in enumerate(header, start=1):
-        nm = str(name or "").strip()
-        if nm:
-            out[nm] = i
-    return out
-
-
 #------------- Local feeding checklist store -------------
-#Checklist state is persisted locally in NDJSON for fast reads; Sheets is source of truth.
+#Checklist state is persisted locally in NDJSON for fast reads and updates.
 def _read_checklist_ndjson(path: Path) -> dict:
     stations: list[str] = []
     days: Dict[str, Dict[str, bool]] = {}
@@ -827,37 +762,6 @@ def _parse_date_str(s: str) -> Optional[str]:
     except Exception:
         pass
     return None
-
-def _find_date_row(ws, date_iso: str) -> Optional[int]:
-    """Find row index (1-based) where Column A equals date_iso (ISO)."""
-    try:
-        col = ws.col_values(1)  #date column
-    except Exception as e:
-        log_action("feeding_sheet", "date_col_error", str(e))
-        return None
-    for idx, val in enumerate(col[1:], start=2):  #skip header cell A1
-        if _parse_date_str(val or "") == date_iso:
-            return idx
-    return None
-
-
-def _ensure_date_row(ws, date_iso: str, header: Optional[Dict[str, int]] = None) -> Optional[int]:
-    header = header or _station_header_map(ws)
-    row = _find_date_row(ws, date_iso)
-    if row:
-        return row
-    max_col = max(header.values()) if header else 1
-    values: List[Any] = [None] * max(1, max_col)
-    values[0] = date_iso
-    for idx in range(1, len(values)):
-        values[idx] = False
-    try:
-        ws.append_row(values, value_input_option="USER_ENTERED")
-        log_action("feeding_sheet", "add_row", date_iso)
-    except Exception as e:
-        log_action("feeding_sheet", "add_row_error", str(e))
-        return None
-    return _find_date_row(ws, date_iso)
 
 def _sheet_station_names() -> List[str]:
     """Return canonical station names from the local checklist store or schedule."""
@@ -1325,6 +1229,9 @@ _FEEDING_SCHEDULER_STARTED = False
 _FEEDING_8PM_LOCK = asyncio.Lock()
 _LAST_FEEDING_ALERT_KEY: Optional[str] = None
 _LAST_FEEDING_ALERT_TS: Optional[datetime] = None
+_FEEDING_8PM_HOUR = 20
+_FEEDING_8PM_MINUTE = 0
+_FEEDING_8PM_CATCHUP_MINUTES = max(0, int(os.getenv("FEEDING_8PM_CATCHUP_MINUTES", "30") or "30"))
 
 async def start_feeding_scheduler(bot: discord.Client) -> None:
     """Kick off the nightly reminder loop that pings unfed stations."""
@@ -1335,10 +1242,15 @@ async def start_feeding_scheduler(bot: discord.Client) -> None:
             return
 
         async def _runner():
+            #Catch-up on startup/reconnect if we are in the same-day send window.
+            try:
+                await _run_8pm_check(bot)
+            except Exception as e:
+                log_action("feeding_scheduler_error", "startup_catchup", str(e))
             while True:
                 try:
                     #sleep until next 20:00 America/Chicago
-                    await _sleep_until_local_time(20, 0)
+                    await _sleep_until_local_time(_FEEDING_8PM_HOUR, _FEEDING_8PM_MINUTE)
                     await _run_8pm_check(bot)
                 except Exception as e:
                     log_action("feeding_scheduler_error", "loop", str(e))
@@ -1361,7 +1273,22 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> None:
     """Build and send the 8PM summary of remaining feed duties."""
     global _LAST_FEEDING_ALERT_KEY, _LAST_FEEDING_ALERT_TS
     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+    send_start = now.replace(hour=_FEEDING_8PM_HOUR, minute=_FEEDING_8PM_MINUTE, second=0, microsecond=0)
+    send_deadline = send_start + timedelta(minutes=_FEEDING_8PM_CATCHUP_MINUTES)
     today_key = now.date().isoformat()
+
+    if not force:
+        #Do not send outside the daily 8:00 PM window, except short catch-up after reboot/reconnect.
+        if now < send_start:
+            return
+        if now > send_deadline:
+            log_action(
+                "feeding_8pm",
+                f"date={today_key}; now={now.isoformat(timespec='seconds')}",
+                f"missed_window_skip(deadline={send_deadline.isoformat(timespec='seconds')})",
+            )
+            return
+
     async with _FEEDING_8PM_LOCK:
         if not force and _LAST_FEEDING_ALERT_KEY == today_key:
             log_action("feeding_8pm", f"date={today_key}", "duplicate_skip")

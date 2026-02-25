@@ -3,7 +3,7 @@
 from __future__ import annotations
 import os, re, io, asyncio
 import ipaddress
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 from pathlib import Path
 import aiohttp
 import time
@@ -15,6 +15,41 @@ from ..vision import vision as V
 from PIL import Image
 from .catsheets import get_most_recent_photo, get_cat_profile, get_tcb_pics_rows
 from .catsheets import sheets_client  #type: ignore
+
+_SHOW_CACHE_FAIL_LOG_COOLDOWN_SEC = max(
+    5.0,
+    float(os.getenv("SHOW_CACHE_FAIL_LOG_COOLDOWN_SEC", "45") or "45"),
+)
+_SHOW_CACHE_LOG_DOWNLOAD_FAILS = str(
+    os.getenv("SHOW_CACHE_LOG_DOWNLOAD_FAILS", "0")
+).strip().lower() in {"1", "true", "yes", "on"}
+_show_cache_fail_next_mono: Dict[str, float] = {}
+
+def _primary_label(full_name: str) -> str:
+    """Canonicalize labels by taking the first comma-separated cat token."""
+    raw = str(full_name or "").strip()
+    if not raw:
+        return ""
+    first = raw.split(",", 1)[0].strip()
+    return first or raw
+
+
+def _log_show_cache_download_fail(url: str, sn: str, attempt: int, error: Exception) -> None:
+    """Throttle noisy per-attempt download errors from show cache warming."""
+    if not _SHOW_CACHE_LOG_DOWNLOAD_FAILS:
+        return
+    key = f"{str(sn or '').strip()}:{str(url or '').strip()[:180]}"
+    now = time.monotonic()
+    next_allowed = float(_show_cache_fail_next_mono.get(key, 0.0))
+    # Always log the terminal retry attempt; throttle intermediate retries.
+    if int(attempt) < 3 and now < next_allowed:
+        return
+    _show_cache_fail_next_mono[key] = now + float(_SHOW_CACHE_FAIL_LOG_COOLDOWN_SEC)
+    log_action(
+        "show_cache_download_fail",
+        url,
+        f"sn={sn} attempt={attempt} err={type(error).__name__}:{error}",
+    )
 
 
 def _cache_dir_for(cat_id: int) -> str:
@@ -285,6 +320,7 @@ def _prune_cache(cat_dir: str, keep: int) -> int:
 async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, exclude_serials: Optional[set[str]] = None, *, prefer_random: bool = False) -> int:
     """Guarantee at least min_count cached photos for a cat, downloading as needed."""
     """Ensure at least min_count images exist for the cat; returns total count after fill."""
+    full_name = _primary_label(full_name)
     min_count = max(0, int(min_count or settings.show_cache_per_cat))
     cid = _cat_id_from_full(full_name)
     display_name = None
@@ -292,6 +328,8 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
         prof = await get_cat_profile(full_name)
         if isinstance(prof, dict):
             actual = prof.get('actual_name') or ''
+            if actual:
+                full_name = _primary_label(actual)
             cid = _cat_id_from_full(actual)
             display_name = re.sub(r"^\s*\d+\.\s*", "", str(actual)).strip()
     if cid is None:
@@ -385,7 +423,7 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
                 if raw:
                     break
             except Exception as e:
-                log_action('show_cache_download_fail', url, f"sn={sn} attempt={attempt} err={type(e).__name__}:{e}")
+                _log_show_cache_download_fail(url, sn, attempt, e)
                 raw = None
                 await asyncio.sleep(0.15 * attempt)
         if not raw:
@@ -492,6 +530,22 @@ def rebuild_name_index() -> None:
 
 def _fix_cached_reverse_index(meta: Optional[dict]) -> Optional[dict]:
     """Pass-through for backwards compatibility - indices are now stored correctly."""
+    if isinstance(meta, dict):
+        # Older sidecars may store multi-cat labels; normalize to one canonical full name.
+        full = str(meta.get("full_name") or "").strip()
+        if full:
+            canon = _primary_label(full)
+            meta["full_name"] = canon
+            if canon != full:
+                # Legacy mixed-label sidecars carry misleading page counts (often "out of 2").
+                # Let refill write fresh indices for the canonical cat.
+                meta["reverse_index"] = "?"
+                meta["total_available"] = "?"
+            if meta.get("display_name"):
+                try:
+                    meta["display_name"] = re.sub(r"^\s*\d+\.\s*", "", canon).strip()
+                except Exception:
+                    pass
     #Legacy code inverted the index; the current storage format is already correct:
     #oldest (lowest serial) = 1, newest (highest serial) = total_available
     return meta

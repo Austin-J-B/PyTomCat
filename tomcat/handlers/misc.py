@@ -38,7 +38,6 @@ TRIGGERS: list[tuple[re.Pattern, Callable[[], str]]] = [
 _COOLDOWN = {}
 _COOLDOWN_SECONDS = 1
 _profiles_update_lock = asyncio.Lock()
-_missing_profile_ids: set[str] = set()
 _profile_embed_hashes: dict[str, str] = {}
 
 
@@ -49,6 +48,17 @@ def _embed_digest(embed_dict: dict) -> str:
     except Exception:
         blob = str(embed_dict)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()
+
+
+def _message_embed_digest(message: discord.Message) -> str | None:
+    """Digest the first embed currently on a message, if present."""
+    try:
+        embeds = list(getattr(message, "embeds", []) or [])
+        if not embeds:
+            return None
+        return _embed_digest(embeds[0].to_dict())
+    except Exception:
+        return None
 
 
 def _is_unknown_message_error(exc: Exception) -> bool:
@@ -64,9 +74,9 @@ def _cool(user_id: int, now: float) -> bool:
 
 async def _profiles_channel(message: discord.Message, ctx: Dict[str, Any]) -> Messageable | None:
     """Resolve which log channel a profile command should output to."""
-    ch_id = getattr(settings, "ch_member_names", None)
+    ch_id = getattr(settings, "ch_cats_on_campus", None) or getattr(settings, "ch_member_names", None)
     if not ch_id:
-        log_action("profiles_error", "missing_ch_member_names", "")
+        log_action("profiles_error", "missing_profiles_channel", "")
         return None
     guild = getattr(message, "guild", None)
     ch = guild.get_channel(ch_id) if guild else None
@@ -81,6 +91,62 @@ async def _profiles_channel(message: discord.Message, ctx: Dict[str, Any]) -> Me
                     ch = candidate
                     break
     return ch if isinstance(ch, Messageable) else None
+
+
+async def _scan_guild_for_message(guild: discord.Guild, message_id: int, *, skip_channel_id: int | None = None) -> discord.Message | None:
+    """Locate a message by ID by scanning text channels in a guild."""
+    for ch in getattr(guild, "text_channels", []):
+        if skip_channel_id and int(getattr(ch, "id", 0)) == int(skip_channel_id):
+            continue
+        try:
+            return await ch.fetch_message(int(message_id))
+        except Exception as e:
+            if _is_unknown_message_error(e):
+                continue
+            continue
+    return None
+
+
+async def _fetch_profile_message(ctx: Dict[str, Any], primary_channel: Messageable | None, message_id: int) -> discord.Message:
+    """Fetch a profile message by ID, with cross-channel fallback when channel config is stale."""
+    primary_err: Exception | None = None
+    if primary_channel and hasattr(primary_channel, "fetch_message"):
+        try:
+            return await primary_channel.fetch_message(int(message_id))  # type: ignore[attr-defined]
+        except Exception as e:
+            primary_err = e
+            if not _is_unknown_message_error(e):
+                raise
+
+    guilds: list[discord.Guild] = []
+    seen: set[int] = set()
+
+    def _push_guild(g: Any) -> None:
+        gid = int(getattr(g, "id", 0) or 0)
+        if not gid or gid in seen:
+            return
+        seen.add(gid)
+        guilds.append(g)
+
+    _push_guild(getattr(primary_channel, "guild", None))
+    _push_guild(getattr(ctx.get("message"), "guild", None))
+    bot = ctx.get("bot")
+    for g in getattr(bot, "guilds", []):
+        _push_guild(g)
+
+    skip_id = int(getattr(primary_channel, "id", 0) or 0) if primary_channel else None
+    for g in guilds:
+        found = await _scan_guild_for_message(g, int(message_id), skip_channel_id=skip_id)
+        if found:
+            src = int(getattr(primary_channel, "id", 0) or 0) if primary_channel else 0
+            dst = int(getattr(found.channel, "id", 0) or 0)
+            if src and dst and src != dst:
+                log_action("profiles_channel_relocated", f"from={src}", f"to={dst}; msg={message_id}")
+            return found
+
+    if primary_err:
+        raise primary_err
+    raise RuntimeError(f"Message not found: {message_id}")
 
 def _open_ws(worksheet_title: str, *, preferred_sheet_id: str | None = None):
     """Open a worksheet by title, checking an optional preferred spreadsheet first."""
@@ -208,10 +274,9 @@ async def handle_profile_update_one(intent, ctx):
         pass
 
     try:
-        m = await ch.fetch_message(int(msg_id))
+        m = await _fetch_profile_message(ctx, ch, int(msg_id))
+        ch = cast(Messageable, m.channel)
     except Exception as e:
-        if _is_unknown_message_error(e):
-            _missing_profile_ids.add(cat_id)
         log_action("profile_update_error", f"id={cat_id}", f"fetch:{e}")
         try:
             await msg.clear_reactions(); await msg.add_reaction("❌")
@@ -240,9 +305,15 @@ async def handle_profile_update_one(intent, ctx):
         embed_dict = await build_profile_embed(cat_name)
         if isinstance(embed_dict, str):
             raise RuntimeError(embed_dict)
+        desired_digest = _embed_digest(embed_dict)
+        current_digest = _message_embed_digest(m)
+        if current_digest and current_digest == desired_digest:
+            _profile_embed_hashes[cat_id] = desired_digest
+            await msg.clear_reactions(); await msg.add_reaction("✅")
+            return
         embed = discord.Embed.from_dict(embed_dict)
         await m.edit(embed=embed)
-        _profile_embed_hashes[cat_id] = _embed_digest(embed_dict)
+        _profile_embed_hashes[cat_id] = desired_digest
         await msg.clear_reactions(); await msg.add_reaction("✅")
     except Exception as e:
         log_action("profile_update_error", f"id={cat_id}", str(e))
@@ -289,8 +360,6 @@ async def handle_profiles_update_all(intent, ctx):
     async with _profiles_update_lock:
         for cat_id, msg_id in settings.profile_messages.items():
             cat_key = str(cat_id)
-            if cat_key in _missing_profile_ids:
-                continue
             r = by_id.get(cat_key)
             if not r:
                 failed.append(cat_key); continue
@@ -302,15 +371,18 @@ async def handle_profiles_update_all(intent, ctx):
                 digest = _embed_digest(embed_dict)
                 if _profile_embed_hashes.get(cat_key) == digest:
                     continue
+                m = await _fetch_profile_message(ctx, ch, int(msg_id))
+                ch = cast(Messageable, m.channel)
+                current_digest = _message_embed_digest(m)
+                if current_digest and current_digest == digest:
+                    _profile_embed_hashes[cat_key] = digest
+                    continue
                 embed = discord.Embed.from_dict(embed_dict)
-                m = await ch.fetch_message(int(msg_id))
                 await m.edit(embed=embed)
                 _profile_embed_hashes[cat_key] = digest
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(max(1.0, float(getattr(settings, "profile_update_edit_delay_sec", 1.0) or 1.0)))
             except Exception as e:
                 failed.append(cat_key)
-                if _is_unknown_message_error(e):
-                    _missing_profile_ids.add(cat_key)
                 log_action("profile_update_error", f"id={cat_id}", str(e))
 
     try:

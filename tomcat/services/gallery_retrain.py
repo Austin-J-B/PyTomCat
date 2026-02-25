@@ -7,7 +7,7 @@ import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 try:
     from zoneinfo import ZoneInfo
@@ -19,11 +19,13 @@ from ..logger import log_action
 from .gallery_updater import run_gallery_update
 
 _STATE_PATH = Path("cache") / "gallery_retrain" / "schedule.json"
+_LAST_RUN_META_PATH = Path("cache") / "gallery_retrain" / "last_run.json"
 _LOCK_DIR = Path("logs") / "gallery_retrain" / "locks"
 _SCHEDULER_LOCK = asyncio.Lock()
 _RUN_LOCK = asyncio.Lock()
 _STARTED = False
 _LAST_RUN_KEY: Optional[str] = None
+_NOTIFY_FN: Optional[Callable[[str], Awaitable[None]]] = None
 
 
 def _tz_now() -> datetime:
@@ -46,6 +48,48 @@ def _default_state() -> Dict[str, Any]:
         "last_run_at": None,
         "last_result": None,
     }
+
+
+def set_gallery_retrain_notifier(fn: Optional[Callable[[str], Awaitable[None]]]) -> None:
+    """Register async callback used to post human-facing retrain status updates."""
+    global _NOTIFY_FN
+    _NOTIFY_FN = fn
+
+
+async def _notify(message: str) -> None:
+    text = str(message or "").strip()
+    if not text:
+        return
+    fn = _NOTIFY_FN
+    if fn is None:
+        return
+    try:
+        await fn(text)
+    except Exception as e:
+        log_action("gallery_retrain_notify_error", "send", str(e))
+
+
+def _version_from_path(path_str: str) -> str:
+    name = Path(str(path_str or "")).name
+    # Expected pattern: R4.5.1_cat_DINOv3_gallery.pt
+    if "_cat_DINOv3_gallery" in name:
+        return name.split("_cat_DINOv3_gallery", 1)[0]
+    stem = Path(name).stem
+    return stem or "unknown"
+
+
+def _build_result_message(result: Dict[str, Any]) -> str:
+    status = str(result.get("status") or "").strip().lower()
+    if status != "ok":
+        reason = str(result.get("error") or result.get("message") or "unknown error").strip()
+        return f"CV gallery update failed: {reason}"
+
+    version_name = _version_from_path(str(result.get("versioned_gallery_path") or ""))
+    cats = int(result.get("cats") or 0)
+    images = int(result.get("embeddings") or 0)
+    return (
+        f"CV gallery updated to {version_name} for {cats} cats with {images} images total."
+    )
 
 
 def _load_state() -> Dict[str, Any]:
@@ -86,6 +130,35 @@ def _target_dt(date_iso: str) -> Optional[datetime]:
 def _run_lock_path(run_key: str) -> Path:
     safe = "".join(ch for ch in str(run_key) if ch.isdigit() or ch == "-")
     return _LOCK_DIR / f"{safe}.lock"
+
+
+def _already_completed_for_date(run_key: str) -> bool:
+    """Return True if last_run.json indicates this date already completed successfully."""
+    try:
+        if not _LAST_RUN_META_PATH.exists():
+            return False
+        raw = json.loads(_LAST_RUN_META_PATH.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return False
+        status = str(raw.get("status") or "").strip().lower()
+        if status != "ok":
+            return False
+        run_date = str(raw.get("run_date") or "").strip()
+        if run_date:
+            return run_date == run_key
+        finished_at = str(raw.get("finished_at") or "").strip()
+        if not finished_at:
+            return False
+        dt = datetime.fromisoformat(finished_at)
+        now_local = _tz_now()
+        if now_local.tzinfo is not None:
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=now_local.tzinfo)
+            else:
+                dt = dt.astimezone(now_local.tzinfo)
+        return dt.date().isoformat() == run_key
+    except Exception:
+        return False
 
 
 def _acquire_run_lock(run_key: str) -> bool:
@@ -148,6 +221,18 @@ async def _run_if_due() -> None:
         return
     if _RUN_LOCK.locked():
         return
+    if _already_completed_for_date(run_key):
+        async with _SCHEDULER_LOCK:
+            st_done = _load_state()
+            st_done["enabled"] = False
+            st_done["scheduled_date"] = None
+            st_done["last_run_date"] = run_key
+            st_done["last_run_at"] = _tz_now().isoformat()
+            st_done["last_result"] = {"status": "already_completed"}
+            _save_state(st_done)
+        _LAST_RUN_KEY = run_key
+        log_action("gallery_retrain_scheduler", f"date={run_key}", "already_completed")
+        return
 
     if not _acquire_run_lock(run_key):
         # Another process already started/completed this date; mark as consumed.
@@ -160,6 +245,7 @@ async def _run_if_due() -> None:
             _save_state(st2)
         _LAST_RUN_KEY = run_key
         log_action("gallery_retrain_scheduler", f"date={run_key}", "duplicate_skip_lock")
+        await _notify(f"CV gallery retrain skipped for {run_key}: duplicate lock detected.")
         return
 
     async with _RUN_LOCK:
@@ -185,6 +271,7 @@ async def _run_if_due() -> None:
             f"date={run_key}",
             str(result.get("status", "ok")),
         )
+        await _notify(_build_result_message(result))
 
 
 async def start_gallery_retrain_scheduler() -> None:

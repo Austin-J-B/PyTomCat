@@ -14,6 +14,8 @@ import sys
 import json
 import re
 import shutil
+import time
+import socket
 from pathlib import Path
 
 
@@ -48,6 +50,26 @@ def _read_config_tunnel_id() -> str | None:
         if stripped.startswith("tunnel:"):
             return stripped.split(":", 1)[1].strip()
     return None
+
+
+def _wait_for_local_port(host: str, port: int, timeout_sec: float = 25.0) -> bool:
+    """Poll a local TCP endpoint until it accepts connections or timeout."""
+    deadline = time.time() + max(0.5, float(timeout_sec))
+    while time.time() < deadline:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(0.5)
+            if sock.connect_ex((host, int(port))) == 0:
+                return True
+        except Exception:
+            pass
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+        time.sleep(0.2)
+    return False
 
 def _resolve_credentials_path(raw_value: str) -> Path:
     candidate = Path(raw_value.strip())
@@ -151,7 +173,7 @@ def _configure_tunnel(cloudflared_path: Path | None) -> str | None:
         #This covers both austin-j-b.github.io AND ui.catsofuta.org if listed.
         ingress_rules = ""
         for host in valid_hostnames:
-            ingress_rules += f"  - hostname: {host}\n    service: http://localhost:8080\n"
+            ingress_rules += f"  - hostname: {host}\n    service: http://127.0.0.1:8080\n"
 
         config_content = f"""
 tunnel: {tunnel_id}
@@ -214,19 +236,54 @@ def main() -> None:
     print(f"Starting TomCat ecosystem...")
     processes = []
     try:
-        print(f"→ Bot: {' '.join(bot_cmd)}")
+        print(f"-> Bot: {' '.join(bot_cmd)}")
         processes.append(subprocess.Popen(bot_cmd, cwd=ROOT))
 
         if tunnel_cmd:
-            print(f"→ Tunnel: {' '.join(tunnel_cmd)}")
-            processes.append(subprocess.Popen(tunnel_cmd, cwd=ROOT))
+            if _wait_for_local_port("127.0.0.1", 8080, timeout_sec=30.0):
+                print(f"-> Tunnel: {' '.join(tunnel_cmd)}")
+                # Keep cloudflared connection churn out of interactive terminal.
+                processes.append(
+                    subprocess.Popen(
+                        tunnel_cmd,
+                        cwd=ROOT,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                )
+            else:
+                print("[Tunnel] Skipped start because 127.0.0.1:8080 is not ready.")
         
         processes[0].wait() #Wait for bot
     except KeyboardInterrupt:
         print("\nShutting down...")
     finally:
         for p in processes:
-            p.terminate()
+            try:
+                if p.poll() is None:
+                    p.terminate()
+            except Exception:
+                pass
+
+        deadline = time.time() + 8.0
+        for p in processes:
+            if p.poll() is not None:
+                continue
+            timeout_left = max(0.2, deadline - time.time())
+            try:
+                p.wait(timeout=timeout_left)
+            except subprocess.TimeoutExpired:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+
+        for p in processes:
+            if p.poll() is None:
+                try:
+                    p.wait(timeout=1.0)
+                except Exception:
+                    pass
 
 if __name__ == "__main__":
     main()

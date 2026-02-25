@@ -29,6 +29,54 @@ _TCB_ROWS: list[list[str]] | None = None
 _TCB_TS: float = 0.0  #monotonic for in-memory
 _TCB_SNAPSHOT = Path("cache") / "sheets" / "tcb_pics_formatted.json"
 
+
+def _normalize_rows(rows: Any) -> list[list[str]]:
+    """Normalize raw sheet data into a stable list[list[str]] shape."""
+    if not isinstance(rows, list):
+        return []
+    out: list[list[str]] = []
+    for row in rows:
+        if isinstance(row, list):
+            out.append(["" if v is None else str(v) for v in row])
+        elif isinstance(row, tuple):
+            out.append(["" if v is None else str(v) for v in list(row)])
+        elif row is None:
+            out.append([])
+        else:
+            out.append([str(row)])
+    return out
+
+
+def _fetch_tcb_rows_live() -> list[list[str]]:
+    """Fetch TCB rows from Sheets with fallback to raw values_get if gspread helpers fail."""
+    sid = settings.sheet_catabase_id
+    if not sid:
+        return []
+
+    gc = sheets_client()
+    sh = gc.open_by_key(sid)
+    ws = sh.worksheet("TCB Pics Formatted")
+
+    # Primary path: gspread convenience API.
+    try:
+        return _normalize_rows(ws.get_all_values())
+    except Exception:
+        pass
+
+    # Fallback path: raw Sheets values_get avoids gspread fill_gaps edge cases.
+    try:
+        raw = sh.values_get("'TCB Pics Formatted'")
+        return _normalize_rows((raw or {}).get("values") or [])
+    except Exception:
+        pass
+
+    # Last fallback with explicit range in case tab-level fetch is blocked.
+    try:
+        raw = sh.values_get("'TCB Pics Formatted'!A:ZZ")
+        return _normalize_rows((raw or {}).get("values") or [])
+    except Exception:
+        return []
+
 def _load_tcb_snapshot() -> tuple[list[list[str]] | None, float]:
     """Load snapshot from disk. Returns (rows, unix_timestamp)."""
     try:
@@ -53,12 +101,9 @@ def force_refresh_tcb_cache() -> list[list[str]]:
     """Force refresh the TCB pics cache from the live sheet, bypassing TTL."""
     global _TCB_ROWS, _TCB_TS
     try:
-        sid = settings.sheet_catabase_id
-        if not sid:
-            return []
-        gc = sheets_client()
-        ws = gc.open_by_key(sid).worksheet("TCB Pics Formatted")
-        rows = ws.get_all_values()
+        rows = _fetch_tcb_rows_live()
+        if not rows:
+            return _TCB_ROWS or []
         _TCB_ROWS, _TCB_TS = rows, time.monotonic()
         _write_tcb_snapshot(rows)
         return rows
@@ -82,12 +127,9 @@ def get_tcb_pics_rows(ttl_sec: int | None = None) -> list[list[str]]:
         return snap_rows
     #Fetch live sheet
     try:
-        sid = settings.sheet_catabase_id
-        if not sid:
-            return snap_rows or []
-        gc = sheets_client()
-        ws = gc.open_by_key(sid).worksheet("TCB Pics Formatted")
-        rows = ws.get_all_values()
+        rows = _fetch_tcb_rows_live()
+        if not rows:
+            return snap_rows or _TCB_ROWS or []
         _TCB_ROWS, _TCB_TS = rows, now_mono
         _write_tcb_snapshot(rows)
         return rows
@@ -300,31 +342,53 @@ async def build_profile_embed(query: str) -> dict | str:
     elif prof.get("image_url"):
         img_url = prof["image_url"]
 
-    fields = []
-    def _add(name: str, val: str | None):
-        if val:
-            fields.append({"name": name, "value": str(val), "inline": False})
+    #Match the legacy dense profile card style used in cats-on-campus.
+    display = re.sub(r"^\s*\d+\.\s*", "", str(prof.get("actual_name") or query)).strip()
+    lines: list[str] = []
 
-    #Assemble fields
-    _add("Location", prof.get("location"))
-    _add("Behavior", prof.get("behavior"))
-    _add("Age", prof.get("age"))
-    _add("Sex", prof.get("sex"))
-    _add("TNR Status", prof.get("tnrd"))
-    _add("TNR Date", prof.get("tnr_date"))
-    last_seen_bits = []
-    if prof.get("last_seen_date"): last_seen_bits.append(str(prof["last_seen_date"]))
-    if prof.get("last_seen_time"): last_seen_bits.append(str(prof["last_seen_time"]))
-    if prof.get("last_seen_by"):   last_seen_bits.append(f"by {prof['last_seen_by']}")
-    _add("Last Seen", " ".join(last_seen_bits) if last_seen_bits else None)
-    _add("Nicknames", prof.get("nicknames"))
-    _add("Comments", prof.get("comments"))
+    desc = prof.get("physical_description")
+    if desc:
+        lines.append(f"**Description:** {desc}")
+    behavior = prof.get("behavior")
+    if behavior:
+        lines.append(f"**Behavior:** {behavior}")
+    location = prof.get("location")
+    if location:
+        lines.append(f"**Location:** {location}")
+    age = prof.get("age")
+    if age:
+        lines.append(f"**Age Estimate:** {age}")
+    sex = prof.get("sex")
+    if sex:
+        lines.append(f"**Sex:** {sex}")
+    tnr = prof.get("tnrd")
+    if tnr:
+        lines.append(f"**TNR Status:** {tnr}")
+    tnr_date = prof.get("tnr_date")
+    if tnr_date:
+        lines.append(f"**TNR Date:** {tnr_date}")
+
+    last_bits = []
+    if prof.get("last_seen_date"):
+        last_bits.append(str(prof["last_seen_date"]))
+    if prof.get("last_seen_time"):
+        last_bits.append(str(prof["last_seen_time"]))
+    if prof.get("last_seen_by"):
+        last_bits.append(f"by {prof['last_seen_by']}")
+    if last_bits:
+        lines.append("**Last Reported:** " + " ".join(last_bits))
+
+    nicknames = prof.get("nicknames")
+    if nicknames:
+        lines.append(f"**Common Nicknames:** {nicknames}")
+    comments = prof.get("comments")
+    if comments:
+        lines.append(f"**Comments:** {comments}")
 
     embed = {
-        "title": f"__**{prof['actual_name']}**__",
+        "title": f"__**{display}**__",
         "color": 0x2F3136,
-        "fields": fields,
-        "footer": {"text": "TomCat VI • Profiles"},
+        "description": "\n".join(lines),
     }
     if img_url:
         embed["image"] = {"url": img_url}

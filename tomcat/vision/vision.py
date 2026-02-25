@@ -6,13 +6,14 @@ import os
 import math
 import warnings
 import threading
+import time
 import base64
 import asyncio
 import random
 import re
 from pathlib import Path
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Any, cast
+from typing import List, Tuple, Optional, Any, Callable, cast
 
 from PIL import Image, ImageDraw, ImageFont
 import torch
@@ -57,6 +58,19 @@ _labeler_ref_cache: dict[str, dict[str, Any]] = {}
 _labeler_ref_ready: bool = False
 _labeler_ref_building: bool = False
 _labeler_ref_task: Optional[asyncio.Task] = None
+_labeler_ref_progress_total: int = 0
+_labeler_ref_progress_built: int = 0
+_manual_ref_cache: dict[str, dict[str, Any]] = {}
+_manual_ref_ready: bool = False
+_manual_ref_building: bool = False
+_manual_ref_task: Optional[asyncio.Task] = None
+_manual_ref_progress_total: int = 0
+_manual_ref_progress_built: int = 0
+_manual_ref_per_cat: int = 0
+_thumb_cache: dict[tuple[str, int], str] = {}
+_thumb_cache_max: int = max(200, int(os.getenv("LABELER_THUMB_CACHE_MAX", "2000") or "2000"))
+_resolved_gallery_path_cache: dict[str, str] = {}
+_sheet_crop_roots: Optional[List[Path]] = None
 
 #Sheet column indices (0-based) for TCB Pics Formatted
 COL_URL = 6
@@ -64,9 +78,15 @@ COL_SERIAL = 7
 COL_BOX_COORDS = 8
 COL_BOX_CAT_IDS = 9
 SN_PATTERN = re.compile(r"sn(\d+)", re.IGNORECASE)
+_CAT_ID_NAME_RE = re.compile(r"^\s*(\d+)\s*[.)\-:]?\s*(.+?)\s*$")
+_CROP_NUM_PATTERN = re.compile(
+    r"(?:crop[_\-\s]?(\d+))|(?:^|[_\-])c(\d{1,3})(?:[^0-9]|$)",
+    re.IGNORECASE,
+)
 _RERANK_ENABLED = str(os.getenv("LABELER_RERANK_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
 _RERANK_TOP_N = max(1, int(os.getenv("LABELER_RERANK_TOP_N", "15") or "15"))
 _RERANK_HFLIP = str(os.getenv("LABELER_RERANK_HFLIP", "1")).strip().lower() in {"1", "true", "yes", "on"}
+_LABELER_REF_SEARCH_POOL = max(5, int(os.getenv("LABELER_REF_SEARCH_POOL", "250") or "250"))
 
 
 def _parse_rerank_angles() -> List[float]:
@@ -105,6 +125,59 @@ def _parse_serial(val: str) -> Optional[int]:
     if str(val or "").strip().isdigit():
         return int(str(val).strip())
     return None
+
+
+def _parse_serial_crop_from_path(path: str) -> Tuple[Optional[int], Optional[int]]:
+    raw = str(path or "")
+    if not raw:
+        return None, None
+    serial = _parse_serial(raw)
+    crop: Optional[int] = None
+    base = os.path.basename(raw)
+    m = _CROP_NUM_PATTERN.search(base)
+    if m:
+        try:
+            g1 = m.group(1)
+            g2 = m.group(2)
+            crop = int(g1 or g2)
+        except Exception:
+            crop = None
+    return serial, crop
+
+
+def _cat_name_from_full(full_name: str) -> str:
+    s = str(full_name or "").strip()
+    if not s:
+        return ""
+    m = _CAT_ID_NAME_RE.match(s)
+    if m:
+        return m.group(2).strip()
+    return s
+
+
+def _profile_cat_names() -> List[str]:
+    out: List[str] = []
+    try:
+        from ..services import profile_cache
+        for full in profile_cache.all_actual_names():
+            name = _cat_name_from_full(str(full))
+            if name:
+                key = re.sub(r"[^a-z0-9]+", "", name.lower())
+                if key in {"notacat", "needsreview", "rejected"}:
+                    continue
+                out.append(name)
+    except Exception:
+        return out
+    return out
+
+
+def get_all_known_cats() -> List[str]:
+    """Return union of CatDatabase names and gallery names."""
+    names: set[str] = set()
+    names.update(_profile_cat_names())
+    if _gallery_names:
+        names.update(_gallery_names)
+    return sorted(names)
 
 
 def _rebuild_gallery_cat_indices() -> None:
@@ -347,13 +420,74 @@ def _get_gallery_root_hints() -> List[Path]:
     _gallery_root_hints = roots
     return roots
 
+def _slug_text(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")
+    return s or "cat"
+
+def _parse_sheet_gallery_uri(path: str) -> Tuple[str, str]:
+    raw = str(path or "").strip()
+    if not raw.lower().startswith("sheet://"):
+        return "", ""
+    body = raw.split("://", 1)[1]
+    if ":" in body:
+        crop_id, cat_name = body.split(":", 1)
+    else:
+        crop_id, cat_name = body, ""
+    return str(crop_id).strip(), str(cat_name).strip()
+
+def _get_sheet_crop_roots() -> List[Path]:
+    """Return candidate local crop roots for resolving sheet:// gallery paths."""
+    global _sheet_crop_roots
+    if _sheet_crop_roots is not None:
+        return _sheet_crop_roots
+    roots: List[Path] = []
+    active = Path("cache") / "gallery_retrain" / "active_crops"
+    if active.exists():
+        roots.append(active)
+    work = Path("cache") / "gallery_retrain" / "work"
+    if work.exists():
+        runs = sorted(
+            [p for p in work.iterdir() if p.is_dir()],
+            key=lambda p: p.name,
+            reverse=True,
+        )
+        for run in runs[:4]:
+            crops = run / "crops"
+            if crops.exists():
+                roots.append(crops)
+    _sheet_crop_roots = roots
+    return roots
+
 def _resolve_gallery_path(path: str) -> str:
     """Map gallery paths saved in training to local filesystem paths."""
     if not path:
         return path
+    cached = _resolved_gallery_path_cache.get(path)
+    if cached:
+        return cached
+    resolved = path
+    crop_id, cat_name = _parse_sheet_gallery_uri(path)
+    if crop_id:
+        slug = _slug_text(cat_name)
+        for root in _get_sheet_crop_roots():
+            # Current updater layout: <root>/<cat_slug>/<crop_id>.jpg
+            candidate = root / slug / f"{crop_id}.jpg"
+            if candidate.exists():
+                resolved = str(candidate)
+                _resolved_gallery_path_cache[path] = resolved
+                return resolved
+            # Back-compat for non-slugged cat folders.
+            if cat_name:
+                legacy = root / cat_name / f"{crop_id}.jpg"
+                if legacy.exists():
+                    resolved = str(legacy)
+                    _resolved_gallery_path_cache[path] = resolved
+                    return resolved
     try:
         if os.path.exists(path):
-            return path
+            resolved = path
+            _resolved_gallery_path_cache[path] = resolved
+            return resolved
     except Exception:
         pass
     # Typical Colab root
@@ -365,18 +499,31 @@ def _resolve_gallery_path(path: str) -> str:
         for root in _get_gallery_root_hints():
             candidate = root / suffix.replace("/", os.sep)
             if candidate.exists():
-                return str(candidate)
-    return path
+                resolved = str(candidate)
+                _resolved_gallery_path_cache[path] = resolved
+                return resolved
+    _resolved_gallery_path_cache[path] = resolved
+    return resolved
 
 def _thumb_b64(path: str, size: int = 96) -> Optional[str]:
     """Load an image, generate a small JPEG thumbnail, and return base64."""
+    cache_key = (str(path), int(size))
+    cached = _thumb_cache.get(cache_key)
+    if cached:
+        return cached
     try:
         resolved = _resolve_gallery_path(path)
         img = Image.open(resolved).convert("RGB")
         img.thumbnail((size, size))
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=80)
-        return base64.b64encode(buf.getvalue()).decode("ascii")
+        out = base64.b64encode(buf.getvalue()).decode("ascii")
+        _thumb_cache[cache_key] = out
+        if len(_thumb_cache) > _thumb_cache_max:
+            # Drop the oldest inserted key (dict preserves insertion order in Py3.7+).
+            old_key = next(iter(_thumb_cache))
+            _thumb_cache.pop(old_key, None)
+        return out
     except Exception:
         return None
 
@@ -469,11 +616,15 @@ def identify(image_bytes: bytes) -> IdentifyResult:
     results = []
 
     if _clf is not None and _gallery_emb is not None and dets:
-        tiles, boxes = [], []
+        tiles: List[Tensor] = []
+        tile_crops: List[Image.Image] = []
+        boxes: List[Tuple[int, int, int, int]] = []
         for d in dets:
             x1, y1, x2, y2 = d.xyxy
             cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, *img.size)
-            tiles.append(_prep_tensor(img.crop((cx1, cy1, cx2, cy2))))
+            crop = img.crop((cx1, cy1, cx2, cy2))
+            tiles.append(_prep_tensor(crop))
+            tile_crops.append(crop)
             boxes.append((int(cx1), int(cy1), int(cx2), int(cy2)))
 
         if tiles:
@@ -486,12 +637,14 @@ def identify(image_bytes: bytes) -> IdentifyResult:
                 vals, idxs = torch.sort(similarities, dim=1, descending=True)
                 
                 for i in range(len(dets)):
-                    top_candidates = []
-                    seen_cats = set()
+                    base_limit = max(5, int(_RERANK_TOP_N if _RERANK_ENABLED else 5))
+                    candidate_names: List[str] = []
+                    candidate_scores: List[float] = []
+                    seen_cats: set[str] = set()
                     
-                    # Iterate until we find 5 unique identities
+                    # Iterate until we find unique identities for base + rerank pool
                     for j in range(len(_gallery_names)):
-                        if len(top_candidates) >= 5:
+                        if len(candidate_names) >= base_limit:
                             break
                             
                         cat_idx = int(idxs[i, j])
@@ -499,8 +652,30 @@ def identify(image_bytes: bytes) -> IdentifyResult:
                         cat_name = _gallery_names[cat_idx]
                         
                         if cat_name not in seen_cats:
-                            top_candidates.append((cat_name, cat_conf))
+                            candidate_names.append(cat_name)
+                            candidate_scores.append(cat_conf)
                             seen_cats.add(cat_name)
+
+                    base_score_map = {n: float(s) for n, s in zip(candidate_names, candidate_scores)}
+                    if _RERANK_ENABLED and candidate_names and i < len(tile_crops):
+                        rerank_pool = candidate_names[: min(len(candidate_names), int(_RERANK_TOP_N))]
+                        reranked = _rerank_scores_for_crop(tile_crops[i], rerank_pool)
+                        if reranked:
+                            combined: List[Tuple[str, float, float]] = []
+                            for name in candidate_names:
+                                base_conf = base_score_map.get(name, 0.0)
+                                score = float(reranked.get(name, base_conf))
+                                combined.append((name, score, base_conf))
+                            combined.sort(key=lambda x: x[1], reverse=True)
+                            candidate_names = [n for (n, _, _) in combined]
+                            candidate_scores = [float(s) for (_, s, _) in combined]
+                            base_score_map = {n: float(b) for (n, _, b) in combined}
+
+                    candidate_names = candidate_names[:5]
+                    candidate_scores = candidate_scores[:5]
+                    top_candidates = [(n, float(s)) for n, s in zip(candidate_names, candidate_scores)]
+                    if not top_candidates:
+                        continue
                     
                     # Best match is just the first unique one
                     best_name, best_conf = top_candidates[0]
@@ -517,6 +692,77 @@ def identify(image_bytes: bytes) -> IdentifyResult:
     annotated.save(buf, format="JPEG")
     return IdentifyResult(boxed_jpeg=buf.getvalue(), results=results)
 
+def _gallery_refs_for_candidate(
+    *,
+    cat_name: str,
+    sims: Tensor,
+    refs_per: int,
+    thumb_size: int,
+    include_thumb: bool = True,
+    search_pool: Optional[int] = None,
+) -> List[dict]:
+    """Return top-k gallery refs (serial/crop metadata, optionally with thumbs)."""
+    idxs = _gallery_cat_indices.get(cat_name)
+    if idxs is None or idxs.numel() == 0:
+        return []
+    k_target = max(0, int(refs_per or 0))
+    if k_target <= 0:
+        return []
+    try:
+        cat_sims = sims.index_select(0, idxs)
+        pool_target = max(k_target, int(search_pool or _LABELER_REF_SEARCH_POOL))
+        pool_k = min(pool_target, int(cat_sims.numel()))
+        if pool_k <= 0:
+            return []
+        topk = torch.topk(cat_sims, k=pool_k)
+    except Exception:
+        return []
+
+    out: List[dict] = []
+    seen_sc: set[Tuple[Optional[int], Optional[int]]] = set()
+    seen_thumb: set[str] = set()
+    seen_path: set[str] = set()
+    top_indices = [int(x) for x in topk.indices.tolist()]
+    top_values = [float(x) for x in topk.values.tolist()]
+    for pos, rel in enumerate(top_indices):
+        try:
+            abs_idx = int(idxs[rel].item())
+        except Exception:
+            continue
+        if abs_idx < 0 or abs_idx >= len(_gallery_paths):
+            continue
+        gpath = _gallery_paths[abs_idx]
+        serial, crop_num = _parse_serial_crop_from_path(gpath)
+        thumb = ""
+        if include_thumb:
+            thumb = _thumb_b64(gpath, size=thumb_size) or ""
+            # If local thumb extraction fails but serial/crop metadata is known,
+            # still keep this ref so downstream can serve it via ref_crop URL.
+            if not thumb and (serial is None or crop_num is None):
+                continue
+        sc_key = (serial, crop_num)
+        if serial is not None and crop_num is not None and sc_key in seen_sc:
+            continue
+        if include_thumb and thumb in seen_thumb:
+            continue
+        if (serial is None or crop_num is None) and gpath in seen_path:
+            continue
+        seen_sc.add(sc_key)
+        if include_thumb and thumb:
+            seen_thumb.add(thumb)
+        if serial is None or crop_num is None:
+            seen_path.add(gpath)
+        row = {"serial": serial, "crop": crop_num}
+        if pos < len(top_values):
+            row["sim"] = float(top_values[pos])
+        if include_thumb and thumb:
+            row["img"] = thumb
+        out.append(row)
+        if len(out) >= k_target:
+            break
+    return out
+
+
 def identify_boxes(
     image_bytes: bytes,
     boxes: List[Tuple[float, float, float, float]],
@@ -524,6 +770,8 @@ def identify_boxes(
     top_k: int = 9,
     refs_per: int = 5,
     thumb_size: int = 128,
+    rerank: bool = True,
+    include_ref_thumbs: bool = True,
 ) -> IdentifyResult:
     """Run DINOv3 identification on specific normalized boxes (cx, cy, w, h)."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -568,7 +816,8 @@ def identify_boxes(
         sims = similarities[i]
         vals, idxs = torch.sort(sims, descending=True)
 
-        base_limit = max(int(top_k), int(_RERANK_TOP_N if _RERANK_ENABLED else top_k))
+        use_rerank = bool(rerank) and bool(_RERANK_ENABLED)
+        base_limit = max(int(top_k), int(_RERANK_TOP_N if use_rerank else top_k))
         candidate_names: List[str] = []
         candidate_scores: List[float] = []
         seen: set[str] = set()
@@ -585,7 +834,7 @@ def identify_boxes(
                 break
 
         base_score_map = {n: float(s) for n, s in zip(candidate_names, candidate_scores)}
-        if _RERANK_ENABLED and candidate_names and i < len(tile_crops):
+        if use_rerank and candidate_names and i < len(tile_crops):
             rerank_pool = candidate_names[: min(len(candidate_names), int(_RERANK_TOP_N))]
             reranked = _rerank_scores_for_crop(tile_crops[i], rerank_pool)
             if reranked:
@@ -601,27 +850,51 @@ def identify_boxes(
 
         candidate_names = candidate_names[: int(top_k)]
         candidate_scores = candidate_scores[: int(top_k)]
+        refs_per_i = max(0, int(refs_per or 0))
         ref_lists: dict[str, List[dict]] = {n: [] for n in candidate_names}
-        if _labeler_ref_ready:
-            for name in candidate_names:
-                ref_lists[name] = _get_labeler_refs_for_cat(name, query_embs[i], refs_per)
-        elif _gallery_paths:
-            done = 0
-            target_total = refs_per * len(candidate_names)
-            for j in range(len(_gallery_names)):
-                if done >= target_total:
-                    break
-                cat_idx = int(idxs[j])
-                cat_name = _gallery_names[cat_idx]
-                if cat_name not in ref_lists:
-                    continue
-                if len(ref_lists[cat_name]) >= refs_per:
-                    continue
-                if cat_idx < len(_gallery_paths):
-                    thumb = _thumb_b64(_gallery_paths[cat_idx], size=thumb_size)
-                    if thumb:
-                        ref_lists[cat_name].append({"img": thumb, "serial": None, "crop": None})
-                        done += 1
+        for name in candidate_names:
+            refs: List[dict] = []
+            if refs_per_i > 0:
+                refs = _gallery_refs_for_candidate(
+                    cat_name=name,
+                    sims=sims,
+                    refs_per=refs_per_i,
+                    thumb_size=thumb_size,
+                    include_thumb=bool(include_ref_thumbs),
+                    search_pool=_LABELER_REF_SEARCH_POOL,
+                )
+                # Legacy fallback is only useful in thumb mode.
+                if (
+                    include_ref_thumbs
+                    and _labeler_ref_ready
+                    and len(refs) < refs_per_i
+                ):
+                    extra = _get_labeler_refs_for_cat(name, query_embs[i], refs_per_i)
+                    if extra:
+                        seen_sc: set[Tuple[Optional[int], Optional[int]]] = set()
+                        seen_thumb: set[str] = set()
+                        merged: List[dict] = []
+                        for r in refs + list(extra):
+                            if not isinstance(r, dict):
+                                continue
+                            serial = r.get("serial")
+                            crop_num = r.get("crop")
+                            thumb = str(r.get("img") or "").strip()
+                            if not thumb:
+                                continue
+                            if serial is not None and crop_num is not None:
+                                sc_key = (serial, crop_num)
+                                if sc_key in seen_sc:
+                                    continue
+                                seen_sc.add(sc_key)
+                            if thumb in seen_thumb:
+                                continue
+                            seen_thumb.add(thumb)
+                            merged.append(r)
+                            if len(merged) >= refs_per_i:
+                                break
+                        refs = merged
+            ref_lists[name] = refs
 
         candidates = []
         for name, conf in zip(candidate_names, candidate_scores):
@@ -675,122 +948,212 @@ def _embed_crops(crops: List[Image.Image]) -> Tensor:
     tensors = [_prep_tensor(c) for c in crops]
     if not tensors:
         return torch.empty((0, 512))
-    batch_size = 32
+    batch_size = max(1, int(os.getenv("LABELER_REF_EMBED_BATCH_SIZE", "8") or "8"))
     out = []
     for i in range(0, len(tensors), batch_size):
         batch = torch.stack(tensors[i:i + batch_size]).to(_device)
-        with torch.inference_mode():
-            emb = _clf(batch)
-        out.append(emb.detach().cpu())
+        try:
+            with torch.inference_mode():
+                emb = _clf(batch)
+            out.append(emb.detach().cpu())
+        except RuntimeError as e:
+            if "out of memory" not in str(e).lower():
+                raise
+            if _device is not None and _device.type == "cuda":
+                try:
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+            # Fallback: process one crop at a time to minimize peak VRAM.
+            for t in tensors[i:i + batch_size]:
+                single = t.unsqueeze(0).to(_device)
+                with torch.inference_mode():
+                    emb1 = _clf(single)
+                out.append(emb1.detach().cpu())
     return torch.cat(out, dim=0) if out else torch.empty((0, 512))
+
+async def _build_ref_cache(
+    *,
+    max_per_cat: int,
+    thumb_size: int,
+    progress_hook: Optional[Callable[[int, int], None]] = None,
+) -> dict[str, dict[str, Any]]:
+    """Build a per-cat embedding+thumbnail cache from labeled sheet rows."""
+    await asyncio.to_thread(_ensure_classifier)
+    cat_list = await asyncio.to_thread(get_all_cats)
+    cat_map = {c.lower(): c for c in cat_list}
+
+    from ..services.catsheets import get_tcb_pics_rows
+    from ..services import labeler_cache
+
+    rows = get_tcb_pics_rows(ttl_sec=60)
+    samples: dict[str, List[Tuple[int, str, str, int]]] = {c: [] for c in cat_list}
+    counts: dict[str, int] = {c: 0 for c in cat_list}
+
+    for row in rows[1:]:
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+        if sn is None:
+            continue
+        url = row[COL_URL] if len(row) > COL_URL else ""
+        if not url.startswith("http"):
+            continue
+        box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
+        box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
+        if not box_coords or not box_cat_ids:
+            continue
+        if str(box_coords).strip().lower() == "rejected":
+            continue
+        coords = [c for c in str(box_coords).split("|") if c.strip()]
+        labels = [l for l in str(box_cat_ids).split("|") if l.strip()]
+        if not coords or not labels:
+            continue
+        limit = min(len(coords), len(labels))
+        for i in range(limit):
+            cat = _normalize_cat_label(labels[i], cat_map)
+            if not cat:
+                continue
+            counts[cat] += 1
+            entry = (sn, url, coords[i], i + 1)
+            bucket = samples[cat]
+            if len(bucket) < max_per_cat:
+                bucket.append(entry)
+            else:
+                j = random.randint(1, counts[cat])
+                if j <= max_per_cat:
+                    replace_idx = random.randrange(max_per_cat)
+                    bucket[replace_idx] = entry
+
+    new_cache: dict[str, dict[str, Any]] = {}
+    total = len(samples)
+    built = 0
+    for cat, entries in samples.items():
+        if not entries:
+            built += 1
+            if progress_hook:
+                try:
+                    progress_hook(built, total)
+                except Exception:
+                    pass
+            continue
+
+        crops: List[Image.Image] = []
+        refs: List[dict] = []
+        for sn, url, coord_str, crop_idx in entries:
+            coord = _parse_yolo_box_str(coord_str)
+            if coord is None:
+                continue
+            data = await labeler_cache.get_or_download(sn, url)
+            if not data:
+                continue
+            try:
+                img = Image.open(io.BytesIO(data)).convert("RGB")
+            except Exception:
+                continue
+            img_w, img_h = img.size
+            cx, cy, w, h = coord
+            x1 = (cx - w / 2) * img_w
+            y1 = (cy - h / 2) * img_h
+            x2 = (cx + w / 2) * img_w
+            y2 = (cy + h / 2) * img_h
+            cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
+            crop = img.crop((cx1, cy1, cx2, cy2))
+            thumb_b64 = _thumb_b64_from_pil(crop, size=thumb_size)
+            if not thumb_b64:
+                continue
+            crops.append(crop)
+            refs.append({"img": thumb_b64, "serial": sn, "crop": crop_idx})
+        if crops:
+            emb = await asyncio.to_thread(_embed_crops, crops)
+            if emb.numel() > 0:
+                new_cache[cat] = {"emb": emb, "refs": refs}
+        built += 1
+        if progress_hook:
+            try:
+                progress_hook(built, total)
+            except Exception:
+                pass
+
+    return new_cache
+
 
 async def warm_labeler_refs(force: bool = False) -> dict:
     """Warm per-cat reference cache from TCB Pics Formatted rows."""
     global _labeler_ref_ready, _labeler_ref_building, _labeler_ref_task, _labeler_ref_cache
+    global _labeler_ref_progress_total, _labeler_ref_progress_built
     if _labeler_ref_building:
-        return {"ready": _labeler_ref_ready, "building": True, "cats": len(_labeler_ref_cache)}
+        return labeler_ref_status()
     if _labeler_ref_ready and not force:
         needs_upgrade = False
+        has_serial_crop_meta = False
         try:
             for pack in _labeler_ref_cache.values():
-                if isinstance(pack, dict) and "refs" not in pack:
+                if not isinstance(pack, dict):
                     needs_upgrade = True
                     break
+                if "refs" not in pack:
+                    needs_upgrade = True
+                    break
+                refs = pack.get("refs") or []
+                if refs and isinstance(refs[0], str):
+                    needs_upgrade = True
+                    break
+                for ref in refs:
+                    if not isinstance(ref, dict):
+                        continue
+                    if ref.get("serial") is not None or ref.get("crop") is not None:
+                        has_serial_crop_meta = True
+                        break
+                if has_serial_crop_meta:
+                    break
+            if not needs_upgrade and _labeler_ref_cache and not has_serial_crop_meta:
+                needs_upgrade = True
         except Exception:
             needs_upgrade = True
         if not needs_upgrade:
-            return {"ready": True, "building": False, "cats": len(_labeler_ref_cache)}
+            if _labeler_ref_progress_total <= 0:
+                _labeler_ref_progress_total = max(
+                    len(_labeler_ref_cache),
+                    len(set(_gallery_names)) if _gallery_names else 0,
+                )
+            _labeler_ref_progress_built = max(
+                int(_labeler_ref_progress_built or 0),
+                int(_labeler_ref_progress_total or 0),
+            )
+            return labeler_ref_status()
 
     async def _build() -> None:
         global _labeler_ref_ready, _labeler_ref_building, _labeler_ref_cache
+        global _labeler_ref_progress_total, _labeler_ref_progress_built
         _labeler_ref_building = True
+        _labeler_ref_progress_total = 0
+        _labeler_ref_progress_built = 0
         try:
-            await asyncio.to_thread(_ensure_classifier)
-            cat_list = await asyncio.to_thread(get_all_cats)
-            cat_map = {c.lower(): c for c in cat_list}
-            max_per_cat = int(getattr(settings, "labeler_ref_per_cat", 50) or 50)
-            thumb_size = int(getattr(settings, "labeler_ref_thumb_size", 96) or 96)
+            max_per_cat = int(getattr(settings, "labeler_ref_per_cat", 250) or 250)
+            thumb_size = int(getattr(settings, "labeler_ref_thumb_size", 128) or 128)
 
-            from ..services.catsheets import get_tcb_pics_rows
-            from ..services import labeler_cache
+            def _on_progress(built: int, total: int) -> None:
+                global _labeler_ref_progress_total, _labeler_ref_progress_built
+                t = max(0, int(total or 0))
+                b = max(0, int(built or 0))
+                if t > 0:
+                    _labeler_ref_progress_total = t
+                    _labeler_ref_progress_built = min(b, t)
+                else:
+                    _labeler_ref_progress_built = b
 
-            rows = get_tcb_pics_rows(ttl_sec=60)
-            samples: dict[str, List[Tuple[int, str, str, int]]] = {c: [] for c in cat_list}
-            counts: dict[str, int] = {c: 0 for c in cat_list}
-
-            for row in rows[1:]:
-                if len(row) <= COL_SERIAL:
-                    continue
-                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-                if sn is None:
-                    continue
-                url = row[COL_URL] if len(row) > COL_URL else ""
-                if not url.startswith("http"):
-                    continue
-                box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
-                box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
-                if not box_coords or not box_cat_ids:
-                    continue
-                if str(box_coords).strip().lower() == "rejected":
-                    continue
-                coords = [c for c in str(box_coords).split("|") if c.strip()]
-                labels = [l for l in str(box_cat_ids).split("|") if l.strip()]
-                if not coords or not labels:
-                    continue
-                limit = min(len(coords), len(labels))
-                for i in range(limit):
-                    cat = _normalize_cat_label(labels[i], cat_map)
-                    if not cat:
-                        continue
-                    counts[cat] += 1
-                    entry = (sn, url, coords[i], i + 1)
-                    bucket = samples[cat]
-                    if len(bucket) < max_per_cat:
-                        bucket.append(entry)
-                    else:
-                        j = random.randint(1, counts[cat])
-                        if j <= max_per_cat:
-                            replace_idx = random.randrange(max_per_cat)
-                            bucket[replace_idx] = entry
-
-            new_cache: dict[str, dict[str, Any]] = {}
-            for cat, entries in samples.items():
-                if not entries:
-                    continue
-                crops: List[Image.Image] = []
-                refs: List[dict] = []
-                for sn, url, coord_str, crop_idx in entries:
-                    coord = _parse_yolo_box_str(coord_str)
-                    if coord is None:
-                        continue
-                    data = await labeler_cache.get_or_download(sn, url)
-                    if not data:
-                        continue
-                    try:
-                        img = Image.open(io.BytesIO(data)).convert("RGB")
-                    except Exception:
-                        continue
-                    img_w, img_h = img.size
-                    cx, cy, w, h = coord
-                    x1 = (cx - w / 2) * img_w
-                    y1 = (cy - h / 2) * img_h
-                    x2 = (cx + w / 2) * img_w
-                    y2 = (cy + h / 2) * img_h
-                    cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
-                    crop = img.crop((cx1, cy1, cx2, cy2))
-                    thumb_b64 = _thumb_b64_from_pil(crop, size=thumb_size)
-                    if not thumb_b64:
-                        continue
-                    crops.append(crop)
-                    refs.append({"img": thumb_b64, "serial": sn, "crop": crop_idx})
-                if not crops:
-                    continue
-                emb = await asyncio.to_thread(_embed_crops, crops)
-                if emb.numel() == 0:
-                    continue
-                new_cache[cat] = {"emb": emb, "refs": refs}
-
-            _labeler_ref_cache = new_cache
+            _labeler_ref_cache = await _build_ref_cache(
+                max_per_cat=max_per_cat,
+                thumb_size=thumb_size,
+                progress_hook=_on_progress,
+            )
+            if _labeler_ref_progress_total <= 0:
+                _labeler_ref_progress_total = max(
+                    len(_labeler_ref_cache),
+                    len(set(_gallery_names)) if _gallery_names else 0,
+                )
+            _labeler_ref_progress_built = int(_labeler_ref_progress_total)
             _labeler_ref_ready = True
         except Exception as e:
             log_action("labeler_ref_build_error", "error", str(e))
@@ -799,16 +1162,89 @@ async def warm_labeler_refs(force: bool = False) -> dict:
             _labeler_ref_building = False
 
     _labeler_ref_task = asyncio.create_task(_build())
-    return {"ready": _labeler_ref_ready, "building": True, "cats": len(_labeler_ref_cache)}
+    return labeler_ref_status()
+
 
 def labeler_ref_status() -> dict:
+    total = int(_labeler_ref_progress_total or 0)
+    if total <= 0:
+        total = max(
+            len(_labeler_ref_cache),
+            len(set(_gallery_names)) if _gallery_names else 0,
+        )
+    built = int(_labeler_ref_progress_built or 0)
+    if _labeler_ref_ready and built < total:
+        built = total
     return {
         "ready": _labeler_ref_ready,
         "building": _labeler_ref_building,
         "cats": len(_labeler_ref_cache),
+        "built": built,
+        "total": total,
     }
 
-def _get_labeler_refs_for_cat(cat: str, query_emb: Tensor, refs_per: int) -> List[str]:
+
+async def warm_labeler_manual_refs(force: bool = False) -> dict:
+    """Warm lightweight manual-review state without heavy per-cat image builds."""
+    global _manual_ref_ready, _manual_ref_building, _manual_ref_task
+    global _manual_ref_cache, _manual_ref_progress_total, _manual_ref_progress_built, _manual_ref_per_cat
+    target_per_cat = max(1, int(getattr(settings, "labeler_manual_ref_per_cat", 50) or 50))
+    if _manual_ref_building:
+        return labeler_manual_ref_status()
+    if _manual_ref_ready and not force and int(_manual_ref_per_cat or 0) == target_per_cat:
+        return labeler_manual_ref_status()
+
+    _manual_ref_building = True
+    _manual_ref_ready = False
+    _manual_ref_progress_total = max(0, int(_manual_ref_progress_total or 0))
+    _manual_ref_progress_built = max(0, int(_manual_ref_progress_built or 0))
+
+    async def _build() -> None:
+        global _manual_ref_ready, _manual_ref_building, _manual_ref_cache
+        global _manual_ref_progress_total, _manual_ref_progress_built, _manual_ref_per_cat
+        _manual_ref_progress_total = 0
+        _manual_ref_progress_built = 0
+        try:
+            known = await asyncio.to_thread(get_all_known_cats)
+            total = len(known)
+            _manual_ref_progress_total = int(total)
+            _manual_ref_progress_built = 0
+            await asyncio.to_thread(_ensure_classifier)
+            _manual_ref_cache = {}
+            _manual_ref_progress_built = int(total)
+            _manual_ref_per_cat = target_per_cat
+            _manual_ref_ready = True
+        except Exception as e:
+            log_action("labeler_manual_ref_build_error", "error", str(e))
+            _manual_ref_ready = False
+        finally:
+            _manual_ref_building = False
+
+    _manual_ref_task = asyncio.create_task(_build())
+    return labeler_manual_ref_status()
+
+
+def labeler_manual_ref_status() -> dict:
+    total = int(_manual_ref_progress_total or 0)
+    if total <= 0:
+        try:
+            total = len(_profile_cat_names())
+        except Exception:
+            total = 0
+    built = int(_manual_ref_progress_built or 0)
+    if _manual_ref_ready and built < total:
+        built = total
+    return {
+        "ready": _manual_ref_ready,
+        "building": _manual_ref_building,
+        "cats": max(len(_manual_ref_cache), total),
+        "built": built,
+        "total": total,
+        "per_cat": int(_manual_ref_per_cat or 0),
+    }
+
+
+def _get_labeler_refs_for_cat(cat: str, query_emb: Tensor, refs_per: int) -> List[dict]:
     pack = _labeler_ref_cache.get(cat)
     if not pack:
         return []
@@ -831,6 +1267,102 @@ def _get_labeler_refs_for_cat(cat: str, query_emb: Tensor, refs_per: int) -> Lis
         return [refs[i] for i in topk if i < len(refs)]
     except Exception:
         return []
+
+
+def _embed_query_from_box(
+    image_bytes: bytes,
+    box: Tuple[float, float, float, float],
+) -> Optional[Tensor]:
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        return None
+    _enforce_max_dim(img)
+    img_w, img_h = img.size
+    try:
+        cx, cy, w, h = [float(x) for x in box]
+    except Exception:
+        return None
+    if w <= 0 or h <= 0:
+        return None
+    x1 = (cx - w / 2) * img_w
+    y1 = (cy - h / 2) * img_h
+    x2 = (cx + w / 2) * img_w
+    y2 = (cy + h / 2) * img_h
+    cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
+    crop = img.crop((cx1, cy1, cx2, cy2))
+    emb = _embed_crops([crop])
+    if emb.numel() == 0:
+        return None
+    return emb[0].detach().cpu()
+
+
+def manual_review_candidates(
+    image_bytes: bytes,
+    box: Tuple[float, float, float, float],
+    *,
+    refs_per: int = 1,
+    thumb_size: int = 96,
+) -> List[dict]:
+    """Score gallery cats against one crop for manual review selection."""
+    _ensure_classifier()
+    if _clf is None or _gallery_emb is None:
+        return []
+    query = _embed_query_from_box(image_bytes, box)
+    if query is None:
+        return []
+    if not _gallery_names:
+        return []
+    q = query.view(-1)
+    if q.device != _gallery_emb.device:
+        q = q.to(_gallery_emb.device)
+    sims = (_gallery_emb @ q).view(-1)
+    refs_per_i = max(1, int(refs_per or 1))
+    thumb_px = max(48, int(thumb_size or 96))
+    out: List[dict] = []
+
+    for cat in sorted(set(_gallery_names)):
+        idxs = _gallery_cat_indices.get(cat)
+        if idxs is None or idxs.numel() == 0:
+            continue
+        try:
+            cat_sims = sims.index_select(0, idxs)
+            k = min(refs_per_i, int(cat_sims.numel()))
+            if k <= 0:
+                continue
+            topk = torch.topk(cat_sims, k=k)
+            rel_idxs = [int(x) for x in topk.indices.tolist()]
+            vals = [float(x) for x in topk.values.tolist()]
+            refs: List[dict] = []
+            for rel in rel_idxs:
+                abs_idx = int(idxs[rel].item())
+                if abs_idx < 0:
+                    continue
+                thumb = None
+                if abs_idx < len(_gallery_paths):
+                    gpath = _gallery_paths[abs_idx]
+                    thumb = _thumb_b64(gpath, size=thumb_px)
+                if thumb:
+                    serial, crop_num = _parse_serial_crop_from_path(gpath)
+                    refs.append({"img": thumb, "serial": serial, "crop": crop_num})
+            out.append({
+                "name": cat,
+                "conf": vals[0] if vals else None,
+                "refs": refs,
+            })
+        except Exception:
+            out.append({"name": cat, "conf": None, "refs": []})
+
+    def _score(item: dict) -> float:
+        try:
+            val = item.get("conf")
+            if val is None:
+                return -1e9
+            return float(val)
+        except Exception:
+            return -1e9
+    out.sort(key=_score, reverse=True)
+    return out
 
 #---------- Visualization Helpers ----------
 def _get_font(size: int) -> Any:
@@ -952,6 +1484,27 @@ def refine_boxes(
         refined.append((rx1, ry1, rx2, ry2))
     return refined
 
+
+def warm_labeler_detector() -> dict:
+    """Preload detector/SAM and run one tiny pass to avoid first-request cold start."""
+    t0 = time.perf_counter()
+    try:
+        img = Image.new("RGB", (384, 384), color=(32, 32, 32))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        detect_with_sam(buf.getvalue())
+        return {
+            "ready": True,
+            "sec": round(time.perf_counter() - t0, 3),
+        }
+    except Exception as e:
+        log_action("labeler_detector_warm_error", f"type={type(e).__name__}", str(e))
+        return {
+            "ready": False,
+            "sec": round(time.perf_counter() - t0, 3),
+            "error": str(e),
+        }
+
 def get_all_cats() -> List[str]:
     """Return sorted list of all unique cat names from the gallery."""
     _ensure_classifier()
@@ -963,6 +1516,9 @@ def get_all_cats() -> List[str]:
 def refresh_gallery(path: Optional[str] = None) -> dict:
     """Reload gallery tensors from disk without waiting for process restart."""
     global _gallery_emb, _gallery_names, _gallery_paths, _labeler_ref_cache, _labeler_ref_ready, _labeler_ref_task
+    global _labeler_ref_progress_total, _labeler_ref_progress_built
+    global _manual_ref_cache, _manual_ref_ready, _manual_ref_task, _manual_ref_progress_total, _manual_ref_progress_built, _manual_ref_per_cat
+    global _thumb_cache, _resolved_gallery_path_cache, _sheet_crop_roots
     _ensure_device_only()
     try:
         if path:
@@ -993,6 +1549,17 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
         _labeler_ref_cache = {}
         _labeler_ref_ready = False
         _labeler_ref_task = None
+        _labeler_ref_progress_total = 0
+        _labeler_ref_progress_built = 0
+        _manual_ref_cache = {}
+        _manual_ref_ready = False
+        _manual_ref_task = None
+        _manual_ref_progress_total = 0
+        _manual_ref_progress_built = 0
+        _manual_ref_per_cat = 0
+        _thumb_cache = {}
+        _resolved_gallery_path_cache = {}
+        _sheet_crop_roots = None
 
         return {
             "ok": True,

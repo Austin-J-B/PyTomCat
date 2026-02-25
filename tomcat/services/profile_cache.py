@@ -117,6 +117,17 @@ def _ttl_sec() -> int:
     except Exception:
         return 3600
 
+def _cache_is_stale() -> bool:
+    """Check staleness for either monotonic or wall-clock timestamps."""
+    ts = float(_TS or 0.0)
+    ttl = float(_ttl_sec())
+    if ts <= 0.0:
+        return True
+    # Snapshot files store epoch seconds; in-memory refresh uses monotonic seconds.
+    if ts > 1_000_000_000:
+        return (time.time() - ts) > ttl
+    return (time.monotonic() - ts) > ttl
+
 def refresh_sync() -> int:
     """Synchronously refresh the cache; returns number of profiles."""
     """Refresh the in-process cache from the CatDatabase sheet. Returns count on success, 0 on failure."""
@@ -222,6 +233,11 @@ def cached_count() -> int:
 def all_actual_names() -> list[str]:
     """Return a list of full cat names (with numeric prefixes) from cache."""
     _ensure_loaded()
+    if _cache_is_stale():
+        try:
+            refresh_sync()
+        except Exception:
+            pass
     if not _CACHE:
         return []
     names: list[str] = []
@@ -243,7 +259,7 @@ def get_profile(name: str) -> Optional[Dict[str, Any]]:
     """Fetch a profile dict from cache, refreshing if stale."""
     _ensure_loaded()
     #Refresh if stale based on TTL
-    if (time.monotonic() - _TS) > _ttl_sec():
+    if _cache_is_stale():
         try:
             refresh_sync()
         except Exception:

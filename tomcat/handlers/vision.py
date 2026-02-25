@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..intent_router import Intent
 from ..vision import vision as V
+from ..services.vision_feedback import register_identify_feedback
 
 #---------- helpers ----------
 async def _download_attachment(att: discord.Attachment) -> str:
@@ -157,6 +158,20 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         file = discord.File(io.BytesIO(out.boxed_jpeg), filename="identified.jpg")
 
         await reply_msg.edit(content=None, attachments=[file], embed=embed)
+        try:
+            await asyncio.to_thread(
+                register_identify_feedback,
+                reply_message_id=int(reply_msg.id),
+                reply_channel_id=int(getattr(ch, "id", 0) or 0),
+                source_message_id=int(getattr(message, "id", 0) or 0),
+                source_channel_id=int(getattr(message.channel, "id", 0) or 0),
+                guild_id=int(getattr(getattr(message, "guild", None), "id", 0) or 0),
+                image_bytes=data,
+                results=list(out.results or []),
+                source_image_url=str(getattr(att, "url", "") or ""),
+            )
+        except Exception as e:
+            log_action("viz_feedback_register_error", f"msg={getattr(reply_msg, 'id', 0)}", str(e))
         
         if not out.results:
             return

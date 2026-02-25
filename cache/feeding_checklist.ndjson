@@ -69,5 +69,6 @@
 {"date":"2026-02-21","status":{"Maintenance":true,"Lot 50":true,"The Greens":true,"HOP":true,"Snickers":true,"West Hall":true}}
 {"date":"2026-02-22","status":{"Microwave":true,"Business":true,"Snickers":true,"The Greens":true,"Maintenance":true,"HOP":true,"West Hall":true,"Lot 50":true}}
 {"date":"2026-02-23","status":{"Microwave":true,"West Hall":true,"Maintenance":true,"The Greens":true,"Snickers":true,"HOP":true,"Lot 50":true}}
-{"date":"2026-02-24","status":{"Lot 50":true,"Business":true,"The Greens":true,"HOP":true}}
-{"meta":{"updated_at":"2026-02-24T17:14:47.118731-06:00"}}
+{"date":"2026-02-24","status":{"Lot 50":true,"Business":true,"The Greens":true,"HOP":true,"Microwave":true}}
+{"date":"2026-02-25","status":{"Microwave":true}}
+{"meta":{"updated_at":"2026-02-25T10:58:00.533995-06:00"}}

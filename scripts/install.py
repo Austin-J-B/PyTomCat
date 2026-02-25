@@ -91,6 +91,7 @@ LABELER_DETECT_CONCURRENCY=1          # Bound concurrent detector requests
 LABELER_REFINE_CONCURRENCY=1          # Bound concurrent SAM refine requests
 LABELER_DETECT_TIMEOUT_SEC=25         # Timeout for interactive detector calls
 LABELER_DETECT_PREFETCH_TIMEOUT_SEC=15 # Timeout for background detector prefetch
+LABELER_DETECT_INLINE_SAM_PASSES=2    # Inline detector SAM refine passes (interactive detect)
 LABELER_REFINE_TIMEOUT_SEC=25         # Timeout for interactive refine calls
 LABELER_REFINE_PREFETCH_TIMEOUT_SEC=15 # Timeout for background refine prefetch
 LABELER_CLAIM_TTL_SEC=180             # Per-photo lock TTL for concurrent labeling

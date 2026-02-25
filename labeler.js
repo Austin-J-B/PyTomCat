@@ -69,6 +69,7 @@
     const CLASSIFY_REF_REFRESH_COOLDOWN_MS = 1200;
     const CLASSIFY_PREFETCH_FAIL_BASE_MS = 5000;
     const CLASSIFY_PREFETCH_FAIL_MAX_MS = 120000;
+    const CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS = 20000;
     const MANUAL_REF_CACHE_VERSION = 'manual_refs_v1';
     const FLAGGED_REF_SERIALS_STORAGE_KEY = 'labelerFlaggedRefSerials_v1';
     const MANUAL_PREFETCH_AHEAD = 4;
@@ -208,6 +209,9 @@
     let warmBarEl = null;
     let warmLabelEl = null;
     let warmSubEl = null;
+    let classifyItemLoadOverlayToken = 0;
+    let classifyItemLoadOverlayActive = false;
+    let pendingUndoRestore = null;
 
     //DOM references (set after init)
     let containerEl = null;
@@ -491,6 +495,7 @@
         activeImageLoadToken = imageLoadToken;
         imageReadyForCurrentItem = false;
         labelerMode = mode;
+        _cancelClassifyItemLoadOverlayWait();
         setWarmOverlay(false);
         setStatus(`Switching to ${mode}...`);
         const listEl = document.getElementById('predictions-list');
@@ -1127,6 +1132,91 @@
         warmOverlayEl.classList.remove('hidden');
     }
 
+    function _cancelClassifyItemLoadOverlayWait() {
+        classifyItemLoadOverlayActive = false;
+        classifyItemLoadOverlayToken += 1;
+    }
+
+    function _isClassifyItemLoadOverlayWaitActive() {
+        return !!(
+            classifyItemLoadOverlayActive
+            && classifyItemLoadOverlayToken > 0
+            && labelerMode === 'classify'
+            && currentItem
+        );
+    }
+
+    function _predictionRefsFullyLoadedForCrop(results, cropIdx) {
+        const depth = _predictionLoadedRefDepthForCrop(results, cropIdx, CLASSIFY_REFS_PER_CAT_TARGET);
+        if (depth.targetCount <= 0) return false;
+        return depth.candidatesAtDepth >= depth.targetCount;
+    }
+
+    function _isCurrentClassifyItemDisplayReady() {
+        if (labelerMode !== 'classify') return false;
+        if (!currentItem || !currentBoxes.length) return false;
+        if (!imageReadyForCurrentItem || !imageElement || !imageElement.complete) return false;
+        if (!_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) return false;
+        if (_predictionRefsAtTargetForCrop(currentPredictions, currentCropIdx)) {
+            return _predictionRefsFullyLoadedForCrop(currentPredictions, currentCropIdx);
+        }
+        return _predictionRefsSufficientForCrop(currentPredictions, currentCropIdx);
+    }
+
+    function startCurrentClassifyItemLoadOverlayWait() {
+        if (labelerMode !== 'classify' || !currentItem || !currentBoxes.length) return;
+        const token = ++classifyItemLoadOverlayToken;
+        classifyItemLoadOverlayActive = true;
+        const requestSerial = currentSerial;
+        const requestKey = getPredCacheKey(currentItem);
+        const startedAt = Date.now();
+
+        const tick = async () => {
+            while (labelerActive && labelerMode === 'classify') {
+                if (token !== classifyItemLoadOverlayToken) return;
+                if (requestSerial !== currentSerial) return;
+                if (requestKey !== getPredCacheKey(currentItem)) return;
+                if (_isCurrentClassifyItemDisplayReady()) {
+                    if (token === classifyItemLoadOverlayToken) {
+                        classifyItemLoadOverlayActive = false;
+                        setWarmOverlay(false);
+                        if (!initialClassifyWarmDone) {
+                            void ensureInitialClassifyWarmGate();
+                        }
+                    }
+                    return;
+                }
+                const elapsed = Date.now() - startedAt;
+                if (elapsed >= CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS) {
+                    if (token === classifyItemLoadOverlayToken) {
+                        classifyItemLoadOverlayActive = false;
+                        setWarmOverlay(false);
+                        if (!initialClassifyWarmDone) {
+                            void ensureInitialClassifyWarmGate();
+                        }
+                    }
+                    return;
+                }
+
+                const hasImage = !!(imageReadyForCurrentItem && imageElement && imageElement.complete);
+                const hasPreds = _predictionHasOptionsForCrop(currentPredictions, currentCropIdx);
+                if (!hasImage && !hasPreds) {
+                    const pct = Math.max(0.03, Math.min(0.55, elapsed / CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS));
+                    setWarmOverlay(true, 'Loading classifier item...', 'Loading image and classifier results', pct);
+                } else if (!hasImage) {
+                    const pct = Math.max(0.2, Math.min(0.7, elapsed / CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS));
+                    setWarmOverlay(true, 'Loading classifier item...', 'Waiting for image to render', pct);
+                } else if (!hasPreds) {
+                    showClassifierWarmOverlay('Loading classifier options...');
+                } else {
+                    showClassifierWarmOverlay('Loading reference photos...');
+                }
+                await waitMs(80);
+            }
+        };
+        void tick();
+    }
+
     function isDetectEntryReady(entry) {
         if (!entry || typeof entry !== 'object') return false;
         if (entry.ready === true) return true;
@@ -1450,6 +1540,24 @@
             setWarmOverlay(false);
             return;
         }
+        if (labelerMode === 'classify') {
+            const key = getPredCacheKey(item);
+            if (!key) return;
+            const deadline = Date.now() + Math.min(15000, ITEM_READY_WAIT_TIMEOUT_MS);
+            while (Date.now() < deadline && labelerActive && labelerMode === 'classify') {
+                const rows = predCache.get(key);
+                if (_classifyItemWarmReady(item)) {
+                    return;
+                }
+                if (Array.isArray(rows) && rows.length) {
+                    prefetchRefsFromResults(rows);
+                } else if (!classifyWarmInFlight.has(key) && !classifyForegroundInFlight.has(key)) {
+                    void ensureClassifyItemReady(item, false, false);
+                }
+                await waitMs(120);
+            }
+            return;
+        }
     }
 
     async function loadQueue(opts = {}) {
@@ -1464,13 +1572,12 @@
                 startWarmLoop();
                 setWarmOverlay(true, 'Loading first item...', 'Claiming item and starting image load', 0.4);
                 await loadCurrentItem();
-                setWarmOverlay(false);
+                if (labelerMode !== 'classify') {
+                    setWarmOverlay(false);
+                }
                 if (labelerMode === 'detect') {
                     // Warm detector queue in background after first item is already loading.
                     void ensureInitialDetectWarmGate();
-                } else if (labelerMode === 'classify') {
-                    // Warm classify refs in background after first item is already loading.
-                    void ensureInitialClassifyWarmGate();
                 }
                 void refreshNonActiveQueuesInBackground(labelerMode, { force: false });
             } else {
@@ -1495,6 +1602,8 @@
         console.log('[Labeler] loadCurrentItem called, queueIndex:', queueIndex, 'queue.length:', queue.length);
         prunePrefetchedClaims();
         let skippedClaims = 0;
+        let claimRetryLoops = 0;
+        let claimRetryStartedAt = 0;
         try {
             while (queueIndex < queue.length) {
                 modePositions[labelerMode] = queueIndex;
@@ -1502,8 +1611,19 @@
                 if (!item) break;
                 const claimResult = await claimQueueItem(item, labelerMode);
                 if (claimResult === 'error') {
+                    claimRetryLoops += 1;
+                    if (!claimRetryStartedAt) claimRetryStartedAt = Date.now();
+                    const elapsed = Math.max(0, Date.now() - claimRetryStartedAt);
+                    const pulse = ((claimRetryLoops - 1) % 12) / 12;
+                    const pct = Math.max(0.08, Math.min(0.92, 0.1 + pulse * 0.8));
+                    setWarmOverlay(
+                        true,
+                        'Waiting for queue lock...',
+                        `Claim request retry ${claimRetryLoops} • ${Math.round(elapsed / 1000)}s`,
+                        pct,
+                    );
                     setStatus('Waiting for queue lock...');
-                    await new Promise((resolve) => setTimeout(resolve, 220));
+                    await waitMs(220);
                     continue;
                 }
                 if (claimResult === 'denied') {
@@ -1514,6 +1634,9 @@
                     applyModeQueue();
                     updateInfo();
                     continue;
+                }
+                if (claimRetryLoops > 0) {
+                    setWarmOverlay(true, 'Claim acquired', 'Preparing image and predictions...', 0.18);
                 }
                 // Never block foreground navigation on warmup readiness.
                 void waitForCurrentItemReady(item);
@@ -1575,6 +1698,34 @@
                 } else if (labelerMode === 'manual' && currentBoxes.length) {
                     prepareManualReviewState();
                 }
+
+                if (
+                    pendingUndoRestore
+                    && pendingUndoRestore.mode === labelerMode
+                    && Number(pendingUndoRestore.serial) === Number(currentSerial)
+                ) {
+                    if (Array.isArray(pendingUndoRestore.boxes) && labelerMode === 'detect') {
+                        currentBoxes = pendingUndoRestore.boxes.map((b) => ({ ...b }));
+                        selectedBoxIdx = 0;
+                    }
+                    if (Array.isArray(pendingUndoRestore.labels) && (labelerMode === 'classify' || labelerMode === 'manual')) {
+                        currentLabels = pendingUndoRestore.labels.slice(0, currentBoxes.length);
+                        while (currentLabels.length < currentBoxes.length) currentLabels.push('');
+                        if (labelerMode === 'manual') {
+                            prepareManualReviewState();
+                        }
+                    }
+                    if (Number.isInteger(Number(pendingUndoRestore.cropIdx)) && currentBoxes.length > 0) {
+                        currentCropIdx = Math.max(0, Math.min(Number(pendingUndoRestore.cropIdx), currentBoxes.length - 1));
+                    }
+                    pendingUndoRestore = null;
+                }
+
+                if (labelerMode === 'classify' && currentBoxes.length) {
+                    startCurrentClassifyItemLoadOverlayWait();
+                } else {
+                    _cancelClassifyItemLoadOverlayWait();
+                }
                 updateInfo();
                 if (labelerMode === 'classify' && currentBoxes.length) {
                     // Start classifier request immediately; do not wait for image paint.
@@ -1601,6 +1752,7 @@
             } else {
                 setStatus('Queue complete!');
             }
+            _cancelClassifyItemLoadOverlayWait();
             setWarmOverlay(false);
             clearCanvas();
         } finally {
@@ -1718,6 +1870,8 @@
         manualPrefetchRequested = false;
         classifierWarmDisplayPct = 0;
         classifierWarmItemKey = '';
+        _cancelClassifyItemLoadOverlayWait();
+        pendingUndoRestore = null;
         initialClassifyWarmDone = false;
         prefetchedClaims.clear();
     }
@@ -2856,6 +3010,34 @@
         pendingUpdates[idx] = { ...pendingUpdates[idx], ...update };
     }
 
+    function findQueueIndexBySerial(serial) {
+        const sn = Number.parseInt(String(serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0) return -1;
+        for (let i = 0; i < queue.length; i++) {
+            if (Number(queue[i]?.serial) === sn) return i;
+        }
+        return -1;
+    }
+
+    function pushCropLabelUndo(nextLabel) {
+        if (labelerMode !== 'classify' && labelerMode !== 'manual') return;
+        if (currentSerial == null || !currentBoxes.length) return;
+        const cropIdx = Math.max(0, Math.min(Number(currentCropIdx || 0), currentBoxes.length - 1));
+        const prevLabel = String(currentLabels[cropIdx] || '');
+        const next = String(nextLabel || '');
+        if (prevLabel === next) return;
+        history.push({
+            type: 'crop_label',
+            mode: labelerMode,
+            serial: Number(currentSerial),
+            queueIndex: Number(queueIndex),
+            cropIdx,
+            labels: [...currentLabels],
+            prevLabel,
+            nextLabel: next,
+        });
+    }
+
     //---------- Actions ----------
 
     function saveAndAdvance() {
@@ -2871,7 +3053,13 @@
                 box_coords: formatYoloBoxes(currentBoxes),
             });
 
-            history.push({ type: 'detect', serial: currentSerial, boxes: [...currentBoxes] });
+            history.push({
+                type: 'detect',
+                mode: labelerMode,
+                serial: currentSerial,
+                queueIndex: Number(queueIndex),
+                boxes: currentBoxes.map((b) => ({ ...b })),
+            });
         } else {
             //Classifier mode - save labels
             queuePendingUpdate({
@@ -2882,7 +3070,20 @@
             initialClassifyWarmDone = true;
             setWarmOverlay(false);
 
-            history.push({ type: 'classify', serial: currentSerial, labels: [...currentLabels] });
+            history.push({
+                type: 'classify',
+                mode: labelerMode,
+                serial: currentSerial,
+                queueIndex: Number(queueIndex),
+                cropIdx: currentBoxes.length
+                    ? Math.max(0, Math.min(Number(currentCropIdx || 0), currentBoxes.length - 1))
+                    : 0,
+                labels: [...currentLabels],
+            });
+
+            if (labelerMode === 'classify') {
+                primeHotNextClassifyItem();
+            }
         }
 
         updateInfo();
@@ -2895,7 +3096,12 @@
             box_coords: 'Rejected',
         });
 
-        history.push({ type: 'reject', serial: currentSerial });
+        history.push({
+            type: 'reject',
+            mode: labelerMode,
+            serial: currentSerial,
+            queueIndex: Number(queueIndex),
+        });
         updateInfo();
         advanceQueue();
     }
@@ -2928,13 +3134,83 @@
         }
 
         const last = history.pop();
+        if (last && last.type === 'crop_label') {
+            const sameMode = String(last.mode || '') === String(labelerMode || '');
+            const sameSerial = Number(last.serial) === Number(currentSerial);
+            const sameQueuePos = Number(last.queueIndex) === Number(queueIndex);
+            if (sameMode && sameSerial && sameQueuePos) {
+                const snap = Array.isArray(last.labels) ? last.labels.slice() : [];
+                currentLabels = snap.slice(0, currentBoxes.length);
+                while (currentLabels.length < currentBoxes.length) currentLabels.push('');
+                if (labelerMode === 'manual') {
+                    prepareManualReviewState();
+                    const idx = Math.max(0, Math.min(Number(last.cropIdx || 0), Math.max(0, currentBoxes.length - 1)));
+                    currentCropIdx = idx;
+                    const cursor = manualReviewIndices.findIndex((n) => Number(n) === idx);
+                    if (cursor >= 0) manualReviewCursor = cursor;
+                    loadManualCandidates();
+                } else {
+                    currentCropIdx = Math.max(0, Math.min(Number(last.cropIdx || 0), Math.max(0, currentBoxes.length - 1)));
+                    loadPredictions();
+                }
+                drawCanvas();
+                updateInfo();
+                setStatus(`Undid crop ${Number(last.cropIdx || 0) + 1}`);
+                return;
+            }
+            // Fall back to navigation restore if the user already advanced.
+            pendingUndoRestore = {
+                mode: String(last.mode || labelerMode || ''),
+                serial: Number(last.serial || 0),
+                queueIndex: Number(last.queueIndex || 0),
+                cropIdx: Number(last.cropIdx || 0),
+                labels: Array.isArray(last.labels) ? last.labels.slice() : [],
+            };
+        }
+
+        if (last && last.mode && String(last.mode) !== String(labelerMode || '')) {
+            // Keep current behavior simple/safe across modes.
+            history.push(last);
+            pendingUndoRestore = null;
+            setStatus(`Switch to ${last.mode} mode to undo that action`);
+            return;
+        }
+
         //Remove from pending
-        const idx = pendingUpdates.findIndex(u => u.serial === last.serial);
+        const idx = pendingUpdates.findIndex(u => String(u?.serial || '') === String(last?.serial || ''));
         if (idx >= 0) pendingUpdates.splice(idx, 1);
+
+        if (!pendingUndoRestore && last) {
+            if (last.type === 'classify' && Array.isArray(last.labels)) {
+                pendingUndoRestore = {
+                    mode: String(last.mode || labelerMode || ''),
+                    serial: Number(last.serial || 0),
+                    queueIndex: Number(last.queueIndex || 0),
+                    cropIdx: Number(last.cropIdx || 0),
+                    labels: last.labels.slice(),
+                };
+            } else if (last.type === 'detect' && Array.isArray(last.boxes)) {
+                pendingUndoRestore = {
+                    mode: String(last.mode || labelerMode || ''),
+                    serial: Number(last.serial || 0),
+                    queueIndex: Number(last.queueIndex || 0),
+                    boxes: last.boxes.map((b) => ({ ...b })),
+                };
+            } else {
+                pendingUndoRestore = null;
+            }
+        }
 
         //Go back
         void releaseCurrentClaim();
-        queueIndex = Math.max(0, queueIndex - 1);
+        let targetIndex = last ? findQueueIndexBySerial(last.serial) : -1;
+        if (targetIndex < 0 && Number.isInteger(Number(last?.queueIndex))) {
+            targetIndex = Math.max(0, Math.min(Number(last.queueIndex), Math.max(0, queue.length - 1)));
+        }
+        if (targetIndex < 0) {
+            targetIndex = Math.max(0, queueIndex - 1);
+        }
+        queueIndex = targetIndex;
         modePositions[labelerMode] = queueIndex;
         void loadCurrentItem();
         setStatus('Undone');
@@ -3390,7 +3666,9 @@
                 if (stopTicker) {
                     stopTicker();
                 }
-                setWarmOverlay(false);
+                if (!(_isClassifyItemLoadOverlayWaitActive() && !_isCurrentClassifyItemDisplayReady())) {
+                    setWarmOverlay(false);
+                }
             }
         } finally {
             loadPredictionsBusy = false;
@@ -3651,6 +3929,7 @@
         if (sidebarEl) {
             manualSidebarRestoreScrollTop = sidebarEl.scrollTop;
         }
+        pushCropLabelUndo(selected);
         currentLabels[currentCropIdx] = selected;
         advanceManualCursor();
     }
@@ -3773,17 +4052,20 @@
 
         const item = items[num - 1];
         const name = item.querySelector('.pred-name').textContent;
+        pushCropLabelUndo(name);
         currentLabels[currentCropIdx] = name;
 
         advanceCrop();
     }
 
     function markNeedsReview() {
+        pushCropLabelUndo('NeedsReview');
         currentLabels[currentCropIdx] = 'NeedsReview';
         advanceCrop();
     }
 
     function rejectCrop() {
+        pushCropLabelUndo('Rejected');
         currentLabels[currentCropIdx] = 'Rejected';
         advanceCrop();
     }
@@ -3968,9 +4250,19 @@
         const nextItem = queue[queueIndex + 1];
         if (!nextItem || !nextItem.boxes) return;
         const key = getPredCacheKey(nextItem);
+        if (key && predCache.has(key)) {
+            const rows = predCache.get(key);
+            if (Array.isArray(rows) && rows.length) {
+                prefetchRefsFromResults(rows);
+            }
+            // If predictions exist but ref thumbnails are still decoding/loading, keep
+            // nudging the ref prefetch path instead of treating the item as fully primed.
+            if (_classifyItemWarmReady(nextItem)) {
+                return;
+            }
+        }
         if (
             !key
-            || predCache.has(key)
             || classifyWarmInFlight.has(key)
             || classifyForegroundInFlight.has(key)
         ) return;

@@ -1411,12 +1411,11 @@ def _sam_refine_box(img_array: Any, prompt_box: List[float]) -> Tuple[float, flo
         if np.any(rows) and np.any(cols):
             rmin, rmax = np.where(rows)[0][[0, -1]]
             cmin, cmax = np.where(cols)[0][[0, -1]]
-            #Add small margin
             return (
-                max(0, float(cmin - 5)),
-                max(0, float(rmin - 5)),
-                min(w, float(cmax + 5)),
-                min(h, float(rmax + 5))
+                max(0, float(cmin)),
+                max(0, float(rmin)),
+                min(w, float(cmax)),
+                min(h, float(rmax))
             )
     return tuple(prompt_box)
 

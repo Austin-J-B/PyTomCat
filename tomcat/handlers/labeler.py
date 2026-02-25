@@ -349,6 +349,11 @@ def _box_cat_ids_has_reviewed_label(box_cat_ids: Any) -> bool:
     return False
 
 
+def _has_reviewed_cat_label_token(label: Any) -> bool:
+    token = str(label or "").strip().lower()
+    return bool(token) and token not in _SKIP_CATID_LABELS
+
+
 def _maybe_schedule_queue_cache_warm(mode: str, queue: List[Dict[str, Any]]) -> None:
     """Throttle repeated queue cache warm kicks to reduce redundant disk/network churn."""
     if not queue:
@@ -777,13 +782,32 @@ def _build_sheet_crop_index_cache() -> Dict[Tuple[int, int], Dict[str, Any]]:
         if _is_flagged_ref_serial(serial):
             continue
         box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
+        box_cat_ids = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
+        catid_cell = str(row[COL_CAT_ID] if len(row) > COL_CAT_ID else "").strip()
         if not box_coords or box_coords.lower() == "rejected":
             continue
         coords = [c.strip() for c in box_coords.split("|")]
+        labels = [l.strip() for l in box_cat_ids.split("|")] if box_cat_ids else []
+
+        valid_coords: List[Tuple[int, str]] = []
         for i, coord in enumerate(coords):
-            if not coord:
+            if not coord or _parse_yolo_box_str(coord) is None:
                 continue
-            if _parse_yolo_box_str(coord) is None:
+            valid_coords.append((i, coord))
+        if not valid_coords:
+            continue
+
+        # Only expose crops that are still actively labeled.
+        # This prevents old cleared/incorrect refs (coords left behind, labels removed)
+        # from reappearing in the reference gallery.
+        single_box_cid_fallback = False
+        if len(valid_coords) == 1:
+            active_cats = [n for n in _parse_catid_cell_names(catid_cell) if _has_reviewed_cat_label_token(n)]
+            single_box_cid_fallback = len(active_cats) == 1
+
+        for i, coord in valid_coords:
+            has_box_label = i < len(labels) and _has_reviewed_cat_label_token(labels[i])
+            if not has_box_label and not single_box_cid_fallback:
                 continue
             crop_num = i + 1
             key = (int(serial), int(crop_num))
@@ -794,6 +818,7 @@ def _build_sheet_crop_index_cache() -> Dict[Tuple[int, int], Dict[str, Any]]:
                 "crop": int(crop_num),
                 "url": url,
                 "box": coord,
+                "label_source": "box_cat_ids" if has_box_label else "catid_single_box",
             }
     return out
 

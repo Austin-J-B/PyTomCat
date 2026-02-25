@@ -199,7 +199,7 @@
     let manualPrefetchRunning = false;
     let manualPrefetchRequested = false;
     let incorrectFlagMode = false;
-    let flagRequestInFlight = false;
+    let flagRequestsInFlight = new Set();
     let flaggedRefSerials = new Set();
     let initialDetectWarmDone = false;
     let initialClassifyWarmDone = false;
@@ -317,7 +317,7 @@
                             </div>
                         </div>
                         <div class="labeler-banner-tools">
-                            <span class="labeler-flag-hint hidden" id="labeler-flag-hint">Flag mode: click a reference photo</span>
+                            <span class="labeler-flag-hint hidden" id="labeler-flag-hint">Flag mode: click reference photos</span>
                             <button
                                 class="labeler-btn labeler-btn-secondary labeler-btn-danger labeler-flag-icon-btn"
                                 id="btn-flag-incorrect"
@@ -389,7 +389,7 @@
                 if (refFrame) {
                     void flagReferenceFromFrame(refFrame);
                 } else {
-                    setStatus('Flag mode active: click a reference photo to flag it.');
+                    setStatus('Flag mode active: click reference photos to flag them.');
                 }
                 return;
             }
@@ -1813,6 +1813,13 @@
         return flaggedRefSerials.has(sn);
     }
 
+    function isRefSerialFlagging(serial) {
+        const sn = Number.parseInt(String(serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0) return false;
+        if (flaggedRefSerials.has(sn)) return false;
+        return flagRequestsInFlight.has(sn);
+    }
+
     function markRefSerialFlagged(serial) {
         const sn = Number.parseInt(String(serial || ''), 10);
         if (!Number.isInteger(sn) || sn <= 0) return;
@@ -1829,6 +1836,20 @@
             flaggedRefSerials.delete(sn);
             saveFlaggedRefSerials();
         }
+    }
+
+    function forEachRefFrameBySerial(serial, visit) {
+        const sn = Number.parseInt(String(serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0 || typeof visit !== 'function') return;
+        const listEl = document.getElementById('predictions-list');
+        if (!listEl) return;
+        listEl.querySelectorAll(`.ref-frame[data-ref-serial="${sn}"]`).forEach((el) => visit(el));
+    }
+
+    function setRefSerialFlagging(serial, isFlagging) {
+        forEachRefFrameBySerial(serial, (el) => {
+            el.classList.toggle('ref-flagging', !!isFlagging);
+        });
     }
 
     function resetPredCache() {
@@ -2450,7 +2471,7 @@
         }
         resetPredCache();
         incorrectFlagMode = false;
-        flagRequestInFlight = false;
+        flagRequestsInFlight.clear();
         containerEl?.classList?.remove('labeler-flag-mode');
         updateFlagButtonState();
         detectWarmInFlight.clear();
@@ -2847,7 +2868,7 @@
         }
         updateFlagButtonState();
         if (incorrectFlagMode) {
-            setStatus('Flag mode ON: click a reference photo to clear labels for that serial.');
+            setStatus('Flag mode ON: click reference photos to clear labels for those serials.');
         }
     }
 
@@ -2860,19 +2881,24 @@
     }
 
     async function flagReferenceFromFrame(frameEl) {
-        if (!frameEl || flagRequestInFlight) return;
+        if (!frameEl) return;
         const serialRaw = String(frameEl.getAttribute('data-ref-serial') || '').trim();
         const serial = Number.parseInt(serialRaw, 10);
         if (!Number.isInteger(serial) || serial <= 0) {
             setStatus('Reference cannot be flagged (no serial metadata).');
             return;
         }
+        if (flagRequestsInFlight.has(serial)) {
+            setStatus(`Already flagging sn${serial}...`);
+            return;
+        }
         const cropRaw = String(frameEl.getAttribute('data-ref-crop') || '').trim();
         const cropNum = Number.parseInt(cropRaw, 10);
         const sourceCrop = Number.isInteger(cropNum) && cropNum > 0 ? cropNum : null;
 
-        flagRequestInFlight = true;
-        frameEl.classList.add('ref-flagging');
+        flagRequestsInFlight.add(serial);
+        setRefSerialFlagging(serial, true);
+        setStatus(`Flagging sn${serial} for relabeling...`);
         try {
             const payload = await apiPost('/api/labeler/flag_incorrect', {
                 serial,
@@ -2880,21 +2906,20 @@
                 source_serial: currentSerial,
                 source_crop: sourceCrop,
             }, { maxAttempts: 4, timeoutMs: 30000 });
-            const listEl = document.getElementById('predictions-list');
-            if (listEl) {
-                listEl.querySelectorAll(`.ref-frame[data-ref-serial="${serial}"]`).forEach((el) => {
-                    el.classList.remove('ref-flagging');
-                    el.classList.add('ref-flagged');
-                });
-            }
+            forEachRefFrameBySerial(serial, (el) => {
+                el.classList.remove('ref-flagging');
+                el.classList.add('ref-flagged');
+            });
             markRefSerialFlagged(serial);
             if (payload && payload.changed === false) {
-                setStatus(`sn${serial} is already unlabeled.`);
+                setStatus(incorrectFlagMode
+                    ? `sn${serial} is already unlabeled. Flag mode still ON.`
+                    : `sn${serial} is already unlabeled.`);
             } else {
-                setStatus(`Flagged sn${serial} for relabeling (sheet updated).`);
+                setStatus(incorrectFlagMode
+                    ? `Flagged sn${serial} for relabeling (sheet updated). Flag mode still ON.`
+                    : `Flagged sn${serial} for relabeling (sheet updated).`);
             }
-            // Exit flag mode after one successful action to avoid accidental key-block feel.
-            setIncorrectFlagMode(false);
             try {
                 await refreshQueues(true);
                 applyModeQueue();
@@ -2905,8 +2930,8 @@
         } catch (e) {
             setStatus(`Flag failed: ${e.message}`);
         } finally {
-            flagRequestInFlight = false;
-            frameEl.classList.remove('ref-flagging');
+            flagRequestsInFlight.delete(serial);
+            setRefSerialFlagging(serial, false);
         }
     }
 
@@ -3740,13 +3765,14 @@
                 const ready = isRefImageReady(src);
                 const sn = info.serial != null ? `sn${info.serial}` : '';
                 const isFlagged = isRefSerialFlagged(info.serial);
+                const isFlagging = isRefSerialFlagging(info.serial);
                 const cropNum = Number(info.crop) || null;
                 const cropText = cropNum ? ` crop ${cropNum}` : '';
                 const caption = sn || cropNum ? `${sn}${cropText}`.trim() : '';
                 const serialAttr = info.serial != null ? ` data-ref-serial="${escapeHtml(String(info.serial))}"` : '';
                 const cropAttr = cropNum ? ` data-ref-crop="${escapeHtml(String(cropNum))}"` : '';
                 refs.push(`
-                    <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}"${serialAttr}${cropAttr}>
+                    <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}${isFlagging ? ' ref-flagging' : ''}"${serialAttr}${cropAttr}>
                         <img loading="eager" decoding="async" src="${escapeHtml(src)}" alt="${safeName} ref ${refIdx + 1}">
                         ${ready && caption ? `<div class="ref-overlay">${escapeHtml(caption)}</div>` : ''}
                     </div>
@@ -3888,13 +3914,14 @@
                 const ready = isRefImageReady(src);
                 const sn = info.serial != null ? `sn${info.serial}` : '';
                 const isFlagged = isRefSerialFlagged(info.serial);
+                const isFlagging = isRefSerialFlagging(info.serial);
                 const cropNum = Number(info.crop) || null;
                 const cropText = cropNum ? ` crop ${cropNum}` : '';
                 const caption = sn || cropNum ? `${sn}${cropText}`.trim() : '';
                 const serialAttr = info.serial != null ? ` data-ref-serial="${escapeHtml(String(info.serial))}"` : '';
                 const cropAttr = cropNum ? ` data-ref-crop="${escapeHtml(String(cropNum))}"` : '';
                 refsHtml.push(`
-                    <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}"${serialAttr}${cropAttr}>
+                    <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}${isFlagging ? ' ref-flagging' : ''}"${serialAttr}${cropAttr}>
                         <img loading="eager" decoding="async" src="${escapeHtml(src)}" alt="${safeDisplayName} ref ${refIdx + 1}">
                         ${ready && caption ? `<div class="ref-overlay">${escapeHtml(caption)}</div>` : ''}
                     </div>

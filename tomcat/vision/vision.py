@@ -1,4 +1,4 @@
-"""Utilities for running YOLO detection and DINOv3 ReID similarity for TomCat."""
+﻿"""Utilities for running YOLO detection and DINOv3 ReID similarity for TomCat."""
 
 from __future__ import annotations
 import io
@@ -15,7 +15,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Any, Callable, cast
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 import torch
 from torch import Tensor
 
@@ -513,7 +513,7 @@ def _thumb_b64(path: str, size: int = 96) -> Optional[str]:
         return cached
     try:
         resolved = _resolve_gallery_path(path)
-        img = Image.open(resolved).convert("RGB")
+        img = _open_rgb_image(resolved)
         img.thumbnail((size, size))
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=80)
@@ -537,6 +537,16 @@ def _thumb_b64_from_pil(img: Image.Image, size: int = 96) -> Optional[str]:
         return base64.b64encode(buf.getvalue()).decode("ascii")
     except Exception:
         return None
+
+
+def _open_rgb_image(source: Any) -> Image.Image:
+    """Open an image and normalize EXIF orientation before RGB conversion."""
+    img = Image.open(source)
+    try:
+        img = ImageOps.exif_transpose(img)
+    except Exception:
+        pass
+    return img.convert("RGB")
 
 def _make_collage(crops: List[Image.Image]) -> Image.Image:
     """Combine multiple crops into a single grid image."""
@@ -572,7 +582,7 @@ def _run_yolo(img: Image.Image) -> List[Det]:
 
 def detect(image_bytes: bytes) -> IdentifyResult:
     """Run detection only and return the boxed image."""
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
     dets = _run_yolo(img)
     annotated = _draw_boxes(img.copy(), dets)
@@ -584,7 +594,7 @@ def detect(image_bytes: bytes) -> IdentifyResult:
 
 def crop(image_bytes: bytes) -> IdentifyResult:
     """Run detection and return a collage of the cropped cats."""
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
     dets = _run_yolo(img)
     
@@ -606,7 +616,7 @@ def crop(image_bytes: bytes) -> IdentifyResult:
 
 def identify(image_bytes: bytes) -> IdentifyResult:
     """Run detection then 512D similarity search for identification."""
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
     
     _ensure_classifier()
@@ -774,7 +784,7 @@ def identify_boxes(
     include_ref_thumbs: bool = True,
 ) -> IdentifyResult:
     """Run DINOv3 identification on specific normalized boxes (cx, cy, w, h)."""
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
     _ensure_classifier()
 
@@ -1048,7 +1058,7 @@ async def _build_ref_cache(
             if not data:
                 continue
             try:
-                img = Image.open(io.BytesIO(data)).convert("RGB")
+                img = _open_rgb_image(io.BytesIO(data))
             except Exception:
                 continue
             img_w, img_h = img.size
@@ -1274,7 +1284,7 @@ def _embed_query_from_box(
     box: Tuple[float, float, float, float],
 ) -> Optional[Tensor]:
     try:
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img = _open_rgb_image(io.BytesIO(image_bytes))
     except Exception:
         return None
     _enforce_max_dim(img)
@@ -1422,7 +1432,7 @@ def _sam_refine_box(img_array: Any, prompt_box: List[float]) -> Tuple[float, flo
 def detect_with_sam(image_bytes: bytes) -> DetectWithSamResult:
     """Run YOLO detection then refine each box with SAM segmentation."""
     import numpy as np
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
     img_array = np.array(img)
     
@@ -1450,7 +1460,7 @@ def refine_boxes(
 ) -> List[Tuple[float, float, float, float]]:
     """Refine provided YOLO-normalized boxes with SAM; returns absolute xyxy boxes."""
     import numpy as np
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
     img_array = np.array(img)
     img_w, img_h = img.size
@@ -1569,3 +1579,4 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
     except Exception as e:
         log_action("viz_gallery_refresh_error", "error", str(e))
         return {"ok": False, "error": str(e)}
+

@@ -81,46 +81,9 @@ CV_DETECT_WEIGHTS=weights/984_917_yolo12s.pt
 CV_ENCODER_WEIGHTS=weights/R4_cat_DINOv3_encoder.pth
 CV_GALLERY_PATH=weights/R4.5_cat_DINOv3_gallery.pt
 CV_CLF_IMGSZ=518
-CV_MAX_DOWNLOAD_MB=0                  # Set to 0 to lift the max file size limit
-SHOW_CACHE_WARM_CONCURRENCY=1         # Reduce boot-time cache warm load
-SHOW_CACHE_CROP_ON_FILL=false         # Skip CV crop during cache fill to avoid event-loop stalls
-LABELER_IDENTIFY_CONCURRENCY=1        # Bound concurrent classifier requests
-LABELER_IDENTIFY_TIMEOUT_SEC=45       # Timeout for interactive classifier calls
-LABELER_IDENTIFY_PREFETCH_TIMEOUT_SEC=20 # Shorter timeout for background prefetch
-LABELER_DETECT_CONCURRENCY=1          # Bound concurrent detector requests
-LABELER_REFINE_CONCURRENCY=1          # Bound concurrent SAM refine requests
-LABELER_DETECT_TIMEOUT_SEC=25         # Timeout for interactive detector calls
-LABELER_DETECT_PREFETCH_TIMEOUT_SEC=15 # Timeout for background detector prefetch
-LABELER_DETECT_INLINE_SAM_PASSES=2    # Inline detector SAM refine passes (interactive detect)
-LABELER_REFINE_TIMEOUT_SEC=25         # Timeout for interactive refine calls
-LABELER_REFINE_PREFETCH_TIMEOUT_SEC=15 # Timeout for background refine prefetch
-LABELER_CLAIM_TTL_SEC=180             # Per-photo lock TTL for concurrent labeling
-LABELER_RERANK_ENABLED=1              # Enable rotation rerank on top classifier candidates
-LABELER_RERANK_TOP_N=15               # Number of candidate cats considered for rerank
-LABELER_RERANK_ANGLES=-10,0,10        # Rotation angles (degrees) used for rerank variants
-LABELER_RERANK_HFLIP=1                # Include horizontal-flip variants during rerank
-LABELER_REF_EMBED_BATCH_SIZE=8        # Batch size for building labeler ref embeddings
-LABELER_MANUAL_REF_PER_CAT=50         # Manual review cache sample count per cat (lighter all-cat view)
-LABELER_MANUAL_FALLBACK_REFS_PER_CAT=5 # Random fallback refs for cats not in current gallery embeddings
-LABELER_MANUAL_SHEET_REF_SAMPLE_PER_CAT=20 # Reservoir sample size per cat from sheet rows (manual fallback source)
-LABELER_MANUAL_SHEET_REF_TTL_SEC=600  # Cache TTL (seconds) for manual fallback sheet index
-LABELER_PROFILE_REFRESH_MIN_SEC=300   # Minimum seconds between CatDatabase refresh attempts during manual review
-LABELER_CLASSIFY_MIN_PIXELS=122500    # Classifier queue pre-filter: minimum image area in pixels (w*h)
-LABELER_CLASSIFY_MIN_DIM=0            # Optional classifier queue pre-filter: minimum width/height (0 disables)
-LABELER_CLASSIFY_MIN_BLUR=35          # Blur gate (variance of Laplacian); lower values are blurrier
-LABELER_CLASSIFY_BLUR_MAX_DIM=640     # Downscale max dimension before blur scoring (speed/consistency)
-LABELER_CLASSIFY_PREFILTER_CONCURRENCY=3 # Parallel quality checks while building classify queue
-LABELER_CLASSIFY_PREFILTER_MAX_SYNC_ITEMS=8 # Max uncached images to quality-check inline per queue request
-LABELER_CLASSIFY_PREFILTER_SYNC_ITEM_TIMEOUT_SEC=3 # Per-item timeout for inline quality checks
-LABELER_CLASSIFY_PREFILTER_BG_CONCURRENCY=3 # Background quality scan concurrency for deferred items
-LABELER_CLASSIFY_PREFILTER_CACHE_TTL_SEC=1800 # Cache TTL for classifier quality checks
-LABELER_CLASSIFY_PREFILTER_CACHE_MAX=20000 # Max cached serial quality results in-memory
-LABELER_QUEUE_CACHE_WARM_COOLDOWN_SEC=8 # Throttle repeated queue cache warm kicks to reduce startup churn
-GALLERY_MIN_PIXELS=122500             # Minimum crop area for gallery training (350x350)
-GALLERY_MIN_PER_CAT=4                 # Minimum eligible crops required per cat
-GALLERY_EMBED_BATCH_SIZE=32           # Encoder batch size during gallery rebuild
-GALLERY_TTA_HFLIP=1                   # Apply horizontal-flip TTA when embedding crops
-GALLERY_KEEP_WORKDIR=0                # Set 1 to keep intermediate crops in cache/gallery_retrain/work
+# Advanced CV/labeler performance knobs intentionally use code defaults.
+# Keep .env focused on stable deployment config (secrets, IDs, paths, toggles).
+# Only add tuning overrides when intentionally performance testing.
 
 # ===== Gmail Ingestion =====
 GMAIL_ENABLED=true                    # Toggle Gmail integration; disable to skip email polling entirely

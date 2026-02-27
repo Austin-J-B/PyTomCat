@@ -34,7 +34,7 @@
     const ZOOM_MAX = 6.0;
     const ZOOM_STEP = 0.12;
     const PREFETCH_AHEAD = 12;
-    const PREFETCH_CONCURRENCY = 1;
+    const PREFETCH_CONCURRENCY = 2;
     const IMAGE_PREFETCH_AHEAD = 12;
     const IMAGE_PREFETCH_MAX = 80;
     const DETECT_PREFETCH_AHEAD = 12;
@@ -80,6 +80,8 @@
     const REF_IMAGE_RETRY_BASE_MS = 1500;
     const REF_IMAGE_RETRY_MAX_MS = 60000;
     const REF_IMAGE_RETRY_MAX_ATTEMPTS = 6;
+    const REF_DISPLAY_HQ_SIZE = 384;
+    const CLASSIFY_AUTO_SKIP_STREAK_LIMIT = 3;
 
     function getApiBase() {
         let base = '';
@@ -99,6 +101,16 @@
         if (/^https?:\/\//i.test(path)) return path;
         if (!path.startsWith('/')) path = `/${path}`;
         return `${base}${path}`;
+    }
+
+    function isLikelyDriveImageUrl(url) {
+        const s = String(url || '').trim().toLowerCase();
+        if (!s) return false;
+        return (
+            s.includes('drive.google.com')
+            || s.includes('drive.usercontent.google.com')
+            || s.includes('googleusercontent.com')
+        );
     }
 
     //State
@@ -125,6 +137,11 @@
     let imageLoadToken = 0;
     let activeImageLoadToken = 0;
     let imageLoadRetryCount = 0;
+    let queueAdvanceStartedAt = 0;
+    let queueAdvanceFromSerial = null;
+    let queueAdvanceMeta = null;
+    let autoSkipStreak = 0;
+    let autoSkipHistory = [];
     let zoomLevel = 1.0;
     let panX = 0;
     let panY = 0;
@@ -212,6 +229,9 @@
     let classifyItemLoadOverlayToken = 0;
     let classifyItemLoadOverlayActive = false;
     let pendingUndoRestore = null;
+    let lastClaimErrorKind = '';
+    let lastClaimErrorMessage = '';
+    let lastResumeWarmKickTs = 0;
 
     //DOM references (set after init)
     let containerEl = null;
@@ -460,6 +480,14 @@
         //Keyboard
         document.addEventListener('keydown', onKeyDown);
         document.addEventListener('keyup', onKeyUp);
+        window.addEventListener('focus', () => {
+            kickWarmOnResume('window-focus');
+        });
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                kickWarmOnResume('tab-visible');
+            }
+        });
 
         if (canvasAreaEl) {
             resizeCanvasToContainer();
@@ -652,7 +680,15 @@
                 throw new Error(detail ? `API error: ${resp.status} - ${detail}` : `API error: ${resp.status}`);
             } catch (e) {
                 const isAbort = e && e.name === 'AbortError';
-                const isNet = String(e && e.message || '').toLowerCase().includes('failed to fetch');
+                const errMsg = String(e && e.message || '');
+                const errMsgLower = errMsg.toLowerCase();
+                const isNet = (
+                    (typeof TypeError !== 'undefined' && e instanceof TypeError)
+                    || errMsgLower.includes('failed to fetch')
+                    || errMsgLower.includes('networkerror')
+                    || errMsgLower.includes('network request failed')
+                    || errMsgLower.includes('load failed')
+                );
                 const retryable = isAbort || isNet;
                 lastError = isAbort ? new Error(`API timeout: ${timeoutMs}ms`) : e;
                 if (attempt < maxAttempts && retryable) {
@@ -751,6 +787,58 @@
         } catch (e) {
             // Diagnostics are best-effort.
         }
+    }
+
+    function resetAutoSkipStreak() {
+        autoSkipStreak = 0;
+        autoSkipHistory = [];
+    }
+
+    function autoSkipCurrentItem(reason, extra = {}) {
+        const rec = {
+            reason: String(reason || 'unknown'),
+            mode: String(labelerMode || ''),
+            serial: Number(currentSerial || 0),
+            queue_index: Number(queueIndex || 0),
+            queue_pos: Number(queueIndex || 0) + 1,
+            queue_total: Number(queueTotal || 0),
+            ts: Date.now(),
+            ...extra,
+        };
+        autoSkipStreak = Math.max(1, Number(autoSkipStreak || 0) + 1);
+        autoSkipHistory.push(rec);
+        if (autoSkipHistory.length > 8) autoSkipHistory = autoSkipHistory.slice(-8);
+        void postUiDiag('auto_skip', {
+            ...rec,
+            streak: autoSkipStreak,
+        });
+
+        const shouldHalt = (
+            labelerMode === 'classify'
+            && autoSkipStreak >= CLASSIFY_AUTO_SKIP_STREAK_LIMIT
+        );
+        if (shouldHalt) {
+            queueAdvanceStartedAt = 0;
+            queueAdvanceFromSerial = null;
+            const recentSerials = autoSkipHistory
+                .map((r) => Number(r?.serial || 0))
+                .filter((sn) => Number.isInteger(sn) && sn > 0)
+                .map((sn) => `sn${sn}`)
+                .join(', ');
+            setWarmOverlay(false);
+            setStatus(
+                `Paused after ${autoSkipStreak} auto-skips. `
+                + `Recent: ${recentSerials || 'unknown'}. Refresh or inspect this item.`
+            );
+            void postUiDiag('auto_skip_halt', {
+                ...rec,
+                streak: autoSkipStreak,
+                recent: autoSkipHistory.slice(-CLASSIFY_AUTO_SKIP_STREAK_LIMIT),
+            });
+            return;
+        }
+
+        advanceQueue();
     }
 
     function stopClaimHeartbeat() {
@@ -864,6 +952,8 @@
         prunePrefetchedClaims();
         const key = claimCacheKey(mode, item.serial);
         if (key && currentClaim && currentClaim.mode === mode && String(currentClaim.serial) === String(item.serial)) {
+            lastClaimErrorKind = '';
+            lastClaimErrorMessage = '';
             return 'granted';
         }
         const prefetched = key ? prefetchedClaims.get(key) : null;
@@ -871,6 +961,8 @@
             prefetchedClaims.delete(key);
             currentClaim = { mode, serial: item.serial };
             startClaimHeartbeat();
+            lastClaimErrorKind = '';
+            lastClaimErrorMessage = '';
             return 'granted';
         }
         try {
@@ -882,10 +974,26 @@
             if (data && data.granted) {
                 currentClaim = { mode, serial: item.serial };
                 startClaimHeartbeat();
+                lastClaimErrorKind = '';
+                lastClaimErrorMessage = '';
                 return 'granted';
             }
+            lastClaimErrorKind = '';
+            lastClaimErrorMessage = '';
             return 'denied';
         } catch (e) {
+            const msg = String(e && e.message || '').trim();
+            const status = getApiErrorStatus(e);
+            lastClaimErrorMessage = msg || 'Claim request failed';
+            if (status === 401 || /missing session user/i.test(msg)) {
+                lastClaimErrorKind = 'auth';
+                return 'auth';
+            }
+            if (isTransientApiError(e) || /networkerror|network request failed|failed to fetch|load failed/i.test(msg)) {
+                lastClaimErrorKind = 'network';
+                return 'retry';
+            }
+            lastClaimErrorKind = 'error';
             return 'error';
         }
     }
@@ -1002,6 +1110,44 @@
             queueBackgroundRefreshPromise = null;
         }
         return queueBackgroundRefreshPromise;
+    }
+
+    function kickWarmOnResume(reason = '') {
+        if (!labelerActive) return;
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        const now = Date.now();
+        if ((now - Number(lastResumeWarmKickTs || 0)) < 1200) return;
+        lastResumeWarmKickTs = now;
+
+        // Resume path: browser timers are often throttled in background tabs.
+        // Kick warmers immediately when the tab/window becomes active again.
+        void refreshQueueMode(labelerMode, { force: false })
+            .then(() => {
+                if (!labelerActive) return;
+                if (labelerMode === 'classify') {
+                    prefetchPredictions();
+                    primeHotNextClassifyItem();
+                    if (Array.isArray(currentPredictions) && currentPredictions.length) {
+                        prefetchRefsFromResults(currentPredictions);
+                        const rs = currentSerial;
+                        const rk = getPredCacheKey(currentItem);
+                        if (rs != null && rk) {
+                            void _refreshCurrentPredictionRefs(rs, rk, 'Loading additional reference photos...');
+                        }
+                    }
+                } else if (labelerMode === 'detect') {
+                    prefetchDetection();
+                    prefetchDetectionRefine();
+                } else if (labelerMode === 'manual') {
+                    prefetchManualCandidates();
+                }
+                prefetchImages();
+            })
+            .catch(() => {
+                // Resume warm kick is best-effort.
+            });
+        void refreshNonActiveQueuesInBackground(labelerMode, { force: false });
+        void runWarmTick();
     }
 
     function queueForMode(mode) {
@@ -1157,10 +1303,8 @@
         if (!currentItem || !currentBoxes.length) return false;
         if (!imageReadyForCurrentItem || !imageElement || !imageElement.complete) return false;
         if (!_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) return false;
-        if (_predictionRefsAtTargetForCrop(currentPredictions, currentCropIdx)) {
-            return _predictionRefsFullyLoadedForCrop(currentPredictions, currentCropIdx);
-        }
-        return _predictionRefsSufficientForCrop(currentPredictions, currentCropIdx);
+        // Do not block first paint on reference photo hydration.
+        return true;
     }
 
     function startCurrentClassifyItemLoadOverlayWait() {
@@ -1432,7 +1576,7 @@
             setWarmOverlay(
                 true,
                 'Preparing detector queue...',
-                `${ready}/${targetReady} ready • usable ${usable}/${windowItems.length} • in-flight ${inflight} • backoff ${blocked}`,
+                `${ready}/${targetReady} ready - usable ${usable}/${windowItems.length} - in-flight ${inflight} - backoff ${blocked}`,
                 pct,
             );
             if (ready >= targetReady) {
@@ -1492,7 +1636,7 @@
             setWarmOverlay(
                 true,
                 'Preparing classifier queue...',
-                `${ready}/${targetReady} ready • preds ${predReady}/${windowItems.length} • in-flight ${inflight} • backoff ${blocked}`,
+                `${ready}/${targetReady} ready - preds ${predReady}/${windowItems.length} - in-flight ${inflight} - backoff ${blocked}`,
                 pct,
             );
             if (ready >= targetReady) {
@@ -1609,20 +1753,58 @@
                 modePositions[labelerMode] = queueIndex;
                 const item = queue[queueIndex];
                 if (!item) break;
+                if (queueAdvanceMeta) {
+                    queueAdvanceMeta.to_serial = Number(item?.serial || 0) || null;
+                    if (!queueAdvanceMeta.claim_started_at) {
+                        queueAdvanceMeta.claim_started_at = Date.now();
+                    }
+                }
                 const claimResult = await claimQueueItem(item, labelerMode);
-                if (claimResult === 'error') {
+                if (claimResult === 'error' || claimResult === 'retry' || claimResult === 'auth') {
                     claimRetryLoops += 1;
                     if (!claimRetryStartedAt) claimRetryStartedAt = Date.now();
                     const elapsed = Math.max(0, Date.now() - claimRetryStartedAt);
+                    if (queueAdvanceMeta) {
+                        queueAdvanceMeta.claim_retry_loops = claimRetryLoops;
+                        queueAdvanceMeta.claim_error_kind = String(lastClaimErrorKind || '');
+                    }
                     const pulse = ((claimRetryLoops - 1) % 12) / 12;
                     const pct = Math.max(0.08, Math.min(0.92, 0.1 + pulse * 0.8));
+                    let overlayTitle = 'Retrying claim...';
+                    let overlaySub = `Claim request retry ${claimRetryLoops} - ${Math.round(elapsed / 1000)}s`;
+                    let statusMsg = 'Retrying claim...';
+                    if (claimResult === 'retry' || lastClaimErrorKind === 'network') {
+                        overlayTitle = 'Reconnecting...';
+                        statusMsg = 'Claim request retrying (network/transient error)...';
+                    } else if (claimResult === 'auth' || lastClaimErrorKind === 'auth') {
+                        overlayTitle = 'Session expired';
+                        overlaySub = 'Claim failed (missing/expired session). Refresh the page.';
+                        statusMsg = 'Claim failed: session expired. Refresh the page.';
+                    } else if (lastClaimErrorMessage) {
+                        const compact = String(lastClaimErrorMessage).slice(0, 180);
+                        overlaySub = `Claim request retry ${claimRetryLoops}: ${compact}`;
+                        statusMsg = 'Claim request error - retrying...';
+                    }
+                    if (claimRetryLoops === 1 || (claimRetryLoops % 10) === 0) {
+                        void postUiDiag('claim_retry', {
+                            serial: Number(item?.serial || 0) || null,
+                            result: claimResult,
+                            error_kind: String(lastClaimErrorKind || ''),
+                            error: String(lastClaimErrorMessage || ''),
+                            loops: claimRetryLoops,
+                            elapsed_ms: elapsed,
+                        });
+                    }
                     setWarmOverlay(
                         true,
-                        'Waiting for queue lock...',
-                        `Claim request retry ${claimRetryLoops} • ${Math.round(elapsed / 1000)}s`,
+                        overlayTitle,
+                        overlaySub,
                         pct,
                     );
-                    setStatus('Waiting for queue lock...');
+                    setStatus(statusMsg);
+                    if ((claimRetryLoops % 8) === 0) {
+                        void refreshQueueMode(labelerMode, { force: true });
+                    }
                     await waitMs(220);
                     continue;
                 }
@@ -1638,6 +1820,11 @@
                 if (claimRetryLoops > 0) {
                     setWarmOverlay(true, 'Claim acquired', 'Preparing image and predictions...', 0.18);
                 }
+                if (queueAdvanceMeta) {
+                    queueAdvanceMeta.claim_granted_at = Date.now();
+                    queueAdvanceMeta.claim_retry_loops = claimRetryLoops;
+                    queueAdvanceMeta.claim_error_kind = String(lastClaimErrorKind || '');
+                }
                 // Never block foreground navigation on warmup readiness.
                 void waitForCurrentItemReady(item);
                 console.log('[Labeler] Loading item:', item);
@@ -1648,6 +1835,12 @@
                 console.log('[Labeler] Built cached URL:', currentImageUrl);
                 imageReadyForCurrentItem = false;
                 imageLoadRetryCount = 0;
+                if (queueAdvanceMeta && labelerMode === 'classify') {
+                    const key = getPredCacheKey(item);
+                    queueAdvanceMeta.pred_cache_hit = !!(key && predCache.has(key));
+                    queueAdvanceMeta.classify_warm_ready = !!_classifyItemWarmReady(item);
+                    queueAdvanceMeta.drive_like = !!isLikelyDriveImageUrl(item?.url || '');
+                }
 
                 //Parse existing boxes if any (for classifier mode)
                 if (item.boxes) {
@@ -2103,10 +2296,29 @@
                 ? refImg
                 : `data:image/jpeg;base64,${refImg}`;
         }
+        const hasSheetCropMeta = Number.isInteger(Number(info?.serial)) && Number(info?.serial) > 0
+            && Number.isInteger(Number(info?.crop)) && Number(info?.crop) > 0;
+        if (hasSheetCropMeta && refUrl) {
+            return refUrl.startsWith('/') ? buildApiUrl(refUrl) : refUrl;
+        }
         if (refUrl) {
             return refUrl.startsWith('/') ? buildApiUrl(refUrl) : refUrl;
         }
         return '';
+    }
+
+    function _extractRefCropUrl(ref, size = REF_DISPLAY_HQ_SIZE) {
+        const info = typeof ref === 'string'
+            ? { img: ref, serial: null, crop: null }
+            : (ref || {});
+        const refUrl = String(info.url || info.src || '').trim();
+        const hasSheetCropMeta = Number.isInteger(Number(info?.serial)) && Number(info?.serial) > 0
+            && Number.isInteger(Number(info?.crop)) && Number(info?.crop) > 0;
+        if (!hasSheetCropMeta || !refUrl) return '';
+        const base = refUrl.startsWith('/') ? buildApiUrl(refUrl) : refUrl;
+        const sep = base.includes('?') ? '&' : '?';
+        const px = Math.max(96, Math.min(512, Number(size || REF_DISPLAY_HQ_SIZE) || REF_DISPLAY_HQ_SIZE));
+        return `${base}${sep}size=${Math.round(px)}`;
     }
 
     function _clearRefRetryTimer(src) {
@@ -2463,6 +2675,9 @@
         togglePrefetchTimer(false);
         classifierWarmDisplayPct = 0;
         classifierWarmItemKey = '';
+        queueAdvanceStartedAt = 0;
+        queueAdvanceFromSerial = null;
+        resetAutoSkipStreak();
         loadPredictionsBusy = false;
         loadPredictionsQueuedForce = false;
         if (manualRefPollId) {
@@ -2497,6 +2712,9 @@
         const token = ++imageLoadToken;
         activeImageLoadToken = token;
         imageReadyForCurrentItem = false;
+        if (queueAdvanceMeta && !queueAdvanceMeta.load_image_at) {
+            queueAdvanceMeta.load_image_at = Date.now();
+        }
         if (imageElement) imageElement.dataset.loadToken = String(token);
         setStatus('Loading image...');
         if (!url) {
@@ -2527,6 +2745,7 @@
             return;
         }
         imageReadyForCurrentItem = true;
+        resetAutoSkipStreak();
         console.log('[Labeler] onImageLoad fired');
         //Resize canvas to match container
         const imgW = imageElement.naturalWidth;
@@ -2537,6 +2756,42 @@
             console.error('[Labeler] Image has no dimensions!');
             setStatus('Image loaded but has no dimensions');
             return;
+        }
+
+        if (queueAdvanceStartedAt > 0) {
+            const transitionMs = Math.max(0, Date.now() - Number(queueAdvanceStartedAt || 0));
+            const fromSerial = Number(queueAdvanceFromSerial || 0) || null;
+            const meta = queueAdvanceMeta && typeof queueAdvanceMeta === 'object'
+                ? { ...queueAdvanceMeta, image_loaded_at: Date.now() }
+                : null;
+            queueAdvanceStartedAt = 0;
+            queueAdvanceFromSerial = null;
+            queueAdvanceMeta = null;
+            if (transitionMs >= 1500) {
+                const claimWaitMs = meta && meta.claim_started_at && meta.claim_granted_at
+                    ? Math.max(0, Number(meta.claim_granted_at) - Number(meta.claim_started_at))
+                    : 0;
+                const preImageMs = meta && meta.claim_granted_at && meta.load_image_at
+                    ? Math.max(0, Number(meta.load_image_at) - Number(meta.claim_granted_at))
+                    : 0;
+                const imageLoadMs = meta && meta.load_image_at && meta.image_loaded_at
+                    ? Math.max(0, Number(meta.image_loaded_at) - Number(meta.load_image_at))
+                    : 0;
+                void postUiDiag('transition_slow', {
+                    from_serial: fromSerial,
+                    to_serial: Number(currentSerial || 0) || null,
+                    ms: transitionMs,
+                    mode: labelerMode,
+                    claim_wait_ms: claimWaitMs,
+                    pre_image_ms: preImageMs,
+                    image_load_ms: imageLoadMs,
+                    claim_retry_loops: Number(meta?.claim_retry_loops || 0),
+                    claim_error_kind: String(meta?.claim_error_kind || ''),
+                    pred_cache_hit: !!meta?.pred_cache_hit,
+                    classify_warm_ready: !!meta?.classify_warm_ready,
+                    drive_like: !!meta?.drive_like,
+                });
+            }
         }
 
         resizeCanvasToContainer();
@@ -2582,12 +2837,25 @@
         console.error('[Labeler] Image load failed:', currentImageUrl, e);
         const serial = currentSerial;
         const itemUrl = String(currentItem?.url || '').trim();
+        const isDriveSource = isLikelyDriveImageUrl(itemUrl);
         const retryN = Number(imageLoadRetryCount || 0);
+        void postUiDiag('image_error', {
+            serial: Number(serial || 0) || null,
+            retry_count: retryN,
+            item_url: itemUrl,
+            current_image_url: String(currentImageUrl || ''),
+            drive_like: !!isDriveSource,
+        });
 
         if (retryN === 0 && serial) {
             imageLoadRetryCount = 1;
             //Do not block on cache warm if source URL is already available.
             void warmCachedImage(serial);
+            if (isDriveSource) {
+                setStatus('Cached image failed - retrying via server proxy...');
+                loadImage(buildApiUrl(`/api/labeler/cached_image/${serial}?proxy=1&retry=${Date.now()}`));
+                return;
+            }
             if (itemUrl.startsWith('http')) {
                 setStatus('Cached image failed - loading source URL...');
                 const sep = itemUrl.includes('?') ? '&' : '?';
@@ -2596,6 +2864,13 @@
             }
             setStatus('Image load failed - retrying cache...');
             loadImage(buildApiUrl(`/api/labeler/cached_image/${serial}?retry=${Date.now()}`));
+            return;
+        }
+
+        if (retryN === 1 && serial && isDriveSource) {
+            imageLoadRetryCount = 2;
+            setStatus('Retrying server proxy...');
+            loadImage(buildApiUrl(`/api/labeler/cached_image/${serial}?proxy=1&retry2=${Date.now()}`));
             return;
         }
 
@@ -2608,7 +2883,11 @@
         }
 
         setStatus('Image load failed after retries - skipping...');
-        advanceQueue();
+        autoSkipCurrentItem('image_load_failed_after_retries', {
+            retry_count: retryN,
+            current_image_url: String(currentImageUrl || ''),
+            item_url: itemUrl,
+        });
     }
 
     async function runDetection() {
@@ -2658,7 +2937,10 @@
         } catch (e) {
             if (isNoImageApiError(e)) {
                 setStatus('Detector image unavailable - skipping...');
-                advanceQueue();
+                autoSkipCurrentItem('detector_image_unavailable', {
+                    api: 'detect',
+                    message: String(e && e.message || ''),
+                });
                 return;
             }
             setStatus(`Detection failed: ${e.message}`);
@@ -2911,7 +3193,17 @@
                 el.classList.add('ref-flagged');
             });
             markRefSerialFlagged(serial);
-            if (payload && payload.changed === false) {
+            const queuedSheetUpdate = !!(payload && payload.queued && payload.applied !== true);
+            if (queuedSheetUpdate) {
+                const pendingCount = Number(payload?.queue_pending || 0);
+                const deduped = !!payload?.queue_deduped;
+                const suffix = pendingCount > 1 ? ` (${pendingCount} queued)` : '';
+                setStatus(
+                    deduped
+                        ? `sn${serial} already queued for background flag sync${suffix}.`
+                        : `Flagged sn${serial} (sheet sync queued in background)${suffix}.`
+                );
+            } else if (payload && payload.changed === false) {
                 setStatus(incorrectFlagMode
                     ? `sn${serial} is already unlabeled. Flag mode still ON.`
                     : `sn${serial} is already unlabeled.`);
@@ -2920,12 +3212,16 @@
                     ? `Flagged sn${serial} for relabeling (sheet updated). Flag mode still ON.`
                     : `Flagged sn${serial} for relabeling (sheet updated).`);
             }
-            try {
-                await refreshQueues(true);
-                applyModeQueue();
+            if (!queuedSheetUpdate) {
+                try {
+                    await refreshQueues(true);
+                    applyModeQueue();
+                    updateInfo();
+                } catch (e) {
+                    // Queue refresh is best-effort after flagging.
+                }
+            } else {
                 updateInfo();
-            } catch (e) {
-                // Queue refresh is best-effort after flagging.
             }
         } catch (e) {
             setStatus(`Flag failed: ${e.message}`);
@@ -3132,6 +3428,27 @@
     }
 
     function advanceQueue() {
+        queueAdvanceStartedAt = Date.now();
+        queueAdvanceFromSerial = Number(currentSerial || 0) || null;
+        queueAdvanceMeta = {
+            mode: String(labelerMode || ''),
+            from_serial: Number(currentSerial || 0) || null,
+            to_serial: null,
+            started_at: queueAdvanceStartedAt,
+            claim_started_at: 0,
+            claim_granted_at: 0,
+            load_image_at: 0,
+            image_loaded_at: 0,
+            claim_retry_loops: 0,
+            claim_error_kind: '',
+            pred_cache_hit: false,
+            classify_warm_ready: false,
+            drive_like: false,
+        };
+        setStatus(labelerMode === 'classify' ? 'Loading next classifier photo...' : 'Loading next item...');
+        if (labelerMode === 'classify') {
+            setWarmOverlay(true, 'Loading next classifier photo...', 'Claiming item and starting image load', 0.08);
+        }
         void releaseCurrentClaim();
         queueIndex++;
         modePositions[labelerMode] = queueIndex;
@@ -3147,6 +3464,9 @@
             }
             void loadCurrentItem();
         } else {
+            queueAdvanceStartedAt = 0;
+            queueAdvanceFromSerial = null;
+            queueAdvanceMeta = null;
             setStatus('Queue complete! Save pending changes.');
             clearCanvas();
         }
@@ -3750,22 +4070,55 @@
                     : (ref || {});
                 const refImg = String(info.img || info.thumb || '').trim();
                 const refUrl = String(info.url || info.src || '').trim();
-                let src = '';
-                if (refImg) {
-                    src = refImg.startsWith('data:image')
+                const baseSrc = _extractRefSrc(info);
+                const hasSheetCropMeta = Number.isInteger(Number(info?.serial)) && Number(info?.serial) > 0
+                    && Number.isInteger(Number(info?.crop)) && Number(info?.crop) > 0;
+                const inlineSrc = refImg
+                    ? (refImg.startsWith('data:image')
                         ? refImg
-                        : `data:image/jpeg;base64,${refImg}`;
-                } else if (refUrl) {
-                    src = refUrl.startsWith('/') ? buildApiUrl(refUrl) : refUrl;
+                        : `data:image/jpeg;base64,${refImg}`)
+                    : '';
+                const hqSrc = hasSheetCropMeta ? _extractRefCropUrl(info, REF_DISPLAY_HQ_SIZE) : '';
+                const fallbackUrlSrc = (!hqSrc && refUrl)
+                    ? (refUrl.startsWith('/') ? buildApiUrl(refUrl) : refUrl)
+                    : '';
+
+                if (baseSrc) prefetchRefImageSrc(baseSrc);
+                if (inlineSrc && inlineSrc !== baseSrc) prefetchRefImageSrc(inlineSrc);
+                if (hqSrc) prefetchRefImageSrc(hqSrc);
+                if (fallbackUrlSrc) prefetchRefImageSrc(fallbackUrlSrc);
+
+                let src = '';
+                if (hqSrc && isRefImageReady(hqSrc)) {
+                    src = hqSrc;
+                } else if (baseSrc) {
+                    src = baseSrc;
+                } else if (hqSrc) {
+                    src = hqSrc;
+                } else if (fallbackUrlSrc) {
+                    src = fallbackUrlSrc;
                 }
-                prefetchRefImageSrc(src);
                 if (!src) continue;
-                const refState = String(refImagePrefetchState.get(src) || '');
-                if (refState === 'error') continue;
-                const ready = isRefImageReady(src);
+
+                const srcState = String(refImagePrefetchState.get(src) || '');
+                if (srcState === 'error') {
+                    const backup = (src === hqSrc && baseSrc) ? baseSrc : '';
+                    if (!backup || String(refImagePrefetchState.get(backup) || '') === 'error') {
+                        continue;
+                    }
+                    src = backup;
+                }
+
+                const ready = !!(
+                    (hqSrc && isRefImageReady(hqSrc))
+                    || (baseSrc && isRefImageReady(baseSrc))
+                    || (inlineSrc && isRefImageReady(inlineSrc))
+                    || isRefImageReady(src)
+                );
                 const sn = info.serial != null ? `sn${info.serial}` : '';
                 const isFlagged = isRefSerialFlagged(info.serial);
                 const isFlagging = isRefSerialFlagging(info.serial);
+                if (isFlagged) continue;
                 const cropNum = Number(info.crop) || null;
                 const cropText = cropNum ? ` crop ${cropNum}` : '';
                 const caption = sn || cropNum ? `${sn}${cropText}`.trim() : '';
@@ -3899,22 +4252,55 @@
                     : (ref || {});
                 const refImg = String(info.img || info.thumb || '').trim();
                 const refUrl = String(info.url || info.src || '').trim();
-                let src = '';
-                if (refImg) {
-                    src = refImg.startsWith('data:image')
+                const baseSrc = _extractRefSrc(info);
+                const hasSheetCropMeta = Number.isInteger(Number(info?.serial)) && Number(info?.serial) > 0
+                    && Number.isInteger(Number(info?.crop)) && Number(info?.crop) > 0;
+                const inlineSrc = refImg
+                    ? (refImg.startsWith('data:image')
                         ? refImg
-                        : `data:image/jpeg;base64,${refImg}`;
-                } else if (refUrl) {
-                    src = refUrl.startsWith('/') ? buildApiUrl(refUrl) : refUrl;
+                        : `data:image/jpeg;base64,${refImg}`)
+                    : '';
+                const hqSrc = hasSheetCropMeta ? _extractRefCropUrl(info, REF_DISPLAY_HQ_SIZE) : '';
+                const fallbackUrlSrc = (!hqSrc && refUrl)
+                    ? (refUrl.startsWith('/') ? buildApiUrl(refUrl) : refUrl)
+                    : '';
+
+                if (baseSrc) prefetchRefImageSrc(baseSrc);
+                if (inlineSrc && inlineSrc !== baseSrc) prefetchRefImageSrc(inlineSrc);
+                if (hqSrc) prefetchRefImageSrc(hqSrc);
+                if (fallbackUrlSrc) prefetchRefImageSrc(fallbackUrlSrc);
+
+                let src = '';
+                if (hqSrc && isRefImageReady(hqSrc)) {
+                    src = hqSrc;
+                } else if (baseSrc) {
+                    src = baseSrc;
+                } else if (hqSrc) {
+                    src = hqSrc;
+                } else if (fallbackUrlSrc) {
+                    src = fallbackUrlSrc;
                 }
-                prefetchRefImageSrc(src);
                 if (!src) continue;
-                const refState = String(refImagePrefetchState.get(src) || '');
-                if (refState === 'error') continue;
-                const ready = isRefImageReady(src);
+
+                const srcState = String(refImagePrefetchState.get(src) || '');
+                if (srcState === 'error') {
+                    const backup = (src === hqSrc && baseSrc) ? baseSrc : '';
+                    if (!backup || String(refImagePrefetchState.get(backup) || '') === 'error') {
+                        continue;
+                    }
+                    src = backup;
+                }
+
+                const ready = !!(
+                    (hqSrc && isRefImageReady(hqSrc))
+                    || (baseSrc && isRefImageReady(baseSrc))
+                    || (inlineSrc && isRefImageReady(inlineSrc))
+                    || isRefImageReady(src)
+                );
                 const sn = info.serial != null ? `sn${info.serial}` : '';
                 const isFlagged = isRefSerialFlagged(info.serial);
                 const isFlagging = isRefSerialFlagging(info.serial);
+                if (isFlagged) continue;
                 const cropNum = Number(info.crop) || null;
                 const cropText = cropNum ? ` crop ${cropNum}` : '';
                 const caption = sn || cropNum ? `${sn}${cropText}`.trim() : '';
@@ -4414,8 +4800,10 @@
                     setDetectEntry(key, entry.raw, data.boxes_yolo, true);
                 }
             }).catch(() => {
-                //Fail soft: keep raw detector boxes so this serial does not block warm progress.
-                setDetectEntry(key, entry.raw, entry.raw, true);
+                // Fail soft: keep raw detector boxes usable, but do NOT mark ready.
+                // When this serial becomes current, onImageLoad will auto-refine instead
+                // of treating the raw YOLO boxes as fully SAM-tightened.
+                setDetectEntry(key, entry.raw, entry.raw, false);
             }).finally(() => {
                 detectRefineInFlight.delete(key);
             });
@@ -4700,3 +5088,4 @@
     });
 
 })();
+

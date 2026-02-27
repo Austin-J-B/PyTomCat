@@ -17,6 +17,8 @@ SPAM_PATTERNS = [
 
 SUSPICIOUS_TERMS = [
     ("dm_if_interested", 2, re.compile(r"\b(?:dm|message|text)\s+me\s+if\s+(?:(?:you'?re|you\s+are)\s+)?interested\b", re.I)),
+    ("interested_should_dm", 2, re.compile(r"\b(?:any\s*one|anyone)\b.*\binterested\b.*\b(?:should|can|pls|please)?\s*(?:dm|pm|message|text)\b(?:\s+me)?\b", re.I)),
+    ("gifting_device", 2, re.compile(r"\b(?:gift(?:ing)?(?:\s+out)?|giv(?:e|ing)\s+away)\b.*\b(?:mac\s*book|macbook|iphone|ps\s*5|playstation|laptop)\b", re.I)),
     ("sell_my", 1, re.compile(r"\bsell(?:ing)?\s+my\b", re.I)),
     ("season_tickets", 1, re.compile(r"\bseason\s+tickets?\b", re.I)),
     ("selling_tickets", 1, re.compile(r"\bsell(?:ing)?\s+(?:my\s+)?tickets?\b", re.I)),

@@ -11,7 +11,7 @@ import time
 import re
 import html as html_lib
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 from urllib.parse import urlparse, parse_qs
 
 from ..config import settings
@@ -46,6 +46,31 @@ _ERROR_LOG_WINDOW_SEC = max(
 _ERROR_LOG_MAX_PER_WINDOW = max(
     1, int(os.getenv("LABELER_CACHE_ERROR_LOG_MAX_PER_WINDOW", "6") or "6")
 )
+_HTTP_CONN_LIMIT = max(
+    8, int(os.getenv("LABELER_CACHE_HTTP_CONN_LIMIT", "32") or "32")
+)
+_HTTP_CONN_LIMIT_PER_HOST = max(
+    2, int(os.getenv("LABELER_CACHE_HTTP_CONN_LIMIT_PER_HOST", "12") or "12")
+)
+_HTTP_DNS_CACHE_TTL_SEC = max(
+    0, int(os.getenv("LABELER_CACHE_HTTP_DNS_CACHE_TTL_SEC", "300") or "300")
+)
+_DRIVE_FETCH_TOTAL_TIMEOUT_SEC = max(
+    2.0,
+    float(os.getenv("LABELER_CACHE_DRIVE_FETCH_TOTAL_TIMEOUT_SEC", "8") or "8"),
+)
+_DRIVE_FETCH_TOTAL_TIMEOUT_BYPASS_SEC = max(
+    _DRIVE_FETCH_TOTAL_TIMEOUT_SEC,
+    float(os.getenv("LABELER_CACHE_DRIVE_FETCH_TOTAL_TIMEOUT_BYPASS_SEC", "16") or "16"),
+)
+_DRIVE_FETCH_PER_REQUEST_TIMEOUT_SEC = max(
+    0.8,
+    float(os.getenv("LABELER_CACHE_DRIVE_FETCH_PER_REQUEST_TIMEOUT_SEC", "3") or "3"),
+)
+_DRIVE_FETCH_PER_REQUEST_TIMEOUT_BYPASS_SEC = max(
+    _DRIVE_FETCH_PER_REQUEST_TIMEOUT_SEC,
+    float(os.getenv("LABELER_CACHE_DRIVE_FETCH_PER_REQUEST_TIMEOUT_BYPASS_SEC", "6") or "6"),
+)
 
 #In-memory tracking of what's currently cached
 _cached_serials: set[int] = set()
@@ -60,6 +85,8 @@ _error_window_logged: int = 0
 _error_window_suppressed: int = 0
 _download_inflight_lock = asyncio.Lock()
 _download_inflight: Dict[int, asyncio.Task] = {}
+_http_session_lock = asyncio.Lock()
+_http_session: Optional[aiohttp.ClientSession] = None
 
 
 def _record_download_success() -> None:
@@ -172,6 +199,20 @@ def _extract_drive_id(url: str) -> Optional[str]:
     return None
 
 
+def _is_drive_like_url(url: str) -> bool:
+    """Return True for Google Drive/googleusercontent URLs used by the labeler."""
+    try:
+        parsed = urlparse(str(url or ""))
+        netloc = str(parsed.netloc or "").lower()
+    except Exception:
+        return False
+    return (
+        "drive.google.com" in netloc
+        or "drive.usercontent.google.com" in netloc
+        or "googleusercontent.com" in netloc
+    )
+
+
 def _extract_drive_html_image_url(page_html: str) -> Optional[str]:
     """Best-effort parse for direct image URL from Google Drive HTML pages."""
     text = str(page_html or "")
@@ -217,6 +258,38 @@ def _drive_thumbnail_candidates(drive_id: str) -> List[str]:
     ]
 
 
+def _drive_download_candidates(url: str, drive_id: str) -> List[str]:
+    """Return deduped Drive candidate URLs ordered to avoid slow wrapper pages first."""
+    original = str(url or "").strip()
+    did = str(drive_id or "").strip()
+    if not did:
+        return [original] if original else []
+
+    direct_candidates = [
+        *_drive_thumbnail_candidates(did),
+        f"https://drive.usercontent.google.com/download?id={did}&export=download",
+        f"https://drive.usercontent.google.com/download?id={did}&export=view",
+        f"https://drive.google.com/uc?export=download&id={did}",
+        f"https://drive.google.com/uc?export=view&id={did}",
+    ]
+    # Many /file/.../view links return HTML wrappers or hang longer than direct/thumbnail URLs.
+    # Prefer direct endpoints first unless the original URL is already a direct image URL.
+    if _is_drive_like_url(original) and "drive.google.com" in str(urlparse(original).netloc or "").lower():
+        ordered = [*direct_candidates, original]
+    else:
+        ordered = [original, *direct_candidates]
+
+    seen: set[str] = set()
+    uniq: List[str] = []
+    for candidate in ordered:
+        c = str(candidate or "").strip()
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        uniq.append(c)
+    return uniq
+
+
 def _looks_like_image(data: bytes, content_type: str | None = None) -> bool:
     """Best-effort check for common image formats."""
     if content_type:
@@ -234,6 +307,41 @@ def _looks_like_image(data: bytes, content_type: str | None = None) -> bool:
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return True
     return False
+
+
+async def _get_http_session() -> aiohttp.ClientSession:
+    """Shared aiohttp session for labeler image fetches (connection reuse matters for Drive)."""
+    global _http_session
+    sess = _http_session
+    if sess is not None and not sess.closed:
+        return sess
+    async with _http_session_lock:
+        sess = _http_session
+        if sess is not None and not sess.closed:
+            return sess
+        connector = aiohttp.TCPConnector(
+            limit=int(_HTTP_CONN_LIMIT),
+            limit_per_host=int(_HTTP_CONN_LIMIT_PER_HOST),
+            ttl_dns_cache=int(_HTTP_DNS_CACHE_TTL_SEC),
+            enable_cleanup_closed=True,
+        )
+        timeout = aiohttp.ClientTimeout(total=None)
+        _http_session = aiohttp.ClientSession(
+            timeout=timeout,
+            connector=connector,
+            headers={"User-Agent": "TomCatLabeler/1.0"},
+        )
+        return _http_session
+
+
+async def close_http_session() -> None:
+    """Close the shared HTTP session used by labeler cache downloads."""
+    global _http_session
+    async with _http_session_lock:
+        sess = _http_session
+        _http_session = None
+    if sess is not None and not sess.closed:
+        await sess.close()
 
 
 def _scan_cache() -> set[int]:
@@ -337,77 +445,112 @@ async def _download_image(
     if not bypass_backoff and time.monotonic() < float(_download_backoff_until_mono):
         return None
     try:
-        timeout = aiohttp.ClientTimeout(total=timeout_sec)
-        headers = {"User-Agent": "TomCatLabeler/1.0"}
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as sess:
-            candidates = [url]
-            drive_id = _extract_drive_id(url)
-            if drive_id:
-                candidates.extend([
-                    *_drive_thumbnail_candidates(drive_id),
-                    f"https://drive.google.com/uc?export=download&id={drive_id}",
-                    f"https://drive.google.com/uc?export=view&id={drive_id}",
-                    f"https://drive.usercontent.google.com/download?id={drive_id}&export=download",
-                    f"https://drive.usercontent.google.com/download?id={drive_id}&export=view",
-                ])
+        sess = await _get_http_session()
+        drive_id = _extract_drive_id(url)
+        if drive_id:
+            uniq_candidates = _drive_download_candidates(url, drive_id)
+        else:
+            uniq_candidates = [str(url or "").strip()]
 
-            seen = set()
-            uniq_candidates = []
-            for candidate in candidates:
-                if candidate and candidate not in seen:
-                    seen.add(candidate)
-                    uniq_candidates.append(candidate)
+        attempts = max(1, int(max_attempts))
+        last_error: Optional[Exception] = None
+        drive_deadline_mono: float = 0.0
+        if drive_id:
+            total_budget = (
+                float(_DRIVE_FETCH_TOTAL_TIMEOUT_BYPASS_SEC)
+                if bypass_backoff
+                else float(_DRIVE_FETCH_TOTAL_TIMEOUT_SEC)
+            )
+            drive_deadline_mono = time.monotonic() + max(1.0, float(total_budget))
+            per_request_timeout = (
+                float(_DRIVE_FETCH_PER_REQUEST_TIMEOUT_BYPASS_SEC)
+                if bypass_backoff
+                else float(_DRIVE_FETCH_PER_REQUEST_TIMEOUT_SEC)
+            )
+        else:
+            per_request_timeout = max(0.5, float(timeout_sec))
 
-            attempts = max(1, int(max_attempts))
-            last_error: Optional[Exception] = None
-            for attempt in range(1, attempts + 1):
-                for candidate in uniq_candidates:
-                    try:
-                        async with sess.get(candidate, allow_redirects=True) as resp:
-                            if resp.status != 200:
-                                continue
-                            data = await resp.read()
-                            if _looks_like_image(data, resp.headers.get("Content-Type")):
-                                _record_download_success()
-                                _record_url_download_success(candidate)
-                                return data
-                            # Some Drive "view" links return HTML wrappers.
-                            ctype = str(resp.headers.get("Content-Type") or "").lower()
-                            if "text/html" in ctype:
-                                try:
-                                    page = data.decode("utf-8", errors="ignore")
-                                except Exception:
-                                    page = ""
-                                img_url = _extract_drive_html_image_url(page)
-                                if img_url:
-                                    try:
-                                        async with sess.get(img_url, allow_redirects=True) as img_resp:
-                                            if img_resp.status == 200:
-                                                img_data = await img_resp.read()
-                                                if _looks_like_image(img_data, img_resp.headers.get("Content-Type")):
-                                                    _record_download_success()
-                                                    _record_url_download_success(candidate)
-                                                    return img_data
-                                    except Exception as e2:
-                                        last_error = e2
-                                if drive_id and _is_drive_quota_page(page):
-                                    for thumb_url in _drive_thumbnail_candidates(drive_id):
-                                        try:
-                                            async with sess.get(thumb_url, allow_redirects=True) as thumb_resp:
-                                                if thumb_resp.status != 200:
-                                                    continue
-                                                thumb_data = await thumb_resp.read()
-                                                if _looks_like_image(thumb_data, thumb_resp.headers.get("Content-Type")):
-                                                    _record_download_success()
-                                                    _record_url_download_success(thumb_url)
-                                                    return thumb_data
-                                        except Exception as e3:
-                                            last_error = e3
-                    except Exception as e:
-                        last_error = e
-                        continue
-                if attempt < attempts:
-                    await asyncio.sleep(0.2 * attempt)
+        async def _fetch_image_only(candidate_url: str, req_timeout_sec: float) -> Optional[bytes]:
+            nonlocal last_error
+            timeout = aiohttp.ClientTimeout(total=max(0.5, float(req_timeout_sec)))
+            try:
+                async with sess.get(candidate_url, allow_redirects=True, timeout=timeout) as resp:
+                    if resp.status != 200:
+                        return None
+                    data = await resp.read()
+                    if _looks_like_image(data, resp.headers.get("Content-Type")):
+                        return data
+                    return None
+            except Exception as e:
+                last_error = e
+                return None
+
+        async def _fetch_candidate(candidate_url: str, req_timeout_sec: float) -> Tuple[Optional[bytes], Optional[str]]:
+            nonlocal last_error
+            timeout = aiohttp.ClientTimeout(total=max(0.5, float(req_timeout_sec)))
+            try:
+                async with sess.get(candidate_url, allow_redirects=True, timeout=timeout) as resp:
+                    if resp.status != 200:
+                        return None, None
+                    data = await resp.read()
+                    if _looks_like_image(data, resp.headers.get("Content-Type")):
+                        return data, candidate_url
+                    # Some Drive "view" links return HTML wrappers.
+                    ctype = str(resp.headers.get("Content-Type") or "").lower()
+                    if "text/html" in ctype:
+                        try:
+                            page = data.decode("utf-8", errors="ignore")
+                        except Exception:
+                            page = ""
+                        img_url = _extract_drive_html_image_url(page)
+                        nested_timeout = max(0.5, min(float(req_timeout_sec), float(per_request_timeout)))
+                        if img_url:
+                            img_data = await _fetch_image_only(img_url, nested_timeout)
+                            if img_data:
+                                return img_data, img_url
+                        if drive_id and _is_drive_quota_page(page):
+                            for thumb_url in _drive_thumbnail_candidates(drive_id):
+                                thumb_data = await _fetch_image_only(thumb_url, nested_timeout)
+                                if thumb_data:
+                                    return thumb_data, thumb_url
+            except Exception as e:
+                last_error = e
+            return None, None
+
+        budget_exhausted = False
+        for attempt in range(1, attempts + 1):
+            for candidate in uniq_candidates:
+                req_timeout_sec = float(per_request_timeout)
+                if drive_deadline_mono > 0.0:
+                    remaining = float(drive_deadline_mono) - time.monotonic()
+                    if remaining <= 0.0:
+                        budget_exhausted = True
+                        break
+                    req_timeout_sec = max(0.5, min(float(per_request_timeout), float(remaining)))
+                data, success_key = await _fetch_candidate(candidate, req_timeout_sec)
+                if data:
+                    _record_download_success()
+                    if success_key:
+                        _record_url_download_success(success_key)
+                        if success_key != candidate:
+                            _record_url_download_success(candidate)
+                    else:
+                        _record_url_download_success(candidate)
+                    return data
+            if budget_exhausted:
+                break
+            if attempt < attempts:
+                sleep_for = 0.2 * attempt
+                if drive_deadline_mono > 0.0:
+                    remaining = float(drive_deadline_mono) - time.monotonic()
+                    if remaining <= 0.0:
+                        budget_exhausted = True
+                        break
+                    sleep_for = min(float(sleep_for), max(0.0, float(remaining)))
+                if sleep_for > 0:
+                    await asyncio.sleep(float(sleep_for))
+        if budget_exhausted and last_error is None and drive_id:
+            last_error = asyncio.TimeoutError("Drive fetch budget exhausted")
         _record_download_failure()
         _record_url_download_failure(url)
         if log_errors and last_error is not None:

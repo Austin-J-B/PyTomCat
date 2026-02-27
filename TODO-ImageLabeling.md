@@ -1,4 +1,4 @@
-# TomCat Image Labeling Pipeline - Implementation TODO
+﻿# TomCat Image Labeling Pipeline - Implementation TODO
 
 > **Created:** 2026-01-30  
 > **Status:** Planning Complete - Awaiting Execution  
@@ -169,10 +169,7 @@ Total: 7,443 embeddings across 94 cats
   - Keep the nightly full rebuild as the source of truth.
   - Add an optional fast path that re-embeds only recently corrected/flagged serials, then refreshes those entries in the active gallery.
   - Ensure this still handles older corrected labels (from incorrect-label flags) without requiring users to wait for the next full sweep.
-- [ ] Full CatDatabase editor (location, description, birthday, etc.)
-  - If not feasible/pretty/realistic, add a 'new cat' button with a simple dropdown of like "name, physical description, location(s)" that integrates with the CatDatabase tab.
-  -Currently considering if this makes sense as an option. it may just be easier to use the google sheet itself and add a new row there since there are less than 200 currently. If we wanted to 'add new cat' in the website, we'd have to figure out a way to drag/drop the rows of the catabase and also update the data validation.
-
+  
 - [x] Update column A `CatID` from classifier labels in column J using CatDatabase ID-name format
 - [x] Build Manual Review tab (lighter all-cat reviewer for `NeedsReview` crops)
     - Added `Manual Review` mode + `/api/labeler/queue/manual` for rows containing `NeedsReview`

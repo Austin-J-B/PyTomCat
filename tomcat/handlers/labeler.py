@@ -5,8 +5,8 @@ Routes:
   GET  /api/labeler/queue/classify  - Serials needing classifier labels
   GET  /api/labeler/image/<sn>      - Image + existing annotations
   GET  /api/labeler/cached_image/<sn> - Cached image bytes (fast)
-  POST /api/labeler/detect          - Run YOLO+SAM → boxes
-  POST /api/labeler/identify        - Run DINOv3 → top-N candidates
+  POST /api/labeler/detect          - Run YOLO+SAM â†’ boxes
+  POST /api/labeler/identify        - Run DINOv3 â†’ top-N candidates
   POST /api/labeler/save            - Batch save annotations to sheet
   POST /api/labeler/flag_incorrect  - Clear labels for one serial for relabel
   GET  /api/labeler/cats            - List all cat names for dropdown
@@ -16,6 +16,7 @@ import io
 import re
 import os
 import time
+import json
 import random
 import hashlib
 import base64
@@ -25,7 +26,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Set
 
 from aiohttp import web
-from PIL import Image
+from PIL import Image, ImageOps
 
 from ..config import settings
 from ..logger import log_action
@@ -59,7 +60,7 @@ _REFINE_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_REFINE_PREFETCH_TIMEOUT_
 _DETECT_INLINE_SAM_TIMEOUT_SEC = float(
     os.getenv("LABELER_DETECT_INLINE_SAM_TIMEOUT_SEC", "8") or "8"
 )
-_DETECT_INLINE_SAM_PASSES = max(1, int(os.getenv("LABELER_DETECT_INLINE_SAM_PASSES", "2") or "2"))
+_DETECT_INLINE_SAM_PASSES = max(2, int(os.getenv("LABELER_DETECT_INLINE_SAM_PASSES", "2") or "2"))
 _identify_sem = asyncio.Semaphore(_IDENTIFY_CONCURRENCY)
 _manual_sem = asyncio.Semaphore(_MANUAL_CONCURRENCY)
 _detect_sem = asyncio.Semaphore(_DETECT_CONCURRENCY)
@@ -75,7 +76,7 @@ _CLASSIFY_MIN_BLUR = max(0.0, float(os.getenv("LABELER_CLASSIFY_MIN_BLUR", "35")
 _CLASSIFY_BLUR_MAX_DIM = max(64, int(os.getenv("LABELER_CLASSIFY_BLUR_MAX_DIM", "640") or "640"))
 _CLASSIFY_PREFILTER_MAX_SYNC_ITEMS = max(
     0,
-    int(os.getenv("LABELER_CLASSIFY_PREFILTER_MAX_SYNC_ITEMS", "8") or "8"),
+    int(os.getenv("LABELER_CLASSIFY_PREFILTER_MAX_SYNC_ITEMS", "4") or "4"),
 )
 _CLASSIFY_PREFILTER_SYNC_ITEM_TIMEOUT_SEC = max(
     0.5,
@@ -83,11 +84,26 @@ _CLASSIFY_PREFILTER_SYNC_ITEM_TIMEOUT_SEC = max(
 )
 _CLASSIFY_PREFILTER_BG_CONCURRENCY = max(
     1,
-    min(10, int(os.getenv("LABELER_CLASSIFY_PREFILTER_BG_CONCURRENCY", "3") or "3")),
+    min(10, int(os.getenv("LABELER_CLASSIFY_PREFILTER_BG_CONCURRENCY", "2") or "2")),
+)
+_CLASSIFY_PREFILTER_BG_QUEUE_SCAN_MAX_ITEMS = max(
+    0,
+    int(os.getenv("LABELER_CLASSIFY_PREFILTER_BG_QUEUE_SCAN_MAX_ITEMS", "12") or "12"),
+)
+_CLASSIFY_PREFILTER_BG_QUEUE_SCAN_COOLDOWN_SEC = max(
+    0.0,
+    float(os.getenv("LABELER_CLASSIFY_PREFILTER_BG_QUEUE_SCAN_COOLDOWN_SEC", "12") or "12"),
 )
 _CLASSIFY_PREFILTER_CACHE_TTL_SEC = max(
     30.0,
     float(os.getenv("LABELER_CLASSIFY_PREFILTER_CACHE_TTL_SEC", "1800") or "1800"),
+)
+_CLASSIFY_PREFILTER_SOFT_FAIL_TTL_SEC = max(
+    5.0,
+    min(
+        float(_CLASSIFY_PREFILTER_CACHE_TTL_SEC),
+        float(os.getenv("LABELER_CLASSIFY_PREFILTER_SOFT_FAIL_TTL_SEC", "120") or "120"),
+    ),
 )
 _CLASSIFY_PREFILTER_CACHE_MAX = max(
     500,
@@ -115,9 +131,13 @@ _identify_result_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _manual_result_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _identify_inflight_lock = asyncio.Lock()
 _identify_inflight: Dict[str, asyncio.Future] = {}
+_classify_quality_inflight_lock = asyncio.Lock()
+_classify_quality_inflight: Dict[int, asyncio.Future] = {}
 _classify_quality_cache: Dict[int, Tuple[float, bool, int, int, float]] = {}
+_classify_quality_soft_fail_cache: Dict[int, Tuple[float, str]] = {}
 _auto_reject_quality_inflight: set[int] = set()
 _classify_quality_scan_inflight: set[int] = set()
+_classify_quality_bg_queue_scan_next_mono: float = 0.0
 _CAT_ID_NAME_RE = re.compile(r"^\s*(\d+)\s*[.)\-:]?\s*(.+?)\s*$")
 _NEEDS_REVIEW_LABELS = {"needsreview", "needs review"}
 _SKIP_CATID_LABELS = {
@@ -207,6 +227,19 @@ _ref_crop_img_unavail_suppressed: int = 0
 _flagged_ref_serials: Set[int] = set()
 _flagged_ref_serials_loaded: bool = False
 _FLAGGED_REF_SERIALS_PATH = Path("cache") / "labeler" / "flagged_ref_serials.json"
+_flag_incorrect_queue_lock = asyncio.Lock()
+_flag_incorrect_queue_loaded: bool = False
+_flag_incorrect_queue: Dict[int, Dict[str, Any]] = {}
+_flag_incorrect_worker_task: Optional[asyncio.Task] = None
+_FLAG_INCORRECT_QUEUE_PATH = Path("cache") / "labeler" / "flag_incorrect_queue.json"
+_FLAG_INCORRECT_QUEUE_BATCH_MAX = max(
+    1,
+    int(os.getenv("LABELER_FLAG_INCORRECT_QUEUE_BATCH_MAX", "24") or "24"),
+)
+_FLAG_INCORRECT_QUEUE_RETRY_DELAY_SEC = max(
+    1.0,
+    float(os.getenv("LABELER_FLAG_INCORRECT_QUEUE_RETRY_DELAY_SEC", "8") or "8"),
+)
 _PROFILE_REFRESH_MIN_SEC = max(60, int(os.getenv("LABELER_PROFILE_REFRESH_MIN_SEC", "300") or "300"))
 _profile_refresh_mono: float = 0.0
 _UI_DIAG_VERBOSE = str(
@@ -304,6 +337,383 @@ def _discard_flagged_ref_serial(serial: Any) -> bool:
     _flagged_ref_serials.discard(sn)
     _persist_flagged_ref_serials()
     return True
+
+
+def _invalidate_labeler_caches_after_label_clears(serials: Optional[List[int]] = None) -> None:
+    """Invalidate in-memory labeler caches after sheet labels are cleared/changed."""
+    global _manual_sheet_ref_cache, _manual_sheet_ref_built_mono
+    global _sheet_crop_index_cache, _sheet_crop_index_built_mono
+    for item in serials or []:
+        try:
+            sn = int(item)
+        except Exception:
+            continue
+        if sn <= 0:
+            continue
+        _classify_quality_cache.pop(int(sn), None)
+        _classify_quality_soft_fail_cache.pop(int(sn), None)
+        _auto_reject_quality_inflight.discard(int(sn))
+        _classify_quality_scan_inflight.discard(int(sn))
+    _detect_result_cache.clear()
+    _refine_result_cache.clear()
+    _identify_result_cache.clear()
+    _manual_result_cache.clear()
+    _manual_sheet_ref_cache = {}
+    _manual_sheet_ref_built_mono = 0.0
+    _sheet_crop_index_cache = {}
+    _sheet_crop_index_built_mono = 0.0
+    _ref_crop_result_cache.clear()
+
+
+def _ensure_flag_incorrect_queue_loaded() -> None:
+    global _flag_incorrect_queue_loaded, _flag_incorrect_queue
+    if _flag_incorrect_queue_loaded:
+        return
+    try:
+        if _FLAG_INCORRECT_QUEUE_PATH.exists():
+            raw = json.loads(_FLAG_INCORRECT_QUEUE_PATH.read_text(encoding="utf-8"))
+            items = raw.get("items") if isinstance(raw, dict) else raw
+            loaded: Dict[int, Dict[str, Any]] = {}
+            if isinstance(items, list):
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    try:
+                        sn = int(item.get("serial"))
+                    except Exception:
+                        continue
+                    if sn <= 0:
+                        continue
+                    loaded[int(sn)] = {
+                        "serial": int(sn),
+                        "actor_name": str(item.get("actor_name") or ""),
+                        "source_mode": str(item.get("source_mode") or ""),
+                        "source_serial": _parse_serial(str(item.get("source_serial") or "")),
+                        "source_crop": int(item.get("source_crop")) if str(item.get("source_crop") or "").strip().isdigit() else None,
+                        "first_queued_ts": float(item.get("first_queued_ts") or item.get("queued_ts") or time.time()),
+                        "updated_ts": float(item.get("updated_ts") or item.get("queued_ts") or time.time()),
+                        "attempts": max(0, int(item.get("attempts") or 0)),
+                        "last_attempt_ts": float(item.get("last_attempt_ts") or 0.0),
+                        "last_error": str(item.get("last_error") or ""),
+                    }
+            _flag_incorrect_queue = loaded
+    except Exception as e:
+        log_action("labeler_flag_incorrect_queue_load_error", "error", f"{type(e).__name__}: {e!r}")
+        _flag_incorrect_queue = {}
+    _flag_incorrect_queue_loaded = True
+
+
+def _persist_flag_incorrect_queue() -> None:
+    try:
+        _FLAG_INCORRECT_QUEUE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _FLAG_INCORRECT_QUEUE_PATH.with_suffix(".json.tmp")
+        items: List[Dict[str, Any]] = []
+        for sn in sorted(_flag_incorrect_queue.keys()):
+            rec = _flag_incorrect_queue.get(int(sn)) or {}
+            items.append(
+                {
+                    "serial": int(sn),
+                    "actor_name": str(rec.get("actor_name") or ""),
+                    "source_mode": str(rec.get("source_mode") or ""),
+                    "source_serial": rec.get("source_serial"),
+                    "source_crop": rec.get("source_crop"),
+                    "first_queued_ts": float(rec.get("first_queued_ts") or 0.0),
+                    "updated_ts": float(rec.get("updated_ts") or 0.0),
+                    "attempts": max(0, int(rec.get("attempts") or 0)),
+                    "last_attempt_ts": float(rec.get("last_attempt_ts") or 0.0),
+                    "last_error": str(rec.get("last_error") or "")[:500],
+                }
+            )
+        tmp.write_text(json.dumps(items, separators=(",", ":")), encoding="utf-8")
+        tmp.replace(_FLAG_INCORRECT_QUEUE_PATH)
+    except Exception as e:
+        log_action("labeler_flag_incorrect_queue_save_error", "error", f"{type(e).__name__}: {e!r}")
+
+
+async def _remove_flag_incorrect_queue_serials(serials: List[int]) -> int:
+    """Drop queued flag-clear jobs for serials that were re-labeled/unblacklisted."""
+    want: Set[int] = set()
+    for item in serials or []:
+        try:
+            sn = int(item)
+        except Exception:
+            continue
+        if sn > 0:
+            want.add(sn)
+    if not want:
+        return 0
+    async with _flag_incorrect_queue_lock:
+        _ensure_flag_incorrect_queue_loaded()
+        removed = 0
+        for sn in list(want):
+            if int(sn) in _flag_incorrect_queue:
+                _flag_incorrect_queue.pop(int(sn), None)
+                removed += 1
+        if removed:
+            _persist_flag_incorrect_queue()
+        return removed
+
+
+async def _enqueue_flag_incorrect_job(
+    serial: int,
+    *,
+    actor_name: str = "",
+    source_mode: str = "",
+    source_serial: Optional[int] = None,
+    source_crop: Optional[int] = None,
+) -> Dict[str, Any]:
+    now_ts = time.time()
+    queued_new = False
+    pending_count = 0
+    async with _flag_incorrect_queue_lock:
+        _ensure_flag_incorrect_queue_loaded()
+        existing = _flag_incorrect_queue.get(int(serial))
+        queued_new = existing is None
+        first_queued_ts = float(existing.get("first_queued_ts") or now_ts) if isinstance(existing, dict) else now_ts
+        attempts = max(0, int(existing.get("attempts") or 0)) if isinstance(existing, dict) else 0
+        _flag_incorrect_queue[int(serial)] = {
+            "serial": int(serial),
+            "actor_name": str(actor_name or ""),
+            "source_mode": str(source_mode or ""),
+            "source_serial": int(source_serial) if source_serial is not None else None,
+            "source_crop": int(source_crop) if source_crop is not None else None,
+            "first_queued_ts": first_queued_ts,
+            "updated_ts": now_ts,
+            "attempts": attempts,
+            "last_attempt_ts": float(existing.get("last_attempt_ts") or 0.0) if isinstance(existing, dict) else 0.0,
+            "last_error": "",
+        }
+        _persist_flag_incorrect_queue()
+        pending_count = len(_flag_incorrect_queue)
+    _kickoff_flag_incorrect_queue_worker()
+    return {"queued_new": bool(queued_new), "pending_count": int(pending_count)}
+
+
+def _kickoff_flag_incorrect_queue_worker() -> None:
+    """Start the background sheet-clear worker if it is not already running."""
+    global _flag_incorrect_worker_task
+    try:
+        if _flag_incorrect_worker_task and not _flag_incorrect_worker_task.done():
+            return
+        _flag_incorrect_worker_task = asyncio.create_task(_flag_incorrect_queue_worker())
+    except Exception:
+        pass
+
+
+def _flush_flag_incorrect_queue_batch_sync(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Apply queued incorrect flags to Sheets in one batch fetch/update."""
+    serial_order: List[int] = []
+    actor_by_serial: Dict[int, str] = {}
+    for item in batch or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            sn = int(item.get("serial"))
+        except Exception:
+            continue
+        if sn <= 0 or sn in actor_by_serial:
+            continue
+        serial_order.append(int(sn))
+        actor_by_serial[int(sn)] = str(item.get("actor_name") or "")
+    if not serial_order:
+        return {"results": {}, "updated_sheet": False}
+
+    gc = sheets_client()
+    sh = gc.open_by_key(settings.sheet_catabase_id)
+    ws = sh.worksheet("TCB Pics Formatted")
+    rows = ws.get_all_values()
+    headers = rows[0] if rows else []
+    col_labeled_by = _find_header_col(
+        headers,
+        [
+            "LabeledBy",
+            "LabelledBy",
+            "Labeled By",
+            "Labelled By",
+            "labeled_by",
+            "labelled_by",
+        ],
+    )
+
+    serial_to_row: Dict[int, int] = {}
+    serial_to_row_data: Dict[int, List[str]] = {}
+    serial_to_labeled_by: Dict[int, str] = {}
+    for idx, row in enumerate(rows[1:], start=2):
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(str(row[COL_SERIAL] if len(row) > COL_SERIAL else ""))
+        if sn is None:
+            continue
+        serial_to_row[int(sn)] = int(idx)
+        serial_to_row_data[int(sn)] = row
+        if col_labeled_by is not None:
+            serial_to_labeled_by[int(sn)] = row[col_labeled_by] if len(row) > col_labeled_by else ""
+
+    updates: List[Dict[str, Any]] = []
+    results: Dict[int, Dict[str, Any]] = {}
+    for sn in serial_order:
+        row_num = serial_to_row.get(int(sn))
+        if not row_num:
+            results[int(sn)] = {
+                "ok": False,
+                "not_found": True,
+                "changed": False,
+                "already_unlabeled": False,
+                "error": "Serial not found",
+            }
+            continue
+
+        row_data = serial_to_row_data.get(int(sn), [])
+        prev_cat_id = str(row_data[COL_CAT_ID] if len(row_data) > COL_CAT_ID else "")
+        prev_box_coords = str(row_data[COL_BOX_COORDS] if len(row_data) > COL_BOX_COORDS else "")
+        prev_box_cat_ids = str(row_data[COL_BOX_CAT_IDS] if len(row_data) > COL_BOX_CAT_IDS else "")
+        changed = bool(prev_cat_id.strip() or prev_box_coords.strip() or prev_box_cat_ids.strip())
+        if changed:
+            updates.extend(
+                [
+                    {"range": f"A{row_num}", "values": [[""]]},
+                    {"range": f"I{row_num}", "values": [[""]]},
+                    {"range": f"J{row_num}", "values": [[""]]},
+                ]
+            )
+
+        if col_labeled_by is not None:
+            merged = _merge_labeled_by(serial_to_labeled_by.get(int(sn), ""), actor_by_serial.get(int(sn), ""))
+            if merged != serial_to_labeled_by.get(int(sn), ""):
+                updates.append(
+                    {
+                        "range": f"{_col_to_a1(col_labeled_by + 1)}{row_num}",
+                        "values": [[merged]],
+                    }
+                )
+
+        results[int(sn)] = {
+            "ok": True,
+            "not_found": False,
+            "changed": bool(changed),
+            "already_unlabeled": not bool(changed),
+        }
+
+    if updates:
+        ws.batch_update(updates)
+    return {"results": results, "updated_sheet": bool(updates)}
+
+
+async def _flag_incorrect_queue_worker() -> None:
+    """Drain queued incorrect flags in background with batched sheet updates."""
+    while True:
+        batch: List[Dict[str, Any]] = []
+        async with _flag_incorrect_queue_lock:
+            _ensure_flag_incorrect_queue_loaded()
+            dirty = False
+            # If a serial has been unblacklisted (re-labeled), drop any stale queued clear.
+            for sn in list(_flag_incorrect_queue.keys()):
+                if not _is_flagged_ref_serial(int(sn)):
+                    _flag_incorrect_queue.pop(int(sn), None)
+                    dirty = True
+            if not _flag_incorrect_queue:
+                if dirty:
+                    _persist_flag_incorrect_queue()
+                return
+
+            ordered = sorted(
+                _flag_incorrect_queue.values(),
+                key=lambda rec: (
+                    float(rec.get("updated_ts") or 0.0),
+                    int(rec.get("serial") or 0),
+                ),
+            )
+            now_ts = time.time()
+            for rec in ordered:
+                try:
+                    sn = int(rec.get("serial"))
+                except Exception:
+                    continue
+                if sn <= 0:
+                    continue
+                live = _flag_incorrect_queue.get(int(sn))
+                if not isinstance(live, dict):
+                    continue
+                live["attempts"] = max(0, int(live.get("attempts") or 0)) + 1
+                live["last_attempt_ts"] = now_ts
+                batch.append(dict(live))
+                if len(batch) >= _FLAG_INCORRECT_QUEUE_BATCH_MAX:
+                    break
+            if not batch:
+                if dirty:
+                    _persist_flag_incorrect_queue()
+                return
+            _persist_flag_incorrect_queue()
+
+        try:
+            outcome = await asyncio.to_thread(_flush_flag_incorrect_queue_batch_sync, batch)
+        except Exception as e:
+            err_txt = f"{type(e).__name__}: {e!r}"
+            async with _flag_incorrect_queue_lock:
+                _ensure_flag_incorrect_queue_loaded()
+                touched = False
+                for rec in batch:
+                    try:
+                        sn = int(rec.get("serial"))
+                    except Exception:
+                        continue
+                    live = _flag_incorrect_queue.get(int(sn))
+                    if not isinstance(live, dict):
+                        continue
+                    live["last_error"] = err_txt
+                    live["updated_ts"] = time.time()
+                    touched = True
+                if touched:
+                    _persist_flag_incorrect_queue()
+            log_action("labeler_flag_incorrect_queue_flush_error", "error", err_txt)
+            await asyncio.sleep(_FLAG_INCORRECT_QUEUE_RETRY_DELAY_SEC)
+            continue
+
+        result_map = outcome.get("results") if isinstance(outcome, dict) else {}
+        if not isinstance(result_map, dict):
+            result_map = {}
+        success_serials: List[int] = []
+        changed_serials: List[int] = []
+        not_found_serials: List[int] = []
+        async with _flag_incorrect_queue_lock:
+            _ensure_flag_incorrect_queue_loaded()
+            dirty = False
+            for rec in batch:
+                try:
+                    sn = int(rec.get("serial"))
+                except Exception:
+                    continue
+                res = result_map.get(int(sn)) or {}
+                if bool(res.get("ok")):
+                    _flag_incorrect_queue.pop(int(sn), None)
+                    success_serials.append(int(sn))
+                    if bool(res.get("changed")):
+                        changed_serials.append(int(sn))
+                    dirty = True
+                    continue
+                if bool(res.get("not_found")):
+                    _flag_incorrect_queue.pop(int(sn), None)
+                    not_found_serials.append(int(sn))
+                    dirty = True
+                    continue
+                live = _flag_incorrect_queue.get(int(sn))
+                if isinstance(live, dict):
+                    live["last_error"] = str(res.get("error") or "Unknown queue flush failure")
+                    live["updated_ts"] = time.time()
+                    dirty = True
+            if dirty:
+                _persist_flag_incorrect_queue()
+            pending_after = len(_flag_incorrect_queue)
+
+        if success_serials:
+            _invalidate_labeler_caches_after_label_clears(success_serials)
+            _kickoff_force_refresh_tcb_cache()
+        if success_serials or not_found_serials:
+            log_action(
+                "labeler_flag_incorrect_queue_flush",
+                f"ok={len(success_serials)}; changed={len(changed_serials)}; missing={len(not_found_serials)}",
+                f"batch={len(batch)}; pending={pending_after}",
+            )
 
 
 def _filter_refs_for_flagged_serials(refs: Any) -> List[Any]:
@@ -1123,7 +1533,7 @@ async def _materialize_fallback_refs(
         data = await _fetch_data(serial, fetch_url)
         if data:
             try:
-                img = Image.open(io.BytesIO(data)).convert("RGB")
+                img = _open_rgb_image(io.BytesIO(data))
                 crop_img: Optional[Image.Image] = None
                 if box is not None:
                     img_w, img_h = img.size
@@ -1238,6 +1648,16 @@ def _with_cors(resp: web.Response, request: web.Request) -> web.Response:
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-CSRF-Token"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return resp
+
+
+def _open_rgb_image(source: Any) -> Image.Image:
+    """Open an image and normalize EXIF orientation before RGB conversion."""
+    img = Image.open(source)
+    try:
+        img = ImageOps.exif_transpose(img)
+    except Exception:
+        pass
+    return img.convert("RGB")
 
 
 def _boxes_to_yolo_strings(boxes: List[Tuple[float, float, float, float]]) -> List[str]:
@@ -1606,6 +2026,38 @@ async def _identify_singleflight_finish(
         fut.set_result({})
 
 
+async def _classify_quality_singleflight_enter(serial: int) -> Tuple[asyncio.Future, bool]:
+    """Return (future, is_owner) for per-serial classify quality eval single-flight."""
+    sn = int(serial)
+    loop = asyncio.get_running_loop()
+    async with _classify_quality_inflight_lock:
+        existing = _classify_quality_inflight.get(sn)
+        if existing is not None and not existing.done():
+            return existing, False
+        fut: asyncio.Future = loop.create_future()
+        _classify_quality_inflight[sn] = fut
+        return fut, True
+
+
+async def _classify_quality_singleflight_finish(
+    serial: int,
+    fut: asyncio.Future,
+    result: Optional[Tuple[bool, Dict[str, Any]]] = None,
+    error: Optional[BaseException] = None,
+) -> None:
+    sn = int(serial)
+    async with _classify_quality_inflight_lock:
+        current = _classify_quality_inflight.get(sn)
+        if current is fut:
+            _classify_quality_inflight.pop(sn, None)
+    if fut.done():
+        return
+    if error is not None:
+        fut.set_exception(error)
+        return
+    fut.set_result(result if result is not None else (False, {"reasons": ["unknown"], "hard_fail": False}))
+
+
 def _cache_get_classify_quality(serial: int) -> Optional[Tuple[bool, int, int, float]]:
     rec = _classify_quality_cache.get(int(serial))
     if not rec:
@@ -1617,7 +2069,37 @@ def _cache_get_classify_quality(serial: int) -> Optional[Tuple[bool, int, int, f
     return bool(ok), int(w), int(h), float(blur)
 
 
+def _cache_get_classify_quality_soft_fail(serial: int) -> Optional[str]:
+    rec = _classify_quality_soft_fail_cache.get(int(serial))
+    if not rec:
+        return None
+    ts, reason = rec
+    if (time.monotonic() - float(ts)) > _CLASSIFY_PREFILTER_SOFT_FAIL_TTL_SEC:
+        _classify_quality_soft_fail_cache.pop(int(serial), None)
+        return None
+    return str(reason or "").strip().lower() or "fetch"
+
+
+def _cache_set_classify_quality_soft_fail(serial: int, reason: str) -> None:
+    _classify_quality_soft_fail_cache[int(serial)] = (
+        time.monotonic(),
+        str(reason or "").strip().lower() or "fetch",
+    )
+    if len(_classify_quality_soft_fail_cache) <= _CLASSIFY_PREFILTER_CACHE_MAX:
+        return
+    overflow = len(_classify_quality_soft_fail_cache) - int(_CLASSIFY_PREFILTER_CACHE_MAX)
+    if overflow <= 0:
+        return
+    oldest = sorted(
+        _classify_quality_soft_fail_cache.items(),
+        key=lambda kv: float(kv[1][0]),
+    )[:overflow]
+    for key, _ in oldest:
+        _classify_quality_soft_fail_cache.pop(int(key), None)
+
+
 def _cache_set_classify_quality(serial: int, ok: bool, width: int, height: int, blur: float) -> None:
+    _classify_quality_soft_fail_cache.pop(int(serial), None)
     _classify_quality_cache[int(serial)] = (
         time.monotonic(),
         bool(ok),
@@ -1670,32 +2152,24 @@ def _compute_blur_score(img: Image.Image) -> float:
         return 0.0
 
 
-async def _evaluate_classify_quality(serial: int, url: str) -> Tuple[bool, Dict[str, Any]]:
-    """Evaluate image quality against classify queue gates."""
-    if _CLASSIFY_MIN_PIXELS <= 0 and _CLASSIFY_MIN_DIM <= 0 and _CLASSIFY_MIN_BLUR <= 0:
-        return True, {"width": 0, "height": 0, "pixels": 0, "blur": 0.0, "reasons": []}
-    cached = _cache_get_classify_quality(int(serial))
-    if cached is not None:
-        ok, width, height, blur = cached
-        pixels = int(width * height)
-        reasons: List[str] = []
-        if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
-            reasons.append("pixels")
-        if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
-            reasons.append("min_dim")
-        if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
-            reasons.append("blur")
-        return bool(ok and not reasons), {
-            "width": int(width),
-            "height": int(height),
-            "pixels": int(pixels),
-            "blur": float(blur),
-            "reasons": reasons,
-            "hard_fail": bool(reasons),
-        }
+def _decode_classify_quality_metrics(data: bytes) -> Tuple[int, int, float]:
+    """Decode image bytes and compute width/height/blur off the event loop."""
+    img = _open_rgb_image(io.BytesIO(data))
+    width, height = [int(x) for x in img.size]
+    blur = _compute_blur_score(img)
+    return int(width), int(height), float(blur)
 
+
+async def _evaluate_classify_quality_uncached(
+    serial: int,
+    url: str,
+    *,
+    source: str = "unknown",
+) -> Tuple[bool, Dict[str, Any]]:
+    """Evaluate image quality against classify queue gates."""
     data = await _fetch_image_bytes_for_labeler(int(serial), str(url or "").strip())
     if not data:
+        _cache_set_classify_quality_soft_fail(int(serial), "fetch")
         return False, {
             "width": 0,
             "height": 0,
@@ -1709,10 +2183,9 @@ async def _evaluate_classify_quality(serial: int, url: str) -> Tuple[bool, Dict[
     height = 0
     blur = 0.0
     try:
-        with Image.open(io.BytesIO(data)) as img:
-            width, height = [int(x) for x in img.size]
-            blur = _compute_blur_score(img)
+        width, height, blur = await asyncio.to_thread(_decode_classify_quality_metrics, data)
     except Exception:
+        _cache_set_classify_quality_soft_fail(int(serial), "decode")
         return False, {
             "width": 0,
             "height": 0,
@@ -1742,10 +2215,108 @@ async def _evaluate_classify_quality(serial: int, url: str) -> Tuple[bool, Dict[
     }
 
 
+async def _evaluate_classify_quality(
+    serial: int,
+    url: str,
+    *,
+    source: str = "unknown",
+) -> Tuple[bool, Dict[str, Any]]:
+    """Evaluate image quality against classify queue gates with single-flight dedupe."""
+    if _CLASSIFY_MIN_PIXELS <= 0 and _CLASSIFY_MIN_DIM <= 0 and _CLASSIFY_MIN_BLUR <= 0:
+        return True, {"width": 0, "height": 0, "pixels": 0, "blur": 0.0, "reasons": []}
+    sn = int(serial)
+    cached = _cache_get_classify_quality(sn)
+    if cached is not None:
+        ok, width, height, blur = cached
+        pixels = int(width * height)
+        reasons: List[str] = []
+        if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
+            reasons.append("pixels")
+        if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
+            reasons.append("min_dim")
+        if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
+            reasons.append("blur")
+        return bool(ok and not reasons), {
+            "width": int(width),
+            "height": int(height),
+            "pixels": int(pixels),
+            "blur": float(blur),
+            "reasons": reasons,
+            "hard_fail": bool(reasons),
+        }
+    soft_fail_reason = _cache_get_classify_quality_soft_fail(sn)
+    if soft_fail_reason:
+        return False, {
+            "width": 0,
+            "height": 0,
+            "pixels": 0,
+            "blur": 0.0,
+            "reasons": [soft_fail_reason],
+            "hard_fail": False,
+        }
+
+    fut, is_owner = await _classify_quality_singleflight_enter(sn)
+    if not is_owner:
+        try:
+            shared = await fut
+            if isinstance(shared, tuple) and len(shared) == 2:
+                return shared  # type: ignore[return-value]
+        except Exception:
+            pass
+        # If the owner failed unexpectedly, try cache one more time before recomputing.
+        cached = _cache_get_classify_quality(sn)
+        if cached is not None:
+            ok, width, height, blur = cached
+            pixels = int(width * height)
+            reasons: List[str] = []
+            if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
+                reasons.append("pixels")
+            if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
+                reasons.append("min_dim")
+            if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
+                reasons.append("blur")
+            return bool(ok and not reasons), {
+                "width": int(width),
+                "height": int(height),
+                "pixels": int(pixels),
+                "blur": float(blur),
+                "reasons": reasons,
+                "hard_fail": bool(reasons),
+            }
+        soft_fail_reason = _cache_get_classify_quality_soft_fail(sn)
+        if soft_fail_reason:
+            return False, {
+                "width": 0,
+                "height": 0,
+                "pixels": 0,
+                "blur": 0.0,
+                "reasons": [soft_fail_reason],
+                "hard_fail": False,
+            }
+
+    try:
+        result = await _evaluate_classify_quality_uncached(sn, str(url or "").strip(), source=source)
+    except Exception as e:
+        await _classify_quality_singleflight_finish(sn, fut, error=e)
+        raise
+    await _classify_quality_singleflight_finish(sn, fut, result=result)
+    return result
+
+
 def _evaluate_cached_classify_quality(serial: int) -> Optional[Tuple[bool, Dict[str, Any]]]:
     cached = _cache_get_classify_quality(int(serial))
     if cached is None:
-        return None
+        soft_fail_reason = _cache_get_classify_quality_soft_fail(int(serial))
+        if not soft_fail_reason:
+            return None
+        return False, {
+            "width": 0,
+            "height": 0,
+            "pixels": 0,
+            "blur": 0.0,
+            "reasons": [soft_fail_reason],
+            "hard_fail": False,
+        }
     ok, width, height, blur = cached
     pixels = int(width * height)
     reasons: List[str] = []
@@ -1769,6 +2340,25 @@ def _evaluate_cached_classify_quality(serial: int) -> Optional[Tuple[bool, Dict[
 def _build_rejected_labels(num_boxes: int) -> str:
     n = max(1, int(num_boxes or 0))
     return "|".join(["Rejected"] * n)
+
+
+def _schedule_classify_quality_scan_from_queue(items: List[Dict[str, Any]]) -> int:
+    """Throttle/cap queue-triggered quality scans so active labeling stays responsive."""
+    global _classify_quality_bg_queue_scan_next_mono
+    if not items:
+        return 0
+    cap = int(_CLASSIFY_PREFILTER_BG_QUEUE_SCAN_MAX_ITEMS or 0)
+    if cap <= 0:
+        return 0
+    now = time.monotonic()
+    if now < float(_classify_quality_bg_queue_scan_next_mono):
+        return 0
+    _classify_quality_bg_queue_scan_next_mono = now + float(_CLASSIFY_PREFILTER_BG_QUEUE_SCAN_COOLDOWN_SEC)
+    selected = items[:cap]
+    if not selected:
+        return 0
+    _schedule_classify_quality_scan(selected)
+    return len(selected)
 
 
 def _auto_reject_low_quality_sync(items: List[Dict[str, Any]]) -> int:
@@ -1907,6 +2497,8 @@ def _schedule_classify_quality_scan(items: List[Dict[str, Any]]) -> None:
             continue
         if _cache_get_classify_quality(sn) is not None:
             continue
+        if _cache_get_classify_quality_soft_fail(sn) is not None:
+            continue
         if sn in _classify_quality_scan_inflight:
             continue
         _classify_quality_scan_inflight.add(sn)
@@ -1923,6 +2515,7 @@ def _schedule_classify_quality_scan(items: List[Dict[str, Any]]) -> None:
                     return item, await _evaluate_classify_quality(
                         int(item.get("serial") or 0),
                         str(item.get("url") or ""),
+                        source="bg_scan",
                     )
                 except Exception:
                     return item, (False, {"reasons": ["scan_error"], "hard_fail": False})
@@ -2081,6 +2674,7 @@ async def get_queue_classify(request: web.Request) -> web.Response:
                             _evaluate_classify_quality(
                                 int(item.get("serial") or 0),
                                 str(item.get("url") or ""),
+                                source="queue_sync",
                             ),
                             timeout=_CLASSIFY_PREFILTER_SYNC_ITEM_TIMEOUT_SEC,
                         )
@@ -2112,7 +2706,7 @@ async def get_queue_classify(request: web.Request) -> web.Response:
                 row = dict(item)
                 row["quality_pending"] = True
                 queue.append(row)
-            _schedule_classify_quality_scan(deferred_items)
+            _schedule_classify_quality_scan_from_queue(deferred_items)
         if auto_reject_items:
             _schedule_auto_reject_low_quality(auto_reject_items)
 
@@ -2243,6 +2837,53 @@ async def get_cached_image(request: web.Request) -> web.Response:
         if not url or not url.startswith("http"):
             return _with_cors(web.Response(status=404, text="Image URL not found"), request)
 
+        url_s = str(url)
+        lower_url = url_s.lower()
+        is_drive_like = (
+            "drive.google.com" in lower_url
+            or "drive.usercontent.google.com" in lower_url
+            or "googleusercontent.com" in lower_url
+        )
+        force_proxy = str(request.query.get("proxy") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+        # For Drive-backed images, prefer a server-side proxy fetch on cache miss.
+        # This avoids browser-side Drive image failures that can cause queue skips.
+        if is_drive_like or force_proxy:
+            proxy_t0 = time.perf_counter()
+            proxy_data: Optional[bytes] = None
+            proxy_status = "miss"
+            try:
+                proxy_data = await asyncio.wait_for(
+                    _fetch_image_bytes_for_labeler(int(sn), url_s, bypass_backoff=force_proxy),
+                    timeout=18.0,
+                )
+                proxy_status = "ok" if proxy_data else "empty"
+            except asyncio.TimeoutError:
+                proxy_status = "timeout"
+            except Exception as e:
+                proxy_status = f"error:{type(e).__name__}"
+                log_action(
+                    "labeler_cached_image_proxy_error",
+                    f"sn={int(sn)}",
+                    f"forced={1 if force_proxy else 0}; drive={1 if is_drive_like else 0}; {type(e).__name__}: {e!r}",
+                )
+            proxy_ms = int(round((time.perf_counter() - proxy_t0) * 1000.0))
+            if proxy_data:
+                resp = web.Response(body=proxy_data, content_type="image/jpeg")
+                resp.headers["Cache-Control"] = "no-store"
+                resp.headers["X-Labeler-Cache"] = "miss-proxy"
+                return _with_cors(resp, request)
+            log_action(
+                "labeler_cached_image_proxy_fail",
+                f"sn={int(sn)}",
+                (
+                    f"ms={proxy_ms}; status={proxy_status}; "
+                    f"forced={1 if force_proxy else 0}; drive={1 if is_drive_like else 0}"
+                ),
+            )
+            if force_proxy:
+                return _with_cors(web.Response(status=503, text="Image proxy fetch failed"), request)
+
         # Do not block UI response on backend cache download attempts.
         # Serve source immediately and warm cache in background.
         async def _warm() -> None:
@@ -2250,7 +2891,7 @@ async def get_cached_image(request: web.Request) -> web.Response:
                 await labeler_cache.get_or_download(
                     int(sn),
                     str(url),
-                    bypass_backoff=True,
+                    bypass_backoff=False,
                     max_attempts=3,
                 )
             except Exception:
@@ -2261,8 +2902,15 @@ async def get_cached_image(request: web.Request) -> web.Response:
         except Exception:
             pass
 
+        if is_drive_like:
+            log_action(
+                "labeler_cached_image_miss_redirect",
+                f"sn={int(sn)}",
+                "drive=1; reason=proxy_failed_or_miss",
+            )
+
         resp = web.Response(status=307)
-        resp.headers["Location"] = str(url)
+        resp.headers["Location"] = url_s
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["X-Labeler-Cache"] = "miss-redirect"
         return _with_cors(resp, request)
@@ -2333,7 +2981,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
             _ref_crop_negative_cache[neg_key] = time.monotonic() + 20.0
             return _with_cors(web.Response(status=502, text="Source image unavailable"), request)
 
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img = _open_rgb_image(io.BytesIO(image_bytes))
         img_w, img_h = img.size
         cx, cy, w, h = box
         x1 = (cx - w / 2) * img_w
@@ -2383,8 +3031,9 @@ async def post_ui_diag(request: web.Request) -> web.Response:
     except Exception:
         data = {}
     try:
-        if _UI_DIAG_VERBOSE:
-            event = str(data.get("event") or "ui_diag").strip().lower()[:64] or "ui_diag"
+        event = str(data.get("event") or "ui_diag").strip().lower()[:64] or "ui_diag"
+        always_log_events = {"auto_skip", "auto_skip_halt", "image_error", "transition_slow", "claim_retry"}
+        if _UI_DIAG_VERBOSE or event in always_log_events:
             mode = str(data.get("mode") or "").strip().lower()[:24]
             serial = _parse_serial(str(data.get("serial") or ""))
             detail = str(data.get("detail") or data.get("details") or "").strip()
@@ -2404,6 +3053,7 @@ async def post_ui_diag(request: web.Request) -> web.Response:
 async def post_claim(request: web.Request) -> web.Response:
     """Acquire/heartbeat/release a claim for a queue item in detect/classify/manual mode."""
     try:
+        t0 = time.perf_counter()
         try:
             data = await request.json()
         except Exception:
@@ -2419,10 +3069,22 @@ async def post_claim(request: web.Request) -> web.Response:
         action = str(data.get("action") or "acquire").strip().lower()
         user_id, username = _actor_from_request(request)
         if not user_id:
+            log_action(
+                "labeler_claim_auth_missing",
+                f"mode={mode}; action={action}; serial={int(serial)}",
+                "Missing session user",
+            )
             return _with_cors(web.Response(status=401, text="Missing session user"), request)
 
         if action == "release":
             released = await _release_claim(mode, int(serial), user_id)
+            dt_ms = int(round((time.perf_counter() - t0) * 1000.0))
+            if dt_ms >= 800:
+                log_action(
+                    "labeler_claim_release_slow",
+                    f"mode={mode}; serial={int(serial)}; uid={user_id}",
+                    f"ms={dt_ms}; released={1 if released else 0}",
+                )
             return _with_cors(web.json_response({
                 "ok": True,
                 "released": bool(released),
@@ -2431,6 +3093,30 @@ async def post_claim(request: web.Request) -> web.Response:
             }), request)
 
         granted, owner = await _acquire_claim(mode, int(serial), user_id, username)
+        dt_ms = int(round((time.perf_counter() - t0) * 1000.0))
+        if not granted:
+            ttl_left_ms = 0
+            try:
+                ttl_left_ms = max(
+                    0,
+                    int(round((float(owner.get("expires_at") or 0.0) - time.monotonic()) * 1000.0)),
+                )
+            except Exception:
+                ttl_left_ms = 0
+            log_action(
+                "labeler_claim_denied",
+                f"mode={mode}; action={action}; serial={int(serial)}; uid={user_id}",
+                (
+                    f"owner={str(owner.get('username') or '')[:48]}; "
+                    f"ttl_left_ms={ttl_left_ms}; ms={dt_ms}"
+                ),
+            )
+        elif dt_ms >= 800:
+            log_action(
+                "labeler_claim_acquire_slow",
+                f"mode={mode}; action={action}; serial={int(serial)}; uid={user_id}",
+                f"ms={dt_ms}; granted=1",
+            )
         return _with_cors(web.json_response({
             "ok": True,
             "granted": bool(granted),
@@ -2440,7 +3126,14 @@ async def post_claim(request: web.Request) -> web.Response:
             "claim_ttl_sec": _LABELER_CLAIM_TTL_SEC,
         }), request)
     except Exception as e:
-        log_action("labeler_claim_error", "error", str(e))
+        try:
+            mode_s = str(locals().get("mode") or "")
+            action_s = str(locals().get("action") or "")
+            serial_s = str(locals().get("serial") or "")
+            trig = f"mode={mode_s}; action={action_s}; serial={serial_s}"
+        except Exception:
+            trig = "error"
+        log_action("labeler_claim_error", trig, f"{type(e).__name__}: {e!r}")
         return _with_cors(web.Response(status=500, text=str(e)), request)
 
 
@@ -2468,6 +3161,7 @@ async def post_detect(request: web.Request) -> web.Response:
         detect_ms = 0.0
         sem_wait_ms = 0.0
         image_source = "none"
+        inline_sam_passes_requested = int(_DETECT_INLINE_SAM_PASSES)
         
         cache_key = _hash_cache_key("detect", serial_i or "", str(url or "").strip(), int(bool(fast)))
         cached_payload = _cache_get(_detect_result_cache, cache_key)
@@ -2571,7 +3265,7 @@ async def post_detect(request: web.Request) -> web.Response:
             if (not fast) and (not prefetch) and raw_boxes_abs:
                 from PIL import Image
 
-                img = Image.open(io.BytesIO(image_bytes))
+                img = _open_rgb_image(io.BytesIO(image_bytes))
                 iw, ih = img.size
                 yolo_boxes: List[Tuple[float, float, float, float]] = []
                 for (x1, y1, x2, y2) in raw_boxes_abs:
@@ -2587,7 +3281,7 @@ async def post_detect(request: web.Request) -> web.Response:
                             V.refine_boxes,
                             image_bytes,
                             yolo_boxes,
-                            passes=max(1, int(_DETECT_INLINE_SAM_PASSES)),
+                            passes=int(inline_sam_passes_requested),
                         ),
                         timeout=sam_timeout,
                     )
@@ -2608,7 +3302,7 @@ async def post_detect(request: web.Request) -> web.Response:
         
         #Convert boxes to YOLO normalized format (cx, cy, w, h)
         from PIL import Image
-        img = Image.open(io.BytesIO(image_bytes))
+        img = _open_rgb_image(io.BytesIO(image_bytes))
         iw, ih = img.size
         
         yolo_boxes = []
@@ -2625,6 +3319,7 @@ async def post_detect(request: web.Request) -> web.Response:
             "boxes": yolo_boxes,
             "boxes_yolo": "|".join(yolo_boxes),
             "sam_refined": bool(sam_refined),
+            "sam_inline_passes_requested": int(inline_sam_passes_requested),
         }
         _cache_set(
             _detect_result_cache,
@@ -2639,7 +3334,8 @@ async def post_detect(request: web.Request) -> web.Response:
             (
                 f"ms total={int(round(total_ms))} img={int(round(image_ms))} sem={int(round(sem_wait_ms))} "
                 f"detect={int(round(detect_ms))}; src={image_source}; raw_boxes={len(raw_boxes_abs)}; "
-                f"out_boxes={len(yolo_boxes)}; sam_refined={int(bool(sam_refined))}"
+                f"out_boxes={len(yolo_boxes)}; sam_refined={int(bool(sam_refined))}; "
+                f"sam_passes={int(inline_sam_passes_requested)}"
             ),
         )
         return _with_cors(web.json_response(payload), request)
@@ -2735,7 +3431,7 @@ async def post_refine(request: web.Request) -> web.Response:
             except Exception:
                 #Fallback to original boxes if SAM refine fails or times out
                 from PIL import Image
-                img = Image.open(io.BytesIO(image_bytes))
+                img = _open_rgb_image(io.BytesIO(image_bytes))
                 iw, ih = img.size
                 refined = []
                 for (cx, cy, w, h) in boxes:
@@ -2749,7 +3445,7 @@ async def post_refine(request: web.Request) -> web.Response:
                 _refine_sem.release()
 
         from PIL import Image
-        img = Image.open(io.BytesIO(image_bytes))
+        img = _open_rgb_image(io.BytesIO(image_bytes))
         iw, ih = img.size
         yolo_boxes = []
         for (x1, y1, x2, y2) in refined:
@@ -2801,9 +3497,16 @@ async def post_identify(request: web.Request) -> web.Response:
             int(getattr(settings, "labeler_ref_per_candidate_prefetch", refs_per_prefetch_default) or refs_per_prefetch_default),
         ) if prefetch else refs_per_full
         refs_per_target = int(refs_per)
-        # Ask vision for a deeper pool, then keep only the first N valid refs.
-        # This avoids dropping below 5 when some high-rank refs are invalid/missing.
-        refs_per_query = max(refs_per_target, refs_per_target * 3) if (not prefetch) else refs_per_target
+        # Keep a small hidden buffer so the UI can still render N refs after
+        # local-only filtering (flagged refs in browser cache, decode errors, etc.).
+        refs_per_keep = max(refs_per_target, refs_per_target + 4)
+        # Ask vision for a deeper pool, then keep only the first valid refs.
+        # Prefetch also needs extra depth now; otherwise hidden/flagged refs can
+        # consume the visible slots and leave gaps until a foreground refresh.
+        refs_per_query = max(
+            refs_per_keep,
+            refs_per_target * (3 if (not prefetch) else 2),
+        )
         top_k = max(1, int(getattr(settings, "labeler_top_k", 9) or 9))
 
         boxes_sig = "|".join(str(b).strip() for b in boxes_raw)
@@ -3058,6 +3761,7 @@ async def post_identify(request: web.Request) -> web.Response:
                     for cand in crop.get("candidates", []) or []:
                         refs_raw = cand.get("refs")
                         ref_target = max(1, int(refs_per_target))
+                        ref_keep_limit = max(ref_target, int(refs_per_keep))
                         refs_meta = list(refs_raw) if isinstance(refs_raw, list) else []
                         selected_refs: List[Dict[str, Any]] = []
                         seen_sc: Set[Tuple[int, int]] = set()
@@ -3088,7 +3792,7 @@ async def post_identify(request: web.Request) -> web.Response:
                                     "source": "dino_gallery_inline",
                                 })
                                 seen_img.add(img_b64)
-                                if len(selected_refs) >= ref_target:
+                                if len(selected_refs) >= ref_keep_limit:
                                     break
                                 continue
                             if _is_flagged_ref_serial(int(serial_ref)):
@@ -3115,7 +3819,7 @@ async def post_identify(request: web.Request) -> web.Response:
                             src_url = str(entry.get("url") or "").strip()
                             if (not img_b64) and src_url.startswith("http"):
                                 warm_candidates.append((int(serial_ref), src_url))
-                            if len(selected_refs) >= ref_target:
+                            if len(selected_refs) >= ref_keep_limit:
                                 break
 
                         cand["refs"] = selected_refs
@@ -3471,6 +4175,11 @@ async def post_save(request: web.Request) -> web.Response:
         for sn in pending_unblacklist_ref_serials:
             if _discard_flagged_ref_serial(int(sn)):
                 cleared_ref_blacklist_serials.append(int(sn))
+        if cleared_ref_blacklist_serials:
+            try:
+                await _remove_flag_incorrect_queue_serials(cleared_ref_blacklist_serials)
+            except Exception as e:
+                log_action("labeler_flag_incorrect_queue_drop_error", "error", f"{type(e).__name__}: {e!r}")
 
         # Refresh local sheet cache in background to avoid blocking the event loop
         # (gspread/requests is synchronous and can stall Discord heartbeats).
@@ -3493,9 +4202,7 @@ async def post_save(request: web.Request) -> web.Response:
 
 
 async def post_flag_incorrect(request: web.Request) -> web.Response:
-    """Clear CatID + box labels for one serial so it can be relabeled."""
-    global _manual_sheet_ref_cache, _manual_sheet_ref_built_mono
-    global _sheet_crop_index_cache, _sheet_crop_index_built_mono
+    """Blacklist a reference serial immediately and queue sheet label-clears in background."""
     try:
         data = await request.json()
     except Exception:
@@ -3515,86 +4222,16 @@ async def post_flag_incorrect(request: web.Request) -> web.Response:
     _, actor_name = _actor_from_request(request)
 
     try:
-        gc = sheets_client()
-        sh = gc.open_by_key(settings.sheet_catabase_id)
-        ws = sh.worksheet("TCB Pics Formatted")
-        rows = ws.get_all_values()
-        headers = rows[0] if rows else []
-        col_labeled_by = _find_header_col(
-            headers,
-            [
-                "LabeledBy",
-                "LabelledBy",
-                "Labeled By",
-                "Labelled By",
-                "labeled_by",
-                "labelled_by",
-            ],
+        blacklisted_now = _add_flagged_ref_serial(int(serial))
+        queue_info = await _enqueue_flag_incorrect_job(
+            int(serial),
+            actor_name=actor_name,
+            source_mode=source_mode,
+            source_serial=source_serial,
+            source_crop=source_crop,
         )
-
-        serial_to_row: Dict[int, int] = {}
-        serial_to_row_data: Dict[int, List[str]] = {}
-        serial_to_labeled_by: Dict[int, str] = {}
-        for idx, row in enumerate(rows[1:], start=2):
-            if len(row) <= COL_SERIAL:
-                continue
-            sn = _parse_serial(str(row[COL_SERIAL] if len(row) > COL_SERIAL else ""))
-            if sn is None:
-                continue
-            serial_to_row[int(sn)] = int(idx)
-            serial_to_row_data[int(sn)] = row
-            if col_labeled_by is not None:
-                serial_to_labeled_by[int(sn)] = row[col_labeled_by] if len(row) > col_labeled_by else ""
-
-        row_num = serial_to_row.get(int(serial))
-        if not row_num:
-            return _with_cors(web.Response(status=404, text="Serial not found"), request)
-
-        row_data = serial_to_row_data.get(int(serial), [])
-        prev_cat_id = str(row_data[COL_CAT_ID] if len(row_data) > COL_CAT_ID else "")
-        prev_box_coords = str(row_data[COL_BOX_COORDS] if len(row_data) > COL_BOX_COORDS else "")
-        prev_box_cat_ids = str(row_data[COL_BOX_CAT_IDS] if len(row_data) > COL_BOX_CAT_IDS else "")
-
-        updates: List[Dict[str, Any]] = []
-        changed = bool(prev_cat_id.strip() or prev_box_coords.strip() or prev_box_cat_ids.strip())
-        if changed:
-            updates.extend(
-                [
-                    {"range": f"A{row_num}", "values": [[""]]},
-                    {"range": f"I{row_num}", "values": [[""]]},
-                    {"range": f"J{row_num}", "values": [[""]]},
-                ]
-            )
-
-        if col_labeled_by is not None:
-            merged = _merge_labeled_by(serial_to_labeled_by.get(int(serial), ""), actor_name)
-            if merged != serial_to_labeled_by.get(int(serial), ""):
-                updates.append(
-                    {
-                        "range": f"{_col_to_a1(col_labeled_by + 1)}{row_num}",
-                        "values": [[merged]],
-                    }
-                )
-
-        if updates:
-            ws.batch_update(updates)
-
-        _kickoff_force_refresh_tcb_cache()
-
-        # Invalidate in-memory quality/candidate caches after label clears.
-        _classify_quality_cache.pop(int(serial), None)
-        _auto_reject_quality_inflight.discard(int(serial))
-        _classify_quality_scan_inflight.discard(int(serial))
-        _detect_result_cache.clear()
-        _refine_result_cache.clear()
-        _identify_result_cache.clear()
-        _manual_result_cache.clear()
-        _manual_sheet_ref_cache = {}
-        _manual_sheet_ref_built_mono = 0.0
-        _sheet_crop_index_cache = {}
-        _sheet_crop_index_built_mono = 0.0
-        _ref_crop_result_cache.clear()
-        _add_flagged_ref_serial(int(serial))
+        # Flush any stale cached ref payloads immediately so new requests honor blacklist.
+        _invalidate_labeler_caches_after_label_clears([int(serial)])
 
         src_parts: List[str] = []
         if source_mode:
@@ -3606,8 +4243,8 @@ async def post_flag_incorrect(request: web.Request) -> web.Response:
         src_txt = ";".join(src_parts) if src_parts else "mode=unknown"
         log_action(
             "labeler_flag_incorrect",
-            f"sn={int(serial)}; changed={1 if changed else 0}",
-            f"by={actor_name}; {src_txt}",
+            f"sn={int(serial)}; queued=1; new={1 if queue_info.get('queued_new') else 0}; blacklisted={1 if blacklisted_now else 0}",
+            f"by={actor_name}; pending={int(queue_info.get('pending_count') or 0)}; {src_txt}",
         )
 
         return _with_cors(
@@ -3615,8 +4252,14 @@ async def post_flag_incorrect(request: web.Request) -> web.Response:
                 {
                     "status": "ok",
                     "serial": int(serial),
-                    "changed": bool(changed),
-                    "already_unlabeled": not bool(changed),
+                    "queued": True,
+                    "applied": False,
+                    "sheet_update": "queued",
+                    "queue_pending": int(queue_info.get("pending_count") or 0),
+                    "queue_deduped": not bool(queue_info.get("queued_new")),
+                    # Sheet clear runs in background now, so immediate changed-state is unknown.
+                    "changed": None,
+                    "already_unlabeled": None,
                     "blacklisted_for_refs": True,
                 }
             ),
@@ -3770,3 +4413,4 @@ def get_labeler_routes() -> List:
         web.options("/api/labeler/gallery_retrain/status", options_handler),
         web.options("/api/labeler/gallery_retrain/schedule", options_handler),
     ]
+

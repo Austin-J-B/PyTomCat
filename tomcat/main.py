@@ -823,6 +823,16 @@ async def start_web_server(bot):
     """Simple web server to serve the UI and API."""
     app = web.Application(middlewares=[rate_limit_middleware])
 
+    async def _cleanup_labeler_cache_http(_app: web.Application) -> None:
+        """Close pooled labeler HTTP clients on web server shutdown."""
+        try:
+            from .services import labeler_cache as _labeler_cache
+            await _labeler_cache.close_http_session()
+        except Exception:
+            pass
+
+    app.on_cleanup.append(_cleanup_labeler_cache_http)
+
     async def get_index(request):
         """Serve the index.html file."""
         try:
@@ -1550,11 +1560,21 @@ async def start_web_server(bot):
     ])
 
     runner = web.AppRunner(app)
-    await runner.setup()
-    #Listen on localhost to avoid exposing the UI externally by default
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
-    print("[TomCat-UI] Web server starting on http://localhost:8080")
-    await site.start()
+    try:
+        await runner.setup()
+        #Listen on localhost to avoid exposing the UI externally by default
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        print("[TomCat-UI] Web server starting on http://localhost:8080")
+        await site.start()
+        # Keep task alive so on_ready reconnects do not spawn duplicate servers.
+        await asyncio.Event().wait()
+    except asyncio.CancelledError:
+        raise
+    finally:
+        try:
+            await runner.cleanup()
+        except Exception:
+            pass
 
 
 #------- Lifecycle -------
@@ -2056,6 +2076,19 @@ async def members(ctx: commands.Context):
     await ctx.send("Members count: (hook up to Members sheet)")
 
 def run():
+    if os.name == "nt":
+        try:
+            use_selector = str(
+                os.getenv("TOMCAT_WINDOWS_SELECTOR_EVENT_LOOP", "1")
+            ).strip().lower() in {"1", "true", "yes", "on"}
+            selector_policy_cls = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+            if use_selector and selector_policy_cls is not None:
+                current_policy = asyncio.get_event_loop_policy()
+                if not isinstance(current_policy, selector_policy_cls):
+                    asyncio.set_event_loop_policy(selector_policy_cls())
+                    print("[TomCat] Using Windows selector event loop policy for network stability.")
+        except Exception:
+            pass
     log_formatter = logging.Formatter(
         "[{asctime}] [{levelname}] {name}: {message}",
         "%Y-%m-%d %H:%M:%S",

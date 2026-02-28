@@ -24,6 +24,9 @@ import asyncio
 import aiohttp
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Set
+import socket
+import ipaddress
+from urllib.parse import urlparse
 
 from aiohttp import web
 from PIL import Image, ImageOps
@@ -1914,6 +1917,10 @@ async def _fetch_image_bytes_for_labeler(
     if not u.startswith("http"):
         return None
 
+    if not _is_safe_url_for_fetch(u):
+        # Reject URLs that resolve to private/loopback/link-local/etc. addresses.
+        return None
+
     lower_u = u.lower()
     is_drive_like = (
         "drive.google.com" in lower_u
@@ -1950,6 +1957,53 @@ async def _fetch_image_bytes_for_labeler(
     except Exception as e:
         log_action("labeler_image_fetch_error", f"serial={serial_i}", f"{type(e).__name__}: {e!r}")
         return None
+
+
+def _is_safe_url_for_fetch(url: str) -> bool:
+    """Return True if the URL is acceptable for server-side fetching.
+
+    This enforces a safe scheme and rejects URLs that resolve to private or loopback
+    IP ranges to mitigate SSRF-style abuse.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        if not parsed.hostname:
+            return False
+
+        hostname = parsed.hostname
+        # Resolve the hostname and ensure no private/loopback/etc. addresses are used.
+        try:
+            addr_infos = socket.getaddrinfo(hostname, None)
+        except OSError:
+            return False
+
+        for family, _, _, _, sockaddr in addr_infos:
+            if family == socket.AF_INET:
+                ip_str = sockaddr[0]
+            elif family == socket.AF_INET6:
+                ip_str = sockaddr[0]
+            else:
+                continue
+
+            try:
+                ip = ipaddress.ip_address(ip_str)
+            except ValueError:
+                return False
+
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_multicast
+                or ip.is_reserved
+            ):
+                return False
+
+        return True
+    except Exception:
+        return False
 
 
 def _kickoff_fallback_ref_cache_warm(candidates: List[Tuple[int, str]], *, max_items: int = 12) -> int:

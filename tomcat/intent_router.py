@@ -1,4 +1,4 @@
-"""Parse inbound Discord messages into structured intents for handlers."""
+﻿"""Parse inbound Discord messages into structured intents for handlers."""
 
 #tomcat/intent_router.py
 from __future__ import annotations
@@ -25,8 +25,8 @@ try:
 except Exception:
     _safe_send = None
 
-#---- handlers we’ll dispatch to ----------------------------------------------
-#Cats: “show me …” and “who is …”
+#---- handlers weâ€™ll dispatch to ----------------------------------------------
+#Cats: â€œshow me â€¦â€ and â€œwho is â€¦â€
 from .handlers.cats import handle_cat_photo, handle_cat_show
 #Vision CV: detect / crop / identify (we already added these earlier)
 from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
@@ -40,14 +40,15 @@ from .handlers.misc import (
 )
 from .handlers.gmail import handle_check_last_email
 from .handlers.finance import handle_log_recent_finances
-from .handlers.stations import handle_station_residents as _handle_station_residents
 from UserInterface.feeding_schedule_linker import handle_feeding_schedule_link
 from UserInterface.sub_request_linker import handle_sub_request_link
+from .services.cat_query import infer_query_from_text
 
 #---- Aliases and optional NLP ------------------------------------------------
 from .aliases import resolve_station_or_cat, alias_vocab
 from .utils.fuzzy import fuzzy_ratio, levenshtein_distance
 from .nlp.model import NLPModel  #returns None if not available
+from .nlp.local_parser import LocalLLMParser
 
 #---- Time zone handling (America/Chicago) -----------------------------------
 try:
@@ -160,7 +161,7 @@ class Intent:
 @dataclass
 class IntentEvent:
     """Internal representation of a message + parsed metadata."""
-    type: str                      #"show_photo" | "who_is" | "cv_identify" | "cv_detect" | "cv_crop" | "feed_update" | "feeding_status" | "feeding_today" | "feeding_schedule" | "station_residents" | "sub_request_link" | "none"
+    type: str                      #"show_photo" | "who_is" | "cv_identify" | "cv_detect" | "cv_crop" | "feed_update" | "feeding_status" | "feeding_today" | "feeding_schedule" | "sub_request_link" | "cat_query" | "none"
     confidence: float
     channel_id: int
     user_id: int
@@ -177,20 +178,21 @@ class IntentEvent:
     paired_messages: Optional[List[int]] = None
     raw_station: Optional[str] = None      #original station query text (for station-specific intents)
     trigger_phrase: Optional[str] = None   #snippet that matched the routing logic
+    query: Optional[Dict[str, Any]] = None #payload for deterministic cat queries
 
 #Simple ring buffer per (channel_id, user_id)
 MachineRow = Dict[str, Any]
 
 TOMCAT_PREFIX = re.compile(r"^\s*(tom\s*cat|tomcat|tom-kat|tom\s*kat)[\s,:-]*", re.I)
 SHOW_PAT = re.compile(r"\b(show\s*me|show)\b", re.I)
+PHOTO_PAT = re.compile(r"\b(photo|picture|pic|image)\b", re.I)
 WHO_PAT  = re.compile(r"\b(who\s+is|who\s*'s|who\s*s|whois)\b", re.I)
 IDENT_PAT= re.compile(r"\b(identify|id|classify|classification)\b", re.I)
 DETECT_PAT = re.compile(r"\bdetect\b", re.I)
 CROP_PAT   = re.compile(r"\bcrop\b", re.I)
 FEED_VERB = re.compile(r"\b(fed|fill(?:ed)?|filled|topped(?:\s*off)?)\b", re.I)
 FEED_NEGATION_RE = re.compile(r"\b(?:(?:do(?:n't|\s+not))|(?:did(?:n't|\s+not))|(?:never)|(?:cant|can't|cannot)|(?:won't)|(?:should(?:n't|\s+not))|(?:would(?:n't|\s+not))|(?:haven't)|(?:hasn't)|(?:hadn't))\s+(?:feed|fed)\b", re.I)
-FEEDING_CHECK_RE = re.compile(r"^(?:(?:who(?:['’]s|\s+is|\s+has|\s+have|\s+hasn?['’]?t|\s+haven?['’]?t)\s*(?:been\s+)?fed(?:\s+today)?)|(?: (?:which|what) \s+ stations? \s+ (?:have|has|haven?['’]?t|hasn?['’]?t) \s*(?:been\s+)?fed(?:\s+today)?))\s*[?.!]*$",re.I | re.X,)
-WHO_LIVES_RE = re.compile(r"^\s*who\s+lives?\s+(?:at|by|near|around|in|on)\s+(?P<target>.+?)\s*[?.!]*$",re.I,)
+FEEDING_CHECK_RE = re.compile(r"^(?:(?:who(?:['â€™]s|\s+is|\s+has|\s+have|\s+hasn?['â€™]?t|\s+haven?['â€™]?t)\s*(?:been\s+)?fed(?:\s+today)?)|(?: (?:which|what) \s+ stations? \s+ (?:have|has|haven?['â€™]?t|hasn?['â€™]?t) \s*(?:been\s+)?fed(?:\s+today)?))\s*[?.!]*$",re.I | re.X,)
 SILENT_CMD = re.compile(r"\bsilent\s*mode\s+(on|off)\b", re.I)
 WHO_THIS_RE = re.compile(r"(?:^|\b)(?:who(?:'s|\s+is)|what(?:'s|\s+is))\s+(?:this|that)\s*(?:cat)?\??$", re.I)
 FEEDING_UPDATE_RE = re.compile(r"^feeding\s+update\s*$", re.I)
@@ -212,7 +214,7 @@ RECACHE_ONE_RE = re.compile(r"\brecache\s+(.+?)(?:\s+photos?)?\b", re.I)
 RECACHE_ALL_RE = re.compile(r"\brecache\s+all\s+(?:show\s+)?(?:cat\s+)?photos?\b", re.I)
 RECACHE_CATABASE_RE = re.compile(r"\brecache\s+(?:catabase|cat\s*database|names)\b", re.I)
 REMOVE_ROLE_RE = re.compile(r"\b(?:remove|clear|strip)\s+(?:the\s+)?role\s+(\d{5,20})(?:\s+from\s+(?:everyone|all))?\b", re.I)
-FEEDING_SCHEDULE_LINK_RE = re.compile(r"(feeding\s*schedule|feed\s*schedule|what[’'`]?\s*(?:is|s)?\s*(?:the\s+)?feeding\s*schedule|whats\s+the\s+feeding\s*schedule)",re.I,)
+FEEDING_SCHEDULE_LINK_RE = re.compile(r"(feeding\s*schedule|feed\s*schedule|what[â€™'`]?\s*(?:is|s)?\s*(?:the\s+)?feeding\s*schedule|whats\s+the\s+feeding\s*schedule)",re.I,)
 SUB_REQUEST_LINK_RE = re.compile(r"(sub\s*request|find\s+(?:a\s+)?sub|find\s+subs|sub\s*me|cover\s+my\s+shift)",re.I,)
 CREATE_PROFILES_RE = re.compile(r"^create\s+profiles?\s+(\d+)(?:\s+through\s+(\d+))?$", re.I)
 UPDATE_PROFILE_RE  = re.compile(r"^update\s+profile\s+(\d+)$", re.I)
@@ -316,6 +318,7 @@ class IntentRouter:
         #ring buffer: per (channel_id, user_id) last ~100 rows
         self._buf: Dict[Tuple[int,int], Deque[MachineRow]] = defaultdict(lambda: deque(maxlen=100))
         self._nlp: Optional[NLPModel] = NLPModel.maybe_load(settings)  #returns None if disabled
+        self._local_llm: Optional[LocalLLMParser] = LocalLLMParser.maybe_load(settings)
         self._alias_vocab = alias_vocab()  #{"stations":[names...], "cats":[names...], "all":[...]}
         #ephemeral memory for clarify actions: msg_id -> payload
         self._pending_clarify: Dict[int, Dict[str, Any]] = {}
@@ -789,33 +792,19 @@ class IntentRouter:
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
-
-
-
-
-
-            #Feeding inquiry requires addressing (wake/mention/DM)
-            m_who_lives = WHO_LIVES_RE.search(text_wo)
-            if m_who_lives:
-                target = m_who_lives.group("target").strip()
-                cleaned = re.sub(r"['’]s\b", "", target)
-                cleaned = re.sub(r"\b(?:feeding\s+)?stations?\b", "", cleaned, flags=re.I)
-                cleaned = re.sub(r"\b(?:the|that|this|there|here)\b", "", cleaned, flags=re.I)
-                cleaned = re.sub(r"\s+", " ", cleaned).strip()
-                station_name = self._extract_best_entity(cleaned or target, want="station", allow_stopword_aliases=True)
-                ev = IntentEvent(
-                    type="station_residents", confidence=0.9,
+            #Deterministic cat-query parser for catabase questions.
+            #Keep this independent of local LLM availability.
+            q_direct = infer_query_from_text(text_wo)
+            if q_direct:
+                trace.append("intent:cat_query(deterministic)")
+                self._traces[row["message_id"]] = trace
+                return IntentEvent(
+                    type="cat_query", confidence=0.82,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                    station=station_name, raw_station=cleaned or target,
+                    trigger_phrase="deterministic_parser",
+                    query=q_direct,
                 )
-                trace.append("intent:station_residents")
-                if station_name:
-                    trace.append(f"slot:station={station_name}")
-                else:
-                    trace.append("slot:station=unknown")
-                self._traces[row["message_id"]] = trace
-                return ev
 
             if FEEDING_CHECK_RE.search(text_wo):
                 return IntentEvent(
@@ -823,7 +812,10 @@ class IntentRouter:
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
-            if SHOW_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["show me", "show"]):
+
+            show_like = bool(SHOW_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["show me", "show"]))
+            photo_like = bool(PHOTO_PAT.search(text_wo))
+            if show_like or photo_like:
                 cat = self._extract_best_entity(text_wo, want="cat")
                 if cat:
                     ev = IntentEvent(
@@ -836,9 +828,11 @@ class IntentRouter:
                     trace.append("intent:show_photo")
                     self._traces[row["message_id"]] = trace
                     return ev
-                #no cat? low confidence; ignore
-                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
-                                   message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                #If this was an explicit "show" command with no cat, suppress noise.
+                #For generic photo mentions (e.g., "photo of X") keep parsing so fallback can help.
+                if show_like:
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
+                                       message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
 
             if WHO_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["who is", "who's", "who is this", "who is that"]):
                 cat = self._extract_best_entity(text_wo, want="cat")
@@ -982,7 +976,101 @@ class IntentRouter:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
                                    message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-        #2) Feeding-team flows (high traffic). Feed updates only; subs are UI-only.
+        #2) Local LLM fallback: addressed router misses should be interpreted before
+        #feeding-channel station heuristics can hijack the message.
+        if addressed and self._local_llm and len(text) >= 3:
+            text_wo = self._strip_wake_tokens(raw_text, message)
+            if text_wo:
+                parsed = await self._local_llm.parse(text_wo)
+                trace.append(f"llm:route={parsed.route};conf={parsed.confidence:.2f}")
+                log_action(
+                    "local_llm_route",
+                    f"msg={row['message_id']}; user={row['user_id']}",
+                    f"route={parsed.route}; conf={parsed.confidence:.2f}; reason={parsed.reason or ''}",
+                )
+                conf_min = float(getattr(settings, "local_llm_conf_min", 0.80) or 0.80)
+                if parsed.route != "none" and parsed.confidence >= conf_min:
+                    if parsed.route == "dispatch_existing":
+                        cat_hint = parsed.cat_name or text_wo
+                        cat = self._extract_best_entity(cat_hint, want="cat", allow_model=True)
+                        if cat and parsed.intent == "show_photo":
+                            trace.append(f"slot:cat={cat}")
+                            trace.append("intent:show_photo(local_llm)")
+                            self._traces[row["message_id"]] = trace
+                            return IntentEvent(
+                                type="show_photo", confidence=parsed.confidence,
+                                channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                                text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                                cat_name=cat, trigger_phrase=parsed.reason or "local_llm_dispatch",
+                            )
+                        if cat and parsed.intent == "who_is":
+                            trace.append(f"slot:cat={cat}")
+                            trace.append("intent:who_is(local_llm)")
+                            self._traces[row["message_id"]] = trace
+                            return IntentEvent(
+                                type="who_is", confidence=parsed.confidence,
+                                channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                                text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                                cat_name=cat, trigger_phrase=parsed.reason or "local_llm_dispatch",
+                            )
+                    if parsed.route == "cat_query":
+                        q = dict(parsed.query or {})
+                        #Merge local-LLM output with deterministic text inference so slot/op errors
+                        #from the model don't degrade obvious filter queries.
+                        q_hint = infer_query_from_text(text_wo) or {}
+
+                        llm_location = q.get("location")
+                        if llm_location:
+                            q["location"] = resolve_station_or_cat(
+                                str(llm_location),
+                                want="station",
+                                include_stopword_aliases=True,
+                            ) or str(llm_location)
+
+                        #When deterministic parsing succeeds, trust its slot extraction.
+                        #This clears hallucinated LLM slots (e.g., random brown filters).
+                        if q_hint:
+                            q["location"] = q_hint.get("location")
+                            q["tnrd"] = q_hint.get("tnrd")
+                            q["color_family"] = q_hint.get("color_family")
+
+                        #Prefer deterministic inferred op when available; it better captures
+                        #question form like "which cats..." vs "how many cats...".
+                        hint_op = str(q_hint.get("op") or "").strip().lower()
+                        if hint_op in {"count_all_cats", "count_by_filters", "list_names_by_filters"}:
+                            q["op"] = hint_op
+
+                        #Final guard: unconstrained list -> count_all for concise response.
+                        if (
+                            q.get("op") == "list_names_by_filters"
+                            and not q.get("location")
+                            and q.get("tnrd") is None
+                            and not q.get("color_family")
+                        ):
+                            q["op"] = "count_all_cats"
+                        trace.append("intent:cat_query(local_llm)")
+                        self._traces[row["message_id"]] = trace
+                        return IntentEvent(
+                            type="cat_query", confidence=parsed.confidence,
+                            channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                            text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                            trigger_phrase=parsed.reason or "local_llm_query",
+                            query=q,
+                        )
+                #Deterministic backup parser when local LLM times out/abstains.
+                q2 = infer_query_from_text(text_wo)
+                if q2:
+                    trace.append("intent:cat_query(heuristic_backup)")
+                    self._traces[row["message_id"]] = trace
+                    return IntentEvent(
+                        type="cat_query", confidence=0.70,
+                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                        trigger_phrase="heuristic_backup",
+                        query=q2,
+                    )
+
+        #3) Feeding-team flows (high traffic). Feed updates only; subs are UI-only.
         #Case A: feed verb with possibly multiple stations
         if FEED_VERB.search(text):
             if FEED_NEGATION_RE.search(text):
@@ -1025,8 +1113,8 @@ class IntentRouter:
             best = self._extract_best_entity(text, want="station")
             if best:
                 station_only_list = [best]
-        if station_only_list and in_feeding:
-            #If they included "fed" above we already returned. This is the “mike” alone case.
+        if station_only_list and in_feeding and not addressed:
+            #If they included "fed" above we already returned. This is the â€œmikeâ€ alone case.
             #If an image is attached, accept. Else, look back (5m). Else set pending.
             if has_image:
                 return IntentEvent(
@@ -1086,8 +1174,24 @@ class IntentRouter:
             await _handle_profile(_intent("cat_profile", {"name": event.cat_name}), ctx)
             return
 
+        if event.type == "cat_query":
+            from .services.cat_query import run_cat_query
+            result = run_cat_query(event.query or {})
+            msg = str(result.get("message") or "").strip()
+            if msg:
+                if _safe_send:
+                    await _safe_send(ctx["channel"], msg)
+                else:
+                    await ctx["channel"].send(msg)
+            log_action(
+                "cat_query",
+                f"user={event.user_id}; ch={event.channel_id}",
+                f"op={result.get('op')}; count={result.get('count')}",
+            )
+            return
+
         if event.type == "cv_identify":
-            #If event.attachment_ids came from context pairing, we’ll “replay” the other message by forging message.attachments.
+            #If event.attachment_ids came from context pairing, weâ€™ll â€œreplayâ€ the other message by forging message.attachments.
             #Easiest path: just call the existing handler; it already checks current or referenced message.
             #If this came via a reply, suppress the handler's "attach an image" prompt when empty
             via_reply = bool(getattr(message, "reference", None))
@@ -1121,11 +1225,6 @@ class IntentRouter:
         if event.type == "feeding_schedule":
             target_iso = event.dates[0] if event.dates else None
             await feeding.handle_feeding_schedule(_intent("feeding_schedule", {"date": target_iso}), {**ctx, "bot": ctx.get("bot")})
-            return
-
-        if event.type == "station_residents":
-            payload = {"station": event.station, "query": event.raw_station}
-            await _handle_station_residents(_intent("station_residents", payload), ctx)
             return
 
         if event.type == "function_glossary":
@@ -1536,10 +1635,10 @@ class IntentRouter:
         if m:
             word = m.group(2)[:3]
             target = self._next_weekday(today, WEEKDAYS[word])
-            #interpret “this friday” as the next occurrence, matching the configured rule
+            #interpret â€œthis fridayâ€ as the next occurrence, matching the configured rule
             out.append(target)
 
-        #numeric range “21st to 28th”, “21-28”
+        #numeric range â€œ21st to 28thâ€, â€œ21-28â€
         m2 = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s*(?:to|-)\s*(\d{1,2})(?:st|nd|rd|th)?\b", text)
         if m2:
             d1 = int(m2.group(1)); d2 = int(m2.group(2))
@@ -1556,7 +1655,7 @@ class IntentRouter:
                 except Exception:
                     continue
 
-        #If someone says “I fed microwave saturday before I left vacation”
+        #If someone says â€œI fed microwave saturday before I left vacationâ€
         if "saturday" in text and "fed" in text:
             #interpret as last Saturday
             out.append(self._prev_weekday(today, WEEKDAYS["sat"]))
@@ -1837,4 +1936,5 @@ class IntentRouter:
 
 def _intent(name: str, data: Dict[str, Any]) -> Intent:
     return Intent(name, data)
+
 

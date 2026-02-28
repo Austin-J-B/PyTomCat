@@ -1949,7 +1949,22 @@ async def _fetch_image_bytes_for_labeler(
     try:
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as sess:
-            async with sess.get(u) as resp:
+            # Disable automatic redirects so we can re-validate redirect targets.
+            async with sess.get(u, allow_redirects=False) as resp:
+                # Handle a single level of redirect with safety checks.
+                if resp.status in (301, 302, 303, 307, 308):
+                    location = resp.headers.get("Location")
+                    if not location:
+                        return None
+                    # Build absolute URL from redirect location.
+                    redirect_url = str(resp.url.join(location))
+                    if not _is_safe_url_for_fetch(redirect_url):
+                        return None
+                    async with sess.get(redirect_url, allow_redirects=False) as resp2:
+                        if resp2.status != 200:
+                            return None
+                        data = await resp2.read()
+                        return data or None
                 if resp.status != 200:
                     return None
                 data = await resp.read()
@@ -1960,6 +1975,60 @@ async def _fetch_image_bytes_for_labeler(
 
 
 def _is_safe_url_for_fetch(url: str) -> bool:
+    """
+    Return True if the given URL is safe to fetch from this server.
+
+    Safety constraints:
+      - Scheme must be http or https.
+      - Host must be present and resolve to only public IP addresses.
+      - Reject private, loopback, link-local, multicast, and reserved ranges.
+      - Optionally, restrict to common web ports to avoid talking to arbitrary services.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        if not parsed.hostname:
+            return False
+
+        # Optional: basic port sanity check. Allow default ports and common HTTPS alternatives.
+        port = parsed.port
+        if port is not None and port not in (80, 443, 8080, 8443):
+            return False
+
+        # Resolve hostname and ensure all addresses are public.
+        try:
+            addrinfo_list = socket.getaddrinfo(parsed.hostname, port or (443 if parsed.scheme == "https" else 80))
+        except socket.gaierror:
+            return False
+
+        for family, _, _, _, sockaddr in addrinfo_list:
+            if family == socket.AF_INET:
+                ip_str = sockaddr[0]
+            elif family == socket.AF_INET6:
+                ip_str = sockaddr[0]
+            else:
+                # Unknown family: be conservative.
+                return False
+
+            try:
+                ip = ipaddress.ip_address(ip_str)
+            except ValueError:
+                return False
+
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_multicast
+                or ip.is_reserved
+            ):
+                return False
+
+        return True
+    except Exception:
+        # On any parsing/resolution error, treat as unsafe.
+        return False
     """Return True if the URL is acceptable for server-side fetching.
 
     This enforces a safe scheme and rejects URLs that resolve to private or loopback

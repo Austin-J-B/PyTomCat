@@ -180,7 +180,15 @@ def station_names(target: Optional[date | str] = None) -> List[str]:
 
 def station_alias_table(target: Optional[date | str] = None) -> Dict[str, List[str]]:
     table: Dict[str, List[str]] = {}
-    for item in station_definitions(target):
+    items = list(station_definitions(target))
+    seen_names = {_norm(item.get("name") or "") for item in items if item.get("name")}
+    # Backfill stations that may be missing from a stale cache version.
+    for item in _SEEDED_STATIONS:
+        key = _norm(item.get("name") or "")
+        if key and key not in seen_names:
+            items.append({"name": item.get("name"), "aliases": item.get("aliases") or []})
+            seen_names.add(key)
+    for item in items:
         name = item.get("name") or ""
         key = _norm(name)
         aliases = []
@@ -198,6 +206,9 @@ def station_alias_table(target: Optional[date | str] = None) -> Dict[str, List[s
 def station_display_for(key: str, *, target: Optional[date | str] = None) -> str:
     k = _norm(key)
     for item in station_definitions(target):
+        if _norm(item.get("name") or "") == k:
+            return item.get("name") or key
+    for item in _SEEDED_STATIONS:
         if _norm(item.get("name") or "") == k:
             return item.get("name") or key
     return key

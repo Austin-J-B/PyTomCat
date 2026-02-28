@@ -391,6 +391,9 @@ def _resolve_exact_or_prefix(
     tokens: Iterable[str],
     include_stopword_aliases: bool = False,
 ) -> Optional[str]:
+    # Prefer exact and more specific (longer) alias hits over shorter aliases.
+    best_key: Optional[str] = None
+    best_score: Tuple[int, int] = (-1, -1)
     for key, aliases in table.items():
         for alias in list(aliases) + [key]:
             alias_norm = _norm(alias)
@@ -401,8 +404,16 @@ def _resolve_exact_or_prefix(
             alias_tokens = [tok for tok in _words(alias) if tok]
             if alias_tokens and not include_stopword_aliases and all(tok in STOPWORDS for tok in alias_tokens):
                 continue
-            if re.search(rf"\b{re.escape(alias_norm)}\b", text_norm):
+            if alias_norm == text_norm:
                 return key
+            if re.search(rf"\b{re.escape(alias_norm)}\b", text_norm):
+                score = (len(alias_norm), len(alias_tokens))
+                if score > best_score:
+                    best_score = score
+                    best_key = key
+
+    if best_key:
+        return best_key
 
     key_tokens: Dict[str, List[str]] = {}
     for key, aliases in table.items():

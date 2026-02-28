@@ -397,11 +397,30 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
                     import json as _json
                     #Read current meta
                     meta = _json.loads(Path(jp).read_text(encoding='utf-8'))
-                    
+
+                    changed = False
                     #If total count or index has drifted, update the file
-                    if meta.get("total_available") != total_available:
+                    if meta.get("total_available") != total_available or meta.get("reverse_index") != reverse_index:
                         meta["total_available"] = total_available
                         meta["reverse_index"] = reverse_index
+                        changed = True
+                    #Canonicalize stale sidecars so later pops don't emit ambiguous labels.
+                    canon_full = str(full_name)
+                    canon_disp = display_name or re.sub(r"^\s*\d+\.\s*", "", canon_full).strip()
+                    if str(meta.get("full_name") or "").strip() != canon_full:
+                        meta["full_name"] = canon_full
+                        changed = True
+                    if str(meta.get("display_name") or "").strip() != canon_disp:
+                        meta["display_name"] = canon_disp
+                        changed = True
+                    try:
+                        existing_cid = int(meta.get("cat_id") or 0)
+                    except Exception:
+                        existing_cid = 0
+                    if existing_cid != int(cid):
+                        meta["cat_id"] = int(cid)
+                        changed = True
+                    if changed:
                         Path(jp).write_text(_json.dumps(meta), encoding='utf-8')
             except Exception:
                 pass
@@ -514,10 +533,21 @@ def _build_name_index() -> None:
                 try:
                     import json as _json
                     meta = _json.loads(Path(os.path.join(p, jf)).read_text(encoding='utf-8'))
-                    disp = meta.get('display_name') or meta.get('full_name')
-                    if disp:
-                        _NAME_INDEX[_norm(disp)] = int(meta.get('cat_id') or int(sub))
-                        break
+                    full = str(meta.get("full_name") or "").strip()
+                    #Skip stale mixed-label sidecars; they can poison fuzzy lookup.
+                    if "," in full:
+                        continue
+                    cid = int(meta.get("cat_id") or int(sub))
+                    parsed = _cat_id_from_full(full) if full else None
+                    if parsed is not None and parsed != cid:
+                        continue
+                    disp = str(meta.get("display_name") or "").strip()
+                    if not disp and full:
+                        disp = re.sub(r"^\s*\d+\.\s*", "", full).strip()
+                    if not disp or "," in disp:
+                        continue
+                    _NAME_INDEX[_norm(disp)] = cid
+                    break
                 except Exception:
                     continue
         except Exception:
@@ -568,41 +598,90 @@ def _resolve_cat_id(query: str) -> Optional[int]:
             return vid
     return None
 
-def _pop_from_files(files: list[str]) -> tuple[Optional[bytes], Optional[dict]]:
+def _remove_cache_entry(path: str) -> None:
+    """Delete one cache JPG and sidecar JSON, best-effort."""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+    try:
+        mp = os.path.splitext(path)[0] + ".json"
+        if os.path.exists(mp):
+            os.remove(mp)
+    except Exception:
+        pass
+
+
+def _meta_is_ambiguous(meta: Optional[dict], expected_cid: Optional[int]) -> bool:
+    """Return True when sidecar metadata is too stale/ambiguous to trust."""
+    if not isinstance(meta, dict):
+        return False
+    full = str(meta.get("full_name") or "").strip()
+    #Mixed labels can represent another cat and produce wrong embeds.
+    if "," in full:
+        return True
+    if str(meta.get("reverse_index", "")).strip() in {"", "?"}:
+        return True
+    if str(meta.get("total_available", "")).strip() in {"", "?"}:
+        return True
+    if expected_cid is None:
+        return False
+    try:
+        expected = int(expected_cid)
+    except Exception:
+        return False
+    cat_id = meta.get("cat_id")
+    if cat_id not in (None, ""):
+        try:
+            if int(cat_id) != expected:
+                return True
+        except Exception:
+            return True
+    parsed = _cat_id_from_full(full) if full else None
+    if parsed is not None and parsed != expected:
+        return True
+    return False
+
+
+def _pop_from_files(files: list[str], expected_cid: Optional[int] = None) -> tuple[Optional[bytes], Optional[dict]]:
     """Pop a random cached file (fast path, no async). Returns (bytes, meta)."""
     from pathlib import Path
     import random as _rand
+
+    candidates = list(files)
     try:
-        path = _rand.choice(files)
+        _rand.shuffle(candidates)
     except Exception:
-        path = sorted(files)[0]
-    data = None
-    try:
-        data = Path(path).read_bytes()
-    except Exception:
-        pass
-    #Load sidecar JSON
-    meta: Optional[dict] = None
-    try:
-        base = os.path.splitext(path)[0]
-        mp = base + ".json"
-        if os.path.exists(mp):
-            import json as _json
-            meta = _fix_cached_reverse_index(_json.loads(Path(mp).read_text(encoding='utf-8')))
-    except Exception:
-        meta = None
-    try:
-        os.remove(path)
-        #Also remove meta sidecar if present
+        candidates = sorted(candidates)
+
+    for path in candidates:
+        try:
+            data = Path(path).read_bytes()
+        except Exception:
+            _remove_cache_entry(path)
+            continue
+
+        meta: Optional[dict] = None
         try:
             mp = os.path.splitext(path)[0] + ".json"
             if os.path.exists(mp):
-                os.remove(mp)
+                import json as _json
+                raw_meta = _json.loads(Path(mp).read_text(encoding='utf-8'))
+                if _meta_is_ambiguous(raw_meta, expected_cid):
+                    _remove_cache_entry(path)
+                    continue
+                meta = _fix_cached_reverse_index(raw_meta)
+                if _meta_is_ambiguous(meta, expected_cid):
+                    _remove_cache_entry(path)
+                    continue
         except Exception:
-            pass
-    except Exception:
-        pass
-    return data, meta
+            meta = None
+
+        _remove_cache_entry(path)
+        return data, meta
+
+    return None, None
 
 async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Optional[bytes], Optional[dict]]:
     """Return and remove one cached image entry, optionally refilling from Sheets.
@@ -630,7 +709,7 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
             files = [os.path.join(cdir, p) for p in os.listdir(cdir) if p.lower().endswith('.jpg')]
             if files:
                 #Fast path: files exist, skip sheet lookup entirely
-                return _pop_from_files(files)
+                return _pop_from_files(files, expected_cid=cid)
     
     #Slow path: need sheet to resolve cat ID
     if cid is None and use_sheet:
@@ -645,7 +724,7 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
     files = [os.path.join(cdir, p) for p in os.listdir(cdir) if p.lower().endswith('.jpg')]
     if not files:
         return None, None
-    return _pop_from_files(files)
+    return _pop_from_files(files, expected_cid=cid)
 
 async def warm_cache_on_boot() -> None:
     """Background task that primes caches for frequently requested cats."""

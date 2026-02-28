@@ -276,6 +276,19 @@ class Settings:
     nlp_tokenizer_path: str | None = os.getenv("NLP_TOKENIZER_PATH") or os.getenv("DEBERTA_TOKENIZER_JSON")
     nlp_conf_high: float = float(os.getenv("NLP_CONF_HIGH", "0.88"))
     nlp_conf_mid: float = float(os.getenv("NLP_CONF_MID", "0.75"))
+    #Local LLM fallback parser (structured routing only; deterministic execution downstream)
+    local_llm_enabled: bool = _get_env_bool("LOCAL_LLM_ENABLED", True)
+    local_llm_runtime: str = os.getenv("LOCAL_LLM_RUNTIME", "llama_cpp").strip().lower()
+    local_llm_gguf_path: str = os.getenv(
+        "LOCAL_LLM_GGUF_PATH",
+        os.path.join("weights", "SmolLM2-1.7B-Instruct-Q6_K.gguf"),
+    )
+    local_llm_conf_min: float = float(os.getenv("LOCAL_LLM_CONF_MIN", "0.80"))
+    local_llm_max_tokens: int = int(os.getenv("LOCAL_LLM_MAX_TOKENS", "220"))
+    local_llm_ctx: int = int(os.getenv("LOCAL_LLM_CTX", "2048"))
+    #0 keeps CPU-safe defaults; set >0 to offload layers when a GPU build is available
+    local_llm_n_gpu_layers: int = int(os.getenv("LOCAL_LLM_N_GPU_LAYERS", "0"))
+    local_llm_timeout_sec: float = float(os.getenv("LOCAL_LLM_TIMEOUT_SEC", "12.0"))
 
     #======== Feeding windows ========
     feed_lookback_minutes_before: int = int(os.getenv("FEED_LOOKBACK_MINUTES_BEFORE", "5"))

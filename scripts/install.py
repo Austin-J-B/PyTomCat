@@ -25,6 +25,13 @@ VENV_DIR = ROOT / ".venv"
 WEIGHTS_DIR = ROOT / "weights"
 ONNX_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.onnx"
 TOKENIZER_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.tokenizer.json"
+LOCAL_LLM_GGUF_NAME = "SmolLM2-1.7B-Instruct-Q6_K.gguf"
+LOCAL_LLM_GGUF_PATH = WEIGHTS_DIR / LOCAL_LLM_GGUF_NAME
+LOCAL_LLM_GGUF_URL = (
+    "https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/"
+    "SmolLM2-1.7B-Instruct-Q6_K.gguf?download=true"
+)
+LLAMA_CPP_WHEEL_INDEX_CPU = "https://abetlen.github.io/llama-cpp-python/whl/cpu"
 CONFIG_PATH = ROOT / "config.yml"
 
 REQUIRED_WEIGHTS = ["R4_cat_DINOv3_encoder.pth", "R4.5_cat_DINOv3_gallery.pt", "sam2_s.pt"]
@@ -75,8 +82,17 @@ SHEET_MEGASHEET_ID=                   # Members/finance megasheet (used for dues
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
 # ===== ML Model Paths =====
+INSTALL_DEBERTA_MODEL=0              # Optional. Set 1 to download/validate DeBERTa ONNX during install
 NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
 NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
+LOCAL_LLM_ENABLED=true
+LOCAL_LLM_RUNTIME=llama_cpp
+LOCAL_LLM_GGUF_PATH=weights/SmolLM2-1.7B-Instruct-Q6_K.gguf
+LOCAL_LLM_CONF_MIN=0.80
+LOCAL_LLM_MAX_TOKENS=220
+LOCAL_LLM_CTX=2048
+LOCAL_LLM_N_GPU_LAYERS=0
+LOCAL_LLM_TIMEOUT_SEC=12.0
 CV_DETECT_WEIGHTS=weights/984_917_yolo12s.pt
 CV_ENCODER_WEIGHTS=weights/R4_cat_DINOv3_encoder.pth
 CV_GALLERY_PATH=weights/R4.5_cat_DINOv3_gallery.pt
@@ -130,6 +146,13 @@ CLOUDFLARE_TUNNEL_CREDENTIALS=        # Optional path to tunnel credentials JSON
 CLOUDFLARE_TUNNEL_NAME=               # Optional: create tunnel if credentials are missing
 """
 ENV_TEMPLATE_PATH = ROOT / ".env TEMPLATE"
+
+
+def _env_bool(key: str, default: bool = False) -> bool:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 class InstallError(RuntimeError):
     """Raised when a provisioning step cannot be recovered automatically."""
@@ -389,6 +412,79 @@ def _ensure_extra_models() -> None:
         "onnxscript" 
     ])
 
+def _ensure_llama_cpp_runtime() -> None:
+    """Install llama.cpp Python bindings used by local structured fallback parsing."""
+    _print_header("Installing local LLM runtime (llama-cpp-python)")
+    try:
+        #Prefer prebuilt wheels to avoid requiring local MSVC/CMake toolchains.
+        _pip([
+            "--prefer-binary",
+            "--extra-index-url", LLAMA_CPP_WHEEL_INDEX_CPU,
+            "llama-cpp-python>=0.3.0,<0.4",
+        ])
+    except subprocess.CalledProcessError:
+        #Fallback to default index in case prebuilt wheel index is unavailable.
+        try:
+            _pip(["--prefer-binary", "llama-cpp-python>=0.3.0,<0.4"])
+        except subprocess.CalledProcessError:
+            print("Warning: llama-cpp-python install failed.")
+            print("Local LLM fallback will stay disabled until this package is installed.")
+            print("Tip: install Build Tools OR use prebuilt wheels from:")
+            print(f"  {LLAMA_CPP_WHEEL_INDEX_CPU}")
+
+def _download_large_file(url: str, dest: Path) -> None:
+    """Stream a large file download with simple MB progress logging."""
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    downloaded = 0
+    total = 0
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "TomCatInstaller/1.0"})
+        with urllib.request.urlopen(req) as resp:
+            try:
+                total = int(resp.headers.get("Content-Length", "0") or 0)
+            except Exception:
+                total = 0
+            with open(tmp, "wb") as f:
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total > 0:
+                        pct = (downloaded * 100.0) / total
+                        print(
+                            f"\rDownloaded {downloaded // (1024 * 1024)}MB / {total // (1024 * 1024)}MB ({pct:.1f}%)",
+                            end="",
+                            flush=True,
+                        )
+                    elif downloaded % (20 * 1024 * 1024) < (1024 * 1024):
+                        print(f"\rDownloaded {downloaded // (1024 * 1024)}MB", end="", flush=True)
+        print("")
+        tmp.replace(dest)
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+
+def _ensure_local_llm_model() -> None:
+    """Download the default GGUF model for local fallback parsing when missing."""
+    WEIGHTS_DIR.mkdir(exist_ok=True)
+    if LOCAL_LLM_GGUF_PATH.exists():
+        print(f"Local LLM model is present: {LOCAL_LLM_GGUF_PATH.name}")
+        return
+    _print_header("Downloading local fallback model (SmolLM2-1.7B Q6_K)")
+    print(f"Target: {LOCAL_LLM_GGUF_PATH}")
+    try:
+        _download_large_file(LOCAL_LLM_GGUF_URL, LOCAL_LLM_GGUF_PATH)
+        size_mb = int(LOCAL_LLM_GGUF_PATH.stat().st_size / (1024 * 1024))
+        print(f"Downloaded {LOCAL_LLM_GGUF_PATH.name} ({size_mb} MB)")
+    except Exception as e:
+        print(f"Warning: failed to download local LLM GGUF: {e}")
+        print("You can add the model manually to weights/ and set LOCAL_LLM_GGUF_PATH in .env.")
+
 def _cleanup_tokenizer_artifacts() -> None:
     leftovers = [
         WEIGHTS_DIR / "added_tokens.json",
@@ -459,10 +555,12 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     python_exe = args.python.resolve() if args.python else Path(sys.executable)
+    install_deberta = _env_bool("INSTALL_DEBERTA_MODEL", False)
     
     _print_header("TomCat Installer")
     print(f"Root: {ROOT}")
     print(f"Python: {python_exe}")
+    print(f"Install DeBERTa NLP model: {'yes' if install_deberta else 'no (set INSTALL_DEBERTA_MODEL=1 to enable)'}")
 
     #Check if we are running from within the .venv we are trying to manage
     if str(VENV_DIR) in str(python_exe):
@@ -489,10 +587,13 @@ def main() -> None:
     if args.resume_model:
         if not _venv_python().exists():
             raise InstallError(".venv not found.")
+        _ensure_llama_cpp_runtime()
         if args.clean_hf_cache:
             _clean_hf_cache()
-        _ensure_deberta_model()
-        _test_model()
+        _ensure_local_llm_model()
+        if install_deberta:
+            _ensure_deberta_model()
+            _test_model()
         _check_yolo_weights()
         _maybe_create_env_template()
     else:
@@ -516,11 +617,15 @@ def main() -> None:
             _install_torch(torch_force)
             _install_base_dependencies(force_reinstall=True)
 
+        _ensure_llama_cpp_runtime()
+
         if not args.skip_model:
             if args.clean_hf_cache:
                 _clean_hf_cache()
-            _ensure_deberta_model()
-            _test_model()
+            _ensure_local_llm_model()
+            if install_deberta:
+                _ensure_deberta_model()
+                _test_model()
 
         _check_yolo_weights()
         _maybe_create_env_template()

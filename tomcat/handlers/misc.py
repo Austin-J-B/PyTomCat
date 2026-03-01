@@ -4,6 +4,7 @@ from __future__ import annotations
 import re, random
 import json
 import hashlib
+import time
 import discord
 import asyncio
 from typing import Any, Dict, cast
@@ -39,6 +40,8 @@ _COOLDOWN = {}
 _COOLDOWN_SECONDS = 1
 _profiles_update_lock = asyncio.Lock()
 _profile_embed_hashes: dict[str, str] = {}
+_profile_edit_gate_lock = asyncio.Lock()
+_profile_edit_next_by_channel: dict[int, float] = {}
 
 
 def _embed_digest(embed_dict: dict) -> str:
@@ -64,6 +67,85 @@ def _message_embed_digest(message: discord.Message) -> str | None:
 def _is_unknown_message_error(exc: Exception) -> bool:
     txt = str(exc).lower()
     return ("unknown message" in txt) or ("10008" in txt)
+
+
+def _profile_edit_retry_after(exc: Exception, *, fallback: float) -> float:
+    retry_after = getattr(exc, "retry_after", None)
+    try:
+        retry = float(retry_after)
+        if retry > 0:
+            return retry
+    except Exception:
+        pass
+    try:
+        resp = getattr(exc, "response", None)
+        headers = getattr(resp, "headers", {}) or {}
+        hdr = headers.get("Retry-After") or headers.get("retry-after")
+        retry = float(hdr)
+        if retry > 0:
+            return retry
+    except Exception:
+        pass
+    return max(0.5, float(fallback))
+
+
+async def _reserve_profile_edit_slot(channel_id: int, min_interval_sec: float) -> None:
+    if channel_id <= 0:
+        return
+    interval = max(0.2, float(min_interval_sec))
+    while True:
+        async with _profile_edit_gate_lock:
+            now = time.monotonic()
+            next_at = float(_profile_edit_next_by_channel.get(channel_id, 0.0) or 0.0)
+            wait = next_at - now
+            if wait <= 0:
+                _profile_edit_next_by_channel[channel_id] = now + interval
+                return
+        await asyncio.sleep(min(max(wait, 0.05), 1.0))
+
+
+async def _push_profile_edit_backoff(channel_id: int, delay_sec: float) -> None:
+    if channel_id <= 0:
+        return
+    delay = max(0.2, float(delay_sec))
+    async with _profile_edit_gate_lock:
+        now = time.monotonic()
+        target = now + delay
+        current = float(_profile_edit_next_by_channel.get(channel_id, 0.0) or 0.0)
+        if target > current:
+            _profile_edit_next_by_channel[channel_id] = target
+
+
+async def _safe_profile_edit(msg_obj: discord.Message, *, embed: discord.Embed) -> None:
+    """Edit profile messages with paced retries to avoid Discord 429s."""
+    channel_id = int(getattr(getattr(msg_obj, "channel", None), "id", 0) or 0)
+    min_interval = max(
+        0.5,
+        float(getattr(settings, "profile_update_edit_min_interval_sec", 4.5) or 4.5),
+    )
+    max_retries = max(
+        1,
+        int(getattr(settings, "profile_update_edit_max_retries", 3) or 3),
+    )
+
+    for attempt in range(1, max_retries + 1):
+        await _reserve_profile_edit_slot(channel_id, min_interval)
+        try:
+            await msg_obj.edit(embed=embed)
+            return
+        except Exception as e:
+            status = int(getattr(e, "status", 0) or 0)
+            if status != 429:
+                raise
+            retry_sec = _profile_edit_retry_after(e, fallback=max(1.0, min_interval))
+            await _push_profile_edit_backoff(channel_id, retry_sec)
+            log_action(
+                "profile_edit_429",
+                f"ch={channel_id}; msg={getattr(msg_obj, 'id', 0)}; attempt={attempt}",
+                f"retry={retry_sec:.2f}s",
+            )
+            await asyncio.sleep(retry_sec)
+    raise RuntimeError("profile_edit_retry_exhausted")
 
 def _cool(user_id: int, now: float) -> bool:
     last = _COOLDOWN.get(user_id, 0.0)
@@ -312,7 +394,7 @@ async def handle_profile_update_one(intent, ctx):
             await msg.clear_reactions(); await msg.add_reaction("✅")
             return
         embed = discord.Embed.from_dict(embed_dict)
-        await m.edit(embed=embed)
+        await _safe_profile_edit(m, embed=embed)
         _profile_embed_hashes[cat_id] = desired_digest
         await msg.clear_reactions(); await msg.add_reaction("✅")
     except Exception as e:
@@ -357,6 +439,8 @@ async def handle_profiles_update_all(intent, ctx):
         return
 
     failed = []
+    edited = 0
+    skipped = 0
     async with _profiles_update_lock:
         for cat_id, msg_id in settings.profile_messages.items():
             cat_key = str(cat_id)
@@ -370,17 +454,19 @@ async def handle_profiles_update_all(intent, ctx):
                     failed.append(cat_key); continue
                 digest = _embed_digest(embed_dict)
                 if _profile_embed_hashes.get(cat_key) == digest:
+                    skipped += 1
                     continue
                 m = await _fetch_profile_message(ctx, ch, int(msg_id))
                 ch = cast(Messageable, m.channel)
                 current_digest = _message_embed_digest(m)
                 if current_digest and current_digest == digest:
                     _profile_embed_hashes[cat_key] = digest
+                    skipped += 1
                     continue
                 embed = discord.Embed.from_dict(embed_dict)
-                await m.edit(embed=embed)
+                await _safe_profile_edit(m, embed=embed)
                 _profile_embed_hashes[cat_key] = digest
-                await asyncio.sleep(max(1.0, float(getattr(settings, "profile_update_edit_delay_sec", 1.0) or 1.0)))
+                edited += 1
             except Exception as e:
                 failed.append(cat_key)
                 log_action("profile_update_error", f"id={cat_id}", str(e))
@@ -393,6 +479,12 @@ async def handle_profiles_update_all(intent, ctx):
 
     if failed:
         log_action("profile_update_failed_ids", f"count={len(failed)}", ",".join(failed))
+    log_action(
+        "profiles_update_all_summary",
+        f"edited={edited}; skipped={skipped}; failed={len(failed)}",
+        f"min_interval={float(getattr(settings, 'profile_update_edit_min_interval_sec', 4.5) or 4.5):.2f}s",
+    )
+    return {"edited": edited, "skipped": skipped, "failed": len(failed)}
 
 async def start_profile_scheduler(bot):
     """Kick off background tasks that sync the profile cache."""
@@ -410,8 +502,15 @@ async def start_profile_scheduler(bot):
             dummy_role = type("R", (), {"id": off_role_id})()
             dummy_author = type("Y", (), {"roles": [dummy_role], "guild_permissions": type("Z", (), {"administrator": False})()})()
             dummy_ctx = {"bot": bot, "message": type("X", (), {"add_reaction": lambda *_: None})(), "author": dummy_author}
-            await handle_profiles_update_all(type("Intent", (), {"data": {}}), dummy_ctx)
-            log_action("profiles_scheduler", "update_all", "ran")
+            summary = await handle_profiles_update_all(type("Intent", (), {"data": {}}), dummy_ctx)
+            if isinstance(summary, dict):
+                log_action(
+                    "profiles_scheduler",
+                    "update_all",
+                    f"ran; edited={summary.get('edited', 0)}; skipped={summary.get('skipped', 0)}; failed={summary.get('failed', 0)}",
+                )
+            else:
+                log_action("profiles_scheduler", "update_all", "ran")
         except Exception as e:
             log_action("profiles_scheduler_error", "", str(e))
 

@@ -35,6 +35,7 @@ _PACKAGE_ROOT = Path(__file__).resolve().parent.parent.parent
 SUBS_ROOT = _PACKAGE_ROOT / "logs" / "subs"
 SUBS_ROOT.mkdir(parents=True, exist_ok=True)
 SUBS_LEGACY_FILE = SUBS_ROOT / "subs.jsonl"
+MACHINE_LOG_ROOT = _PACKAGE_ROOT / "logs" / "machine"
 _SUBS_LOCK = asyncio.Lock()
 
 #UI-provided schedule cache (ndjson primary, legacy JSON fallback)
@@ -1232,6 +1233,65 @@ _LAST_FEEDING_ALERT_TS: Optional[datetime] = None
 _FEEDING_8PM_HOUR = 20
 _FEEDING_8PM_MINUTE = 0
 _FEEDING_8PM_CATCHUP_MINUTES = max(0, int(os.getenv("FEEDING_8PM_CATCHUP_MINUTES", "30") or "30"))
+_FEEDING_8PM_VERIFIED_OUTPUTS = {"sent", "celebrated", "verified_sent"}
+
+
+def _feeding_8pm_window_bounds(now: datetime) -> tuple[datetime, datetime]:
+    send_start = now.replace(hour=_FEEDING_8PM_HOUR, minute=_FEEDING_8PM_MINUTE, second=0, microsecond=0)
+    send_deadline = send_start + timedelta(minutes=_FEEDING_8PM_CATCHUP_MINUTES)
+    return send_start, send_deadline
+
+
+def _feeding_8pm_log_path_for_day(day: date) -> Path:
+    return MACHINE_LOG_ROOT / f"{day:%Y-%m}" / f"{day:%Y-%m-%d}.ndjson"
+
+
+def _feeding_8pm_was_verified_for_day(day: date) -> bool:
+    day_key = day.isoformat()
+    if _LAST_FEEDING_ALERT_KEY == day_key:
+        return True
+
+    path = _feeding_8pm_log_path_for_day(day)
+    if not path.exists():
+        return False
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for raw in f:
+                if '"name": "feeding_8pm"' not in raw:
+                    continue
+                if (
+                    '"output": "sent"' not in raw
+                    and '"output": "celebrated"' not in raw
+                    and '"output": "verified_sent"' not in raw
+                ):
+                    continue
+                try:
+                    row = json.loads(raw)
+                except Exception:
+                    continue
+                if row.get("event") != "action" or row.get("name") != "feeding_8pm":
+                    continue
+                output = str(row.get("output") or "").strip().lower()
+                if output not in _FEEDING_8PM_VERIFIED_OUTPUTS:
+                    continue
+                trigger = str(row.get("trigger") or "")
+                if f"date={day_key}" in trigger:
+                    return True
+                # Backward compatibility: older success logs omitted date=... in trigger.
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _next_8pm_start(now: datetime) -> datetime:
+    send_start, _ = _feeding_8pm_window_bounds(now)
+    return send_start if now < send_start else (send_start + timedelta(days=1))
+
+
+def _next_minute_tick(now: datetime) -> datetime:
+    return (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 async def start_feeding_scheduler(bot: discord.Client) -> None:
     """Kick off the nightly reminder loop that pings unfed stations."""
@@ -1242,16 +1302,45 @@ async def start_feeding_scheduler(bot: discord.Client) -> None:
             return
 
         async def _runner():
-            #Catch-up on startup/reconnect if we are in the same-day send window.
-            try:
-                await _run_8pm_check(bot)
-            except Exception as e:
-                log_action("feeding_scheduler_error", "startup_catchup", str(e))
             while True:
                 try:
-                    #sleep until next 20:00 America/Chicago
-                    await _sleep_until_local_time(_FEEDING_8PM_HOUR, _FEEDING_8PM_MINUTE)
+                    now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+                    send_start, send_deadline = _feeding_8pm_window_bounds(now)
+                    today_key = now.date().isoformat()
+
+                    if now < send_start:
+                        await _sleep_until(send_start)
+                        continue
+
+                    if now > send_deadline:
+                        if not _feeding_8pm_was_verified_for_day(now.date()):
+                            log_action(
+                                "feeding_8pm",
+                                f"date={today_key}; now={now.isoformat(timespec='seconds')}",
+                                f"give_up(deadline={send_deadline.isoformat(timespec='seconds')})",
+                            )
+                        await _sleep_until(send_start + timedelta(days=1))
+                        continue
+
                     await _run_8pm_check(bot)
+
+                    now_after = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+                    if _feeding_8pm_was_verified_for_day(now_after.date()):
+                        await _sleep_until(_next_8pm_start(now_after))
+                        continue
+
+                    _, live_deadline = _feeding_8pm_window_bounds(now_after)
+                    next_attempt = _next_minute_tick(now_after)
+                    if next_attempt <= live_deadline:
+                        await _sleep_until(next_attempt)
+                        continue
+
+                    log_action(
+                        "feeding_8pm",
+                        f"date={today_key}; now={now_after.isoformat(timespec='seconds')}",
+                        f"give_up(deadline={live_deadline.isoformat(timespec='seconds')})",
+                    )
+                    await _sleep_until(_next_8pm_start(now_after))
                 except Exception as e:
                     log_action("feeding_scheduler_error", "loop", str(e))
                     await asyncio.sleep(10)
@@ -1261,121 +1350,117 @@ async def start_feeding_scheduler(bot: discord.Client) -> None:
         log_action("feeding_scheduler", "started", "ok")
 
 
+async def _sleep_until(target: datetime) -> None:
+    now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+    wait_seconds = max(0.0, (target - now).total_seconds())
+    if wait_seconds > 0:
+        await asyncio.sleep(wait_seconds)
+
+
 async def _sleep_until_local_time(hour: int, minute: int):
     """Suspend until the next scheduled run in the configured timezone."""
     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
         target = target + timedelta(days=1)
-    await asyncio.sleep((target - now).total_seconds())
+    await _sleep_until(target)
 
-async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> None:
+async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> bool:
     """Build and send the 8PM summary of remaining feed duties."""
     global _LAST_FEEDING_ALERT_KEY, _LAST_FEEDING_ALERT_TS
     now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
-    send_start = now.replace(hour=_FEEDING_8PM_HOUR, minute=_FEEDING_8PM_MINUTE, second=0, microsecond=0)
-    send_deadline = send_start + timedelta(minutes=_FEEDING_8PM_CATCHUP_MINUTES)
+    send_start, send_deadline = _feeding_8pm_window_bounds(now)
+    today = now.date()
     today_key = now.date().isoformat()
 
     if not force:
         #Do not send outside the daily 8:00 PM window, except short catch-up after reboot/reconnect.
         if now < send_start:
-            return
+            return False
         if now > send_deadline:
             log_action(
                 "feeding_8pm",
                 f"date={today_key}; now={now.isoformat(timespec='seconds')}",
                 f"missed_window_skip(deadline={send_deadline.isoformat(timespec='seconds')})",
             )
-            return
+            return False
 
     async with _FEEDING_8PM_LOCK:
         if not force and _LAST_FEEDING_ALERT_KEY == today_key:
-            log_action("feeding_8pm", f"date={today_key}", "duplicate_skip")
-            return
-        _LAST_FEEDING_ALERT_KEY = today_key
-        _LAST_FEEDING_ALERT_TS = now
+            log_action("feeding_8pm", f"date={today_key}", "duplicate_skip(memory)")
+            return True
 
-    sent_or_logged = False
+        if not force and _feeding_8pm_was_verified_for_day(today):
+            _LAST_FEEDING_ALERT_KEY = today_key
+            _LAST_FEEDING_ALERT_TS = now
+            log_action("feeding_8pm", f"date={today_key}", "duplicate_skip(log_verified)")
+            return True
 
-    #Use feeding team channel for alerts
-    channel_id = getattr(settings, "ch_feeding_team", None)
-    if not channel_id:
-        log_action("feeding_8pm", "channel=None", "skipped (no alert channel configured)")
-        sent_or_logged = False
-        async with _FEEDING_8PM_LOCK:
-            if _LAST_FEEDING_ALERT_KEY == today_key:
-                _LAST_FEEDING_ALERT_KEY = None
-                _LAST_FEEDING_ALERT_TS = None
-        return
+        #Use feeding team channel for alerts
+        channel_id = getattr(settings, "ch_feeding_team", None)
+        if not channel_id:
+            log_action("feeding_8pm", "channel=None", "skipped (no alert channel configured)")
+            return False
 
-    ch = bot.get_channel(int(channel_id))
-    if not ch:
-        log_action("feeding_8pm", f"channel={channel_id}", "not_found")
-        async with _FEEDING_8PM_LOCK:
-            if _LAST_FEEDING_ALERT_KEY == today_key:
-                _LAST_FEEDING_ALERT_KEY = None
-                _LAST_FEEDING_ALERT_TS = None
-        return
+        from discord.abc import Messageable
 
-    unfed = await _list_unfed_stations_today()
-    from discord.abc import Messageable
+        ch = bot.get_channel(int(channel_id))
+        if ch is None:
+            try:
+                ch = await bot.fetch_channel(int(channel_id))
+            except Exception as e:
+                log_action("feeding_8pm_error", f"channel={channel_id}", f"fetch_failed: {e}")
+                ch = None
+        if not isinstance(ch, Messageable):
+            ch_type = type(ch).__name__ if ch is not None else "NoneType"
+            log_action("feeding_8pm", f"channel={channel_id}; type={ch_type}", "not_messageable")
+            return False
 
-    #choose who to ping: subs first, else default schedule
-    today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
-    weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
-    sched = _read_schedule_for_weekday(weekday, today)
+        unfed = await _list_unfed_stations_today()
 
-    assigned_unfed: List[str] = []
-    if unfed:
-        async with _SUBS_LOCK:
-            files = _load_sub_files(_recent_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
-            subs: List[dict] = []
-            for _, rows in files:
-                subs.extend(rows)
-        today_iso = today.isoformat()
-        request_map = _build_request_map(subs)
-        assigned_unfed = [st for st in unfed if _assignees_for_station(st, sched, subs, today_iso, request_map)]
+        #choose who to ping: subs first, else default schedule
+        weekday = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][today.weekday()]
+        sched = _read_schedule_for_weekday(weekday, today)
 
-    if not assigned_unfed:
-        msg = "All stations have been fed! Yippee!!!"
-        try:
-            if isinstance(ch, Messageable):
+        assigned_unfed: List[str] = []
+        if unfed:
+            async with _SUBS_LOCK:
+                files = _load_sub_files(_recent_month_keys(), include_legacy=os.path.exists(SUBS_LEGACY_FILE))
+                subs: List[dict] = []
+                for _, rows in files:
+                    subs.extend(rows)
+            today_iso = today.isoformat()
+            request_map = _build_request_map(subs)
+            assigned_unfed = [st for st in unfed if _assignees_for_station(st, sched, subs, today_iso, request_map)]
+
+        if not assigned_unfed:
+            msg = "All stations have been fed! Yippee!!!"
+            try:
                 await safe_send(ch, msg)
-                log_action("feeding_8pm", f"assigned_unfed=0; total_unfed={len(unfed)}", "celebrated")
-                sent_or_logged = True
-            else:
-                log_action("feeding_8pm", f"channel={channel_id}; type={type(ch).__name__}", "not_messageable")
-                sent_or_logged = True
-        except Exception as e:
-            log_action("feeding_8pm_error", f"assigned_unfed=0; total_unfed={len(unfed)}", str(e))
-        if not sent_or_logged:
-            async with _FEEDING_8PM_LOCK:
-                if _LAST_FEEDING_ALERT_KEY == today_key:
-                    _LAST_FEEDING_ALERT_KEY = None
-                    _LAST_FEEDING_ALERT_TS = None
-        return
+                _LAST_FEEDING_ALERT_KEY = today_key
+                _LAST_FEEDING_ALERT_TS = now
+                log_action(
+                    "feeding_8pm",
+                    f"date={today_key}; assigned_unfed=0; total_unfed={len(unfed)}",
+                    "celebrated",
+                )
+                return True
+            except Exception as e:
+                log_action("feeding_8pm_error", f"assigned_unfed=0; total_unfed={len(unfed)}", str(e))
+                return False
 
-    #Build a message that pings the right people
-    lines = await build_8pm_lines(bot, unfed=unfed, sched=sched, mention=True)
+        #Build a message that pings the right people
+        lines = await build_8pm_lines(bot, unfed=unfed, sched=sched, mention=True)
 
-    try:
-        if isinstance(ch, Messageable):
+        try:
             await safe_send(ch, lines)  #silent mode respected here
-            log_action("feeding_8pm", f"unfed={len(unfed)}", "sent")
-            sent_or_logged = True
-        else:
-            log_action("feeding_8pm", f"channel={channel_id}; type={type(ch).__name__}", "not_messageable")
-            sent_or_logged = True
-    except Exception as e:
-        log_action("feeding_8pm_error", f"unfed={len(unfed)}", str(e))
-        sent_or_logged = False
-
-    if not sent_or_logged:
-        async with _FEEDING_8PM_LOCK:
-            if _LAST_FEEDING_ALERT_KEY == today_key:
-                _LAST_FEEDING_ALERT_KEY = None
-                _LAST_FEEDING_ALERT_TS = None
+            _LAST_FEEDING_ALERT_KEY = today_key
+            _LAST_FEEDING_ALERT_TS = now
+            log_action("feeding_8pm", f"date={today_key}; unfed={len(unfed)}", "sent")
+            return True
+        except Exception as e:
+            log_action("feeding_8pm_error", f"unfed={len(unfed)}", str(e))
+            return False
 
 def _build_request_map(subs: List[dict]) -> Dict[str, int | str]:
     return {

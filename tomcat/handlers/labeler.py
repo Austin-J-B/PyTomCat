@@ -68,6 +68,8 @@ _identify_sem = asyncio.Semaphore(_IDENTIFY_CONCURRENCY)
 _manual_sem = asyncio.Semaphore(_MANUAL_CONCURRENCY)
 _detect_sem = asyncio.Semaphore(_DETECT_CONCURRENCY)
 _refine_sem = asyncio.Semaphore(_REFINE_CONCURRENCY)
+_identify_prefetch_timeout_streak = 0
+_identify_prefetch_backoff_until_mono = 0.0
 _CV_RESULT_TTL_SEC = max(5.0, float(os.getenv("LABELER_CV_RESULT_TTL_SEC", "180") or "180"))
 _DETECT_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_DETECT_RESULT_CACHE_MAX", "1000") or "1000"))
 _REFINE_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_REFINE_RESULT_CACHE_MAX", "1200") or "1200"))
@@ -124,6 +126,16 @@ _IDENTIFY_DEBUG_PREFETCH_SAMPLE = max(
 )
 _IDENTIFY_REF_PIPELINE_VERSION = "dino_refs_v4"
 _LABELER_CLAIM_TTL_SEC = max(30, int(os.getenv("LABELER_CLAIM_TTL_SEC", "180") or "180"))
+_DRIVE_PROXY_FAIL_STREAK: int = 0
+_DRIVE_PROXY_BACKOFF_UNTIL_MONO: float = 0.0
+_DRIVE_PROXY_BACKOFF_BASE_SEC = max(
+    2.0,
+    float(os.getenv("LABELER_DRIVE_PROXY_BACKOFF_BASE_SEC", "10") or "10"),
+)
+_DRIVE_PROXY_BACKOFF_MAX_SEC = max(
+    _DRIVE_PROXY_BACKOFF_BASE_SEC,
+    float(os.getenv("LABELER_DRIVE_PROXY_BACKOFF_MAX_SEC", "180") or "180"),
+)
 _claim_lock = asyncio.Lock()
 _active_claims: Dict[Tuple[str, int], Dict[str, Any]] = {}
 _detector_warm_task: Optional[asyncio.Task] = None
@@ -1663,6 +1675,25 @@ def _open_rgb_image(source: Any) -> Image.Image:
     return img.convert("RGB")
 
 
+def _vision_working_image_size(image_bytes: bytes) -> Tuple[int, int]:
+    """Return the effective image size used by vision.detect/refine preprocessing."""
+    img = _open_rgb_image(io.BytesIO(image_bytes))
+    max_dim = int(getattr(settings, "cv_max_image_dim", 0) or 0)
+    if max_dim > 0:
+        w, h = img.size
+        if w > max_dim or h > max_dim:
+            if w > h:
+                target = (int(max_dim), max(1, int(h * (float(max_dim) / float(w)))))
+            else:
+                target = (max(1, int(w * (float(max_dim) / float(h)))), int(max_dim))
+            try:
+                # Mirror tomcat.vision._enforce_max_dim() behavior (JPEG decoder draft mode).
+                img.draft(None, target)
+            except Exception:
+                pass
+    return img.size
+
+
 def _boxes_to_yolo_strings(boxes: List[Tuple[float, float, float, float]]) -> List[str]:
     out: List[str] = []
     for box in boxes:
@@ -2605,12 +2636,19 @@ def _schedule_classify_quality_scan(items: List[Dict[str, Any]]) -> None:
 
 #---------- Queue Endpoints ----------
 
+async def _get_tcb_rows_async(*, force: bool = False, ttl_sec: int = 60) -> List[List[str]]:
+    """Load TCB sheet rows without blocking the event loop."""
+    if force:
+        return await asyncio.to_thread(force_refresh_tcb_cache)
+    return await asyncio.to_thread(get_tcb_pics_rows, int(ttl_sec))
+
+
 async def get_queue_detect(request: web.Request) -> web.Response:
     """Return list of serials needing detector labels (empty BoxCoordinates)."""
     try:
         _kick_detector_warm_task()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = force_refresh_tcb_cache() if force else get_tcb_pics_rows(ttl_sec=60)
+        rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
         queue = []
@@ -2642,7 +2680,7 @@ async def get_queue_classify(request: web.Request) -> web.Response:
     """Return serials with boxes but incomplete cat IDs."""
     try:
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = force_refresh_tcb_cache() if force else get_tcb_pics_rows(ttl_sec=60)
+        rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
         queue: List[Dict[str, Any]] = []
@@ -2787,7 +2825,7 @@ async def get_queue_manual(request: web.Request) -> web.Response:
     """Return serials with one or more crops marked NeedsReview."""
     try:
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = force_refresh_tcb_cache() if force else get_tcb_pics_rows(ttl_sec=60)
+        rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
         queue: List[Dict[str, Any]] = []
@@ -2843,7 +2881,7 @@ async def get_image(request: web.Request) -> web.Response:
         if sn is None:
             return _with_cors(web.Response(status=400, text="Invalid serial"), request)
         
-        rows = get_tcb_pics_rows(ttl_sec=60)
+        rows = await _get_tcb_rows_async(ttl_sec=60)
         for row in rows[1:]:
             if len(row) <= COL_SERIAL:
                 continue
@@ -2866,6 +2904,7 @@ async def get_image(request: web.Request) -> web.Response:
 async def get_cached_image(request: web.Request) -> web.Response:
     """Get cached image bytes for a serial. Downloads on-demand if not cached."""
     try:
+        global _DRIVE_PROXY_FAIL_STREAK, _DRIVE_PROXY_BACKOFF_UNTIL_MONO
         sn_str = request.match_info.get("sn", "")
         sn = _parse_serial(sn_str)
         if sn is None:
@@ -2878,7 +2917,7 @@ async def get_cached_image(request: web.Request) -> web.Response:
             return _with_cors(resp, request)
         
         #Not cached - look up URL and download directly
-        rows = get_tcb_pics_rows(ttl_sec=60)
+        rows = await _get_tcb_rows_async(ttl_sec=60)
         url = None
         for row in rows[1:]:
             if len(row) <= COL_SERIAL:
@@ -2899,17 +2938,23 @@ async def get_cached_image(request: web.Request) -> web.Response:
             or "googleusercontent.com" in lower_url
         )
         force_proxy = str(request.query.get("proxy") or "").strip().lower() in {"1", "true", "yes", "on"}
+        drive_proxy_backoff_active = (
+            is_drive_like
+            and (not force_proxy)
+            and (time.monotonic() < float(_DRIVE_PROXY_BACKOFF_UNTIL_MONO))
+        )
 
         # For Drive-backed images, prefer a server-side proxy fetch on cache miss.
         # This avoids browser-side Drive image failures that can cause queue skips.
-        if is_drive_like or force_proxy:
+        if (is_drive_like or force_proxy) and (not drive_proxy_backoff_active):
             proxy_t0 = time.perf_counter()
             proxy_data: Optional[bytes] = None
             proxy_status = "miss"
+            proxy_timeout_sec = 18.0 if force_proxy else 10.0
             try:
                 proxy_data = await asyncio.wait_for(
                     _fetch_image_bytes_for_labeler(int(sn), url_s, bypass_backoff=force_proxy),
-                    timeout=18.0,
+                    timeout=proxy_timeout_sec,
                 )
                 proxy_status = "ok" if proxy_data else "empty"
             except asyncio.TimeoutError:
@@ -2923,10 +2968,24 @@ async def get_cached_image(request: web.Request) -> web.Response:
                 )
             proxy_ms = int(round((time.perf_counter() - proxy_t0) * 1000.0))
             if proxy_data:
+                if is_drive_like:
+                    _DRIVE_PROXY_FAIL_STREAK = 0
+                    _DRIVE_PROXY_BACKOFF_UNTIL_MONO = 0.0
                 resp = web.Response(body=proxy_data, content_type="image/jpeg")
                 resp.headers["Cache-Control"] = "no-store"
                 resp.headers["X-Labeler-Cache"] = "miss-proxy"
                 return _with_cors(resp, request)
+            if is_drive_like and not force_proxy:
+                _DRIVE_PROXY_FAIL_STREAK = min(8, int(_DRIVE_PROXY_FAIL_STREAK) + 1)
+                step = max(0, int(_DRIVE_PROXY_FAIL_STREAK) - 1)
+                delay = min(
+                    float(_DRIVE_PROXY_BACKOFF_MAX_SEC),
+                    float(_DRIVE_PROXY_BACKOFF_BASE_SEC) * float(2 ** step),
+                )
+                _DRIVE_PROXY_BACKOFF_UNTIL_MONO = max(
+                    float(_DRIVE_PROXY_BACKOFF_UNTIL_MONO),
+                    time.monotonic() + float(delay),
+                )
             log_action(
                 "labeler_cached_image_proxy_fail",
                 f"sn={int(sn)}",
@@ -2937,6 +2996,8 @@ async def get_cached_image(request: web.Request) -> web.Response:
             )
             if force_proxy:
                 return _with_cors(web.Response(status=503, text="Image proxy fetch failed"), request)
+        elif drive_proxy_backoff_active:
+            pass
 
         # Do not block UI response on backend cache download attempts.
         # Serve source immediately and warm cache in background.
@@ -3086,7 +3147,23 @@ async def post_ui_diag(request: web.Request) -> web.Response:
         data = {}
     try:
         event = str(data.get("event") or "ui_diag").strip().lower()[:64] or "ui_diag"
-        always_log_events = {"auto_skip", "auto_skip_halt", "image_error", "transition_slow", "claim_retry"}
+        always_log_events = {
+            "auto_skip",
+            "auto_skip_halt",
+            "image_error",
+            "transition_slow",
+            "claim_retry",
+            "claim_acquire_slow",
+            "claim_acquire_error",
+            "detect_item_ready_wait",
+            "detect_item_ready_done",
+            "detect_item_ready_timeout",
+            "detect_next_prime",
+            "detect_ready_refine_error",
+            "classify_item_ready_wait",
+            "classify_item_ready_done",
+            "classify_item_ready_timeout",
+        }
         if _UI_DIAG_VERBOSE or event in always_log_events:
             mode = str(data.get("mode") or "").strip().lower()[:24]
             serial = _parse_serial(str(data.get("serial") or ""))
@@ -3241,7 +3318,7 @@ async def post_detect(request: web.Request) -> web.Response:
 
         #If serial provided but not cached and no URL, look up URL by serial
         if serial_i is not None and not image_bytes and not url:
-            rows = get_tcb_pics_rows(ttl_sec=60)
+            rows = await _get_tcb_rows_async(ttl_sec=60)
             for row in rows[1:]:
                 if len(row) <= COL_SERIAL:
                     continue
@@ -3317,10 +3394,7 @@ async def post_detect(request: web.Request) -> web.Response:
             # Foreground full-feature detect: try bounded inline SAM refine on the YOLO boxes.
             refined_boxes_abs = list(raw_boxes_abs)
             if (not fast) and (not prefetch) and raw_boxes_abs:
-                from PIL import Image
-
-                img = _open_rgb_image(io.BytesIO(image_bytes))
-                iw, ih = img.size
+                iw, ih = _vision_working_image_size(image_bytes)
                 yolo_boxes: List[Tuple[float, float, float, float]] = []
                 for (x1, y1, x2, y2) in raw_boxes_abs:
                     cx = (x1 + x2) / 2 / iw
@@ -3355,9 +3429,7 @@ async def post_detect(request: web.Request) -> web.Response:
         boxed_b64 = base64.b64encode(boxed_jpeg).decode("ascii") if boxed_jpeg else ""
         
         #Convert boxes to YOLO normalized format (cx, cy, w, h)
-        from PIL import Image
-        img = _open_rgb_image(io.BytesIO(image_bytes))
-        iw, ih = img.size
+        iw, ih = _vision_working_image_size(image_bytes)
         
         yolo_boxes = []
         boxes_out = refined_boxes_abs if refined_boxes_abs else raw_boxes_abs
@@ -3435,7 +3507,7 @@ async def post_refine(request: web.Request) -> web.Response:
             image_bytes = labeler_cache.get_cached_image(int(serial_i))
 
         if serial_i is not None and not image_bytes and not url:
-            rows = get_tcb_pics_rows(ttl_sec=60)
+            rows = await _get_tcb_rows_async(ttl_sec=60)
             for row in rows[1:]:
                 if len(row) <= COL_SERIAL:
                     continue
@@ -3484,9 +3556,7 @@ async def post_refine(request: web.Request) -> web.Response:
                 )
             except Exception:
                 #Fallback to original boxes if SAM refine fails or times out
-                from PIL import Image
-                img = _open_rgb_image(io.BytesIO(image_bytes))
-                iw, ih = img.size
+                iw, ih = _vision_working_image_size(image_bytes)
                 refined = []
                 for (cx, cy, w, h) in boxes:
                     x1 = (cx - w / 2) * iw
@@ -3498,9 +3568,7 @@ async def post_refine(request: web.Request) -> web.Response:
             if acquired:
                 _refine_sem.release()
 
-        from PIL import Image
-        img = _open_rgb_image(io.BytesIO(image_bytes))
-        iw, ih = img.size
+        iw, ih = _vision_working_image_size(image_bytes)
         yolo_boxes = []
         for (x1, y1, x2, y2) in refined:
             cx = (x1 + x2) / 2 / iw
@@ -3528,6 +3596,7 @@ async def post_refine(request: web.Request) -> web.Response:
 async def post_identify(request: web.Request) -> web.Response:
     """Run DINOv3 identification on crops from an image."""
     try:
+        global _identify_prefetch_timeout_streak, _identify_prefetch_backoff_until_mono
         data = await request.json()
         serial = data.get("serial")
         url = data.get("url")
@@ -3574,6 +3643,17 @@ async def post_identify(request: web.Request) -> web.Response:
             boxes_sig,
         )[:10]
         trace_identify = _identify_should_trace(prefetch)
+        if prefetch:
+            now_mono = time.monotonic()
+            backoff_left_ms = int(round(max(0.0, float(_identify_prefetch_backoff_until_mono) - now_mono) * 1000.0))
+            if backoff_left_ms > 0:
+                if trace_identify:
+                    log_action(
+                        "labeler_identify_prefetch_skipped",
+                        f"rid={req_id}; serial={serial_i}; prefetch={prefetch}",
+                        f"reason=timeout_backoff; backoff_left_ms={backoff_left_ms}; streak={int(_identify_prefetch_timeout_streak)}",
+                    )
+                return _with_cors(web.Response(status=429, text="Busy"), request)
         req_t0 = time.perf_counter()
         sem_wait_ms = 0.0
         identify_ms = 0.0
@@ -3768,7 +3848,18 @@ async def post_identify(request: web.Request) -> web.Response:
                     timeout=timeout_sec,
                 )
                 identify_ms = (time.perf_counter() - t_identify) * 1000.0
+                if prefetch:
+                    _identify_prefetch_timeout_streak = max(0, int(_identify_prefetch_timeout_streak) - 1)
+                    if _identify_prefetch_timeout_streak <= 0:
+                        _identify_prefetch_backoff_until_mono = 0.0
             except asyncio.TimeoutError:
+                if prefetch:
+                    _identify_prefetch_timeout_streak = min(8, int(_identify_prefetch_timeout_streak) + 1)
+                    backoff_sec = min(
+                        45.0,
+                        1.5 * float(2 ** max(0, int(_identify_prefetch_timeout_streak) - 1)),
+                    )
+                    _identify_prefetch_backoff_until_mono = time.monotonic() + backoff_sec
                 log_action("labeler_identify_timeout", f"serial={serial}", f"prefetch={prefetch}")
                 if trace_identify:
                     log_action(
@@ -4121,6 +4212,102 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
 
 #---------- Save Endpoint ----------
 
+def _apply_save_updates_sync(updates: List[Dict[str, Any]], actor_name: str) -> Dict[str, Any]:
+    """Apply sheet updates synchronously (runs in worker thread via asyncio.to_thread)."""
+    gc = sheets_client()
+    sh = gc.open_by_key(settings.sheet_catabase_id)
+    ws = sh.worksheet("TCB Pics Formatted")
+
+    rows = ws.get_all_values()
+    headers = rows[0] if rows else []
+    col_labeled_by = _find_header_col(
+        headers,
+        [
+            "LabeledBy",
+            "LabelledBy",
+            "Labeled By",
+            "Labelled By",
+            "labeled_by",
+            "labelled_by",
+        ],
+    )
+    needs_catid_sync = any("box_cat_ids" in upd for upd in updates)
+    catid_lookup: Dict[str, str] = {}
+    if needs_catid_sync:
+        try:
+            cat_ws = sh.worksheet("CatDatabase")
+            cat_rows = cat_ws.get_all_values()
+            catid_lookup = _build_catid_lookup(cat_rows)
+        except Exception as e:
+            log_action("labeler_catid_lookup_error", "error", f"{type(e).__name__}: {e!r}")
+    can_sync_catid = bool(catid_lookup)
+
+    serial_to_row: Dict[int, int] = {}
+    serial_to_labeled_by: Dict[int, str] = {}
+    for idx, row in enumerate(rows[1:], start=2):  # 1-indexed, skip header
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(row[COL_SERIAL])
+        if sn is None:
+            continue
+        serial_to_row[int(sn)] = int(idx)
+        if col_labeled_by is not None:
+            serial_to_labeled_by[int(sn)] = row[col_labeled_by] if len(row) > col_labeled_by else ""
+
+    import time as _time
+
+    cells_to_update: List[Dict[str, Any]] = []
+    labeled_by_serials: Set[int] = set()
+    pending_unblacklist_ref_serials: List[int] = []
+    for upd in updates:
+        sn = _parse_serial(str(upd.get("serial") or ""))
+        if sn is None or int(sn) not in serial_to_row:
+            continue
+        row_num = serial_to_row[int(sn)]
+        touched = False
+        if "box_coords" in upd:
+            cells_to_update.append({
+                "range": f"I{row_num}",
+                "values": [[upd["box_coords"]]],
+            })
+            touched = True
+        if "box_cat_ids" in upd:
+            cells_to_update.append({
+                "range": f"J{row_num}",
+                "values": [[upd["box_cat_ids"]]],
+            })
+            if can_sync_catid:
+                catid_cell = _format_catid_cell_from_labels(str(upd.get("box_cat_ids") or ""), catid_lookup)
+                cells_to_update.append({
+                    "range": f"A{row_num}",
+                    "values": [[catid_cell]],
+                })
+            if _box_cat_ids_has_reviewed_label(upd.get("box_cat_ids")):
+                pending_unblacklist_ref_serials.append(int(sn))
+            touched = True
+        if touched and col_labeled_by is not None and int(sn) not in labeled_by_serials:
+            merged = _merge_labeled_by(serial_to_labeled_by.get(int(sn), ""), actor_name)
+            serial_to_labeled_by[int(sn)] = merged
+            labeled_by_serials.add(int(sn))
+            cells_to_update.append({
+                "range": f"{_col_to_a1(col_labeled_by + 1)}{row_num}",
+                "values": [[merged]],
+            })
+
+    # Batch update with throttling to avoid upstream sheet rate spikes.
+    chunk_size = 50
+    for i in range(0, len(cells_to_update), chunk_size):
+        chunk = cells_to_update[i:i + chunk_size]
+        ws.batch_update(chunk)
+        if i + chunk_size < len(cells_to_update):
+            _time.sleep(1)
+
+    return {
+        "saved": int(len(updates)),
+        "pending_unblacklist_ref_serials": pending_unblacklist_ref_serials,
+    }
+
+
 async def post_save(request: web.Request) -> web.Response:
     """Batch save annotations to the sheet."""
     try:
@@ -4129,102 +4316,13 @@ async def post_save(request: web.Request) -> web.Response:
         data = await request.json()
         updates = data.get("updates", [])  #List of {serial, box_coords, box_cat_ids}
         _, actor_name = _actor_from_request(request)
-        
-        if not updates:
-            return _with_cors(web.Response(status=400, text="No updates"), request)
-        
-        #Get sheet
-        gc = sheets_client()
-        sh = gc.open_by_key(settings.sheet_catabase_id)
-        ws = sh.worksheet("TCB Pics Formatted")
-        
-        #Build serial -> row index mapping
-        rows = ws.get_all_values()
-        headers = rows[0] if rows else []
-        col_labeled_by = _find_header_col(
-            headers,
-            [
-                "LabeledBy",
-                "LabelledBy",
-                "Labeled By",
-                "Labelled By",
-                "labeled_by",
-                "labelled_by",
-            ],
-        )
-        needs_catid_sync = any("box_cat_ids" in upd for upd in updates)
-        catid_lookup: Dict[str, str] = {}
-        if needs_catid_sync:
-            try:
-                cat_ws = sh.worksheet("CatDatabase")
-                cat_rows = cat_ws.get_all_values()
-                catid_lookup = _build_catid_lookup(cat_rows)
-            except Exception as e:
-                log_action("labeler_catid_lookup_error", "error", f"{type(e).__name__}: {e!r}")
-        can_sync_catid = bool(catid_lookup)
 
-        serial_to_row = {}
-        serial_to_labeled_by: Dict[int, str] = {}
-        for idx, row in enumerate(rows[1:], start=2):  #1-indexed, skip header
-            if len(row) > COL_SERIAL:
-                sn = _parse_serial(row[COL_SERIAL])
-                if sn is not None:
-                    serial_to_row[sn] = idx
-                    if col_labeled_by is not None:
-                        serial_to_labeled_by[sn] = row[col_labeled_by] if len(row) > col_labeled_by else ""
-        
-        #Build cell updates
-        import time as _time
-        cells_to_update = []
-        labeled_by_serials: set[int] = set()
-        pending_unblacklist_ref_serials: List[int] = []
+        if not isinstance(updates, list) or not updates:
+            return _with_cors(web.Response(status=400, text="No updates"), request)
+
+        save_outcome = await asyncio.to_thread(_apply_save_updates_sync, updates, str(actor_name or ""))
+        pending_unblacklist_ref_serials = list(save_outcome.get("pending_unblacklist_ref_serials") or [])
         cleared_ref_blacklist_serials: List[int] = []
-        for upd in updates:
-            sn = _parse_serial(str(upd.get("serial") or ""))
-            if sn not in serial_to_row:
-                continue
-            row_num = serial_to_row[sn]
-            touched = False
-            if "box_coords" in upd:
-                cells_to_update.append({
-                    "range": f"I{row_num}",
-                    "values": [[upd["box_coords"]]]
-                })
-                touched = True
-            if "box_cat_ids" in upd:
-                cells_to_update.append({
-                    "range": f"J{row_num}",
-                    "values": [[upd["box_cat_ids"]]]
-                })
-                if can_sync_catid:
-                    catid_cell = _format_catid_cell_from_labels(str(upd.get("box_cat_ids") or ""), catid_lookup)
-                    cells_to_update.append({
-                        "range": f"A{row_num}",
-                        "values": [[catid_cell]],
-                    })
-                if _box_cat_ids_has_reviewed_label(upd.get("box_cat_ids")):
-                    pending_unblacklist_ref_serials.append(int(sn))
-                touched = True
-            if (
-                touched
-                and col_labeled_by is not None
-                and sn not in labeled_by_serials
-            ):
-                merged = _merge_labeled_by(serial_to_labeled_by.get(sn, ""), actor_name)
-                serial_to_labeled_by[sn] = merged
-                labeled_by_serials.add(sn)
-                cells_to_update.append({
-                    "range": f"{_col_to_a1(col_labeled_by + 1)}{row_num}",
-                    "values": [[merged]],
-                })
-        
-        #Batch update with throttling
-        chunk_size = 50
-        for i in range(0, len(cells_to_update), chunk_size):
-            chunk = cells_to_update[i:i + chunk_size]
-            ws.batch_update(chunk)
-            if i + chunk_size < len(cells_to_update):
-                _time.sleep(1)
 
         for sn in pending_unblacklist_ref_serials:
             if _discard_flagged_ref_serial(int(sn)):
@@ -4243,7 +4341,7 @@ async def post_save(request: web.Request) -> web.Response:
         _sheet_crop_index_cache = {}
         _sheet_crop_index_built_mono = 0.0
         _ref_crop_result_cache.clear()
-        
+
         log_action("labeler_save", "saved", f"{len(updates)} annotations by {actor_name}")
         return _with_cors(web.json_response({
             "status": "ok",

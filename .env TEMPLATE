@@ -45,6 +45,7 @@ LOCAL_LLM_MAX_TOKENS=220
 LOCAL_LLM_CTX=2048
 LOCAL_LLM_N_GPU_LAYERS=0
 LOCAL_LLM_TIMEOUT_SEC=12.0
+LOCAL_LLM_TIMEOUT_CAP_SEC=1.2
 CV_DETECT_WEIGHTS=weights/NanoModel.pt
 CV_CLASSIFY_WEIGHTS=weights/NanoClassifier.pt
 CV_MAX_DOWNLOAD_MB=0                  # Set to 0 to lift the max file size limit
@@ -107,8 +108,10 @@ DUES_AUTO_VERIFY_THRESHOLD=0.90       # Auto-verify members with score >= this t
 BOT_USER_ID=                          # Bot user ID for mention detection + wake word shortcuts
 
 # ===== Cache Expiry =====
-CAT_PROFILE_TTL_SEC=3600              # Seconds before cached cat profiles auto-refresh
-PROFILE_UPDATE_EDIT_DELAY_SEC=1.0     # Delay between profile message edits to avoid Discord 429s
+CAT_PROFILE_TTL_SEC=3600                   # Seconds before cached cat profiles auto-refresh
+PROFILE_UPDATE_EDIT_DELAY_SEC=4.5          # Legacy alias for profile edit pacing
+PROFILE_UPDATE_EDIT_MIN_INTERVAL_SEC=4.5   # Minimum seconds between profile message PATCH edits (prevents 429s)
+PROFILE_UPDATE_EDIT_MAX_RETRIES=3          # Retry attempts on Discord 429 during profile edits
 CAT_ALIASES_TTL_SEC=7200              # Seconds before alias table refreshes from Sheets
 FINANCE_SHEET_THROTTLE_SEC=0.5        # When finances are requested, it waits this long between queries
 

@@ -42,7 +42,7 @@ from .handlers.gmail import handle_check_last_email
 from .handlers.finance import handle_log_recent_finances
 from UserInterface.feeding_schedule_linker import handle_feeding_schedule_link
 from UserInterface.sub_request_linker import handle_sub_request_link
-from .services.cat_query import infer_query_from_text
+from .services.cat_query import infer_query_from_text, looks_like_cat_query_text
 
 #---- Aliases and optional NLP ------------------------------------------------
 from .aliases import resolve_station_or_cat, alias_vocab
@@ -88,6 +88,32 @@ def _first_token(text: str) -> Tuple[str, str]:
     if not m:
         return "", text or ""
     return m.group(1), m.group(2)
+
+
+def _deterministic_cat_query_confidence(text: str, query: Optional[Dict[str, Any]]) -> float:
+    """Compute a meaningful confidence for deterministic cat-query parses."""
+    q = query or {}
+    conf = 0.70
+    op = str(q.get("op") or "").strip().lower()
+    if op in {"count_all_cats", "count_by_filters", "list_names_by_filters"}:
+        conf += 0.05
+    if q.get("location"):
+        conf += 0.08
+    if q.get("tnrd") is not None:
+        conf += 0.06
+    if q.get("color_family"):
+        conf += 0.05
+    if q.get("birth_year") is not None:
+        conf += 0.05
+    if q.get("photo_count_min") is not None or q.get("photo_count_max") is not None:
+        conf += 0.08
+    if q.get("photo_count_extreme") in {"max", "min"}:
+        conf += 0.08
+    if q.get("recent_scope") in {"active", "inactive", "all"}:
+        conf += 0.04
+    if re.search(r"\b(which|what|who|how\s+many|list|count)\b|\?", str(text or "").lower()):
+        conf += 0.04
+    return max(0.0, min(0.97, conf))
 
 
 def _normalize_wake_token(token: str) -> str:
@@ -638,7 +664,15 @@ class IntentRouter:
                 )
 
             #Officer-only: recache catabase profiles/names (check this BEFORE show-photo recache)
-            if RECACHE_CATABASE_RE.search(text_wo):
+            recache_catabase_like = bool(
+                RECACHE_CATABASE_RE.search(text_wo)
+                or _fuzzy_command_present(
+                    text_wo,
+                    ["recache catabase", "recache cat database", "recache names"],
+                    threshold=84,
+                )
+            )
+            if recache_catabase_like:
                 author = message.author
                 is_admin = is_officer(author, settings)
                 if not is_admin:
@@ -796,14 +830,32 @@ class IntentRouter:
             #Keep this independent of local LLM availability.
             q_direct = infer_query_from_text(text_wo)
             if q_direct:
+                q_conf = _deterministic_cat_query_confidence(text_wo, q_direct)
                 trace.append("intent:cat_query(deterministic)")
                 self._traces[row["message_id"]] = trace
                 return IntentEvent(
-                    type="cat_query", confidence=0.82,
+                    type="cat_query", confidence=q_conf,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
                     trigger_phrase="deterministic_parser",
-                    query=q_direct,
+                    query={**q_direct, "source_text": text_wo},
+                )
+            # If we can tell it's a catabase question but slot extraction is unclear,
+            # route directly with source_text so the generic CSV plan can parse it.
+            if looks_like_cat_query_text(text_wo):
+                trace.append("intent:cat_query(source_text_fallback)")
+                self._traces[row["message_id"]] = trace
+                return IntentEvent(
+                    type="cat_query",
+                    confidence=0.72,
+                    channel_id=row["channel_id"],
+                    user_id=row["user_id"],
+                    message_id=row["message_id"],
+                    text=row["text"],
+                    has_image=has_image,
+                    attachment_ids=row["attachment_ids"],
+                    trigger_phrase="source_text_fallback",
+                    query={"op": "list_names_by_filters", "source_text": text_wo},
                 )
 
             if FEEDING_CHECK_RE.search(text_wo):
@@ -1015,6 +1067,7 @@ class IntentRouter:
                             )
                     if parsed.route == "cat_query":
                         q = dict(parsed.query or {})
+                        has_plan_filters = bool(q.get("filters"))
                         #Merge local-LLM output with deterministic text inference so slot/op errors
                         #from the model don't degrade obvious filter queries.
                         q_hint = infer_query_from_text(text_wo) or {}
@@ -1029,25 +1082,37 @@ class IntentRouter:
 
                         #When deterministic parsing succeeds, trust its slot extraction.
                         #This clears hallucinated LLM slots (e.g., random brown filters).
-                        if q_hint:
+                        if q_hint and not has_plan_filters:
                             q["location"] = q_hint.get("location")
                             q["tnrd"] = q_hint.get("tnrd")
                             q["color_family"] = q_hint.get("color_family")
+                            q["recent_scope"] = q_hint.get("recent_scope")
+                            q["birth_year"] = q_hint.get("birth_year")
+                            q["photo_count_min"] = q_hint.get("photo_count_min")
+                            q["photo_count_max"] = q_hint.get("photo_count_max")
+                            q["photo_count_extreme"] = q_hint.get("photo_count_extreme")
 
                         #Prefer deterministic inferred op when available; it better captures
                         #question form like "which cats..." vs "how many cats...".
                         hint_op = str(q_hint.get("op") or "").strip().lower()
-                        if hint_op in {"count_all_cats", "count_by_filters", "list_names_by_filters"}:
+                        if (not has_plan_filters) and hint_op in {"count_all_cats", "count_by_filters", "list_names_by_filters"}:
                             q["op"] = hint_op
 
                         #Final guard: unconstrained list -> count_all for concise response.
                         if (
                             q.get("op") == "list_names_by_filters"
+                            and not has_plan_filters
                             and not q.get("location")
                             and q.get("tnrd") is None
                             and not q.get("color_family")
+                            and q.get("birth_year") is None
+                            and q.get("photo_count_min") is None
+                            and q.get("photo_count_max") is None
+                            and q.get("photo_count_extreme") is None
+                            and not q.get("recent_scope")
                         ):
                             q["op"] = "count_all_cats"
+                        q["source_text"] = text_wo
                         trace.append("intent:cat_query(local_llm)")
                         self._traces[row["message_id"]] = trace
                         return IntentEvent(
@@ -1067,7 +1132,7 @@ class IntentRouter:
                         channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                         text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
                         trigger_phrase="heuristic_backup",
-                        query=q2,
+                        query={**q2, "source_text": text_wo},
                     )
 
         #3) Feeding-team flows (high traffic). Feed updates only; subs are UI-only.

@@ -289,6 +289,8 @@ class Settings:
     #0 keeps CPU-safe defaults; set >0 to offload layers when a GPU build is available
     local_llm_n_gpu_layers: int = int(os.getenv("LOCAL_LLM_N_GPU_LAYERS", "0"))
     local_llm_timeout_sec: float = float(os.getenv("LOCAL_LLM_TIMEOUT_SEC", "12.0"))
+    #Hard cap for user-visible parser latency; lower keeps bot responsive even when local model is overloaded.
+    local_llm_timeout_cap_sec: float = float(os.getenv("LOCAL_LLM_TIMEOUT_CAP_SEC", "1.2"))
 
     #======== Feeding windows ========
     feed_lookback_minutes_before: int = int(os.getenv("FEED_LOOKBACK_MINUTES_BEFORE", "5"))
@@ -327,7 +329,14 @@ class Settings:
     #Cat aliases/profile TTLs
     cat_aliases_ttl_sec: int = int(os.getenv("CAT_ALIASES_TTL_SEC", "7200") or "7200")
     cat_profile_ttl_sec: int = int(os.getenv("CAT_PROFILE_TTL_SEC", "3600") or "3600")
-    profile_update_edit_delay_sec: float = float(os.getenv("PROFILE_UPDATE_EDIT_DELAY_SEC", "1.5") or "1.5")
+    #Legacy compatibility knob (kept for old envs).
+    profile_update_edit_delay_sec: float = float(os.getenv("PROFILE_UPDATE_EDIT_DELAY_SEC", "4.5") or "4.5")
+    #Paced profile-message edit interval to avoid Discord PATCH 429s.
+    profile_update_edit_min_interval_sec: float = float(
+        os.getenv("PROFILE_UPDATE_EDIT_MIN_INTERVAL_SEC", os.getenv("PROFILE_UPDATE_EDIT_DELAY_SEC", "4.5")) or "4.5"
+    )
+    #Max retries when Discord still responds with 429.
+    profile_update_edit_max_retries: int = int(os.getenv("PROFILE_UPDATE_EDIT_MAX_RETRIES", "3") or "3")
     dues_member_max_candidates: int = int(os.getenv("DUES_MEMBER_MAX_CANDIDATES", "300"))
 
     #Roles & Guilds

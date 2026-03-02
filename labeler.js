@@ -88,6 +88,7 @@
     const MANUAL_CANDIDATE_CACHE_MAX = 240;
     const UI_DIAG_MIN_INTERVAL_MS = 1500;
     const REF_IMAGE_PREFETCH_MAX = 12000;
+    const IMAGE_PREFETCH_MAX = 2000;
     const REF_IMAGE_RETRY_BASE_MS = 1500;
     const REF_IMAGE_RETRY_MAX_MS = 60000;
     const REF_IMAGE_RETRY_MAX_ATTEMPTS = 6;
@@ -1520,8 +1521,7 @@
         if (!currentItem || !currentBoxes.length) return false;
         if (!imageReadyForCurrentItem || !imageElement || !imageElement.complete) return false;
         if (!_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) return false;
-        // Keep photo + refs in sync for first visible paint.
-        if (!_predictionRefsSufficientForCrop(currentPredictions, currentCropIdx)) return false;
+        //Ref images load progressively; don't block the entire UI on downloads.
         return true;
     }
 
@@ -1967,12 +1967,13 @@
                 const cov = _predictionLoadedRefCoverageForCrop(rows, idx);
                 const refsSufficient = _predictionRefsSufficientForCrop(rows, idx);
                 const refsReadyForDisplay = refsReady || (FLAG_CLASSIFY_READY_RELAX && refsSufficient);
+                const predsCached = predCache.has(key);
                 const prefetchTerminalError = isPrefetchedImageTerminalError(item.serial);
                 const prefetchStalled = isPrefetchedImageStalled(item.serial);
                 let readyReason = '';
-                if (refsSufficient && imageReady) readyReason = 'refs_sufficient+image_ready';
-                else if (refsSufficient && prefetchTerminalError) readyReason = 'refs_sufficient+prefetch_terminal_error';
-                else if (refsSufficient && prefetchStalled) readyReason = 'refs_sufficient+prefetch_stalled';
+                if (predsCached && imageReady) readyReason = 'preds_cached+image_ready';
+                else if (predsCached && prefetchTerminalError) readyReason = 'preds_cached+prefetch_terminal_error';
+                else if (predsCached && prefetchStalled) readyReason = 'preds_cached+prefetch_stalled';
                 else if (refsReadyForDisplay && imageReady) readyReason = 'refs_ready+image_ready';
                 if (readyReason) {
                     setWarmOverlay(false);
@@ -2034,13 +2035,14 @@
             const finalRefsReady = _classifyItemWarmReady(item);
             const finalRefsSufficient = _predictionRefsSufficientForCrop(finalRows, finalIdx);
             const finalRefsReadyForDisplay = finalRefsReady || (FLAG_CLASSIFY_READY_RELAX && finalRefsSufficient);
+            const finalPredsCached = predCache.has(key);
             const finalImageReady = isPrefetchedImageReady(item.serial);
             const finalPrefetchTerminalError = isPrefetchedImageTerminalError(item.serial);
             const finalPrefetchStalled = isPrefetchedImageStalled(item.serial);
             let finalReadyReason = '';
-            if (finalRefsSufficient && finalImageReady) finalReadyReason = 'deadline_refs_sufficient+image_ready';
-            else if (finalRefsSufficient && finalPrefetchTerminalError) finalReadyReason = 'deadline_refs_sufficient+prefetch_terminal_error';
-            else if (finalRefsSufficient && finalPrefetchStalled) finalReadyReason = 'deadline_refs_sufficient+prefetch_stalled';
+            if (finalPredsCached && finalImageReady) finalReadyReason = 'deadline_preds_cached+image_ready';
+            else if (finalPredsCached && finalPrefetchTerminalError) finalReadyReason = 'deadline_preds_cached+prefetch_terminal_error';
+            else if (finalPredsCached && finalPrefetchStalled) finalReadyReason = 'deadline_preds_cached+prefetch_stalled';
             else if (finalRefsReadyForDisplay && finalImageReady) finalReadyReason = 'deadline_refs_ready+image_ready';
             if (finalReadyReason) {
                 void postUiDiag('classify_item_ready_done', {
@@ -2377,6 +2379,7 @@
                 prefetchDetection();
                 prefetchDetectionRefine();
                 primeHotNextDetectItem();
+                primeHotNextClassifyItem();
                 prefetchManualCandidates();
             }, 3000);
         }
@@ -3004,43 +3007,41 @@
                 setTimeout(processRefImageQueue, 10);
             };
 
-            img.addEventListener('load', () => {
+            img.onload = () => {
                 refImagePrefetchState.set(key, 'ready');
                 refImagePrefetchRetry.delete(key);
                 _clearRefRetryTimer(key);
                 scheduleRefRenderRefresh();
                 _onFinish();
-            }, { once: true });
-            img.addEventListener('error', () => {
+            };
+            img.onerror = () => {
                 refImagePrefetchState.set(key, 'error');
                 refImagePrefetch.delete(key);
                 const retry = _recordRefImageError(key);
                 _scheduleRefImageRetry(key, Number(retry.delayMs || REF_IMAGE_RETRY_BASE_MS));
                 scheduleRefRenderRefresh();
                 _onFinish();
-            }, { once: true });
+            };
 
             refImagePrefetch.set(key, img);
             img.src = key;
-            if (img.complete) {
-                if (img.naturalWidth > 0) {
-                    refImagePrefetchState.set(key, 'ready');
-                    refImagePrefetchRetry.delete(key);
-                    _clearRefRetryTimer(key);
-                } else {
-                    refImagePrefetchState.set(key, 'error');
-                    refImagePrefetch.delete(key);
-                    const retry = _recordRefImageError(key);
-                    _scheduleRefImageRetry(key, Number(retry.delayMs || REF_IMAGE_RETRY_BASE_MS));
-                }
-                _onFinish();
-            }
         }
     }
 
     function prefetchRefImageSrc(src) {
         const key = String(src || '').trim();
         if (!key) return;
+
+        //Data URIs are already embedded; mark ready immediately without queuing.
+        if (key.startsWith('data:')) {
+            if (refImagePrefetchState.get(key) === 'ready') return;
+            const img = new Image();
+            img.src = key;
+            refImagePrefetch.set(key, img);
+            refImagePrefetchState.set(key, 'ready');
+            return;
+        }
+
         const now = Date.now();
         const state = String(refImagePrefetchState.get(key) || '');
         if (state === 'ready') return;
@@ -3105,8 +3106,29 @@
             for (const cand of cands.slice(0, 9)) {
                 const refs = Array.isArray(cand?.refs) ? cand.refs : [];
                 for (const ref of refs.slice(0, CLASSIFY_REFS_PER_CAT_TARGET)) {
-                    const src = _extractRefSrc(ref);
-                    if (src) prefetchRefImageSrc(src);
+                    const info = typeof ref === 'string'
+                        ? { img: ref, serial: null, crop: null }
+                        : (ref || {});
+                    const refImg = String(info.img || info.thumb || '').trim();
+                    const refUrl = String(info.url || info.src || '').trim();
+                    const baseSrc = _extractRefSrc(info);
+                    const hasSheetCropMeta = Number.isInteger(Number(info?.serial)) && Number(info?.serial) > 0
+                        && Number.isInteger(Number(info?.crop)) && Number(info?.crop) > 0;
+
+                    const inlineSrc = refImg
+                        ? (refImg.startsWith('data:image')
+                            ? refImg
+                            : `data:image/jpeg;base64,${refImg}`)
+                        : '';
+                    const hqSrc = hasSheetCropMeta ? _extractRefCropUrl(info, REF_DISPLAY_HQ_SIZE) : '';
+
+                    if (hqSrc) {
+                        prefetchRefImageSrc(hqSrc);
+                    } else if (inlineSrc && inlineSrc !== baseSrc) {
+                        prefetchRefImageSrc(inlineSrc);
+                    } else if (baseSrc) {
+                        prefetchRefImageSrc(baseSrc);
+                    }
                 }
             }
         }
@@ -3390,6 +3412,18 @@
             classifyTodo.forEach((item) => tasks.push(ensureClassifyItemReady(item, false, true)));
             if (tasks.length) {
                 await Promise.all(tasks);
+            }
+
+            //Use remaining idle time to push ref image downloads for upcoming items
+            //whose predictions are already cached but ref thumbnails haven't finished downloading.
+            if (labelerMode === 'classify') {
+                for (const item of classifyTargets) {
+                    const key = getPredCacheKey(item);
+                    if (!key) continue;
+                    const rows = predCache.get(key);
+                    if (!Array.isArray(rows) || !rows.length) continue;
+                    prefetchRefsFromResults(rows);
+                }
             }
         } catch (e) {
             //Warm loop failures should not interrupt labeling.
@@ -4464,9 +4498,12 @@
             let hasAny = false;
             const refs = Array.isArray(cand?.refs) ? cand.refs : [];
             for (const ref of refs) {
-                const src = _extractRefSrc(ref);
-                if (!src) continue;
-                if (isRefImageReady(src)) {
+                const baseSrc = _extractRefSrc(ref);
+                const hqSrc = _extractRefCropUrl(ref, REF_DISPLAY_HQ_SIZE);
+                if (hqSrc && isRefImageReady(hqSrc)) {
+                    count += 1;
+                    hasAny = true;
+                } else if (baseSrc && isRefImageReady(baseSrc)) {
                     count += 1;
                     hasAny = true;
                 }
@@ -4537,9 +4574,13 @@
             let refCount = 0;
             const refs = Array.isArray(cand?.refs) ? cand.refs : [];
             for (const ref of refs) {
-                const src = _extractRefSrc(ref);
-                if (!src) continue;
-                if (isRefImageReady(src)) refCount += 1;
+                const baseSrc = _extractRefSrc(ref);
+                const hqSrc = _extractRefCropUrl(ref, REF_DISPLAY_HQ_SIZE);
+                if (hqSrc && isRefImageReady(hqSrc)) {
+                    refCount += 1;
+                } else if (baseSrc && isRefImageReady(baseSrc)) {
+                    refCount += 1;
+                }
             }
             if (refCount >= threshold) atDepth += 1;
         }
@@ -4885,10 +4926,12 @@
                 let src = '';
                 if (hqSrc && isRefImageReady(hqSrc)) {
                     src = hqSrc;
-                } else if (baseSrc) {
-                    src = baseSrc;
+                } else if (inlineSrc) {
+                    src = inlineSrc;
                 } else if (hqSrc) {
                     src = hqSrc;
+                } else if (baseSrc) {
+                    src = baseSrc;
                 } else if (fallbackUrlSrc) {
                     src = fallbackUrlSrc;
                 }
@@ -4903,12 +4946,6 @@
                     src = backup;
                 }
 
-                const ready = !!(
-                    (hqSrc && isRefImageReady(hqSrc))
-                    || (baseSrc && isRefImageReady(baseSrc))
-                    || (inlineSrc && isRefImageReady(inlineSrc))
-                    || isRefImageReady(src)
-                );
                 const sn = info.serial != null ? `sn${info.serial}` : '';
                 const isFlagged = isRefSerialFlagged(info.serial);
                 const isFlagging = isRefSerialFlagging(info.serial);
@@ -4921,7 +4958,7 @@
                 refs.push(`
                     <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}${isFlagging ? ' ref-flagging' : ''}"${serialAttr}${cropAttr}>
                         <img loading="eager" decoding="async" src="${escapeHtml(src)}" alt="${safeName} ref ${refIdx + 1}">
-                        ${ready && caption ? `<div class="ref-overlay">${escapeHtml(caption)}</div>` : ''}
+                        ${caption ? `<div class="ref-overlay">${escapeHtml(caption)}</div>` : ''}
                     </div>
                 `);
             }
@@ -5067,10 +5104,12 @@
                 let src = '';
                 if (hqSrc && isRefImageReady(hqSrc)) {
                     src = hqSrc;
-                } else if (baseSrc) {
-                    src = baseSrc;
+                } else if (inlineSrc) {
+                    src = inlineSrc;
                 } else if (hqSrc) {
                     src = hqSrc;
+                } else if (baseSrc) {
+                    src = baseSrc;
                 } else if (fallbackUrlSrc) {
                     src = fallbackUrlSrc;
                 }
@@ -5085,12 +5124,6 @@
                     src = backup;
                 }
 
-                const ready = !!(
-                    (hqSrc && isRefImageReady(hqSrc))
-                    || (baseSrc && isRefImageReady(baseSrc))
-                    || (inlineSrc && isRefImageReady(inlineSrc))
-                    || isRefImageReady(src)
-                );
                 const sn = info.serial != null ? `sn${info.serial}` : '';
                 const isFlagged = isRefSerialFlagged(info.serial);
                 const isFlagging = isRefSerialFlagging(info.serial);
@@ -5103,7 +5136,7 @@
                 refsHtml.push(`
                     <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}${isFlagging ? ' ref-flagging' : ''}"${serialAttr}${cropAttr}>
                         <img loading="eager" decoding="async" src="${escapeHtml(src)}" alt="${safeDisplayName} ref ${refIdx + 1}">
-                        ${ready && caption ? `<div class="ref-overlay">${escapeHtml(caption)}</div>` : ''}
+                        ${caption ? `<div class="ref-overlay">${escapeHtml(caption)}</div>` : ''}
                     </div>
                 `);
             }

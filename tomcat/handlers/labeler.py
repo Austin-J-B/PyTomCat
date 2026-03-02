@@ -79,6 +79,10 @@ _loop_lag_max_ms: float = 0.0
 _loop_lag_monitor_started = False
 _LOOP_LAG_INTERVAL_SEC = 2.0
 _LOOP_LAG_LOG_THRESHOLD_MS = 500.0
+_LOOP_LAG_SHED_BG_WORK_MS = max(
+    300.0,
+    float(os.getenv("LABELER_LOOP_LAG_SHED_BG_WORK_MS", "900") or "900"),
+)
 
 
 async def _event_loop_lag_monitor() -> None:
@@ -876,6 +880,8 @@ def _has_reviewed_cat_label_token(label: Any) -> bool:
 def _maybe_schedule_queue_cache_warm(mode: str, queue: List[Dict[str, Any]]) -> None:
     """Throttle repeated queue cache warm kicks to reduce redundant disk/network churn."""
     if not queue:
+        return
+    if float(_loop_lag_ms) >= float(_LOOP_LAG_SHED_BG_WORK_MS):
         return
     key = str(mode or "").strip().lower()
     if key not in _queue_cache_warm_next_mono:
@@ -2605,6 +2611,8 @@ def _schedule_classify_quality_scan_from_queue(items: List[Dict[str, Any]]) -> i
     global _classify_quality_bg_queue_scan_next_mono
     if not items:
         return 0
+    if float(_loop_lag_ms) >= float(_LOOP_LAG_SHED_BG_WORK_MS):
+        return 0
     cap = int(_CLASSIFY_PREFILTER_BG_QUEUE_SCAN_MAX_ITEMS or 0)
     if cap <= 0:
         return 0
@@ -2861,7 +2869,6 @@ async def get_queue_classify(request: web.Request) -> web.Response:
     try:
         _kickoff_boot_cache_warm_once()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
         rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
         t0 = time.perf_counter()
         user_id, _ = _actor_from_request(request)
@@ -3461,19 +3468,27 @@ async def post_claim(request: web.Request) -> web.Response:
         dt_ms = int(round((t_post_acquire - t0) * 1000.0))
         json_ms = int(round((t_json - t0) * 1000.0))
         acquire_ms = int(round((t_post_acquire - t_pre_acquire) * 1000.0))
-        task_census = _get_task_census()
-        dl_stats = labeler_cache.get_download_stats()
-
-        #Always log claim timing for diagnostic purposes
-        log_action(
-            "labeler_claim_diag",
-            f"mode={mode}; serial={int(serial)}; action={action}",
-            (
-                f"total_ms={dt_ms}; json_ms={json_ms}; acquire_ms={acquire_ms}; "
-                f"loop_lag_ms={int(loop_lag_at_entry)}; granted={1 if granted else 0}; "
-                f"dl=[{dl_stats}]; {task_census}"
-            ),
+        lag_ms = int(loop_lag_at_entry)
+        # Keep claim diagnostics lightweight under heavy load.
+        # Heartbeats are high-frequency; sample them unless they are slow/laggy.
+        should_log_diag = (
+            action != "heartbeat"
+            or dt_ms >= 120
+            or random.random() < 0.01
         )
+        if should_log_diag:
+            include_census = (action != "heartbeat") and ((dt_ms >= 150) or (lag_ms >= 900))
+            task_census = _get_task_census() if include_census else "tasks=skip"
+            dl_stats = labeler_cache.get_download_stats()
+            log_action(
+                "labeler_claim_diag",
+                f"mode={mode}; serial={int(serial)}; action={action}",
+                (
+                    f"total_ms={dt_ms}; json_ms={json_ms}; acquire_ms={acquire_ms}; "
+                    f"loop_lag_ms={lag_ms}; granted={1 if granted else 0}; "
+                    f"dl=[{dl_stats}]; {task_census}"
+                ),
+            )
         return _with_cors(web.json_response({
             "ok": True,
             "granted": bool(granted),

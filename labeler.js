@@ -34,9 +34,9 @@
     const ZOOM_MAX = 6.0;
     const ZOOM_STEP = 0.12;
     const PREFETCH_AHEAD = 12;
-    const PREFETCH_CONCURRENCY = 2;
+    const PREFETCH_CONCURRENCY = 1;
     const IMAGE_PREFETCH_AHEAD = 3;
-    const IMAGE_PREFETCH_AHEAD_CLASSIFY = 2;
+    const IMAGE_PREFETCH_AHEAD_CLASSIFY = 12;
     const IMAGE_PREFETCH_RESTART_MS = 60000;
     const IMAGE_PREFETCH_AHEAD_DETECT = 4;
     const DETECT_PREFETCH_CONCURRENCY = 3;
@@ -47,9 +47,10 @@
     const API_POST_TIMEOUT_MS = 45000;
     const API_PREFETCH_TIMEOUT_MS = 15000;
     const CLAIM_HEARTBEAT_MS = 15000;
-    const CLAIM_ACQUIRE_TIMEOUT_MS = 6000;
+    const CLAIM_ACQUIRE_TIMEOUT_MS = 10000;
     const CLAIM_PRECLAIM_TIMEOUT_MS = 3000;
     const CLAIM_RETRY_REFRESH_COOLDOWN_MS = 15000;
+    const CLAIM_PRECLAIM_AHEAD_COUNT = 1;
     const SESSION_WARM_TARGET = 15;
     const SESSION_WARM_TICK_MS = 333;
     const SESSION_REFRESH_QUEUES_MS = 30000;
@@ -93,6 +94,7 @@
     const REF_IMAGE_RETRY_MAX_MS = 60000;
     const REF_IMAGE_RETRY_MAX_ATTEMPTS = 6;
     const REF_DISPLAY_HQ_SIZE = 384;
+    const REF_DISPLAY_FAST_SIZE = 112;
     const CLASSIFY_AUTO_SKIP_STREAK_LIMIT = 3;
     const IMAGE_PREFETCH_RETRY_BASE_MS = 1200;
     const IMAGE_PREFETCH_RETRY_MAX_MS = 20000;
@@ -335,6 +337,9 @@
     let imagePrefetch = new Map();
     let imagePrefetchState = new Map();
     let imagePrefetchRetryTimers = new Map();
+    let imagePrefetchQueue = [];
+    let imagePrefetchQueued = new Set();
+    let imagePrefetchWorkerRunning = false;
     let cachedImagePathByIntent = new Map();
     let cachedImagePathLatest = new Map();
     let cachedImagePathProbeInFlight = new Set();
@@ -1241,7 +1246,7 @@
             });
     }
 
-    function preclaimAhead(mode, startIdx, count = 2) {
+    function preclaimAhead(mode, startIdx, count = CLAIM_PRECLAIM_AHEAD_COUNT) {
         const q = queueForMode(mode);
         const begin = Math.max(0, Number(startIdx || 0));
         const maxCount = Math.max(1, Number(count || 1));
@@ -2342,11 +2347,7 @@
                     primeHotNextDetectItem();
                 }
                 prefetchManualCandidates();
-                const nextItem = queue[queueIndex + 1];
-                if (nextItem && nextItem.serial) {
-                    preclaimItem(nextItem, labelerMode);
-                }
-                preclaimAhead(labelerMode, queueIndex, 2);
+                preclaimAhead(labelerMode, queueIndex, CLAIM_PRECLAIM_AHEAD_COUNT);
                 return;
             }
             await releaseCurrentClaim();
@@ -2467,6 +2468,9 @@
         prefetchRequested = false;
         imagePrefetch.clear();
         imagePrefetchState.clear();
+        imagePrefetchQueue = [];
+        imagePrefetchQueued.clear();
+        imagePrefetchWorkerRunning = false;
         cachedImagePathByIntent.clear();
         cachedImagePathLatest.clear();
         cachedImagePathProbeInFlight.clear();
@@ -2480,6 +2484,9 @@
         refImagePrefetch.clear();
         refImagePrefetchState.clear();
         refImagePrefetchRetry.clear();
+        refImageFetchQueue.length = 0;
+        refImageFetchQueued.clear();
+        refImagesLoadingCount = 0;
         if (refImageRetryTimers.size) {
             for (const timer of refImageRetryTimers.values()) {
                 clearTimeout(timer);
@@ -2717,9 +2724,67 @@
         );
         const timer = setTimeout(() => {
             imagePrefetchRetryTimers.delete(key);
-            prefetchImageSerial(serial, { force: true, cacheBust: Date.now() });
+            queueImagePrefetchSerial(serial, { force: true, cacheBust: Date.now(), priority: 'high' });
         }, delayMs);
         imagePrefetchRetryTimers.set(key, timer);
+    }
+
+    function queueImagePrefetchSerial(serial, opts = {}) {
+        const key = _imagePrefetchKey(serial);
+        if (!key) return;
+        const force = !!opts.force;
+        const priority = String(opts.priority || '').trim().toLowerCase();
+        const highPriority = priority === 'high';
+        const now = Date.now();
+        const rec = imagePrefetchState.get(key) || { state: 'idle', nextRetryTs: 0 };
+        if (!force) {
+            if (rec.state === 'loading' || rec.state === 'ready') return;
+            if (rec.state === 'error' && Number(rec.nextRetryTs || 0) > now) return;
+            if (imagePrefetchQueued.has(key)) return;
+        }
+        const work = {
+            serial: Number.parseInt(key, 10),
+            force,
+            cacheBust: opts.cacheBust || null,
+        };
+        if (highPriority) {
+            imagePrefetchQueue.unshift(work);
+        } else {
+            imagePrefetchQueue.push(work);
+        }
+        imagePrefetchQueued.add(key);
+        processImagePrefetchQueue();
+    }
+
+    function processImagePrefetchQueue() {
+        if (imagePrefetchWorkerRunning) return;
+        if (!imagePrefetchQueue.length) return;
+        imagePrefetchWorkerRunning = true;
+        void (async () => {
+            try {
+                while (labelerActive && imagePrefetchQueue.length > 0) {
+                    const work = imagePrefetchQueue.shift();
+                    if (!work || !work.serial) continue;
+                    const key = _imagePrefetchKey(work.serial);
+                    if (!key) continue;
+                    imagePrefetchQueued.delete(key);
+                    prefetchImageSerial(work.serial, {
+                        force: !!work.force,
+                        cacheBust: work.cacheBust || null,
+                    });
+                    await _waitFor(() => {
+                        const st = imagePrefetchState.get(key);
+                        const state = String(st?.state || 'idle');
+                        return state !== 'loading';
+                    }, API_PREFETCH_TIMEOUT_MS + 3000, 70);
+                }
+            } finally {
+                imagePrefetchWorkerRunning = false;
+                if (labelerActive && imagePrefetchQueue.length > 0) {
+                    processImagePrefetchQueue();
+                }
+            }
+        })();
     }
 
     function prefetchImageSerial(serial, opts = {}) {
@@ -2938,6 +3003,34 @@
         return `${base}${sep}size=${Math.round(px)}`;
     }
 
+    function _getRefDisplaySources(ref) {
+        const info = typeof ref === 'string'
+            ? { img: ref, serial: null, crop: null }
+            : (ref || {});
+        const refImg = String(info.img || info.thumb || '').trim();
+        const refUrl = String(info.url || info.src || '').trim();
+        const baseSrc = _extractRefSrc(info);
+        const inlineSrc = refImg
+            ? (refImg.startsWith('data:image')
+                ? refImg
+                : `data:image/jpeg;base64,${refImg}`)
+            : '';
+        const hasSheetCropMeta = Number.isInteger(Number(info?.serial)) && Number(info?.serial) > 0
+            && Number.isInteger(Number(info?.crop)) && Number(info?.crop) > 0;
+        const fastSrc = hasSheetCropMeta ? _extractRefCropUrl(info, REF_DISPLAY_FAST_SIZE) : '';
+        const hqSrc = hasSheetCropMeta ? _extractRefCropUrl(info, REF_DISPLAY_HQ_SIZE) : '';
+        const fallbackUrlSrc = (!hqSrc && refUrl)
+            ? (refUrl.startsWith('/') ? buildApiUrl(refUrl) : refUrl)
+            : '';
+        return {
+            baseSrc,
+            inlineSrc,
+            fastSrc,
+            hqSrc,
+            fallbackUrlSrc,
+        };
+    }
+
     function _clearRefRetryTimer(src) {
         const key = String(src || '').trim();
         if (!key) return;
@@ -2981,6 +3074,7 @@
     }
 
     const refImageFetchQueue = [];
+    const refImageFetchQueued = new Set();
     let refImagesLoadingCount = 0;
     const REF_IMAGE_CONCURRENCY = 15;
 
@@ -2988,6 +3082,8 @@
         if (!labelerActive) return;
         while (refImagesLoadingCount < REF_IMAGE_CONCURRENCY && refImageFetchQueue.length > 0) {
             const key = refImageFetchQueue.shift();
+            if (!key) continue;
+            refImageFetchQueued.delete(key);
 
             const state = String(refImagePrefetchState.get(key) || '');
             if (state !== 'queued') continue;
@@ -3028,9 +3124,11 @@
         }
     }
 
-    function prefetchRefImageSrc(src) {
+    function prefetchRefImageSrc(src, opts = {}) {
         const key = String(src || '').trim();
         if (!key) return;
+        const priority = String(opts?.priority || '').trim().toLowerCase();
+        const isHighPriority = priority === 'high';
 
         //Data URIs are already embedded; mark ready immediately without queuing.
         if (key.startsWith('data:')) {
@@ -3045,6 +3143,13 @@
         const now = Date.now();
         const state = String(refImagePrefetchState.get(key) || '');
         if (state === 'ready') return;
+        if (state === 'queued' && isHighPriority && refImageFetchQueued.has(key)) {
+            const idx = refImageFetchQueue.indexOf(key);
+            if (idx > 0) {
+                refImageFetchQueue.splice(idx, 1);
+                refImageFetchQueue.unshift(key);
+            }
+        }
         if ((state === 'loading' || state === 'queued') && refImagePrefetch.has(key)) return;
         if (state === 'error') {
             const retry = refImagePrefetchRetry.get(key) || {};
@@ -3059,7 +3164,14 @@
 
         refImagePrefetchState.set(key, 'queued');
         refImagePrefetch.set(key, { complete: false, naturalWidth: 0 });
-        refImageFetchQueue.push(key);
+        if (!refImageFetchQueued.has(key)) {
+            if (isHighPriority) {
+                refImageFetchQueue.unshift(key);
+            } else {
+                refImageFetchQueue.push(key);
+            }
+            refImageFetchQueued.add(key);
+        }
         processRefImageQueue();
 
         if (refImagePrefetch.size > REF_IMAGE_PREFETCH_MAX) {
@@ -3072,6 +3184,7 @@
                 refImagePrefetchState.delete(oldKey);
                 refImagePrefetchRetry.delete(oldKey);
                 _clearRefRetryTimer(oldKey);
+                refImageFetchQueued.delete(oldKey);
             }
         }
     }
@@ -3106,28 +3219,15 @@
             for (const cand of cands.slice(0, 9)) {
                 const refs = Array.isArray(cand?.refs) ? cand.refs : [];
                 for (const ref of refs.slice(0, CLASSIFY_REFS_PER_CAT_TARGET)) {
-                    const info = typeof ref === 'string'
-                        ? { img: ref, serial: null, crop: null }
-                        : (ref || {});
-                    const refImg = String(info.img || info.thumb || '').trim();
-                    const refUrl = String(info.url || info.src || '').trim();
-                    const baseSrc = _extractRefSrc(info);
-                    const hasSheetCropMeta = Number.isInteger(Number(info?.serial)) && Number(info?.serial) > 0
-                        && Number.isInteger(Number(info?.crop)) && Number(info?.crop) > 0;
-
-                    const inlineSrc = refImg
-                        ? (refImg.startsWith('data:image')
-                            ? refImg
-                            : `data:image/jpeg;base64,${refImg}`)
-                        : '';
-                    const hqSrc = hasSheetCropMeta ? _extractRefCropUrl(info, REF_DISPLAY_HQ_SIZE) : '';
-
-                    if (hqSrc) {
-                        prefetchRefImageSrc(hqSrc);
-                    } else if (inlineSrc && inlineSrc !== baseSrc) {
-                        prefetchRefImageSrc(inlineSrc);
-                    } else if (baseSrc) {
-                        prefetchRefImageSrc(baseSrc);
+                    const srcs = _getRefDisplaySources(ref);
+                    if (srcs.fastSrc) {
+                        prefetchRefImageSrc(srcs.fastSrc);
+                    } else if (srcs.inlineSrc && srcs.inlineSrc !== srcs.baseSrc) {
+                        prefetchRefImageSrc(srcs.inlineSrc);
+                    } else if (srcs.baseSrc) {
+                        prefetchRefImageSrc(srcs.baseSrc);
+                    } else if (srcs.fallbackUrlSrc) {
+                        prefetchRefImageSrc(srcs.fallbackUrlSrc);
                     }
                 }
             }
@@ -3379,13 +3479,13 @@
         try {
             await refreshQueues(false);
             const detectTargets = labelerMode === 'detect' ? warmWindowForMode('detect') : [];
-            detectTargets.forEach((item) => prefetchImageSerial(item.serial));
+            detectTargets.forEach((item, idx) => queueImagePrefetchSerial(item.serial, { priority: idx === 0 ? 'high' : 'normal' }));
             const classifyTargets = labelerMode === 'classify' ? warmWindowForMode('classify') : [];
             classifyTargets
                 .slice(0, IMAGE_PREFETCH_AHEAD_CLASSIFY)
-                .forEach((item) => prefetchImageSerial(item.serial));
+                .forEach((item, idx) => queueImagePrefetchSerial(item.serial, { priority: idx === 0 ? 'high' : 'normal' }));
             const manualTargets = labelerMode === 'manual' ? warmWindowForMode('manual') : [];
-            manualTargets.forEach((item) => prefetchImageSerial(item.serial));
+            manualTargets.forEach((item, idx) => queueImagePrefetchSerial(item.serial, { priority: idx === 0 ? 'high' : 'normal' }));
 
             const detectTodo = detectTargets.filter((item) => {
                 const key = String(item.serial || '');
@@ -4283,7 +4383,7 @@
             if (nextItem && nextItem.serial) {
                 prefetchImageSerial(nextItem.serial);
                 preclaimItem(nextItem, labelerMode);
-                preclaimAhead(labelerMode, queueIndex, 2);
+                preclaimAhead(labelerMode, queueIndex, CLAIM_PRECLAIM_AHEAD_COUNT);
                 if (labelerMode === 'classify') {
                     void ensureClassifyItemReady(nextItem, false, true);
                 } else if (labelerMode === 'detect') {
@@ -4498,9 +4598,14 @@
             let hasAny = false;
             const refs = Array.isArray(cand?.refs) ? cand.refs : [];
             for (const ref of refs) {
-                const baseSrc = _extractRefSrc(ref);
-                const hqSrc = _extractRefCropUrl(ref, REF_DISPLAY_HQ_SIZE);
+                const srcs = _getRefDisplaySources(ref);
+                const baseSrc = srcs.baseSrc;
+                const fastSrc = srcs.fastSrc;
+                const hqSrc = srcs.hqSrc;
                 if (hqSrc && isRefImageReady(hqSrc)) {
+                    count += 1;
+                    hasAny = true;
+                } else if (fastSrc && isRefImageReady(fastSrc)) {
                     count += 1;
                     hasAny = true;
                 } else if (baseSrc && isRefImageReady(baseSrc)) {
@@ -4574,9 +4679,13 @@
             let refCount = 0;
             const refs = Array.isArray(cand?.refs) ? cand.refs : [];
             for (const ref of refs) {
-                const baseSrc = _extractRefSrc(ref);
-                const hqSrc = _extractRefCropUrl(ref, REF_DISPLAY_HQ_SIZE);
+                const srcs = _getRefDisplaySources(ref);
+                const baseSrc = srcs.baseSrc;
+                const fastSrc = srcs.fastSrc;
+                const hqSrc = srcs.hqSrc;
                 if (hqSrc && isRefImageReady(hqSrc)) {
+                    refCount += 1;
+                } else if (fastSrc && isRefImageReady(fastSrc)) {
                     refCount += 1;
                 } else if (baseSrc && isRefImageReady(baseSrc)) {
                     refCount += 1;
@@ -4903,33 +5012,32 @@
                 const info = typeof ref === 'string'
                     ? { img: ref, serial: null, crop: null }
                     : (ref || {});
-                const refImg = String(info.img || info.thumb || '').trim();
-                const refUrl = String(info.url || info.src || '').trim();
-                const baseSrc = _extractRefSrc(info);
-                const hasSheetCropMeta = Number.isInteger(Number(info?.serial)) && Number(info?.serial) > 0
-                    && Number.isInteger(Number(info?.crop)) && Number(info?.crop) > 0;
-                const inlineSrc = refImg
-                    ? (refImg.startsWith('data:image')
-                        ? refImg
-                        : `data:image/jpeg;base64,${refImg}`)
-                    : '';
-                const hqSrc = hasSheetCropMeta ? _extractRefCropUrl(info, REF_DISPLAY_HQ_SIZE) : '';
-                const fallbackUrlSrc = (!hqSrc && refUrl)
-                    ? (refUrl.startsWith('/') ? buildApiUrl(refUrl) : refUrl)
-                    : '';
+                const srcs = _getRefDisplaySources(info);
+                const baseSrc = srcs.baseSrc;
+                const inlineSrc = srcs.inlineSrc;
+                const fastSrc = srcs.fastSrc;
+                const hqSrc = srcs.hqSrc;
+                const fallbackUrlSrc = srcs.fallbackUrlSrc;
 
-                if (baseSrc) prefetchRefImageSrc(baseSrc);
-                if (inlineSrc && inlineSrc !== baseSrc) prefetchRefImageSrc(inlineSrc);
+                if (fastSrc) prefetchRefImageSrc(fastSrc, { priority: 'high' });
+                if (baseSrc) prefetchRefImageSrc(baseSrc, { priority: 'high' });
+                if (inlineSrc && inlineSrc !== baseSrc) prefetchRefImageSrc(inlineSrc, { priority: 'high' });
                 if (hqSrc) prefetchRefImageSrc(hqSrc);
                 if (fallbackUrlSrc) prefetchRefImageSrc(fallbackUrlSrc);
 
                 let src = '';
                 if (hqSrc && isRefImageReady(hqSrc)) {
                     src = hqSrc;
+                } else if (fastSrc && isRefImageReady(fastSrc)) {
+                    src = fastSrc;
                 } else if (inlineSrc) {
                     src = inlineSrc;
+                } else if (fastSrc) {
+                    src = fastSrc;
                 } else if (hqSrc) {
                     src = hqSrc;
+                } else if (baseSrc && isRefImageReady(baseSrc)) {
+                    src = baseSrc;
                 } else if (baseSrc) {
                     src = baseSrc;
                 } else if (fallbackUrlSrc) {
@@ -4939,8 +5047,16 @@
 
                 const srcState = String(refImagePrefetchState.get(src) || '');
                 if (srcState === 'error') {
-                    const backup = (src === hqSrc && baseSrc) ? baseSrc : '';
-                    if (!backup || String(refImagePrefetchState.get(backup) || '') === 'error') {
+                    const backups = [
+                        (src === hqSrc ? fastSrc : ''),
+                        (src === hqSrc || src === fastSrc ? baseSrc : ''),
+                        inlineSrc,
+                        fallbackUrlSrc,
+                    ].filter(Boolean);
+                    const backup = backups.find((candidateSrc) => (
+                        String(refImagePrefetchState.get(candidateSrc) || '') !== 'error'
+                    )) || '';
+                    if (!backup) {
                         continue;
                     }
                     src = backup;
@@ -5081,33 +5197,32 @@
                 const info = typeof ref === 'string'
                     ? { img: ref, serial: null, crop: null }
                     : (ref || {});
-                const refImg = String(info.img || info.thumb || '').trim();
-                const refUrl = String(info.url || info.src || '').trim();
-                const baseSrc = _extractRefSrc(info);
-                const hasSheetCropMeta = Number.isInteger(Number(info?.serial)) && Number(info?.serial) > 0
-                    && Number.isInteger(Number(info?.crop)) && Number(info?.crop) > 0;
-                const inlineSrc = refImg
-                    ? (refImg.startsWith('data:image')
-                        ? refImg
-                        : `data:image/jpeg;base64,${refImg}`)
-                    : '';
-                const hqSrc = hasSheetCropMeta ? _extractRefCropUrl(info, REF_DISPLAY_HQ_SIZE) : '';
-                const fallbackUrlSrc = (!hqSrc && refUrl)
-                    ? (refUrl.startsWith('/') ? buildApiUrl(refUrl) : refUrl)
-                    : '';
+                const srcs = _getRefDisplaySources(info);
+                const baseSrc = srcs.baseSrc;
+                const inlineSrc = srcs.inlineSrc;
+                const fastSrc = srcs.fastSrc;
+                const hqSrc = srcs.hqSrc;
+                const fallbackUrlSrc = srcs.fallbackUrlSrc;
 
-                if (baseSrc) prefetchRefImageSrc(baseSrc);
-                if (inlineSrc && inlineSrc !== baseSrc) prefetchRefImageSrc(inlineSrc);
+                if (fastSrc) prefetchRefImageSrc(fastSrc, { priority: 'high' });
+                if (baseSrc) prefetchRefImageSrc(baseSrc, { priority: 'high' });
+                if (inlineSrc && inlineSrc !== baseSrc) prefetchRefImageSrc(inlineSrc, { priority: 'high' });
                 if (hqSrc) prefetchRefImageSrc(hqSrc);
                 if (fallbackUrlSrc) prefetchRefImageSrc(fallbackUrlSrc);
 
                 let src = '';
                 if (hqSrc && isRefImageReady(hqSrc)) {
                     src = hqSrc;
+                } else if (fastSrc && isRefImageReady(fastSrc)) {
+                    src = fastSrc;
                 } else if (inlineSrc) {
                     src = inlineSrc;
+                } else if (fastSrc) {
+                    src = fastSrc;
                 } else if (hqSrc) {
                     src = hqSrc;
+                } else if (baseSrc && isRefImageReady(baseSrc)) {
+                    src = baseSrc;
                 } else if (baseSrc) {
                     src = baseSrc;
                 } else if (fallbackUrlSrc) {
@@ -5117,8 +5232,16 @@
 
                 const srcState = String(refImagePrefetchState.get(src) || '');
                 if (srcState === 'error') {
-                    const backup = (src === hqSrc && baseSrc) ? baseSrc : '';
-                    if (!backup || String(refImagePrefetchState.get(backup) || '') === 'error') {
+                    const backups = [
+                        (src === hqSrc ? fastSrc : ''),
+                        (src === hqSrc || src === fastSrc ? baseSrc : ''),
+                        inlineSrc,
+                        fallbackUrlSrc,
+                    ].filter(Boolean);
+                    const backup = backups.find((candidateSrc) => (
+                        String(refImagePrefetchState.get(candidateSrc) || '') !== 'error'
+                    )) || '';
+                    if (!backup) {
                         continue;
                     }
                     src = backup;
@@ -5518,7 +5641,7 @@
         for (let i = start; i < end; i++) {
             const item = queue[i];
             if (!item || !item.serial) continue;
-            prefetchImageSerial(item.serial);
+            queueImagePrefetchSerial(item.serial, { priority: i === start ? 'high' : 'normal' });
         }
     }
 
@@ -5917,4 +6040,3 @@
     });
 
 })();
-

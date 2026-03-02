@@ -213,6 +213,12 @@ def main() -> None:
     else:
         cloudflared_path = ROOT / "cloudflared"
 
+    # Avoid accidentally launching duplicate bot instances.
+    if _wait_for_local_port("127.0.0.1", 8080, timeout_sec=1.0):
+        print("[Start] 127.0.0.1:8080 is already in use. Refusing to start a duplicate bot instance.")
+        print("[Start] If you intended a restart, stop existing TomCat processes first.")
+        return
+
     #--- 1. Configure Tunnel ---
     tunnel_uuid = _configure_tunnel(cloudflared_path if cloudflared_path.exists() else None)
 

@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import time
 import secrets
+import socket
 from typing import Any, Callable, Dict, Optional, Union
 from collections import deque
 from datetime import datetime
@@ -75,8 +76,15 @@ RATE_LIMIT_MAX_REQUESTS = 200
 RATE_LIMIT_WINDOW_SECONDS = 60
 LABELER_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_RATE_LIMIT_MAX_REQUESTS", "700") or "700")
 LABELER_IMAGE_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_IMAGE_RATE_LIMIT_MAX_REQUESTS", "1800") or "1800")
+LABELER_CLAIM_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_CLAIM_RATE_LIMIT_MAX_REQUESTS", "2600") or "2600")
+LABELER_SAVE_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_SAVE_RATE_LIMIT_MAX_REQUESTS", "1500") or "1500")
+LABELER_UI_DIAG_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_UI_DIAG_RATE_LIMIT_MAX_REQUESTS", "8000") or "8000")
+LABELER_RATE_LIMIT_SPLIT = os.getenv("LABELER_RATE_LIMIT_SPLIT", "1").strip().lower() in {"1", "true", "yes", "on"}
+LABELER_PREFETCH_RETRY_FIX = os.getenv("LABELER_PREFETCH_RETRY_FIX", "1").strip().lower() in {"1", "true", "yes", "on"}
+LABELER_CLASSIFY_READY_RELAX = os.getenv("LABELER_CLASSIFY_READY_RELAX", "1").strip().lower() in {"1", "true", "yes", "on"}
 _rate_limit_counters: dict[str, deque] = {}
 _background_tasks: dict[str, asyncio.Task] = {}
+_singleton_guard_socket: Optional[socket.socket] = None
 
 
 def _start_background_task(name: str, coro_factory: Callable[[], Any]) -> None:
@@ -590,7 +598,7 @@ from .handlers.admin import handle_silent_mode as _handle_silent_mode_raw
 from .handlers.misc import handle_misc as _handle_misc_raw
 
 from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
-from .handlers.labeler import get_labeler_routes
+from .handlers.labeler import get_labeler_routes, kickoff_boot_cache_warm_startup
 from .utils.permissions import is_officer
 
 
@@ -804,11 +812,24 @@ async def rate_limit_middleware(request: web.Request, handler):
     max_requests = RATE_LIMIT_MAX_REQUESTS
     if is_labeler_api:
         user_id = str((labeler_session or {}).get("user_id") or "").strip() or client_id
+        bucket_suffix = "general"
         client_id = f"labeler:{user_id}"
         if request.path.startswith("/api/labeler/cached_image/"):
+            bucket_suffix = "image"
             max_requests = LABELER_IMAGE_RATE_LIMIT_MAX_REQUESTS
+        elif request.path.startswith("/api/labeler/claim"):
+            bucket_suffix = "claim"
+            max_requests = LABELER_CLAIM_RATE_LIMIT_MAX_REQUESTS
+        elif request.path.startswith("/api/labeler/save"):
+            bucket_suffix = "save"
+            max_requests = LABELER_SAVE_RATE_LIMIT_MAX_REQUESTS
+        elif request.path.startswith("/api/labeler/ui_diag"):
+            bucket_suffix = "diag"
+            max_requests = LABELER_UI_DIAG_RATE_LIMIT_MAX_REQUESTS
         else:
             max_requests = LABELER_RATE_LIMIT_MAX_REQUESTS
+        if LABELER_RATE_LIMIT_SPLIT:
+            client_id = f"{client_id}:{bucket_suffix}"
     now = time.time()
     bucket = _rate_limit_counters.setdefault(client_id, deque())
     while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
@@ -831,6 +852,14 @@ async def start_web_server(bot):
         except Exception:
             pass
 
+    async def _startup_labeler_cache_warm(_app: web.Application) -> None:
+        """Kick off boot cache warm in the background."""
+        try:
+            await kickoff_boot_cache_warm_startup()
+        except Exception:
+            pass
+
+    app.on_startup.append(_startup_labeler_cache_warm)
     app.on_cleanup.append(_cleanup_labeler_cache_http)
 
     async def get_index(request):
@@ -847,7 +876,17 @@ async def start_web_server(bot):
         """Serve the labeler.js file."""
         try:
             with open("labeler.js", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="application/javascript")
+                raw_js = f.read()
+                # Serve frontend feature flags from env so rollouts can be toggled without JS edits.
+                flags = {
+                    "prefetchRetryFix": bool(LABELER_PREFETCH_RETRY_FIX),
+                    "classifyReadyRelax": bool(LABELER_CLASSIFY_READY_RELAX),
+                }
+                injected = (
+                    "globalThis.__LABELER_FEATURES = Object.assign({}, globalThis.__LABELER_FEATURES || {}, "
+                    f"{json.dumps(flags, separators=(',', ':'))});\n"
+                )
+                resp = web.Response(text=f"{injected}{raw_js}", content_type="application/javascript")
                 resp.headers["Cache-Control"] = "no-store"
                 return _with_cors(resp, request)
         except FileNotFoundError:
@@ -2076,6 +2115,29 @@ async def members(ctx: commands.Context):
     await ctx.send("Members count: (hook up to Members sheet)")
 
 def run():
+    # Prevent multiple bot instances from connecting with the same token.
+    singleton_enabled = str(
+        os.getenv("TOMCAT_SINGLETON_GUARD", "1")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if singleton_enabled:
+        host = str(os.getenv("TOMCAT_SINGLETON_HOST", "127.0.0.1") or "127.0.0.1").strip() or "127.0.0.1"
+        port = int(os.getenv("TOMCAT_SINGLETON_PORT", "58808") or "58808")
+        guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                guard.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            guard.bind((host, int(port)))
+            guard.listen(1)
+            global _singleton_guard_socket
+            _singleton_guard_socket = guard
+        except OSError:
+            try:
+                guard.close()
+            except Exception:
+                pass
+            print(f"[TomCat] Another instance is already running ({host}:{port}). Exiting.")
+            return
+
     if os.name == "nt":
         try:
             use_selector = str(

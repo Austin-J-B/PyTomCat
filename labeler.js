@@ -33,35 +33,40 @@
     const ZOOM_MIN = 0.5;
     const ZOOM_MAX = 6.0;
     const ZOOM_STEP = 0.12;
-    const PREFETCH_AHEAD = 8;
+    const PREFETCH_AHEAD = 12;
     const PREFETCH_CONCURRENCY = 2;
-    const IMAGE_PREFETCH_AHEAD = 8;
-    const IMAGE_PREFETCH_MAX = 80;
-    const DETECT_PREFETCH_AHEAD = 8;
-    const DETECT_PREFETCH_CONCURRENCY = 1;
+    const IMAGE_PREFETCH_AHEAD = 3;
+    const IMAGE_PREFETCH_AHEAD_CLASSIFY = 2;
+    const IMAGE_PREFETCH_RESTART_MS = 60000;
+    const IMAGE_PREFETCH_AHEAD_DETECT = 4;
+    const DETECT_PREFETCH_CONCURRENCY = 3;
     const DETECT_PREFETCH_COOLDOWN_MS = 8000;
-    const DETECT_REFINE_PREFETCH_AHEAD = 8;
+    const DETECT_REFINE_PREFETCH_AHEAD = 12;
     const DETECT_REFINE_COOLDOWN_MS = 12000;
     const ACTION_COOLDOWN_MS = 250;
     const API_POST_TIMEOUT_MS = 45000;
     const API_PREFETCH_TIMEOUT_MS = 15000;
     const CLAIM_HEARTBEAT_MS = 15000;
-    const CLAIM_ACQUIRE_TIMEOUT_MS = 12000;
-    const CLAIM_PRECLAIM_TIMEOUT_MS = 6000;
+    const CLAIM_ACQUIRE_TIMEOUT_MS = 6000;
+    const CLAIM_PRECLAIM_TIMEOUT_MS = 3000;
     const CLAIM_RETRY_REFRESH_COOLDOWN_MS = 15000;
-    const SESSION_WARM_TARGET = 25;
-    const SESSION_WARM_TICK_MS = 2500;
+    const SESSION_WARM_TARGET = 15;
+    const SESSION_WARM_TICK_MS = 333;
     const SESSION_REFRESH_QUEUES_MS = 30000;
     const DETECTOR_PREFETCH_REFINE_PASSES = 2;
     const INITIAL_DETECT_WARM_WINDOW = 25;
+
+    // Detect has smaller crops, classify has complex bounding boxes requiring caching
+    const INITIAL_MANUAL_WARM_WINDOW = 25;
+
     const INITIAL_DETECT_WARM_MIN = 10;
     const INITIAL_DETECT_WARM_TIMEOUT_MS = 25000;
-    const INITIAL_CLASSIFY_WARM_WINDOW = 25;
+    const INITIAL_CLASSIFY_WARM_WINDOW = 6;
     const INITIAL_CLASSIFY_WARM_MIN = 10;
     const INITIAL_CLASSIFY_WARM_TIMEOUT_MS = 20000;
     const ITEM_READY_WAIT_TIMEOUT_MS = 90000;
     const DETECT_READY_WAIT_TIMEOUT_MS = 30000;
-    const CLASSIFY_READY_WAIT_TIMEOUT_MS = 30000;
+    const CLASSIFY_READY_WAIT_TIMEOUT_MS = 12000;
     const READY_WAIT_DIAG_INTERVAL_MS = 2000;
     const API_RETRY_MAX_ATTEMPTS = 3;
     const API_RETRY_BASE_MS = 280;
@@ -88,6 +93,27 @@
     const REF_IMAGE_RETRY_MAX_ATTEMPTS = 6;
     const REF_DISPLAY_HQ_SIZE = 384;
     const CLASSIFY_AUTO_SKIP_STREAK_LIMIT = 3;
+    const IMAGE_PREFETCH_RETRY_BASE_MS = 1200;
+    const IMAGE_PREFETCH_RETRY_MAX_MS = 20000;
+    const IMAGE_PREFETCH_RETRY_MAX_ATTEMPTS = 5;
+    const IMAGE_PREFETCH_STALL_BYPASS_MS = 2800;
+    const CACHED_IMAGE_PATH_PROBE_COOLDOWN_MS = 8000;
+
+    function _flagEnabled(flagName, defaultOn = true) {
+        try {
+            const src = (typeof window !== 'undefined' && window.__LABELER_FEATURES && typeof window.__LABELER_FEATURES === 'object')
+                ? window.__LABELER_FEATURES
+                : {};
+            if (!(flagName in src)) return !!defaultOn;
+            return !!src[flagName];
+        } catch (e) {
+            return !!defaultOn;
+        }
+    }
+
+    const FLAG_PREFETCH_RETRY_FIX = _flagEnabled('prefetchRetryFix', true);
+    const FLAG_CLASSIFY_READY_RELAX = _flagEnabled('classifyReadyRelax', true);
+    const FLAG_CACHED_IMAGE_PATH_PROBE = _flagEnabled('cachedImagePathProbe', false);
 
     function getApiBase() {
         let base = '';
@@ -107,6 +133,144 @@
         if (/^https?:\/\//i.test(path)) return path;
         if (!path.startsWith('/')) path = `/${path}`;
         return `${base}${path}`;
+    }
+
+    function buildCachedImageUrl(serial, opts = {}) {
+        const sn = Number.parseInt(String(serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0) return '';
+        const query = new URLSearchParams();
+        const intent = String(opts.intent || '').trim().toLowerCase();
+        if (intent === 'prefetch' || intent === 'foreground') {
+            query.set('intent', intent);
+        }
+        if (opts.proxy) {
+            query.set('proxy', '1');
+        }
+        if (opts.cacheBust) {
+            query.set('cb', String(opts.cacheBust));
+        }
+        const base = `/api/labeler/cached_image/${sn}`;
+        const qs = query.toString();
+        return buildApiUrl(qs ? `${base}?${qs}` : base);
+    }
+
+    function _cachedImageIntent(intent) {
+        const s = String(intent || '').trim().toLowerCase();
+        if (s === 'prefetch' || s === 'foreground') return s;
+        return 'unknown';
+    }
+
+    function _cachedImageProbeKey(serial, intent) {
+        const sn = Number.parseInt(String(serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0) return '';
+        return `${sn}:${_cachedImageIntent(intent)}`;
+    }
+
+    function _recordCachedImagePathProbe(serial, intent, rec) {
+        const key = _cachedImageProbeKey(serial, intent);
+        if (!key) return;
+        const sn = Number.parseInt(String(serial || ''), 10);
+        const out = {
+            serial: sn,
+            intent: _cachedImageIntent(intent),
+            path: String(rec?.path || ''),
+            cache: String(rec?.cache || ''),
+            status: Number(rec?.status || 0),
+            redirected: !!rec?.redirected,
+            at: Date.now(),
+            source: String(rec?.source || ''),
+        };
+        cachedImagePathByIntent.set(key, out);
+        cachedImagePathLatest.set(String(sn), out);
+        if (cachedImagePathByIntent.size > 4000) {
+            const overflow = cachedImagePathByIntent.size - 4000;
+            const keys = cachedImagePathByIntent.keys();
+            for (let i = 0; i < overflow; i++) {
+                const evictKey = keys.next().value;
+                if (!evictKey) continue;
+                cachedImagePathByIntent.delete(evictKey);
+            }
+        }
+        if (cachedImagePathLatest.size > 2000) {
+            const overflow = cachedImagePathLatest.size - 2000;
+            const keys = cachedImagePathLatest.keys();
+            for (let i = 0; i < overflow; i++) {
+                const evictKey = keys.next().value;
+                if (!evictKey) continue;
+                cachedImagePathLatest.delete(evictKey);
+            }
+        }
+    }
+
+    function getCachedImagePathDiag(serial) {
+        const sn = Number.parseInt(String(serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0) return { latest: null, prefetch: null, foreground: null };
+        const s = String(sn);
+        return {
+            latest: cachedImagePathLatest.get(s) || null,
+            prefetch: cachedImagePathByIntent.get(`${s}:prefetch`) || null,
+            foreground: cachedImagePathByIntent.get(`${s}:foreground`) || null,
+        };
+    }
+
+    function _compactCachedPathRecord(rec) {
+        if (!rec || typeof rec !== 'object') return null;
+        return {
+            intent: String(rec.intent || ''),
+            path: String(rec.path || ''),
+            cache: String(rec.cache || ''),
+            status: Number(rec.status || 0),
+            source: String(rec.source || ''),
+        };
+    }
+
+    function compactCachedImagePathDiag(serial) {
+        const raw = getCachedImagePathDiag(serial);
+        return {
+            latest: _compactCachedPathRecord(raw?.latest),
+            prefetch: _compactCachedPathRecord(raw?.prefetch),
+            foreground: _compactCachedPathRecord(raw?.foreground),
+        };
+    }
+
+    async function probeCachedImagePath(serial, intent = 'foreground', opts = {}) {
+        const key = _cachedImageProbeKey(serial, intent);
+        if (!key) return null;
+        if (cachedImagePathProbeInFlight.has(key)) return null;
+        const now = Date.now();
+        const force = !!opts.force;
+        if (!FLAG_CACHED_IMAGE_PATH_PROBE && !force) return null;
+        const lastTs = Number(cachedImagePathProbeTs.get(key) || 0);
+        if (!force && (now - lastTs) < CACHED_IMAGE_PATH_PROBE_COOLDOWN_MS) return null;
+        cachedImagePathProbeInFlight.add(key);
+        cachedImagePathProbeTs.set(key, now);
+        try {
+            const url = buildCachedImageUrl(serial, { intent, cacheBust: `diag-${now}` });
+            const resp = await fetch(url, {
+                credentials: 'include',
+                redirect: 'manual',
+                cache: 'no-store',
+            });
+            _recordCachedImagePathProbe(serial, intent, {
+                path: String(resp.headers.get('X-Labeler-Image-Path') || ''),
+                cache: String(resp.headers.get('X-Labeler-Cache') || ''),
+                status: Number(resp.status || 0),
+                redirected: !!resp.redirected,
+                source: 'probe',
+            });
+            try {
+                if (resp.body && typeof resp.body.cancel === 'function') {
+                    await resp.body.cancel();
+                }
+            } catch (e) {
+                // Best-effort cancellation for diagnostics.
+            }
+            return getCachedImagePathDiag(serial);
+        } catch (e) {
+            return null;
+        } finally {
+            cachedImagePathProbeInFlight.delete(key);
+        }
     }
 
     function isLikelyDriveImageUrl(url) {
@@ -168,6 +332,12 @@
     let classifyPrefetchBackoffUntil = 0;
     let prefetchTimer = null;
     let imagePrefetch = new Map();
+    let imagePrefetchState = new Map();
+    let imagePrefetchRetryTimers = new Map();
+    let cachedImagePathByIntent = new Map();
+    let cachedImagePathLatest = new Map();
+    let cachedImagePathProbeInFlight = new Set();
+    let cachedImagePathProbeTs = new Map();
     let refImagePrefetch = new Map();
     let refImagePrefetchState = new Map();
     let refImagePrefetchRetry = new Map();
@@ -736,13 +906,30 @@
         }
     }
 
-    async function warmCachedImage(serial) {
+    async function warmCachedImage(serial, opts = {}) {
         if (!serial) return false;
+        const intent = _cachedImageIntent(opts.intent || 'prefetch');
         try {
-            const resp = await fetch(buildApiUrl(`/api/labeler/cached_image/${serial}`), {
+            const resp = await fetch(buildCachedImageUrl(serial, { intent, cacheBust: Date.now() }), {
                 credentials: 'include',
+                redirect: 'manual',
+                cache: 'no-store',
             });
-            return !!resp.ok;
+            _recordCachedImagePathProbe(serial, intent, {
+                path: String(resp.headers.get('X-Labeler-Image-Path') || ''),
+                cache: String(resp.headers.get('X-Labeler-Cache') || ''),
+                status: Number(resp.status || 0),
+                redirected: !!resp.redirected,
+                source: 'warm',
+            });
+            try {
+                if (resp.body && typeof resp.body.cancel === 'function') {
+                    await resp.body.cancel();
+                }
+            } catch (e) {
+                // Best-effort cancellation for diagnostics.
+            }
+            return resp.ok || (resp.status >= 300 && resp.status < 400);
         } catch (e) {
             return false;
         }
@@ -980,7 +1167,7 @@
                 action: 'acquire',
                 mode,
                 serial: item.serial,
-            }, { timeoutMs: CLAIM_ACQUIRE_TIMEOUT_MS, maxAttempts: 2 });
+            }, { timeoutMs: CLAIM_ACQUIRE_TIMEOUT_MS, maxAttempts: 1 });
             const claimMs = Math.max(0, Date.now() - claimStartedAt);
             if (claimMs >= 1200) {
                 void postUiDiag('claim_acquire_slow', {
@@ -1040,7 +1227,7 @@
             action: 'acquire',
             mode,
             serial: item.serial,
-        }, { timeoutMs: CLAIM_PRECLAIM_TIMEOUT_MS, maxAttempts: 2 })
+        }, { timeoutMs: CLAIM_PRECLAIM_TIMEOUT_MS, maxAttempts: 1 })
             .then((data) => {
                 if (data && data.granted) {
                     prefetchedClaims.set(key, { inFlight: false, expiresAt: Date.now() + 25000 });
@@ -1560,9 +1747,11 @@
         const idx = _targetCropIdxForItem(item);
         // Count ready only when ref thumbnails are actually decoded/ready,
         // not merely present as URLs in prediction payloads.
-        const depth = _predictionLoadedRefDepthForCrop(rows, idx, CLASSIFY_REFS_PER_CAT_TARGET);
+        const depth = _predictionLoadedRefDepthForCrop(rows, idx, CLASSIFY_WARM_READY_MIN_REFS_PER_CAT);
         if (depth.targetCount <= 0) return false;
-        return depth.candidatesAtDepth >= depth.targetCount;
+        if (depth.candidatesAtDepth >= depth.targetCount) return true;
+        if (FLAG_CLASSIFY_READY_RELAX && _predictionRefsSufficientForCrop(rows, idx)) return true;
+        return false;
     }
 
     function countWarmReadyClassify(windowItems) {
@@ -1777,13 +1966,27 @@
                 const depth = _predictionLoadedRefDepthForCrop(rows, idx, CLASSIFY_WARM_READY_MIN_REFS_PER_CAT);
                 const cov = _predictionLoadedRefCoverageForCrop(rows, idx);
                 const refsSufficient = _predictionRefsSufficientForCrop(rows, idx);
-                if (refsReady && imageReady) {
+                const refsReadyForDisplay = refsReady || (FLAG_CLASSIFY_READY_RELAX && refsSufficient);
+                const prefetchTerminalError = isPrefetchedImageTerminalError(item.serial);
+                const prefetchStalled = isPrefetchedImageStalled(item.serial);
+                let readyReason = '';
+                if (refsSufficient && imageReady) readyReason = 'refs_sufficient+image_ready';
+                else if (refsSufficient && prefetchTerminalError) readyReason = 'refs_sufficient+prefetch_terminal_error';
+                else if (refsSufficient && prefetchStalled) readyReason = 'refs_sufficient+prefetch_stalled';
+                else if (refsReadyForDisplay && imageReady) readyReason = 'refs_ready+image_ready';
+                if (readyReason) {
                     setWarmOverlay(false);
                     void postUiDiag('classify_item_ready_done', {
                         serial: Number(item?.serial || 0) || null,
                         wait_ms: Math.max(0, waitBudgetMs - Math.max(0, deadline - Date.now())),
-                        refs_ready: refsReady,
+                        wait_budget_ms: waitBudgetMs,
+                        refs_ready: refsReadyForDisplay,
                         image_prefetch_ready: imageReady,
+                        image_prefetch_terminal_error: prefetchTerminalError,
+                        image_prefetch_stalled: prefetchStalled,
+                        ready_reason: readyReason,
+                        classify_ready_relax_flag: !!FLAG_CLASSIFY_READY_RELAX,
+                        cached_image_path: compactCachedImagePathDiag(item.serial),
                         refs_sufficient: refsSufficient,
                         refs_depth_ready_candidates: Number(depth.candidatesAtDepth || 0),
                         refs_depth_target_candidates: Number(depth.targetCount || 0),
@@ -1801,9 +2004,14 @@
                     lastDiagAt = now;
                     void postUiDiag('classify_item_ready_wait', {
                         serial: Number(item?.serial || 0) || null,
-                        refs_ready: refsReady,
+                        wait_budget_ms: waitBudgetMs,
+                        refs_ready: refsReadyForDisplay,
                         refs_sufficient: refsSufficient,
                         image_prefetch_ready: imageReady,
+                        image_prefetch_terminal_error: prefetchTerminalError,
+                        image_prefetch_stalled: prefetchStalled,
+                        classify_ready_relax_flag: !!FLAG_CLASSIFY_READY_RELAX,
+                        cached_image_path: compactCachedImagePathDiag(item.serial),
                         pred_cache_hit: !!(rows && Array.isArray(rows) && rows.length),
                         refs_with_loaded_images: Number(cov.candidatesWithRefs || 0),
                         refs_target_candidates: Number(cov.targetCount || 0),
@@ -1823,17 +2031,56 @@
             const finalIdx = _targetCropIdxForItem(item);
             const finalCov = _predictionLoadedRefCoverageForCrop(finalRows, finalIdx);
             const finalDepth = _predictionLoadedRefDepthForCrop(finalRows, finalIdx, CLASSIFY_WARM_READY_MIN_REFS_PER_CAT);
+            const finalRefsReady = _classifyItemWarmReady(item);
+            const finalRefsSufficient = _predictionRefsSufficientForCrop(finalRows, finalIdx);
+            const finalRefsReadyForDisplay = finalRefsReady || (FLAG_CLASSIFY_READY_RELAX && finalRefsSufficient);
+            const finalImageReady = isPrefetchedImageReady(item.serial);
+            const finalPrefetchTerminalError = isPrefetchedImageTerminalError(item.serial);
+            const finalPrefetchStalled = isPrefetchedImageStalled(item.serial);
+            let finalReadyReason = '';
+            if (finalRefsSufficient && finalImageReady) finalReadyReason = 'deadline_refs_sufficient+image_ready';
+            else if (finalRefsSufficient && finalPrefetchTerminalError) finalReadyReason = 'deadline_refs_sufficient+prefetch_terminal_error';
+            else if (finalRefsSufficient && finalPrefetchStalled) finalReadyReason = 'deadline_refs_sufficient+prefetch_stalled';
+            else if (finalRefsReadyForDisplay && finalImageReady) finalReadyReason = 'deadline_refs_ready+image_ready';
+            if (finalReadyReason) {
+                void postUiDiag('classify_item_ready_done', {
+                    serial: Number(item?.serial || 0) || null,
+                    wait_ms: waitBudgetMs,
+                    wait_budget_ms: waitBudgetMs,
+                    refs_ready: finalRefsReadyForDisplay,
+                    refs_sufficient: finalRefsSufficient,
+                    image_prefetch_ready: finalImageReady,
+                    image_prefetch_terminal_error: finalPrefetchTerminalError,
+                    image_prefetch_stalled: finalPrefetchStalled,
+                    ready_reason: finalReadyReason,
+                    late_after_deadline: true,
+                    classify_ready_relax_flag: !!FLAG_CLASSIFY_READY_RELAX,
+                    cached_image_path: compactCachedImagePathDiag(item.serial),
+                    refs_depth_ready_candidates: Number(finalDepth.candidatesAtDepth || 0),
+                    refs_depth_target_candidates: Number(finalDepth.targetCount || 0),
+                    refs_depth_min_per_candidate: Number(finalDepth.minRefsPerCandidate || 0),
+                    refs_with_loaded_images: Number(finalCov.candidatesWithRefs || 0),
+                    refs_target_candidates: Number(finalCov.targetCount || 0),
+                    image_prefetch_state: getPrefetchedImageState(item.serial),
+                });
+                return true;
+            }
             void postUiDiag('classify_item_ready_timeout', {
                 serial: Number(item?.serial || 0) || null,
                 wait_ms: waitBudgetMs,
-                image_prefetch_ready: isPrefetchedImageReady(item.serial),
+                wait_budget_ms: waitBudgetMs,
+                image_prefetch_ready: finalImageReady,
+                image_prefetch_terminal_error: finalPrefetchTerminalError,
+                image_prefetch_stalled: finalPrefetchStalled,
+                classify_ready_relax_flag: !!FLAG_CLASSIFY_READY_RELAX,
+                cached_image_path: compactCachedImagePathDiag(item.serial),
                 image_prefetch_state: getPrefetchedImageState(item.serial),
                 refs_with_loaded_images: Number(finalCov.candidatesWithRefs || 0),
                 refs_target_candidates: Number(finalCov.targetCount || 0),
                 refs_depth_ready_candidates: Number(finalDepth.candidatesAtDepth || 0),
                 refs_depth_target_candidates: Number(finalDepth.targetCount || 0),
                 refs_depth_min_per_candidate: Number(finalDepth.minRefsPerCandidate || 0),
-                refs_sufficient: _predictionRefsSufficientForCrop(finalRows, finalIdx),
+                refs_sufficient: finalRefsSufficient,
                 pred_cache_hit: !!(Array.isArray(finalRows) && finalRows.length),
             });
             return false;
@@ -1952,7 +2199,8 @@
                         lastClaimRetryQueueRefreshAt = now;
                         void refreshQueueMode(labelerMode, { force: false });
                     }
-                    await waitMs(280);
+                    const retryDelayMs = Math.min(4000, 500 * Math.pow(2, Math.min(claimRetryLoops - 1, 3)));
+                    await waitMs(retryDelayMs);
                     continue;
                 }
                 if (claimResult === 'denied') {
@@ -1983,11 +2231,17 @@
                 console.log('[Labeler] Loading item:', item);
                 currentItem = item;
                 currentSerial = item.serial;
-                //Use cached endpoint for fast loading (falls back to Google Drive if not cached)
-                currentImageUrl = buildApiUrl(`/api/labeler/cached_image/${item.serial}`);
+                const imageLoadChoice = resolveDisplayImageUrl(item.serial);
+                // Prefer reusing the already-prefetched URL to avoid a second network fetch.
+                currentImageUrl = imageLoadChoice.url || buildCachedImageUrl(item.serial, { intent: 'foreground' });
                 console.log('[Labeler] Built cached URL:', currentImageUrl);
                 imageReadyForCurrentItem = false;
                 imageLoadRetryCount = 0;
+                if (queueAdvanceMeta) {
+                    queueAdvanceMeta.image_source = String(imageLoadChoice.source || '');
+                    queueAdvanceMeta.image_intent = String(imageLoadChoice.intent || '');
+                    queueAdvanceMeta.image_prefetch_ready = !!imageLoadChoice.prefetch_ready;
+                }
                 if (queueAdvanceMeta && labelerMode === 'classify') {
                     const key = getPredCacheKey(item);
                     queueAdvanceMeta.pred_cache_hit = !!(key && predCache.has(key));
@@ -2209,6 +2463,17 @@
         prefetchRunning = false;
         prefetchRequested = false;
         imagePrefetch.clear();
+        imagePrefetchState.clear();
+        cachedImagePathByIntent.clear();
+        cachedImagePathLatest.clear();
+        cachedImagePathProbeInFlight.clear();
+        cachedImagePathProbeTs.clear();
+        if (imagePrefetchRetryTimers.size) {
+            for (const timer of imagePrefetchRetryTimers.values()) {
+                clearTimeout(timer);
+            }
+            imagePrefetchRetryTimers.clear();
+        }
         refImagePrefetch.clear();
         refImagePrefetchState.clear();
         refImagePrefetchRetry.clear();
@@ -2424,38 +2689,176 @@
         return boxes.map(b => `${b.cx.toFixed(6)} ${b.cy.toFixed(6)} ${b.w.toFixed(6)} ${b.h.toFixed(6)}`).join('|');
     }
 
-    function prefetchImageSerial(serial) {
-        if (!serial) return;
-        const url = buildApiUrl(`/api/labeler/cached_image/${serial}`);
-        if (imagePrefetch.has(url)) return;
+    function _imagePrefetchKey(serial) {
+        const sn = Number.parseInt(String(serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0) return '';
+        return String(sn);
+    }
+
+    function _clearImagePrefetchRetryTimer(key) {
+        const timer = imagePrefetchRetryTimers.get(key);
+        if (timer) {
+            clearTimeout(timer);
+            imagePrefetchRetryTimers.delete(key);
+        }
+    }
+
+    function _scheduleImagePrefetchRetry(serial, key, attempts) {
+        if (!FLAG_PREFETCH_RETRY_FIX) return;
+        if (!key || imagePrefetchRetryTimers.has(key)) return;
+        if (attempts >= IMAGE_PREFETCH_RETRY_MAX_ATTEMPTS) return;
+        const exp = Math.max(0, Math.min(8, Number(attempts || 0)));
+        const delayMs = Math.min(
+            IMAGE_PREFETCH_RETRY_MAX_MS,
+            IMAGE_PREFETCH_RETRY_BASE_MS * Math.pow(2, exp),
+        );
+        const timer = setTimeout(() => {
+            imagePrefetchRetryTimers.delete(key);
+            prefetchImageSerial(serial, { force: true, cacheBust: Date.now() });
+        }, delayMs);
+        imagePrefetchRetryTimers.set(key, timer);
+    }
+
+    function prefetchImageSerial(serial, opts = {}) {
+        const key = _imagePrefetchKey(serial);
+        if (!key) return;
+        const force = !!opts.force;
+        const existing = imagePrefetch.get(key);
+        const rec = imagePrefetchState.get(key) || { state: 'idle', attempts: 0, nextRetryTs: 0 };
+        const now = Date.now();
+        if (!force) {
+            if (rec.state === 'loading' && existing && existing.img) return;
+            if (rec.state === 'ready' && existing && existing.img) return;
+            if (rec.state === 'error' && Number(rec.nextRetryTs || 0) > now) return;
+        }
+
+        const cacheBust = opts.cacheBust || (force ? Date.now() : null);
+        const url = buildCachedImageUrl(serial, { intent: 'prefetch', cacheBust });
+        if (!url) return;
+        _clearImagePrefetchRetryTimer(key);
         const img = new Image();
         img.decoding = 'async';
         img.loading = 'eager';
+        imagePrefetch.set(key, { img, url, startedAt: now });
+        imagePrefetchState.set(key, {
+            state: 'loading',
+            attempts: Number(force ? (rec.attempts || 0) : 0),
+            nextRetryTs: 0,
+            error: '',
+            updatedAt: now,
+        });
+
+        img.onload = () => {
+            const current = imagePrefetch.get(key);
+            if (!current || current.img !== img) return;
+            const naturalW = Number(img.naturalWidth || 0);
+            const naturalH = Number(img.naturalHeight || 0);
+            if (naturalW > 0 && naturalH > 0) {
+                imagePrefetchState.set(key, {
+                    state: 'ready',
+                    attempts: 0,
+                    nextRetryTs: 0,
+                    error: '',
+                    updatedAt: Date.now(),
+                });
+                return;
+            }
+            const attempts = Number(rec.attempts || 0) + 1;
+            const exp = Math.max(0, Math.min(8, attempts - 1));
+            const delayMs = Math.min(
+                IMAGE_PREFETCH_RETRY_MAX_MS,
+                IMAGE_PREFETCH_RETRY_BASE_MS * Math.pow(2, exp),
+            );
+            imagePrefetchState.set(key, {
+                state: 'error',
+                attempts,
+                nextRetryTs: Date.now() + delayMs,
+                error: 'load_complete_zero_dimensions',
+                updatedAt: Date.now(),
+            });
+            _scheduleImagePrefetchRetry(serial, key, attempts);
+        };
+
+        img.onerror = () => {
+            const current = imagePrefetch.get(key);
+            if (!current || current.img !== img) return;
+            const attempts = Number(rec.attempts || 0) + 1;
+            const exp = Math.max(0, Math.min(8, attempts - 1));
+            const delayMs = Math.min(
+                IMAGE_PREFETCH_RETRY_MAX_MS,
+                IMAGE_PREFETCH_RETRY_BASE_MS * Math.pow(2, exp),
+            );
+            imagePrefetchState.set(key, {
+                state: 'error',
+                attempts,
+                nextRetryTs: Date.now() + delayMs,
+                error: 'load_error',
+                updatedAt: Date.now(),
+            });
+            _scheduleImagePrefetchRetry(serial, key, attempts);
+        };
+
         img.src = url;
-        imagePrefetch.set(url, img);
         if (imagePrefetch.size > IMAGE_PREFETCH_MAX) {
             const overflow = imagePrefetch.size - IMAGE_PREFETCH_MAX;
             const keys = imagePrefetch.keys();
             for (let i = 0; i < overflow; i++) {
-                const key = keys.next().value;
-                if (key) imagePrefetch.delete(key);
+                const evictKey = keys.next().value;
+                if (!evictKey) continue;
+                imagePrefetch.delete(evictKey);
+                imagePrefetchState.delete(evictKey);
+                _clearImagePrefetchRetryTimer(evictKey);
             }
         }
     }
 
     function isPrefetchedImageReady(serial) {
-        if (!serial) return false;
-        const url = buildApiUrl(`/api/labeler/cached_image/${serial}`);
-        const img = imagePrefetch.get(url);
-        return !!(img && img.complete && img.naturalWidth > 0);
+        const key = _imagePrefetchKey(serial);
+        if (!key) return false;
+        const entry = imagePrefetch.get(key);
+        const img = entry && entry.img ? entry.img : null;
+        return !!(img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0);
+    }
+
+    function isPrefetchedImageTerminalError(serial) {
+        const key = _imagePrefetchKey(serial);
+        if (!key) return false;
+        const st = imagePrefetchState.get(key);
+        if (!st || String(st.state || '') !== 'error') return false;
+        return Number(st.attempts || 0) >= IMAGE_PREFETCH_RETRY_MAX_ATTEMPTS;
+    }
+
+    function isPrefetchedImageStalled(serial, minMs = IMAGE_PREFETCH_STALL_BYPASS_MS) {
+        const key = _imagePrefetchKey(serial);
+        if (!key) return false;
+        const st = imagePrefetchState.get(key);
+        if (!st || String(st.state || '') !== 'loading') return false;
+        const updatedAt = Number(st.updatedAt || 0);
+        if (!updatedAt) return false;
+        return (Date.now() - updatedAt) >= Math.max(400, Number(minMs || IMAGE_PREFETCH_STALL_BYPASS_MS));
     }
 
     function getPrefetchedImageState(serial) {
-        if (!serial) return { present: false, complete: false, natural_width: 0, natural_height: 0 };
-        const url = buildApiUrl(`/api/labeler/cached_image/${serial}`);
-        const img = imagePrefetch.get(url);
+        const key = _imagePrefetchKey(serial);
+        if (!key) return { present: false, complete: false, natural_width: 0, natural_height: 0, state: 'idle' };
+        const entry = imagePrefetch.get(key);
+        const img = entry && entry.img ? entry.img : null;
+        const st = imagePrefetchState.get(key) || { state: 'idle', attempts: 0, nextRetryTs: 0, error: '' };
+        const loadingForMs = (
+            String(st.state || '') === 'loading' && Number(st.updatedAt || 0) > 0
+        ) ? Math.max(0, Date.now() - Number(st.updatedAt || 0)) : 0;
         if (!img) {
-            return { present: false, complete: false, natural_width: 0, natural_height: 0 };
+            return {
+                present: false,
+                complete: false,
+                natural_width: 0,
+                natural_height: 0,
+                state: String(st.state || 'idle'),
+                attempts: Number(st.attempts || 0),
+                next_retry_ms: Math.max(0, Number(st.nextRetryTs || 0) - Date.now()),
+                loading_for_ms: loadingForMs,
+                error: String(st.error || ''),
+            };
         }
         return {
             present: true,
@@ -2463,6 +2866,36 @@
             natural_width: Number(img.naturalWidth || 0),
             natural_height: Number(img.naturalHeight || 0),
             current_src: String(img.currentSrc || img.src || ''),
+            state: String(st.state || 'idle'),
+            attempts: Number(st.attempts || 0),
+            next_retry_ms: Math.max(0, Number(st.nextRetryTs || 0) - Date.now()),
+            loading_for_ms: loadingForMs,
+            error: String(st.error || ''),
+        };
+    }
+
+    function resolveDisplayImageUrl(serial) {
+        const sn = Number.parseInt(String(serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0) {
+            return { url: '', source: 'none', intent: 'foreground', prefetch_ready: false };
+        }
+        const key = _imagePrefetchKey(sn);
+        const entry = key ? imagePrefetch.get(key) : null;
+        const prefetchReady = isPrefetchedImageReady(sn);
+        const prefetchedUrl = String(entry?.img?.currentSrc || entry?.url || '').trim();
+        if (prefetchReady && prefetchedUrl) {
+            return {
+                url: prefetchedUrl,
+                source: 'prefetch_ready_reuse',
+                intent: 'prefetch',
+                prefetch_ready: true,
+            };
+        }
+        return {
+            url: buildCachedImageUrl(sn, { intent: 'foreground' }),
+            source: 'foreground_fetch',
+            intent: 'foreground',
+            prefetch_ready: !!prefetchReady,
         };
     }
 
@@ -2544,13 +2977,74 @@
         refImageRetryTimers.set(key, timer);
     }
 
+    const refImageFetchQueue = [];
+    let refImagesLoadingCount = 0;
+    const REF_IMAGE_CONCURRENCY = 15;
+
+    function processRefImageQueue() {
+        if (!labelerActive) return;
+        while (refImagesLoadingCount < REF_IMAGE_CONCURRENCY && refImageFetchQueue.length > 0) {
+            const key = refImageFetchQueue.shift();
+
+            const state = String(refImagePrefetchState.get(key) || '');
+            if (state !== 'queued') continue;
+
+            refImagesLoadingCount++;
+            refImagePrefetchState.set(key, 'loading');
+
+            const img = new Image();
+            img.decoding = 'async';
+            img.loading = 'eager';
+
+            let finished = false;
+            const _onFinish = () => {
+                if (finished) return;
+                finished = true;
+                refImagesLoadingCount--;
+                setTimeout(processRefImageQueue, 10);
+            };
+
+            img.addEventListener('load', () => {
+                refImagePrefetchState.set(key, 'ready');
+                refImagePrefetchRetry.delete(key);
+                _clearRefRetryTimer(key);
+                scheduleRefRenderRefresh();
+                _onFinish();
+            }, { once: true });
+            img.addEventListener('error', () => {
+                refImagePrefetchState.set(key, 'error');
+                refImagePrefetch.delete(key);
+                const retry = _recordRefImageError(key);
+                _scheduleRefImageRetry(key, Number(retry.delayMs || REF_IMAGE_RETRY_BASE_MS));
+                scheduleRefRenderRefresh();
+                _onFinish();
+            }, { once: true });
+
+            refImagePrefetch.set(key, img);
+            img.src = key;
+            if (img.complete) {
+                if (img.naturalWidth > 0) {
+                    refImagePrefetchState.set(key, 'ready');
+                    refImagePrefetchRetry.delete(key);
+                    _clearRefRetryTimer(key);
+                } else {
+                    refImagePrefetchState.set(key, 'error');
+                    refImagePrefetch.delete(key);
+                    const retry = _recordRefImageError(key);
+                    _scheduleRefImageRetry(key, Number(retry.delayMs || REF_IMAGE_RETRY_BASE_MS));
+                }
+                _onFinish();
+            }
+        }
+    }
+
     function prefetchRefImageSrc(src) {
         const key = String(src || '').trim();
         if (!key) return;
         const now = Date.now();
         const state = String(refImagePrefetchState.get(key) || '');
         if (state === 'ready') return;
-        if (state === 'loading' && refImagePrefetch.has(key)) return;
+        if ((state === 'loading' || state === 'queued') && refImagePrefetch.has(key)) return;
         if (state === 'error') {
             const retry = refImagePrefetchRetry.get(key) || {};
             const nextTs = Number(retry.nextTs || 0);
@@ -2561,37 +3055,12 @@
         } else if (refImagePrefetch.has(key)) {
             return;
         }
-        refImagePrefetchState.set(key, 'loading');
-        const img = new Image();
-        img.decoding = 'async';
-        img.loading = 'eager';
-        img.addEventListener('load', () => {
-            refImagePrefetchState.set(key, 'ready');
-            refImagePrefetchRetry.delete(key);
-            _clearRefRetryTimer(key);
-            scheduleRefRenderRefresh();
-        }, { once: true });
-        img.addEventListener('error', () => {
-            refImagePrefetchState.set(key, 'error');
-            refImagePrefetch.delete(key);
-            const retry = _recordRefImageError(key);
-            _scheduleRefImageRetry(key, Number(retry.delayMs || REF_IMAGE_RETRY_BASE_MS));
-            scheduleRefRenderRefresh();
-        }, { once: true });
-        refImagePrefetch.set(key, img);
-        img.src = key;
-        if (img.complete) {
-            if (img.naturalWidth > 0) {
-                refImagePrefetchState.set(key, 'ready');
-                refImagePrefetchRetry.delete(key);
-                _clearRefRetryTimer(key);
-            } else {
-                refImagePrefetchState.set(key, 'error');
-                refImagePrefetch.delete(key);
-                const retry = _recordRefImageError(key);
-                _scheduleRefImageRetry(key, Number(retry.delayMs || REF_IMAGE_RETRY_BASE_MS));
-            }
-        }
+
+        refImagePrefetchState.set(key, 'queued');
+        refImagePrefetch.set(key, { complete: false, naturalWidth: 0 });
+        refImageFetchQueue.push(key);
+        processRefImageQueue();
+
         if (refImagePrefetch.size > REF_IMAGE_PREFETCH_MAX) {
             const overflow = refImagePrefetch.size - REF_IMAGE_PREFETCH_MAX;
             const keys = refImagePrefetch.keys();
@@ -2890,7 +3359,9 @@
             const detectTargets = labelerMode === 'detect' ? warmWindowForMode('detect') : [];
             detectTargets.forEach((item) => prefetchImageSerial(item.serial));
             const classifyTargets = labelerMode === 'classify' ? warmWindowForMode('classify') : [];
-            classifyTargets.forEach((item) => prefetchImageSerial(item.serial));
+            classifyTargets
+                .slice(0, IMAGE_PREFETCH_AHEAD_CLASSIFY)
+                .forEach((item) => prefetchImageSerial(item.serial));
             const manualTargets = labelerMode === 'manual' ? warmWindowForMode('manual') : [];
             manualTargets.forEach((item) => prefetchImageSerial(item.serial));
 
@@ -3066,6 +3537,10 @@
                     pred_cache_hit: !!meta?.pred_cache_hit,
                     classify_warm_ready: !!meta?.classify_warm_ready,
                     drive_like: !!meta?.drive_like,
+                    image_source: String(meta?.image_source || ''),
+                    image_intent: String(meta?.image_intent || ''),
+                    image_prefetch_ready: !!meta?.image_prefetch_ready,
+                    cached_image_path: compactCachedImagePathDiag(currentSerial),
                 });
             }
         }
@@ -3129,9 +3604,15 @@
             retry_count: retryN,
             item_url: itemUrl,
             current_image_url: String(currentImageUrl || ''),
+            image_source: String(queueAdvanceMeta?.image_source || ''),
+            image_intent: String(queueAdvanceMeta?.image_intent || ''),
             drive_like: !!isDriveSource,
+            cached_image_path: compactCachedImagePathDiag(serial),
             image_prefetch_state: getPrefetchedImageState(serial),
         });
+        if (serial) {
+            void probeCachedImagePath(serial, 'foreground', { force: true });
+        }
 
         if (retryN === 0 && serial) {
             imageLoadRetryCount = 1;
@@ -3139,7 +3620,7 @@
             void warmCachedImage(serial);
             if (isDriveSource) {
                 setStatus('Cached image failed - retrying via server proxy...');
-                loadImage(buildApiUrl(`/api/labeler/cached_image/${serial}?proxy=1&retry=${Date.now()}`));
+                loadImage(buildCachedImageUrl(serial, { intent: 'foreground', proxy: true, cacheBust: `retry-${Date.now()}` }));
                 return;
             }
             if (itemUrl.startsWith('http')) {
@@ -3149,14 +3630,14 @@
                 return;
             }
             setStatus('Image load failed - retrying cache...');
-            loadImage(buildApiUrl(`/api/labeler/cached_image/${serial}?retry=${Date.now()}`));
+            loadImage(buildCachedImageUrl(serial, { intent: 'foreground', cacheBust: `retry-${Date.now()}` }));
             return;
         }
 
         if (retryN === 1 && serial && isDriveSource) {
             imageLoadRetryCount = 2;
             setStatus('Retrying server proxy...');
-            loadImage(buildApiUrl(`/api/labeler/cached_image/${serial}?proxy=1&retry2=${Date.now()}`));
+            loadImage(buildCachedImageUrl(serial, { intent: 'foreground', proxy: true, cacheBust: `retry2-${Date.now()}` }));
             return;
         }
 
@@ -3750,6 +4231,9 @@
             pred_cache_hit: false,
             classify_warm_ready: false,
             drive_like: false,
+            image_source: '',
+            image_intent: '',
+            image_prefetch_ready: false,
             item_ready_wait_ms: 0,
             item_ready_wait_ready: false,
         };
@@ -4996,7 +5480,8 @@
 
     function prefetchImages() {
         const start = queueIndex + 1;
-        const end = Math.min(queue.length, start + IMAGE_PREFETCH_AHEAD);
+        const ahead = labelerMode === 'classify' ? IMAGE_PREFETCH_AHEAD_CLASSIFY : IMAGE_PREFETCH_AHEAD;
+        const end = Math.min(queue.length, start + ahead);
         for (let i = start; i < end; i++) {
             const item = queue[i];
             if (!item || !item.serial) continue;
@@ -5263,7 +5748,7 @@
             return;
         }
 
-        const actionKeys = new Set(['backspace', 'y', 'enter', 'n', 'x', 'tab', 'space', '0', '1','2','3','4','5','6','7','8','9']);
+        const actionKeys = new Set(['backspace', 'y', 'enter', 'n', 'x', 'tab', 'space', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
         if (e.repeat && actionKeys.has(key)) return;
 
         //Common

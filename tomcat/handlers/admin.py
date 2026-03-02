@@ -242,20 +242,29 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
         unique_names.append(key)
     target_count = len(unique_names)
 
-    async def _one(nm: str):
-        nonlocal total
-        async with sem:
-            try:
-                await ensure_cat_cache(nm, settings.show_cache_per_cat, prefer_random=True)
-                total += 1
-            except Exception as e:
-                log_action("recache_error", nm, str(e))
-            await asyncio.sleep(0.2)
-
-    from ..services import show_cache as _sc
-    _sc.reset_recentpics_cache()
-
-    await asyncio.gather(*[_one(n) for n in unique_names])
+    from ..services import show_cache as _sc
+    _sc.reset_recentpics_cache()
+
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    for nm in unique_names:
+        queue.put_nowait(nm)
+
+    async def _worker() -> None:
+        nonlocal total
+        while True:
+            try:
+                nm = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            try:
+                await ensure_cat_cache(nm, settings.show_cache_per_cat, prefer_random=True)
+                total += 1
+            except Exception as e:
+                log_action("recache_error", nm, str(e))
+            await asyncio.sleep(0.2)
+
+    concurrency = max(1, settings.show_cache_warm_concurrency)
+    await asyncio.gather(*[_worker() for _ in range(concurrency)])
     try:
         _sc.rebuild_name_index()
     except Exception:

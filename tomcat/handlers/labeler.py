@@ -68,8 +68,73 @@ _identify_sem = asyncio.Semaphore(_IDENTIFY_CONCURRENCY)
 _manual_sem = asyncio.Semaphore(_MANUAL_CONCURRENCY)
 _detect_sem = asyncio.Semaphore(_DETECT_CONCURRENCY)
 _refine_sem = asyncio.Semaphore(_REFINE_CONCURRENCY)
+_HEAVY_CONCURRENCY = max(1, int(os.getenv("LABELER_HEAVY_CONCURRENCY", "3") or "3"))
+_heavy_sem = asyncio.Semaphore(_HEAVY_CONCURRENCY)
 _identify_prefetch_timeout_streak = 0
 _identify_prefetch_backoff_until_mono = 0.0
+
+#Event loop health monitoring
+_loop_lag_ms: float = 0.0
+_loop_lag_max_ms: float = 0.0
+_loop_lag_monitor_started = False
+_LOOP_LAG_INTERVAL_SEC = 2.0
+_LOOP_LAG_LOG_THRESHOLD_MS = 500.0
+
+
+async def _event_loop_lag_monitor() -> None:
+    """Continuously measure event loop responsiveness.
+
+    Sleeps for _LOOP_LAG_INTERVAL_SEC and measures how late the wakeup is.
+    High lag means the event loop is saturated with other work.
+    """
+    global _loop_lag_ms, _loop_lag_max_ms
+    while True:
+        t0 = time.perf_counter()
+        await asyncio.sleep(_LOOP_LAG_INTERVAL_SEC)
+        elapsed = (time.perf_counter() - t0) * 1000.0
+        expected = _LOOP_LAG_INTERVAL_SEC * 1000.0
+        lag = max(0.0, elapsed - expected)
+        _loop_lag_ms = lag
+        _loop_lag_max_ms = max(_loop_lag_max_ms, lag)
+        if lag >= _LOOP_LAG_LOG_THRESHOLD_MS:
+            task_census = _get_task_census()
+            log_action(
+                "labeler_event_loop_lag",
+                f"lag_ms={int(lag)}; max_ms={int(_loop_lag_max_ms)}",
+                f"tasks={task_census}",
+            )
+
+
+def _ensure_loop_lag_monitor() -> None:
+    """Start the event loop lag monitor if not already running."""
+    global _loop_lag_monitor_started
+    if _loop_lag_monitor_started:
+        return
+    _loop_lag_monitor_started = True
+    try:
+        asyncio.create_task(_event_loop_lag_monitor())
+    except Exception:
+        _loop_lag_monitor_started = False
+
+
+def _get_task_census() -> str:
+    """Return a summary of active asyncio tasks by coroutine name."""
+    try:
+        all_tasks = asyncio.all_tasks()
+        counts: Dict[str, int] = {}
+        for t in all_tasks:
+            coro = t.get_coro()
+            name = getattr(coro, "__qualname__", None) or getattr(coro, "__name__", None) or "unknown"
+            #Trim to just the function name for brevity
+            if "." in name:
+                name = name.rsplit(".", 1)[-1]
+            counts[name] = counts.get(name, 0) + 1
+        total = len(all_tasks)
+        top = sorted(counts.items(), key=lambda x: -x[1])[:8]
+        parts = [f"{n}={c}" for n, c in top]
+        return f"total={total}; " + "; ".join(parts)
+    except Exception:
+        return "error"
 _CV_RESULT_TTL_SEC = max(5.0, float(os.getenv("LABELER_CV_RESULT_TTL_SEC", "180") or "180"))
 _DETECT_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_DETECT_RESULT_CACHE_MAX", "1000") or "1000"))
 _REFINE_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_REFINE_RESULT_CACHE_MAX", "1200") or "1200"))
@@ -264,7 +329,35 @@ _QUEUE_CACHE_WARM_COOLDOWN_SEC = max(
     1.0,
     float(os.getenv("LABELER_QUEUE_CACHE_WARM_COOLDOWN_SEC", "8") or "8"),
 )
+_QUEUE_CACHE_WARM_TARGET = max(
+    10,
+    int(os.getenv("LABELER_QUEUE_WARM_TARGET", "360") or "360"),
+)
+_QUEUE_CACHE_WARM_SCAN_LIMIT = max(
+    _QUEUE_CACHE_WARM_TARGET,
+    int(os.getenv("LABELER_QUEUE_WARM_SCAN_LIMIT", "600") or "600"),
+)
+_BATCH_WARM_ENABLE = str(
+    os.getenv("LABELER_BATCH_WARM_ENABLE", "1")
+).strip().lower() in {"1", "true", "yes", "on"}
+_BOOT_WARM_ENABLE = str(
+    os.getenv("LABELER_BOOT_WARM_ENABLE", "1")
+).strip().lower() in {"1", "true", "yes", "on"}
+_BOOT_WARM_BUDGET_GB = max(
+    0.5,
+    float(os.getenv("LABELER_BOOT_WARM_BUDGET_GB", "12") or "12"),
+)
+_BOOT_WARM_SCAN_LIMIT = max(
+    100,
+    int(os.getenv("LABELER_BOOT_WARM_SCAN_LIMIT", "1500") or "1500"),
+)
+_BOOT_WARM_CONCURRENCY = max(
+    1,
+    int(os.getenv("LABELER_BOOT_WARM_CONCURRENCY", "4") or "4"),
+)
 _queue_cache_warm_next_mono: Dict[str, float] = {"detect": 0.0, "classify": 0.0, "manual": 0.0}
+_boot_cache_warm_task: Optional[asyncio.Task] = None
+_boot_cache_warm_started: bool = False
 
 
 def _parse_serial(val: str) -> Optional[int]:
@@ -791,11 +884,91 @@ def _maybe_schedule_queue_cache_warm(mode: str, queue: List[Dict[str, Any]]) -> 
     if now < float(_queue_cache_warm_next_mono.get(key, 0.0)):
         return
     _queue_cache_warm_next_mono[key] = now + float(_QUEUE_CACHE_WARM_COOLDOWN_SEC)
-    warm_target = min(25, len(queue))
+    warm_target = min(int(_QUEUE_CACHE_WARM_TARGET), len(queue))
+    scan_limit = min(int(_QUEUE_CACHE_WARM_SCAN_LIMIT), len(queue))
     try:
-        asyncio.create_task(labeler_cache.ensure_cache_filled(queue[:60], target_count=warm_target))
+        asyncio.create_task(
+            labeler_cache.ensure_cache_filled(
+                queue[:scan_limit],
+                target_count=warm_target,
+                scan_limit=scan_limit,
+            )
+        )
     except Exception:
         pass
+
+
+def _queue_items_from_rows(rows: List[List[str]], *, mode: str = "boot", max_items: int = 0) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen: Set[int] = set()
+    mode_s = str(mode or "boot").strip().lower()
+    for row in rows[1:]:
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+        if sn is None or int(sn) <= 0:
+            continue
+        if int(sn) in seen:
+            continue
+        url = str(row[COL_URL] if len(row) > COL_URL else "").strip()
+        if not url.startswith("http"):
+            continue
+        box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
+        labels = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
+        include = True
+        if mode_s == "detect":
+            include = (not box_coords) or (box_coords.lower() == "rejected")
+        elif mode_s == "classify":
+            include = bool(box_coords) and box_coords.lower() != "rejected"
+        elif mode_s == "manual":
+            include = bool(box_coords) and bool(labels)
+        if not include:
+            continue
+        seen.add(int(sn))
+        out.append({"serial": int(sn), "url": url})
+        if max_items > 0 and len(out) >= int(max_items):
+            break
+    out.sort(key=lambda item: int(item.get("serial") or 0))
+    return out
+
+
+def _kickoff_boot_cache_warm_once() -> None:
+    """Start one boot-time cache warm task (best effort)."""
+    global _boot_cache_warm_task, _boot_cache_warm_started
+    if not _BOOT_WARM_ENABLE:
+        return
+    if _boot_cache_warm_started:
+        return
+    if _boot_cache_warm_task and not _boot_cache_warm_task.done():
+        return
+    _boot_cache_warm_started = True
+
+    async def _runner() -> None:
+        try:
+            rows = await _get_tcb_rows_async(ttl_sec=120)
+            boot_items = _queue_items_from_rows(rows, mode="boot", max_items=int(_BOOT_WARM_SCAN_LIMIT))
+            if not boot_items:
+                return
+            target_guess = labeler_cache.estimate_cache_target_from_budget(float(_BOOT_WARM_BUDGET_GB))
+            target = max(int(_QUEUE_CACHE_WARM_TARGET), min(int(target_guess), len(boot_items)))
+            await labeler_cache.ensure_cache_filled(
+                boot_items,
+                target_count=target,
+                scan_limit=min(len(boot_items), int(_BOOT_WARM_SCAN_LIMIT)),
+                concurrency=max(1, int(_BOOT_WARM_CONCURRENCY)),
+            )
+            log_action(
+                "labeler_boot_cache_warm_done",
+                "boot",
+                f"target={target}; scanned={min(len(boot_items), int(_BOOT_WARM_SCAN_LIMIT))}",
+            )
+        except Exception as e:
+            log_action("labeler_boot_cache_warm_error", "error", f"{type(e).__name__}: {e!r}")
+
+    try:
+        _boot_cache_warm_task = asyncio.create_task(_runner())
+    except Exception:
+        _boot_cache_warm_task = None
 
 
 def _normalize_header_token(text: str) -> str:
@@ -1315,11 +1488,7 @@ def _map_identify_candidate_refs_to_sheet(
     cached_first: List[Tuple[int, int, str]] = []
     uncached: List[Tuple[int, int, str]] = []
     for serial, crop, box in valid:
-        is_cached = False
-        try:
-            is_cached = bool(labeler_cache.has_cached_image(int(serial)))
-        except Exception:
-            is_cached = False
+        is_cached = int(serial) in labeler_cache._cached_serials
         if is_cached:
             cached_first.append((serial, crop, box))
         else:
@@ -1396,12 +1565,9 @@ def _fallback_refs_for_cat(
 
         def _is_cached_entry(ent: Dict[str, Any]) -> bool:
             sn = ent.get("serial")
-            try:
-                if sn is None:
-                    return False
-                return bool(labeler_cache.has_cached_image(int(sn)))
-            except Exception:
+            if sn is None:
                 return False
+            return int(sn) in labeler_cache._cached_serials
 
         for ent in cropped:
             if _is_cached_entry(ent):
@@ -1510,7 +1676,7 @@ async def _materialize_fallback_refs(
             data: Optional[bytes] = None
             if serial is not None:
                 try:
-                    data = labeler_cache.get_cached_image(int(serial))
+                    data = await labeler_cache.get_cached_image_async(int(serial))
                 except Exception:
                     data = None
             image_cache[key] = data
@@ -1938,7 +2104,7 @@ async def _fetch_image_bytes_for_labeler(
 
     if serial_i is not None:
         try:
-            data = labeler_cache.get_cached_image(serial_i)
+            data = await labeler_cache.get_cached_image_async(serial_i)
         except Exception:
             data = None
     if data:
@@ -2059,17 +2225,24 @@ def _kickoff_fallback_ref_cache_warm(candidates: List[Tuple[int, str]], *, max_i
         return 0
 
     async def _runner(rows: List[Tuple[int, str]]) -> None:
-        sem = asyncio.Semaphore(4)
+        queue: asyncio.Queue[Tuple[int, str]] = asyncio.Queue()
+        for r in rows:
+            queue.put_nowait(r)
 
-        async def _one(sn: int, u: str) -> None:
-            async with sem:
+        async def _worker() -> None:
+            while True:
+                try:
+                    sn, u = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
                 try:
                     await labeler_cache.get_or_download(int(sn), str(u))
                 except Exception:
                     pass
 
         try:
-            await asyncio.gather(*[_one(sn, u) for sn, u in rows])
+            concurrency = 4
+            await asyncio.gather(*[_worker() for _ in range(concurrency)])
         except Exception:
             pass
 
@@ -2646,27 +2819,34 @@ async def _get_tcb_rows_async(*, force: bool = False, ttl_sec: int = 60) -> List
 async def get_queue_detect(request: web.Request) -> web.Response:
     """Return list of serials needing detector labels (empty BoxCoordinates)."""
     try:
+        _kickoff_boot_cache_warm_once()
         _kick_detector_warm_task()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
         rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
-        queue = []
-        for row in rows[1:]:  #Skip header
-            if len(row) <= COL_SERIAL:
-                continue
-            sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-            if sn is None:
-                continue
-            claim = claims.get(("detect", int(sn)))
-            if claim and str(claim.get("user_id") or "") != user_id:
-                continue
-            box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
-            if not box_coords.strip():
-                url = row[COL_URL] if len(row) > COL_URL else ""
-                if url.startswith("http"):
-                    queue.append({"serial": sn, "url": url})
-        queue.sort(key=lambda item: int(item.get("serial") or 0))
+        def _parse_queue_detect_candidates(
+            in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
+        ) -> List[Dict[str, Any]]:
+            out_queue: List[Dict[str, Any]] = []
+            for row in in_rows[1:]:  #Skip header
+                if len(row) <= COL_SERIAL:
+                    continue
+                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+                if sn is None:
+                    continue
+                claim = in_claims.get(("detect", int(sn)))
+                if claim and str(claim.get("user_id") or "") != in_user_id:
+                    continue
+                box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
+                if not box_coords.strip():
+                    url = row[COL_URL] if len(row) > COL_URL else ""
+                    if url.startswith("http"):
+                        out_queue.append({"serial": sn, "url": url})
+            out_queue.sort(key=lambda item: int(item.get("serial") or 0))
+            return out_queue
+
+        queue = await asyncio.to_thread(_parse_queue_detect_candidates, rows, claims, user_id)
         total = len(queue)
         #Trigger background cache fill for first images in queue (throttled)
         _maybe_schedule_queue_cache_warm("detect", queue)
@@ -2679,56 +2859,66 @@ async def get_queue_detect(request: web.Request) -> web.Response:
 async def get_queue_classify(request: web.Request) -> web.Response:
     """Return serials with boxes but incomplete cat IDs."""
     try:
+        _kickoff_boot_cache_warm_once()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
         rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
+        rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
+        t0 = time.perf_counter()
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
-        queue: List[Dict[str, Any]] = []
-        candidates: List[Dict[str, Any]] = []
-        skipped_low_quality = 0
-        for row in rows[1:]:
-            if len(row) <= COL_SERIAL:
-                continue
-            sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-            if sn is None:
-                continue
-            claim = claims.get(("classify", int(sn)))
-            if claim and str(claim.get("user_id") or "") != user_id:
-                continue
-            box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
-            box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
-            
-            #Skip if no boxes, rejected, or empty
-            if not box_coords.strip() or box_coords.strip().lower() == "rejected":
-                continue
-            
-            # Count only valid YOLO boxes to keep queue math aligned with identify parsing.
-            parsed_boxes = [
-                b
-                for b in (str(box_coords).split("|") if box_coords else [])
-                if _parse_yolo_box_str(str(b).strip()) is not None
-            ]
-            num_boxes = len(parsed_boxes)
-            if num_boxes <= 0:
-                continue
-            labels = box_cat_ids.split("|") if box_cat_ids else []
-            num_labeled = 0
-            for idx in range(min(num_boxes, len(labels))):
-                if str(labels[idx] or "").strip():
-                    num_labeled += 1
-            
-            if num_labeled < num_boxes:
-                url = row[COL_URL] if len(row) > COL_URL else ""
-                if url.startswith("http"):
-                    candidates.append({
-                        "serial": sn,
-                        "url": url,
-                        "boxes": box_coords,
-                        "labels": box_cat_ids,
-                        "num_boxes": num_boxes,
-                        "num_labeled": num_labeled,
-                    })
 
+        def _parse_queue_classify_candidates(
+            in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
+        ) -> List[Dict[str, Any]]:
+            out_candidates: List[Dict[str, Any]] = []
+            for row in in_rows[1:]:
+                if len(row) <= COL_SERIAL:
+                    continue
+                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+                if sn is None:
+                    continue
+                claim = in_claims.get(("classify", int(sn)))
+                if claim and str(claim.get("user_id") or "") != in_user_id:
+                    continue
+                box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
+                box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
+                
+                if not box_coords.strip() or box_coords.strip().lower() == "rejected":
+                    continue
+                
+                parsed_boxes = [
+                    b
+                    for b in (str(box_coords).split("|") if box_coords else [])
+                    if _parse_yolo_box_str(str(b).strip()) is not None
+                ]
+                num_boxes = len(parsed_boxes)
+                if num_boxes <= 0:
+                    continue
+                labels = box_cat_ids.split("|") if box_cat_ids else []
+                num_labeled = 0
+                for idx in range(min(num_boxes, len(labels))):
+                    if str(labels[idx] or "").strip():
+                        num_labeled += 1
+                
+                if num_labeled < num_boxes:
+                    url = row[COL_URL] if len(row) > COL_URL else ""
+                    if url.startswith("http"):
+                        out_candidates.append({
+                            "serial": sn,
+                            "url": url,
+                            "boxes": box_coords,
+                            "labels": box_cat_ids,
+                            "num_boxes": num_boxes,
+                            "num_labeled": num_labeled,
+                        })
+            return out_candidates
+
+        candidates = await asyncio.to_thread(
+            _parse_queue_classify_candidates, rows, claims, user_id
+        )
+
+        queue: List[Dict[str, Any]] = []
+        skipped_low_quality = 0
         auto_reject_items: List[Dict[str, Any]] = []
         pending_items: List[Dict[str, Any]] = []
         for item in candidates:
@@ -2745,11 +2935,13 @@ async def get_queue_classify(request: web.Request) -> web.Response:
                 auto_reject_items.append({
                     "serial": int(item.get("serial") or 0),
                     "num_boxes": int(item.get("num_boxes") or 0),
-                    "reason": ",".join((meta or {}).get("reasons") or []),
-                    "pixels": int((meta or {}).get("pixels") or 0),
-                    "blur": float((meta or {}).get("blur") or 0.0),
+                    "url": str(item.get("url") or ""),
+                    "reason": str((meta or {}).get("reason") or "quality_filter"),
                 })
-
+        
+        t1 = time.perf_counter()
+        if (t1 - t0) > 0.1:
+            log_action("labeler_queue_classify_slow", "get_queue_classify", f"total_ms={int((t1-t0)*1000)}; candidates={len(candidates)}; queue={len(queue)}")
         # Evaluate only a small subset synchronously to keep queue endpoint fast.
         sync_n = min(len(pending_items), int(_CLASSIFY_PREFILTER_MAX_SYNC_ITEMS))
         sync_items = pending_items[:sync_n]
@@ -2824,47 +3016,54 @@ async def get_queue_classify(request: web.Request) -> web.Response:
 async def get_queue_manual(request: web.Request) -> web.Response:
     """Return serials with one or more crops marked NeedsReview."""
     try:
+        _kickoff_boot_cache_warm_once()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
         rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
-        queue: List[Dict[str, Any]] = []
-        for row in rows[1:]:
-            if len(row) <= COL_SERIAL:
-                continue
-            sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-            if sn is None:
-                continue
-            claim = claims.get(("manual", int(sn)))
-            if claim and str(claim.get("user_id") or "") != user_id:
-                continue
-            box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
-            box_cat_ids = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
-            if not box_coords or box_coords.lower() == "rejected" or not box_cat_ids:
-                continue
-            coords = [c.strip() for c in box_coords.split("|")]
-            labels = [l.strip() for l in box_cat_ids.split("|")]
-            if not coords or not labels:
-                continue
-            review_indices = [
-                idx for idx in range(min(len(coords), len(labels)))
-                if _is_needs_review_label(labels[idx])
-            ]
-            if not review_indices:
-                continue
-            url = row[COL_URL] if len(row) > COL_URL else ""
-            if not str(url).startswith("http"):
-                continue
-            queue.append({
-                "serial": sn,
-                "url": url,
-                "boxes": box_coords,
-                "labels": box_cat_ids,
-                "num_boxes": len(coords),
-                "review_indices": review_indices,
-                "num_review": len(review_indices),
-            })
-        queue.sort(key=lambda item: int(item.get("serial") or 0))
+        def _parse_queue_manual_candidates(
+            in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
+        ) -> List[Dict[str, Any]]:
+            out_queue: List[Dict[str, Any]] = []
+            for row in in_rows[1:]:
+                if len(row) <= COL_SERIAL:
+                    continue
+                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+                if sn is None:
+                    continue
+                claim = in_claims.get(("manual", int(sn)))
+                if claim and str(claim.get("user_id") or "") != in_user_id:
+                    continue
+                box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
+                box_cat_ids = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
+                if not box_coords or box_coords.lower() == "rejected" or not box_cat_ids:
+                    continue
+                coords = [c.strip() for c in box_coords.split("|")]
+                labels = [l.strip() for l in box_cat_ids.split("|")]
+                if not coords or not labels:
+                    continue
+                review_indices = [
+                    idx for idx in range(min(len(coords), len(labels)))
+                    if _is_needs_review_label(labels[idx])
+                ]
+                if not review_indices:
+                    continue
+                url = row[COL_URL] if len(row) > COL_URL else ""
+                if not str(url).startswith("http"):
+                    continue
+                out_queue.append({
+                    "serial": sn,
+                    "url": url,
+                    "boxes": box_coords,
+                    "labels": box_cat_ids,
+                    "num_boxes": len(coords),
+                    "review_indices": review_indices,
+                    "num_review": len(review_indices),
+                })
+            out_queue.sort(key=lambda item: int(item.get("serial") or 0))
+            return out_queue
+
+        queue = await asyncio.to_thread(_parse_queue_manual_candidates, rows, claims, user_id)
         total = len(queue)
         _maybe_schedule_queue_cache_warm("manual", queue)
         return _with_cors(web.json_response({"queue": queue[:500], "total": total}), request)
@@ -2882,18 +3081,24 @@ async def get_image(request: web.Request) -> web.Response:
             return _with_cors(web.Response(status=400, text="Invalid serial"), request)
         
         rows = await _get_tcb_rows_async(ttl_sec=60)
-        for row in rows[1:]:
-            if len(row) <= COL_SERIAL:
-                continue
-            row_sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-            if row_sn == sn:
-                return _with_cors(web.json_response({
-                    "serial": sn,
-                    "url": row[COL_URL] if len(row) > COL_URL else "",
-                    "cat_id": row[COL_CAT_ID] if len(row) > COL_CAT_ID else "",
-                    "box_coords": row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "",
-                    "box_cat_ids": row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "",
-                }), request)
+        def _get_image_data_from_rows(in_rows: List[List[str]], target_sn: int) -> Optional[Dict[str, Any]]:
+            for row in in_rows[1:]:
+                if len(row) <= COL_SERIAL:
+                    continue
+                row_sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+                if row_sn == target_sn:
+                    return {
+                        "serial": target_sn,
+                        "url": row[COL_URL] if len(row) > COL_URL else "",
+                        "cat_id": row[COL_CAT_ID] if len(row) > COL_CAT_ID else "",
+                        "box_coords": row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "",
+                        "box_cat_ids": row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "",
+                    }
+            return None
+
+        data = await asyncio.to_thread(_get_image_data_from_rows, rows, sn)
+        if data:
+            return _with_cors(web.json_response(data), request)
         
         return _with_cors(web.Response(status=404, text="Serial not found"), request)
     except Exception as e:
@@ -2910,22 +3115,26 @@ async def get_cached_image(request: web.Request) -> web.Response:
         if sn is None:
             return _with_cors(web.Response(status=400, text="Invalid serial"), request)
         
-        #Try cache first
-        data = labeler_cache.get_cached_image(sn)
+        #Try cache first (non-blocking)
+        data = await labeler_cache.get_cached_image_async(sn)
         if data:
             resp = web.Response(body=data, content_type="image/jpeg")
+            resp.headers["X-Labeler-Image-Path"] = "hit"
             return _with_cors(resp, request)
         
         #Not cached - look up URL and download directly
         rows = await _get_tcb_rows_async(ttl_sec=60)
-        url = None
-        for row in rows[1:]:
-            if len(row) <= COL_SERIAL:
-                continue
-            row_sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-            if row_sn == sn:
-                url = row[COL_URL] if len(row) > COL_URL else ""
-                break
+        
+        def _find_url_in_rows(in_rows: List[List[str]], target_sn: int) -> Optional[str]:
+            for row in in_rows[1:]:
+                if len(row) <= COL_SERIAL:
+                    continue
+                row_sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+                if row_sn == target_sn:
+                    return row[COL_URL] if len(row) > COL_URL else ""
+            return None
+
+        url = await asyncio.to_thread(_find_url_in_rows, rows, sn)
         
         if not url or not url.startswith("http"):
             return _with_cors(web.Response(status=404, text="Image URL not found"), request)
@@ -2937,6 +3146,11 @@ async def get_cached_image(request: web.Request) -> web.Response:
             or "drive.usercontent.google.com" in lower_url
             or "googleusercontent.com" in lower_url
         )
+        intent = str(request.query.get("intent") or "foreground").strip().lower()
+        if intent not in {"prefetch", "foreground"}:
+            intent = "foreground"
+        foreground_intent = intent == "foreground"
+        prefetch_intent = intent == "prefetch"
         force_proxy = str(request.query.get("proxy") or "").strip().lower() in {"1", "true", "yes", "on"}
         drive_proxy_backoff_active = (
             is_drive_like
@@ -2946,56 +3160,69 @@ async def get_cached_image(request: web.Request) -> web.Response:
 
         # For Drive-backed images, prefer a server-side proxy fetch on cache miss.
         # This avoids browser-side Drive image failures that can cause queue skips.
-        if (is_drive_like or force_proxy) and (not drive_proxy_backoff_active):
-            proxy_t0 = time.perf_counter()
-            proxy_data: Optional[bytes] = None
-            proxy_status = "miss"
-            proxy_timeout_sec = 18.0 if force_proxy else 10.0
-            try:
-                proxy_data = await asyncio.wait_for(
-                    _fetch_image_bytes_for_labeler(int(sn), url_s, bypass_backoff=force_proxy),
-                    timeout=proxy_timeout_sec,
-                )
-                proxy_status = "ok" if proxy_data else "empty"
-            except asyncio.TimeoutError:
-                proxy_status = "timeout"
-            except Exception as e:
-                proxy_status = f"error:{type(e).__name__}"
+        # Important: skip slow proxy attempts for prefetch traffic to avoid building
+        # long request backlogs that can delay lightweight claim calls.
+        allow_proxy_attempt = bool(force_proxy or (is_drive_like and foreground_intent))
+        if allow_proxy_attempt:
+            async with _heavy_sem:
+                proxy_t0 = time.perf_counter()
+                proxy_data: Optional[bytes] = None
+                proxy_status = "miss"
+                proxy_timeout_sec = 18.0 if force_proxy else (3.5 if foreground_intent else 10.0)
+                proxy_bypass_backoff = bool(force_proxy or foreground_intent)
+                try:
+                    proxy_data = await asyncio.wait_for(
+                        _fetch_image_bytes_for_labeler(int(sn), url_s, bypass_backoff=proxy_bypass_backoff),
+                        timeout=proxy_timeout_sec,
+                    )
+                    proxy_status = "ok" if proxy_data else "empty"
+                except asyncio.TimeoutError:
+                    proxy_status = "timeout"
+                except Exception as e:
+                    proxy_status = f"error:{type(e).__name__}"
+                    log_action(
+                        "labeler_cached_image_proxy_error",
+                        f"sn={int(sn)}",
+                        f"forced={1 if force_proxy else 0}; drive={1 if is_drive_like else 0}; {type(e).__name__}: {e!r}",
+                    )
+                proxy_ms = int(round((time.perf_counter() - proxy_t0) * 1000.0))
+                if proxy_data:
+                    if is_drive_like:
+                        _DRIVE_PROXY_FAIL_STREAK = 0
+                        _DRIVE_PROXY_BACKOFF_UNTIL_MONO = 0.0
+                    resp = web.Response(body=proxy_data, content_type="image/jpeg")
+                    resp.headers["Cache-Control"] = "no-store"
+                    resp.headers["X-Labeler-Cache"] = "miss-proxy"
+                    proxy_path = str(labeler_cache.get_last_fetch_path(int(sn)) or "").strip().lower()
+                    if proxy_path in {"drive_api", "drive_api_fallback"}:
+                        resp.headers["X-Labeler-Image-Path"] = proxy_path
+                    elif force_proxy:
+                        resp.headers["X-Labeler-Image-Path"] = "proxy_forced"
+                    else:
+                        resp.headers["X-Labeler-Image-Path"] = "proxy"
+                    return _with_cors(resp, request)
+                if is_drive_like and not force_proxy:
+                    _DRIVE_PROXY_FAIL_STREAK = min(8, int(_DRIVE_PROXY_FAIL_STREAK) + 1)
+                    step = max(0, int(_DRIVE_PROXY_FAIL_STREAK) - 1)
+                    delay = min(
+                        float(_DRIVE_PROXY_BACKOFF_MAX_SEC),
+                        float(_DRIVE_PROXY_BACKOFF_BASE_SEC) * float(2 ** step),
+                    )
+                    _DRIVE_PROXY_BACKOFF_UNTIL_MONO = max(
+                        float(_DRIVE_PROXY_BACKOFF_UNTIL_MONO),
+                        time.monotonic() + float(delay),
+                    )
                 log_action(
-                    "labeler_cached_image_proxy_error",
+                    "labeler_cached_image_proxy_fail",
                     f"sn={int(sn)}",
-                    f"forced={1 if force_proxy else 0}; drive={1 if is_drive_like else 0}; {type(e).__name__}: {e!r}",
+                    (
+                        f"ms={proxy_ms}; status={proxy_status}; "
+                        f"forced={1 if force_proxy else 0}; drive={1 if is_drive_like else 0}; "
+                        f"intent={intent}; bypass={1 if proxy_bypass_backoff else 0}"
+                    ),
                 )
-            proxy_ms = int(round((time.perf_counter() - proxy_t0) * 1000.0))
-            if proxy_data:
-                if is_drive_like:
-                    _DRIVE_PROXY_FAIL_STREAK = 0
-                    _DRIVE_PROXY_BACKOFF_UNTIL_MONO = 0.0
-                resp = web.Response(body=proxy_data, content_type="image/jpeg")
-                resp.headers["Cache-Control"] = "no-store"
-                resp.headers["X-Labeler-Cache"] = "miss-proxy"
-                return _with_cors(resp, request)
-            if is_drive_like and not force_proxy:
-                _DRIVE_PROXY_FAIL_STREAK = min(8, int(_DRIVE_PROXY_FAIL_STREAK) + 1)
-                step = max(0, int(_DRIVE_PROXY_FAIL_STREAK) - 1)
-                delay = min(
-                    float(_DRIVE_PROXY_BACKOFF_MAX_SEC),
-                    float(_DRIVE_PROXY_BACKOFF_BASE_SEC) * float(2 ** step),
-                )
-                _DRIVE_PROXY_BACKOFF_UNTIL_MONO = max(
-                    float(_DRIVE_PROXY_BACKOFF_UNTIL_MONO),
-                    time.monotonic() + float(delay),
-                )
-            log_action(
-                "labeler_cached_image_proxy_fail",
-                f"sn={int(sn)}",
-                (
-                    f"ms={proxy_ms}; status={proxy_status}; "
-                    f"forced={1 if force_proxy else 0}; drive={1 if is_drive_like else 0}"
-                ),
-            )
-            if force_proxy:
-                return _with_cors(web.Response(status=503, text="Image proxy fetch failed"), request)
+                if force_proxy:
+                    return _with_cors(web.Response(status=503, text="Image proxy fetch failed"), request)
         elif drive_proxy_backoff_active:
             pass
 
@@ -3006,8 +3233,8 @@ async def get_cached_image(request: web.Request) -> web.Response:
                 await labeler_cache.get_or_download(
                     int(sn),
                     str(url),
-                    bypass_backoff=False,
-                    max_attempts=3,
+                    bypass_backoff=bool(foreground_intent),
+                    max_attempts=1 if prefetch_intent else 3,
                 )
             except Exception:
                 pass
@@ -3028,6 +3255,7 @@ async def get_cached_image(request: web.Request) -> web.Response:
         resp.headers["Location"] = url_s
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["X-Labeler-Cache"] = "miss-redirect"
+        resp.headers["X-Labeler-Image-Path"] = "redirect"
         return _with_cors(resp, request)
     except Exception as e:
         log_action("labeler_cached_image_error", "error", str(e))
@@ -3083,13 +3311,14 @@ async def get_ref_crop(request: web.Request) -> web.Response:
             _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
             return _with_cors(web.Response(status=404, text="Crop coordinates missing"), request)
 
-        image_bytes = labeler_cache.get_cached_image(int(sn))
+        image_bytes = await labeler_cache.get_cached_image_async(int(sn))
         if not image_bytes:
-            image_bytes = await _fetch_image_bytes_for_labeler(
-                int(sn),
-                str(entry.get("url") or ""),
-                bypass_backoff=True,
-            )
+            async with _heavy_sem:
+                image_bytes = await _fetch_image_bytes_for_labeler(
+                    int(sn),
+                    str(entry.get("url") or ""),
+                    bypass_backoff=True,
+                )
         if not image_bytes:
             _log_ref_crop_miss(int(sn), int(crop_num), "image_unavailable")
             # Treat source-image fetch failures as transient; avoid long false negatives.
@@ -3168,8 +3397,8 @@ async def post_ui_diag(request: web.Request) -> web.Response:
             mode = str(data.get("mode") or "").strip().lower()[:24]
             serial = _parse_serial(str(data.get("serial") or ""))
             detail = str(data.get("detail") or data.get("details") or "").strip()
-            if len(detail) > 800:
-                detail = detail[:800]
+            if len(detail) > 2000:
+                detail = detail[:2000]
             user_id, actor = _actor_from_request(request)
             log_action(
                 f"labeler_ui_{event}",
@@ -3183,12 +3412,15 @@ async def post_ui_diag(request: web.Request) -> web.Response:
 
 async def post_claim(request: web.Request) -> web.Response:
     """Acquire/heartbeat/release a claim for a queue item in detect/classify/manual mode."""
+    _ensure_loop_lag_monitor()
     try:
         t0 = time.perf_counter()
+        loop_lag_at_entry = _loop_lag_ms
         try:
             data = await request.json()
         except Exception:
             data = {}
+        t_json = time.perf_counter()
         mode = str(data.get("mode") or "detect").strip().lower()
         if mode not in {"detect", "classify", "manual"}:
             return _with_cors(web.Response(status=400, text="Invalid mode"), request)
@@ -3223,31 +3455,25 @@ async def post_claim(request: web.Request) -> web.Response:
                 "serial": int(serial),
             }), request)
 
+        t_pre_acquire = time.perf_counter()
         granted, owner = await _acquire_claim(mode, int(serial), user_id, username)
-        dt_ms = int(round((time.perf_counter() - t0) * 1000.0))
-        if not granted:
-            ttl_left_ms = 0
-            try:
-                ttl_left_ms = max(
-                    0,
-                    int(round((float(owner.get("expires_at") or 0.0) - time.monotonic()) * 1000.0)),
-                )
-            except Exception:
-                ttl_left_ms = 0
-            log_action(
-                "labeler_claim_denied",
-                f"mode={mode}; action={action}; serial={int(serial)}; uid={user_id}",
-                (
-                    f"owner={str(owner.get('username') or '')[:48]}; "
-                    f"ttl_left_ms={ttl_left_ms}; ms={dt_ms}"
-                ),
-            )
-        elif dt_ms >= 800:
-            log_action(
-                "labeler_claim_acquire_slow",
-                f"mode={mode}; action={action}; serial={int(serial)}; uid={user_id}",
-                f"ms={dt_ms}; granted=1",
-            )
+        t_post_acquire = time.perf_counter()
+        dt_ms = int(round((t_post_acquire - t0) * 1000.0))
+        json_ms = int(round((t_json - t0) * 1000.0))
+        acquire_ms = int(round((t_post_acquire - t_pre_acquire) * 1000.0))
+        task_census = _get_task_census()
+        dl_stats = labeler_cache.get_download_stats()
+
+        #Always log claim timing for diagnostic purposes
+        log_action(
+            "labeler_claim_diag",
+            f"mode={mode}; serial={int(serial)}; action={action}",
+            (
+                f"total_ms={dt_ms}; json_ms={json_ms}; acquire_ms={acquire_ms}; "
+                f"loop_lag_ms={int(loop_lag_at_entry)}; granted={1 if granted else 0}; "
+                f"dl=[{dl_stats}]; {task_census}"
+            ),
+        )
         return _with_cors(web.json_response({
             "ok": True,
             "granted": bool(granted),
@@ -3312,7 +3538,7 @@ async def post_detect(request: web.Request) -> web.Response:
         
         #Try cache first if serial provided
         if serial_i is not None:
-            image_bytes = labeler_cache.get_cached_image(int(serial_i))
+            image_bytes = await labeler_cache.get_cached_image_async(int(serial_i))
             if image_bytes:
                 image_source = "cache"
 
@@ -3504,7 +3730,7 @@ async def post_refine(request: web.Request) -> web.Response:
 
         image_bytes = None
         if serial_i is not None:
-            image_bytes = labeler_cache.get_cached_image(int(serial_i))
+            image_bytes = await labeler_cache.get_cached_image_async(int(serial_i))
 
         if serial_i is not None and not image_bytes and not url:
             rows = await _get_tcb_rows_async(ttl_sec=60)
@@ -3743,7 +3969,7 @@ async def post_identify(request: web.Request) -> web.Response:
             image_bytes = None
             if serial_i is not None:
                 try:
-                    image_bytes = labeler_cache.get_cached_image(int(serial_i))
+                    image_bytes = await labeler_cache.get_cached_image_async(int(serial_i))
                     if image_bytes:
                         image_source = "cache"
                 except Exception:
@@ -4064,7 +4290,7 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
         image_bytes = None
         if serial_i is not None:
             try:
-                image_bytes = labeler_cache.get_cached_image(int(serial_i))
+                image_bytes = await labeler_cache.get_cached_image_async(int(serial_i))
             except Exception:
                 image_bytes = None
 
@@ -4508,6 +4734,104 @@ async def post_gallery_retrain_schedule_api(request: web.Request) -> web.Respons
         return _with_cors(web.Response(status=500, text=str(e)), request)
 
 
+async def post_cache_warm(request: web.Request) -> web.Response:
+    """Queue a batch cache warm for labeler source images."""
+    try:
+        if not _BATCH_WARM_ENABLE:
+            return _with_cors(
+                web.json_response({"accepted": False, "queued": 0, "in_flight": labeler_cache.download_inflight_count(), "cache_target": 0}),
+                request,
+            )
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        mode = str(data.get("mode") or "boot").strip().lower()
+        if mode not in {"detect", "classify", "manual", "boot"}:
+            mode = "boot"
+        raw_items = data.get("items")
+        scan_limit = int(data.get("scan_limit") or _QUEUE_CACHE_WARM_SCAN_LIMIT)
+        scan_limit = max(10, min(scan_limit, 5000))
+        target_raw = int(data.get("target_count") or 0)
+        priority = str(data.get("priority") or "normal").strip().lower()
+        if priority not in {"low", "normal", "high"}:
+            priority = "normal"
+
+        items: List[Dict[str, Any]] = []
+        if isinstance(raw_items, list) and raw_items:
+            seen: Set[int] = set()
+            for it in raw_items:
+                if not isinstance(it, dict):
+                    continue
+                try:
+                    sn = int(it.get("serial") or 0)
+                except Exception:
+                    sn = 0
+                url = str(it.get("url") or "").strip()
+                if sn <= 0 or not url.startswith("http") or sn in seen:
+                    continue
+                seen.add(sn)
+                items.append({"serial": sn, "url": url})
+                if len(items) >= scan_limit:
+                    break
+        else:
+            rows = await _get_tcb_rows_async(ttl_sec=120)
+            items = _queue_items_from_rows(rows, mode=mode, max_items=scan_limit)
+
+        if not items:
+            return _with_cors(
+                web.json_response(
+                    {
+                        "accepted": True,
+                        "queued": 0,
+                        "in_flight": labeler_cache.download_inflight_count(),
+                        "cache_target": 0,
+                    }
+                ),
+                request,
+            )
+
+        if target_raw > 0:
+            target = min(target_raw, len(items))
+        elif mode == "boot":
+            target = min(labeler_cache.estimate_cache_target_from_budget(float(_BOOT_WARM_BUDGET_GB)), len(items))
+        else:
+            target = min(int(_QUEUE_CACHE_WARM_TARGET), len(items))
+
+        concurrency = int(_BOOT_WARM_CONCURRENCY)
+        if priority == "high":
+            concurrency = max(concurrency, 6)
+        elif priority == "low":
+            concurrency = max(1, min(concurrency, 2))
+
+        async def _runner() -> None:
+            try:
+                await labeler_cache.ensure_cache_filled(
+                    items,
+                    target_count=target,
+                    scan_limit=min(scan_limit, len(items)),
+                    concurrency=max(1, concurrency),
+                )
+            except Exception:
+                pass
+
+        asyncio.create_task(_runner())
+        return _with_cors(
+            web.json_response(
+                {
+                    "accepted": True,
+                    "queued": int(len(items)),
+                    "in_flight": labeler_cache.download_inflight_count(),
+                    "cache_target": int(target),
+                }
+            ),
+            request,
+        )
+    except Exception as e:
+        log_action("labeler_cache_warm_error", "error", f"{type(e).__name__}: {e!r}")
+        return _with_cors(web.Response(status=500, text=str(e)), request)
+
+
 #---------- OPTIONS handlers for CORS ----------
 
 async def options_handler(request: web.Request) -> web.Response:
@@ -4517,6 +4841,10 @@ async def options_handler(request: web.Request) -> web.Response:
 
 
 #---------- Route registration ----------
+
+async def kickoff_boot_cache_warm_startup() -> None:
+    """Startup hook: fire-and-forget boot cache warming if enabled."""
+    _kickoff_boot_cache_warm_once()
 
 def get_labeler_routes() -> List:
     """Return list of labeler API routes for registration in main.py."""
@@ -4540,6 +4868,7 @@ def get_labeler_routes() -> List:
         web.get("/api/labeler/refs/status", get_refs_status),
         web.post("/api/labeler/manual_refs/warm", post_manual_refs_warm),
         web.get("/api/labeler/manual_refs/status", get_manual_refs_status),
+        web.post("/api/labeler/cache/warm", post_cache_warm),
         web.get("/api/labeler/gallery_retrain/status", get_gallery_retrain_status_api),
         web.post("/api/labeler/gallery_retrain/schedule", post_gallery_retrain_schedule_api),
         #CORS preflight
@@ -4562,6 +4891,7 @@ def get_labeler_routes() -> List:
         web.options("/api/labeler/refs/status", options_handler),
         web.options("/api/labeler/manual_refs/warm", options_handler),
         web.options("/api/labeler/manual_refs/status", options_handler),
+        web.options("/api/labeler/cache/warm", options_handler),
         web.options("/api/labeler/gallery_retrain/status", options_handler),
         web.options("/api/labeler/gallery_retrain/schedule", options_handler),
     ]

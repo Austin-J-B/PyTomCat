@@ -751,18 +751,25 @@ async def warm_cache_on_boot() -> None:
     if settings.show_cache_warm_limit > 0:
         names = names[:settings.show_cache_warm_limit]
 
-    sem = asyncio.Semaphore(max(1, settings.show_cache_warm_concurrency))
+    concurrency = max(1, settings.show_cache_warm_concurrency)
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    for nm in names:
+        queue.put_nowait(nm)
 
-    async def _one(nm: str):
-        async with sem:
-            cdir = _cache_dir_for(_cat_id_from_full(nm) or 0)
-            cnt = len([p for p in os.listdir(cdir) if p.lower().endswith('.jpg')]) if os.path.isdir(cdir) else 0
-            target = int(settings.show_cache_per_cat)
-            if cnt < target:
-                try:
+    async def _worker() -> None:
+        while True:
+            try:
+                nm = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            try:
+                cdir = _cache_dir_for(_cat_id_from_full(nm) or 0)
+                cnt = len([p for p in os.listdir(cdir) if p.lower().endswith('.jpg')]) if os.path.isdir(cdir) else 0
+                target = int(settings.show_cache_per_cat)
+                if cnt < target:
                     await ensure_cat_cache(nm, target, prefer_random=True)
-                except Exception as e:
-                    log_action('show_cache_warm_error', nm, str(e))
+            except Exception as e:
+                log_action('show_cache_warm_error', nm, str(e))
             await asyncio.sleep(0.25)
 
-    await asyncio.gather(*[_one(n) for n in names])
+    await asyncio.gather(*[_worker() for _ in range(concurrency)])

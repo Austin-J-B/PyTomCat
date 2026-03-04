@@ -3,13 +3,17 @@
 TomCat is the Campus Cat Coalition’s Discord automation bot. The bot checks feeding,
 documents dues and finances, runs computer vision tasks, and keeps large amounts
 of data stored and organized for each of the campus cats.
-The codebase is built around our 'Intent_router' to keep things 'modular', which
+The codebase is built around our 'Intent_router' to keep things modular, which
 builds off of the problems with the previous 'TomCat v5.6' javascript bot.
 Beyond that, part of what the 'TomCat VI' update relies on is utilizing logs and
 memory, which gives it the ability to keep track of previous messages and better
 fit around normal human language quirks such as sending a picture and text in 
 separate messages. This gives extra contextual understanding that creates the 
 desired feeling of 'intelligence'.
+
+This bot is a continued work in progress! Much of the 'financial logging and analysis' 
+has been completed in the fall of 2025, but the ReID and automated-training tasks for
+the Computer Vision system are still in development.
 
 ---
 
@@ -98,8 +102,7 @@ on whether `nvidia-smi` is available (override with `--gpu` or `--cpu`).
    Place the following files in the `weights/` directory:
    - `984_917_yolo12s.pt` - YOLOv12 detector
    - `R4_cat_DINOv3_encoder.pth` - DINOv3 encoder
-   - `R4.5_cat_DINOv3_gallery.pt` - Embedding gallery for classification
-   - `deberta-v3-small-mnli.onnx` - NLP model (optional)
+   - `R4.5.X_cat_DINOv3_gallery.pt` - Embedding gallery for classification
    
    These files must be copied from an existing deployment or training artifacts.
 
@@ -126,64 +129,3 @@ on whether `nvidia-smi` is available (override with `--gpu` or `--cpu`).
    ```
 
 ---
-
-## Configuration Cheat Sheet (`.env`)
-
-The `.env` file is heavily commented in-repo. Key groups:
-
-- **Gmail** – enable/disable ingestion, OAuth client/token paths, local OAuth redirect port.
-- **Dues** – enable dues automation, accepted amounts, email look-back window,
-  scanning limits, NLP toggle, membership cache TTL.
-- **Discord** – bot/user IDs and command prefix (also see channel IDs and admin IDs).
-- **Caches** – cat profile and alias TTLs.
-
-See `tomcat/config.py` for additional defaults (channels, roles, feeding schedule).
-
----
-
-## Operations & Logs
-
-- **Human log**: `logs/human/YYYY-MM-DD.log` – timeline of messages, intents,
-  feeding actions, finance results, spam alerts, etc.
-- **Machine log**: `logs/machine/YYYY-MM/YYYY-MM-DD.ndjson` – structured events
-  ready for downstream analytics.
-- **Subs log**: `logs/subs/YYYY/YYYY-MM.jsonl` – per-month substitution requests.
-- **Finance index**: `logs/finance/index.jsonl` – prevents duplicate processing.
-
-Schedulers:
-- Gmail logging every ~4 hours (`start_gmail_logging_scheduler`).
-- Feeding 8 PM reminder task (`start_feeding_scheduler`).
-- Profile cache refresh and show-photo warmup tasks.
-
-Use these logs to verify automation on first boot. For testing, run manual
-commands such as `TomCat, log the past 5 emails` or `TomCat, manual 8pm update`.
-
----
-
-## Development Tips
-
-- Keep business logic isolated inside handlers/services; the router should only
-  orchestrate detection and dispatch.
-- Whenever you add Sheets interaction, route through `sheets_client()` so the
-  service account session stays cached.
-- Extend aliases via `tomcat/aliases.py` for deterministic matches before
-  leaning on NLP. Add fuzzy thresholds carefully to avoid cross-cat confusion.
-- Honor silent mode via `safe_send`; never call `channel.send` directly.
-- Run `python3 -m py_compile $(git ls-files '*.py')` before committing.
-
----
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---------|-----|
-| Bot silent everywhere | Check `.env` `DISCORD_TOKEN`, ensure silent mode is not enabled (`TomCat, silent mode off`). |
-| Gmail auth pending | Trigger `TomCat, check the last email`; follow the OAuth link and respond with the code. |
-| Sheets 403/worksheet missing | Share sheet with service account; verify tab names in `CHANNEL_SHEET_MAP`. |
-| CV requests fail | Make sure `weights/984_917_yolo12s.pt` & `weights/R4.5_cat_DINOv3_gallery.pt` exist and the GPU drivers are installed. |
-| NLP fallback disabled | Provide the DeBERTa ONNX/tokenizer pair in `weights/` or set `DUES_NLP_ENABLED=false`. |
-| Torch install fails | Update NVIDIA drivers; if still failing, fall back to CPU wheels (edit `requirements.txt`). |
-
----
-
-

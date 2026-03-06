@@ -6,6 +6,7 @@ import io
 import asyncio
 import aiohttp
 import discord
+from datetime import timezone
 from typing import Dict, Any, Optional, List
 
 from ..config import settings
@@ -33,17 +34,22 @@ async def _download_attachment(att: discord.Attachment) -> str:
         f.write(data)
     return path
 
-def _first_image(message: discord.Message) -> Optional[discord.Attachment]:
-    """Pick the first image attachment from a message if any."""
+def _first_image_with_source(message: discord.Message) -> tuple[Optional[discord.Attachment], Optional[discord.Message]]:
+    """Pick the first image attachment and the message that owns it."""
     for a in getattr(message, "attachments", []) or []:
         if (a.content_type or "").startswith("image/"):
-            return a
+            return a, message
     ref = getattr(message, "reference", None)
     if ref and ref.resolved and isinstance(ref.resolved, discord.Message):
         for a in getattr(ref.resolved, "attachments", []) or []:
             if (a.content_type or "").startswith("image/"):
-                return a
-    return None
+                return a, ref.resolved
+    return None, None
+
+
+def _first_image(message: discord.Message) -> Optional[discord.Attachment]:
+    att, _ = _first_image_with_source(message)
+    return att
 
 async def _read_bytes(path: str) -> bytes:
     with open(path, "rb") as f:
@@ -122,7 +128,7 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     message: discord.Message = ctx["message"]
     ch: discord.abc.MessageableChannel = ctx["channel"]
 
-    att = _first_image(message)
+    att, source_msg = _first_image_with_source(message)
     if not att:
         if not ctx.get("silent_on_no_image"):
             await ch.send("Attach an image or reply to one, then say `TomCat, identify`.")
@@ -163,12 +169,18 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
                 register_identify_feedback,
                 reply_message_id=int(reply_msg.id),
                 reply_channel_id=int(getattr(ch, "id", 0) or 0),
-                source_message_id=int(getattr(message, "id", 0) or 0),
-                source_channel_id=int(getattr(message.channel, "id", 0) or 0),
-                guild_id=int(getattr(getattr(message, "guild", None), "id", 0) or 0),
+                source_message_id=int(getattr(source_msg or message, "id", 0) or 0),
+                source_channel_id=int(getattr(getattr(source_msg or message, "channel", None), "id", 0) or 0),
+                guild_id=int(getattr(getattr(source_msg or message, "guild", None), "id", 0) or 0),
                 image_bytes=data,
                 results=list(out.results or []),
                 source_image_url=str(getattr(att, "url", "") or ""),
+                source_username=str(getattr(getattr(source_msg, "author", None), "name", "") or ""),
+                source_created_at=str(
+                    (
+                        getattr(source_msg, "created_at", None) or message.created_at
+                    ).astimezone(timezone.utc).isoformat()
+                ),
             )
         except Exception as e:
             log_action("viz_feedback_register_error", f"msg={getattr(reply_msg, 'id', 0)}", str(e))

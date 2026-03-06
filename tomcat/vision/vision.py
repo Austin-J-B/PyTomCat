@@ -539,9 +539,16 @@ def _thumb_b64_from_pil(img: Image.Image, size: int = 96) -> Optional[str]:
         return None
 
 
+_PIL_MAX_PIXELS = 500_000_000
+
 def _open_rgb_image(source: Any) -> Image.Image:
     """Open an image and normalize EXIF orientation before RGB conversion."""
-    img = Image.open(source)
+    old_limit = Image.MAX_IMAGE_PIXELS
+    Image.MAX_IMAGE_PIXELS = _PIL_MAX_PIXELS
+    try:
+        img = Image.open(source)
+    finally:
+        Image.MAX_IMAGE_PIXELS = old_limit
     try:
         img = ImageOps.exif_transpose(img)
     except Exception:
@@ -1404,7 +1411,11 @@ class DetectWithSamResult:
     boxes: List[Tuple[float, float, float, float]]  #YOLO-refined boxes (x1,y1,x2,y2)
 
 def _sam_refine_box(img_array: Any, prompt_box: List[float]) -> Tuple[float, float, float, float]:
-    """Use SAM to refine a bounding box based on mask fit."""
+    """Use SAM to refine a bounding box based on mask fit.
+
+    SAM2 returns multiple candidate masks. We select the one whose bounding
+    box has the best IoU with the original prompt, giving the tightest fit.
+    """
     import numpy as np
     _ensure_sam()
     if _sam is None:
@@ -1413,20 +1424,48 @@ def _sam_refine_box(img_array: Any, prompt_box: List[float]) -> Tuple[float, flo
         results = _sam(img_array, bboxes=[prompt_box], verbose=False)
     except Exception:
         return tuple(prompt_box)
-    if results and results[0].masks:
-        mask = results[0].masks.data[0].cpu().numpy().astype(bool)
-        h, w = mask.shape[-2:]
+    if not results or not results[0].masks:
+        return tuple(prompt_box)
+
+    masks_data = results[0].masks.data.cpu().numpy()
+    px1, py1, px2, py2 = prompt_box
+
+    best_box = None
+    best_iou = -1.0
+
+    for idx in range(masks_data.shape[0]):
+        mask = masks_data[idx].astype(bool)
         rows = np.any(mask, axis=1)
         cols = np.any(mask, axis=0)
-        if np.any(rows) and np.any(cols):
-            rmin, rmax = np.where(rows)[0][[0, -1]]
-            cmin, cmax = np.where(cols)[0][[0, -1]]
-            return (
-                max(0, float(cmin)),
-                max(0, float(rmin)),
-                min(w, float(cmax)),
-                min(h, float(rmax))
-            )
+        if not (np.any(rows) and np.any(cols)):
+            continue
+        rmin, rmax = np.where(rows)[0][[0, -1]]
+        cmin, cmax = np.where(cols)[0][[0, -1]]
+        mx1, my1, mx2, my2 = float(cmin), float(rmin), float(cmax + 1), float(rmax + 1)
+
+        #IoU between mask bbox and prompt bbox
+        ix1 = max(mx1, px1)
+        iy1 = max(my1, py1)
+        ix2 = min(mx2, px2)
+        iy2 = min(my2, py2)
+        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+        area_m = (mx2 - mx1) * (my2 - my1)
+        area_p = (px2 - px1) * (py2 - py1)
+        union = area_m + area_p - inter
+        iou = inter / union if union > 0 else 0.0
+
+        if iou > best_iou:
+            best_iou = iou
+            best_box = (mx1, my1, mx2, my2)
+
+    if best_box is not None:
+        h, w = masks_data.shape[-2:]
+        return (
+            max(0.0, best_box[0]),
+            max(0.0, best_box[1]),
+            min(float(w), best_box[2]),
+            min(float(h), best_box[3]),
+        )
     return tuple(prompt_box)
 
 def detect_with_sam(image_bytes: bytes) -> DetectWithSamResult:

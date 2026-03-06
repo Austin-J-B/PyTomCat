@@ -13,8 +13,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import parse_qs, urlparse
-from urllib.request import Request, urlopen
 
 from PIL import Image
 import torch
@@ -25,6 +23,7 @@ from ..logger import log_action
 from ..services.catsheets import force_refresh_tcb_cache
 from ..services.sheets_client import sheets_client
 from ..services import labeler_cache
+from ..services import local_photos
 from ..services.vision_feedback import load_verified_gallery_records
 from ..vision.vision import DINOv3Wrapper, refresh_gallery
 
@@ -40,11 +39,78 @@ _REJECTED = {"rejected", "needsreview", "needs review", "0. notacat", "notacat"}
 _DEFAULT_MIN_PIXELS = int(os.getenv("GALLERY_MIN_PIXELS", "122500") or "122500")
 _DEFAULT_MIN_PER_CAT = int(os.getenv("GALLERY_MIN_PER_CAT", "4") or "4")
 _DEFAULT_BATCH_SIZE = int(os.getenv("GALLERY_EMBED_BATCH_SIZE", "32") or "32")
-_DEFAULT_TIMEOUT_SEC = float(os.getenv("GALLERY_DOWNLOAD_TIMEOUT_SEC", "20") or "20")
 _DEFAULT_TTA_HFLIP = str(os.getenv("GALLERY_TTA_HFLIP", "1")).strip().lower() in {"1", "true", "yes", "on"}
 _DEFAULT_DOWNLOAD_WORKERS = max(1, int(os.getenv("GALLERY_DOWNLOAD_WORKERS", "10") or "10"))
 _DEFAULT_DOWNLOAD_CHUNK_SIZE = max(16, int(os.getenv("GALLERY_DOWNLOAD_CHUNK_SIZE", "128") or "128"))
 _DEFAULT_PROGRESS_LOG_SEC = max(5.0, float(os.getenv("GALLERY_PROGRESS_LOG_SEC", "15") or "15"))
+_DEFAULT_USE_LOCAL_PHOTOS = str(os.getenv("GALLERY_USE_LOCAL_PHOTOS", "1")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _gallery_path_for_env(path: Path) -> str:
+    root = _project_root()
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except Exception:
+        return str(path.resolve()).replace("\\", "/")
+
+
+def _update_cv_gallery_path_in_env(new_gallery_path: str) -> Dict[str, Any]:
+    env_path = _project_root() / ".env"
+    out: Dict[str, Any] = {
+        "ok": False,
+        "updated": False,
+        "found": False,
+        "env_path": str(env_path),
+        "value": str(new_gallery_path),
+    }
+    try:
+        if not env_path.exists():
+            out["error"] = ".env not found"
+            return out
+
+        raw = env_path.read_text(encoding="utf-8")
+        lines = raw.splitlines()
+        found_idx: Optional[int] = None
+
+        for i, line in enumerate(lines):
+            if not re.match(r"^\s*CV_GALLERY_PATH\s*=", line):
+                continue
+            found_idx = i
+            out["found"] = True
+            before_hash, sep, after_hash = line.partition("#")
+            prefix_match = re.match(r"^(\s*CV_GALLERY_PATH\s*=\s*).*$", before_hash)
+            prefix = prefix_match.group(1) if prefix_match else "CV_GALLERY_PATH="
+            rebuilt = f"{prefix}{new_gallery_path}"
+            if sep:
+                comment = f"#{after_hash}".rstrip()
+                rebuilt = f"{rebuilt} {comment}"
+            if rebuilt != line:
+                lines[i] = rebuilt
+                out["updated"] = True
+            break
+
+        if found_idx is None:
+            if lines and lines[-1].strip():
+                lines.append("")
+            lines.append(f"CV_GALLERY_PATH={new_gallery_path}")
+            out["updated"] = True
+
+        if out["updated"]:
+            tmp = env_path.with_name(env_path.name + ".tmp")
+            payload = "\n".join(lines)
+            if not payload.endswith("\n"):
+                payload += "\n"
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(env_path)
+        out["ok"] = True
+        return out
+    except Exception as e:
+        out["error"] = str(e)
+        return out
 
 
 def _parse_serial(val: str) -> Optional[int]:
@@ -112,87 +178,35 @@ def _slug(text: str) -> str:
     return s or "cat"
 
 
-def _extract_drive_id(url: str) -> Optional[str]:
-    try:
-        parsed = urlparse(url)
-    except Exception:
-        return None
-    if "drive.google.com" not in parsed.netloc and "googleusercontent.com" not in parsed.netloc:
-        return None
-    qs = parse_qs(parsed.query or "")
-    if qs.get("id"):
-        return qs["id"][0]
-    parts = [p for p in parsed.path.split("/") if p]
-    if "d" in parts:
-        idx = parts.index("d")
-        if idx + 1 < len(parts):
-            return parts[idx + 1]
-    return None
-
-
-def _looks_like_image(data: bytes, content_type: str | None = None) -> bool:
-    if content_type:
-        ct = content_type.split(";", 1)[0].strip().lower()
-        if ct.startswith("image/"):
-            return True
-    if not data:
-        return False
-    if data.startswith(b"\xff\xd8\xff"):
-        return True
-    if data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return True
-    if data[:6] in (b"GIF87a", b"GIF89a"):
-        return True
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return True
-    return False
-
-
-def _download_image(url: str, timeout_sec: float = _DEFAULT_TIMEOUT_SEC) -> Optional[bytes]:
-    try:
-        candidates = [url]
-        drive_id = _extract_drive_id(url)
-        if drive_id:
-            candidates.extend([
-                f"https://drive.google.com/uc?export=download&id={drive_id}",
-                f"https://drive.google.com/uc?export=view&id={drive_id}",
-                f"https://drive.usercontent.google.com/download?id={drive_id}&export=download",
-            ])
-        seen: set[str] = set()
-        for cand in candidates:
-            if not cand or cand in seen:
-                continue
-            seen.add(cand)
-            req = Request(cand, headers={"User-Agent": "TomCatGalleryUpdater/1.0"})
-            with urlopen(req, timeout=timeout_sec) as resp:
-                data = resp.read()
-                ctype = resp.headers.get("Content-Type", "")
-                if _looks_like_image(data, ctype):
-                    return data
-        return None
-    except Exception:
-        return None
-
-
-def _get_image_bytes(serial: int, url: str) -> Optional[bytes]:
+def _get_image_bytes(
+    serial: int,
+    *,
+    use_local_photos: bool = _DEFAULT_USE_LOCAL_PHOTOS,
+) -> Tuple[Optional[bytes], str]:
+    # Fast path: labeler cache.
     try:
         cached = labeler_cache.get_cached_image(int(serial))
         if cached:
-            return cached
+            return cached, "labeler_cache"
     except Exception:
         pass
 
-    data = _download_image(url)
-    if not data:
-        return None
+    # Preferred path: manually supervised local photo store.
+    if use_local_photos:
+        try:
+            local_data = local_photos.read_local_photo_bytes(int(serial))
+            if local_data:
+                try:
+                    cache_dir = Path("cache") / "labeler"
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                    (cache_dir / f"sn{int(serial):04d}.jpg").write_bytes(local_data)
+                except Exception:
+                    pass
+                return local_data, "local_photo"
+        except Exception:
+            pass
 
-    try:
-        cache_dir = Path("cache") / "labeler"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        (cache_dir / f"sn{int(serial):04d}.jpg").write_bytes(data)
-    except Exception:
-        pass
-    return data
+    return None, "local_missing"
 
 
 def _next_version_path(weights_dir: Path) -> Path:
@@ -269,11 +283,12 @@ def run_gallery_update(
     min_per_cat: int = _DEFAULT_MIN_PER_CAT,
     batch_size: int = _DEFAULT_BATCH_SIZE,
     tta_hflip: bool = _DEFAULT_TTA_HFLIP,
+    use_local_photos: bool = _DEFAULT_USE_LOCAL_PHOTOS,
     download_workers: int = _DEFAULT_DOWNLOAD_WORKERS,
     download_chunk_size: int = _DEFAULT_DOWNLOAD_CHUNK_SIZE,
     progress_log_sec: float = _DEFAULT_PROGRESS_LOG_SEC,
 ) -> Dict[str, Any]:
-    """Rebuild the gallery from sheet labels and publish it as the active gallery.
+    """Rebuild the gallery from sheet labels and publish the newest versioned gallery.
 
     Mode is currently coerced to `full` to ensure label corrections are reflected.
     """
@@ -293,6 +308,8 @@ def run_gallery_update(
         "download_workers": int(max(1, download_workers)),
         "download_chunk_size": int(max(16, download_chunk_size)),
         "progress_log_sec": float(max(5.0, progress_log_sec)),
+        "use_local_photos": bool(use_local_photos),
+        "local_photo_root": str(local_photos.photo_root()),
         "rows": 0,
         "rows_with_boxes": 0,
         "rows_processed": 0,
@@ -301,6 +318,9 @@ def run_gallery_update(
         "crop_filtered_small": 0,
         "images_requested": 0,
         "images_loaded": 0,
+        "images_loaded_cache": 0,
+        "images_loaded_local": 0,
+        "images_missing_local": 0,
         "images_failed": 0,
         "cats_before_filter": 0,
         "cats_after_filter": 0,
@@ -372,21 +392,32 @@ def run_gallery_update(
                     stats["images_requested"] += int(len(req_by_serial))
 
                     future_map = {
-                        pool.submit(_get_image_bytes, int(serial), url): int(serial)
+                        pool.submit(
+                            _get_image_bytes,
+                            int(serial),
+                            use_local_photos=bool(use_local_photos),
+                        ): int(serial)
                         for serial, url in req_by_serial.items()
                     }
                     image_by_serial: Dict[int, bytes] = {}
                     for fut in as_completed(future_map):
                         serial = future_map[fut]
+                        source = ""
                         try:
-                            data = fut.result()
+                            data, source = fut.result()
                         except Exception:
                             data = None
                         if data:
                             image_by_serial[int(serial)] = data
                             stats["images_loaded"] += 1
+                            if source == "labeler_cache":
+                                stats["images_loaded_cache"] += 1
+                            elif source == "local_photo":
+                                stats["images_loaded_local"] += 1
                         else:
                             stats["images_failed"] += 1
+                            if source == "local_missing":
+                                stats["images_missing_local"] += 1
 
                     for serial, _, coords, labels in chunk:
                         stats["rows_processed"] += 1
@@ -531,17 +562,24 @@ def run_gallery_update(
             "path": all_paths,
         }
 
-        active_gallery_path = Path(settings.cv_gallery_path)
-        weights_dir = active_gallery_path.parent if active_gallery_path.parent else Path("weights")
+        previous_active_gallery_path = Path(settings.cv_gallery_path)
+        weights_dir = previous_active_gallery_path.parent if previous_active_gallery_path.parent else Path("weights")
         weights_dir.mkdir(parents=True, exist_ok=True)
         version_path = _next_version_path(weights_dir)
 
+        # Write only the versioned gallery; baseline galleries remain untouched.
         torch.save(gallery_obj, version_path)
         removed_old_versions = _prune_old_versioned_galleries(weights_dir, version_path)
         stats["old_versions_pruned"] = int(removed_old_versions)
-        if version_path.resolve() != active_gallery_path.resolve():
-            active_gallery_path.parent.mkdir(parents=True, exist_ok=True)
-            torch.save(gallery_obj, active_gallery_path)
+
+        env_gallery_path = _gallery_path_for_env(version_path)
+        env_update = _update_cv_gallery_path_in_env(env_gallery_path)
+        stats["env_gallery_path"] = env_gallery_path
+        stats["env_gallery_env_file"] = str(env_update.get("env_path") or "")
+        stats["env_gallery_env_updated"] = bool(env_update.get("updated"))
+        if not bool(env_update.get("ok")):
+            stats["env_gallery_env_error"] = str(env_update.get("error") or "unknown")
+            log_action("gallery_updater_env_error", "CV_GALLERY_PATH", str(env_update.get("error") or "unknown"))
 
         # Persist the latest crop tree so sheet:// gallery refs can resolve locally
         # without rebuilding thumbs from remote URLs at runtime.
@@ -559,7 +597,8 @@ def run_gallery_update(
         except Exception as e:
             log_action("gallery_updater_active_crops_error", "error", str(e))
 
-        refresh_state = refresh_gallery(str(active_gallery_path))
+        # Switch runtime to the newest version immediately after build.
+        refresh_state = refresh_gallery(str(version_path.resolve()))
         force_refresh_tcb_cache()
 
         result = {
@@ -567,7 +606,8 @@ def run_gallery_update(
             "started_at": started_at,
             "finished_at": datetime.now().isoformat(),
             "run_date": datetime.now().date().isoformat(),
-            "active_gallery_path": str(active_gallery_path),
+            "active_gallery_path": str(version_path),
+            "previous_active_gallery_path": str(previous_active_gallery_path),
             "versioned_gallery_path": str(version_path),
             "embeddings": int(emb_tensor.shape[0]),
             "cats": int(len(class_to_idx)),
@@ -583,7 +623,7 @@ def run_gallery_update(
         log_action(
             "gallery_updater",
             f"cats={result['cats']} embeddings={result['embeddings']}",
-            f"active={active_gallery_path.name} tta_hflip={int(bool(tta_hflip))}",
+            f"active={version_path.name} tta_hflip={int(bool(tta_hflip))}",
         )
         return result
     finally:

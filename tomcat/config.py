@@ -23,6 +23,7 @@ implements the equivalent logic inline.
 """
 from __future__ import annotations
 import os
+import re
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 from typing import Dict
@@ -39,6 +40,25 @@ def _get_env_bool(key: str, default: bool = False) -> bool:
     if v is None:
         return default
     return v.strip().lower() in {"1", "true", "yes", "on"}
+
+def _parse_allowed_image_exts(key: str, default: str = ".jpg,.jpeg,.png,.webp") -> list[str]:
+    raw = os.getenv(key, default)
+    out: list[str] = []
+    seen: set[str] = set()
+    for tok in str(raw or "").split(","):
+        ext = str(tok or "").strip().lower()
+        if not ext:
+            continue
+        if not ext.startswith("."):
+            ext = f".{ext}"
+        if not re.match(r"^\.[a-z0-9]+$", ext):
+            continue
+        if ext not in seen:
+            seen.add(ext)
+            out.append(ext)
+    if out:
+        return out
+    return [".jpg", ".jpeg", ".png", ".webp"]
 
 def _parse_channel_list_env(key: str) -> list[int]:
     """Parse a list env like "[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]" or "123,456" into ints.
@@ -214,9 +234,15 @@ class Settings:
 
     #Labeler reference cache (classifier UI)
     labeler_ref_per_cat: int = int(os.getenv("LABELER_REF_PER_CAT", "250") or "250")
-    labeler_ref_thumb_size: int = int(os.getenv("LABELER_REF_THUMB_SIZE", "128") or "128")
+    labeler_ref_thumb_size: int = int(os.getenv("LABELER_REF_THUMB_SIZE", "256") or "256")
     #Manual-review cache (lighter all-cat candidate view)
     labeler_manual_ref_per_cat: int = int(os.getenv("LABELER_MANUAL_REF_PER_CAT", "50") or "50")
+    #Step 1 local labeler photo source
+    labeler_local_photo_root: str = os.getenv("LABELER_LOCAL_PHOTO_ROOT", "./cache/PicsOfCats/Pictures")
+    labeler_local_only: bool = _get_env_bool("LABELER_LOCAL_ONLY", True)
+    labeler_local_allowed_exts: list[str] = field(
+        default_factory=lambda: _parse_allowed_image_exts("LABELER_LOCAL_ALLOWED_EXTS")
+    )
 
     #Core knobs
     cv_conf: float = float(os.getenv("CV_CONF", "0.552"))

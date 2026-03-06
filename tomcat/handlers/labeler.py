@@ -36,7 +36,7 @@ from ..logger import log_action
 from ..vision import vision as V
 from ..services.catsheets import get_tcb_pics_rows, force_refresh_tcb_cache
 from ..services.sheets_client import sheets_client
-from ..services import labeler_cache
+from ..services import labeler_cache, local_photos
 from ..services.gallery_retrain import get_gallery_retrain_status, schedule_gallery_retrain
 
 #Column indices in TCB Pics Formatted (0-indexed)
@@ -83,6 +83,16 @@ _LOOP_LAG_SHED_BG_WORK_MS = max(
     300.0,
     float(os.getenv("LABELER_LOOP_LAG_SHED_BG_WORK_MS", "900") or "900"),
 )
+_LOOP_LAG_LOG_COOLDOWN_SEC = max(
+    1.0,
+    float(os.getenv("LABELER_LOOP_LAG_LOG_COOLDOWN_SEC", "20") or "20"),
+)
+_LOOP_LAG_LOG_MIN_DELTA_MS = max(
+    100.0,
+    float(os.getenv("LABELER_LOOP_LAG_LOG_MIN_DELTA_MS", "1200") or "1200"),
+)
+_loop_lag_last_log_mono: float = 0.0
+_loop_lag_last_logged_ms: float = 0.0
 
 
 async def _event_loop_lag_monitor() -> None:
@@ -92,6 +102,7 @@ async def _event_loop_lag_monitor() -> None:
     High lag means the event loop is saturated with other work.
     """
     global _loop_lag_ms, _loop_lag_max_ms
+    global _loop_lag_last_log_mono, _loop_lag_last_logged_ms
     while True:
         t0 = time.perf_counter()
         await asyncio.sleep(_LOOP_LAG_INTERVAL_SEC)
@@ -101,12 +112,18 @@ async def _event_loop_lag_monitor() -> None:
         _loop_lag_ms = lag
         _loop_lag_max_ms = max(_loop_lag_max_ms, lag)
         if lag >= _LOOP_LAG_LOG_THRESHOLD_MS:
-            task_census = _get_task_census()
-            log_action(
-                "labeler_event_loop_lag",
-                f"lag_ms={int(lag)}; max_ms={int(_loop_lag_max_ms)}",
-                f"tasks={task_census}",
-            )
+            now_mono = time.monotonic()
+            cooldown_ok = (now_mono - float(_loop_lag_last_log_mono)) >= float(_LOOP_LAG_LOG_COOLDOWN_SEC)
+            delta_ok = abs(float(lag) - float(_loop_lag_last_logged_ms)) >= float(_LOOP_LAG_LOG_MIN_DELTA_MS)
+            if cooldown_ok or delta_ok:
+                task_census = _get_task_census()
+                log_action(
+                    "labeler_event_loop_lag",
+                    f"lag_ms={int(lag)}; max_ms={int(_loop_lag_max_ms)}",
+                    f"tasks={task_census}",
+                )
+                _loop_lag_last_log_mono = now_mono
+                _loop_lag_last_logged_ms = float(lag)
 
 
 def _ensure_loop_lag_monitor() -> None:
@@ -329,6 +346,37 @@ _profile_refresh_mono: float = 0.0
 _UI_DIAG_VERBOSE = str(
     os.getenv("LABELER_UI_DIAG_VERBOSE", "0")
 ).strip().lower() in {"1", "true", "yes", "on"}
+_QUEUE_ROWS_TTL_SEC = max(
+    30,
+    int(os.getenv("LABELER_QUEUE_ROWS_TTL_SEC", "60") or "60"),
+)
+_QUEUE_ROWS_TTL_LOCAL_ONLY_SEC = max(
+    _QUEUE_ROWS_TTL_SEC,
+    int(os.getenv("LABELER_QUEUE_ROWS_TTL_LOCAL_ONLY_SEC", "300") or "300"),
+)
+_QUEUE_CLASSIFY_SLOW_LOG_THRESHOLD_MS = max(
+    250.0,
+    float(os.getenv("LABELER_QUEUE_CLASSIFY_SLOW_LOG_THRESHOLD_MS", "1800") or "1800"),
+)
+_QUEUE_CLASSIFY_SLOW_LOG_COOLDOWN_SEC = max(
+    2.0,
+    float(os.getenv("LABELER_QUEUE_CLASSIFY_SLOW_LOG_COOLDOWN_SEC", "30") or "30"),
+)
+_queue_classify_slow_last_log_mono: float = 0.0
+_CLAIM_DIAG_SLOW_MS = max(
+    120,
+    int(os.getenv("LABELER_CLAIM_DIAG_SLOW_MS", "800") or "800"),
+)
+_CLAIM_DIAG_SAMPLE = max(
+    0.0,
+    min(1.0, float(os.getenv("LABELER_CLAIM_DIAG_SAMPLE", "0.08") or "0.08")),
+)
+_FORCE_REFRESH_TCB_CACHE_COOLDOWN_SEC = max(
+    2.0,
+    float(os.getenv("LABELER_FORCE_REFRESH_TCB_CACHE_COOLDOWN_SEC", "20") or "20"),
+)
+_force_refresh_tcb_cache_task: Optional[asyncio.Task] = None
+_force_refresh_tcb_cache_next_allowed_mono: float = 0.0
 _QUEUE_CACHE_WARM_COOLDOWN_SEC = max(
     1.0,
     float(os.getenv("LABELER_QUEUE_CACHE_WARM_COOLDOWN_SEC", "8") or "8"),
@@ -362,6 +410,13 @@ _BOOT_WARM_CONCURRENCY = max(
 _queue_cache_warm_next_mono: Dict[str, float] = {"detect": 0.0, "classify": 0.0, "manual": 0.0}
 _boot_cache_warm_task: Optional[asyncio.Task] = None
 _boot_cache_warm_started: bool = False
+_LOCAL_MISSING_SAMPLE_MAX = 50
+_local_mode_logged: bool = False
+_QUEUE_LOCAL_FILTER_LOG_COOLDOWN_SEC = max(
+    5.0,
+    float(os.getenv("LABELER_QUEUE_LOCAL_FILTER_LOG_COOLDOWN_SEC", "60") or "60"),
+)
+_queue_local_filter_next_log_mono: Dict[str, float] = {}
 
 
 def _parse_serial(val: str) -> Optional[int]:
@@ -879,6 +934,8 @@ def _has_reviewed_cat_label_token(label: Any) -> bool:
 
 def _maybe_schedule_queue_cache_warm(mode: str, queue: List[Dict[str, Any]]) -> None:
     """Throttle repeated queue cache warm kicks to reduce redundant disk/network churn."""
+    if local_photos.is_local_only():
+        return
     if not queue:
         return
     if float(_loop_lag_ms) >= float(_LOOP_LAG_SHED_BG_WORK_MS):
@@ -941,6 +998,8 @@ def _queue_items_from_rows(rows: List[List[str]], *, mode: str = "boot", max_ite
 def _kickoff_boot_cache_warm_once() -> None:
     """Start one boot-time cache warm task (best effort)."""
     global _boot_cache_warm_task, _boot_cache_warm_started
+    if local_photos.is_local_only():
+        return
     if not _BOOT_WARM_ENABLE:
         return
     if _boot_cache_warm_started:
@@ -975,6 +1034,26 @@ def _kickoff_boot_cache_warm_once() -> None:
         _boot_cache_warm_task = asyncio.create_task(_runner())
     except Exception:
         _boot_cache_warm_task = None
+
+
+def _log_local_mode_once() -> None:
+    global _local_mode_logged
+    if _local_mode_logged:
+        return
+    _local_mode_logged = True
+    try:
+        count = len(local_photos.local_serials(force_refresh=False))
+    except Exception:
+        count = -1
+    log_action(
+        "labeler_local_mode",
+        "startup",
+        (
+            f"local_only={1 if local_photos.is_local_only() else 0}; "
+            f"root={str(local_photos.photo_root())}; "
+            f"serials={int(count)}"
+        ),
+    )
 
 
 def _normalize_header_token(text: str) -> str:
@@ -1274,7 +1353,7 @@ def _manual_sheet_ref_reservoir_add(
 
 
 def _build_manual_sheet_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-    rows = get_tcb_pics_rows(ttl_sec=60)
+    rows = get_tcb_pics_rows(ttl_sec=_queue_rows_ttl_sec())
     refs: Dict[str, List[Dict[str, Any]]] = {}
     counts: Dict[str, int] = {}
 
@@ -1373,7 +1452,7 @@ def _build_manual_sheet_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) -> Di
 
 
 def _build_sheet_crop_index_cache() -> Dict[Tuple[int, int], Dict[str, Any]]:
-    rows = get_tcb_pics_rows(ttl_sec=60)
+    rows = get_tcb_pics_rows(ttl_sec=_queue_rows_ttl_sec())
     out: Dict[Tuple[int, int], Dict[str, Any]] = {}
     for row in rows[1:]:
         if len(row) <= COL_URL:
@@ -1847,6 +1926,38 @@ def _open_rgb_image(source: Any) -> Image.Image:
     return img.convert("RGB")
 
 
+def _render_ref_crop_jpeg(
+    image_bytes: bytes,
+    box: Tuple[float, float, float, float],
+    thumb_size: int,
+    pad: float,
+) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
+    """Decode, crop, and encode a reference JPEG crop in a worker thread."""
+    img = _open_rgb_image(io.BytesIO(image_bytes))
+    img_w, img_h = img.size
+    cx, cy, w, h = box
+    x1 = (cx - w / 2) * img_w
+    y1 = (cy - h / 2) * img_h
+    x2 = (cx + w / 2) * img_w
+    y2 = (cy + h / 2) * img_h
+    bw = x2 - x1
+    bh = y2 - y1
+    px = bw * float(pad)
+    py = bh * float(pad)
+    cx1 = max(0, int(round(x1 - px)))
+    cy1 = max(0, int(round(y1 - py)))
+    cx2 = min(int(img_w), int(round(x2 + px)))
+    cy2 = min(int(img_h), int(round(y2 + py)))
+    if cx2 <= cx1 or cy2 <= cy1:
+        return None, "invalid_bounds", f"img={int(img_w)}x{int(img_h)}"
+
+    crop = img.crop((cx1, cy1, cx2, cy2))
+    crop.thumbnail((int(thumb_size), int(thumb_size)))
+    out = io.BytesIO()
+    crop.save(out, format="JPEG", quality=86)
+    return out.getvalue(), None, None
+
+
 def _vision_working_image_size(image_bytes: bytes) -> Tuple[int, int]:
     """Return the effective image size used by vision.detect/refine preprocessing."""
     img = _open_rgb_image(io.BytesIO(image_bytes))
@@ -1885,17 +1996,34 @@ def _hash_cache_key(*parts: Any) -> str:
     return h.hexdigest()
 
 
-def _kickoff_force_refresh_tcb_cache() -> None:
+def _kickoff_force_refresh_tcb_cache(reason: str = "") -> None:
     """Refresh sheet cache in a worker thread so the aiohttp/discord loop is not blocked."""
+    global _force_refresh_tcb_cache_task, _force_refresh_tcb_cache_next_allowed_mono
+    now_mono = time.monotonic()
+    active = _force_refresh_tcb_cache_task
+    if active is not None and not active.done():
+        return
+    if now_mono < float(_force_refresh_tcb_cache_next_allowed_mono):
+        return
+    _force_refresh_tcb_cache_next_allowed_mono = now_mono + float(_FORCE_REFRESH_TCB_CACHE_COOLDOWN_SEC)
+
     async def _run() -> None:
+        global _force_refresh_tcb_cache_task
         try:
             await asyncio.to_thread(force_refresh_tcb_cache)
         except Exception as e:
-            log_action("labeler_force_refresh_tcb_cache_error", "error", f"{type(e).__name__}: {e!r}")
+            log_action(
+                "labeler_force_refresh_tcb_cache_error",
+                f"reason={str(reason or '').strip() or 'unknown'}",
+                f"{type(e).__name__}: {e!r}",
+            )
+        finally:
+            _force_refresh_tcb_cache_task = None
+
     try:
-        asyncio.create_task(_run())
+        _force_refresh_tcb_cache_task = asyncio.create_task(_run())
     except Exception:
-        pass
+        _force_refresh_tcb_cache_task = None
 
 
 def _identify_should_trace(prefetch: bool) -> bool:
@@ -2108,6 +2236,15 @@ async def _fetch_image_bytes_for_labeler(
     data: Optional[bytes] = None
     serial_i = int(serial) if serial is not None else None
 
+    # Local source of truth for Step 1.
+    if serial_i is not None:
+        try:
+            data = local_photos.read_local_photo_bytes(int(serial_i))
+        except Exception:
+            data = None
+    if data:
+        return data
+
     if serial_i is not None:
         try:
             data = await labeler_cache.get_cached_image_async(serial_i)
@@ -2115,6 +2252,9 @@ async def _fetch_image_bytes_for_labeler(
             data = None
     if data:
         return data
+
+    if local_photos.is_local_only():
+        return None
 
     u = str(url or "").strip()
     if not u.startswith("http"):
@@ -2211,6 +2351,8 @@ def _is_safe_url_for_fetch(url: str) -> bool:
 
 def _kickoff_fallback_ref_cache_warm(candidates: List[Tuple[int, str]], *, max_items: int = 12) -> int:
     """Best-effort background warm of missing fallback ref source images."""
+    if local_photos.is_local_only():
+        return 0
     uniq: List[Tuple[int, str]] = []
     seen: Set[int] = set()
     for serial, url in candidates:
@@ -2817,20 +2959,103 @@ def _schedule_classify_quality_scan(items: List[Dict[str, Any]]) -> None:
 
 #---------- Queue Endpoints ----------
 
-async def _get_tcb_rows_async(*, force: bool = False, ttl_sec: int = 60) -> List[List[str]]:
+def _local_missing_payload(excluded: int, sample: List[int]) -> Dict[str, Any]:
+    return {
+        "local_missing_excluded": int(max(0, excluded)),
+        "local_missing_sample": [int(sn) for sn in list(sample or [])[:_LOCAL_MISSING_SAMPLE_MAX]],
+    }
+
+
+def _log_local_filter_throttled(mode: str, excluded: int, sample: List[int]) -> None:
+    if int(excluded) <= 0:
+        return
+    key = str(mode or "unknown").strip().lower() or "unknown"
+    now = time.monotonic()
+    next_allowed = float(_queue_local_filter_next_log_mono.get(key, 0.0))
+    if now < next_allowed:
+        return
+    _queue_local_filter_next_log_mono[key] = now + float(_QUEUE_LOCAL_FILTER_LOG_COOLDOWN_SEC)
+    sample_txt = ",".join(str(int(sn)) for sn in list(sample or [])[:_LOCAL_MISSING_SAMPLE_MAX])
+    log_action(
+        "labeler_queue_local_filter",
+        f"mode={key}; excluded={int(excluded)}",
+        f"sample={sample_txt}" if sample_txt else "sample=",
+    )
+
+
+def _filter_queue_to_local(mode: str, items: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int, List[int]]:
+    """Filter queue entries down to local serials when local-only mode is enabled."""
+    if not local_photos.is_local_only():
+        return list(items or []), 0, []
+    local_serials = local_photos.local_serials(force_refresh=False)
+    out: List[Dict[str, Any]] = []
+    excluded = 0
+    sample: List[int] = []
+    for item in items or []:
+        try:
+            sn = int(item.get("serial") or 0)
+        except Exception:
+            sn = 0
+        if sn > 0 and sn in local_serials:
+            out.append(item)
+            continue
+        excluded += 1
+        if sn > 0 and len(sample) < _LOCAL_MISSING_SAMPLE_MAX:
+            sample.append(int(sn))
+    _log_local_filter_throttled(mode, excluded, sample)
+    return out, excluded, sample
+
+
+def _collect_local_missing_summary(rows: List[List[str]], *, sample_cap: int = _LOCAL_MISSING_SAMPLE_MAX) -> Dict[str, Any]:
+    """Compare sheet serials against local index and return missing summary."""
+    local_serials = local_photos.local_serials(force_refresh=False)
+    sheet_serials: Set[int] = set()
+    missing: List[int] = []
+    for row in rows[1:]:
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+        if sn is None:
+            continue
+        serial = int(sn)
+        if serial in sheet_serials:
+            continue
+        sheet_serials.add(serial)
+        if serial not in local_serials and len(missing) < int(max(1, sample_cap)):
+            missing.append(serial)
+    total_missing = max(0, len(sheet_serials) - len(local_serials.intersection(sheet_serials)))
+    missing.sort()
+    return {
+        "total_missing": int(total_missing),
+        "sample": [int(sn) for sn in missing[: int(max(1, sample_cap))]],
+        "photo_root": str(local_photos.photo_root()),
+    }
+
+
+def _queue_rows_ttl_sec() -> int:
+    """Queue reads can use a longer TTL in local-only mode to avoid network churn."""
+    if local_photos.is_local_only():
+        return int(_QUEUE_ROWS_TTL_LOCAL_ONLY_SEC)
+    return int(_QUEUE_ROWS_TTL_SEC)
+
+
+async def _get_tcb_rows_async(*, force: bool = False, ttl_sec: Optional[int] = None) -> List[List[str]]:
     """Load TCB sheet rows without blocking the event loop."""
+    ttl = int(ttl_sec) if ttl_sec is not None else int(_queue_rows_ttl_sec())
+    ttl = max(1, ttl)
     if force:
         return await asyncio.to_thread(force_refresh_tcb_cache)
-    return await asyncio.to_thread(get_tcb_pics_rows, int(ttl_sec))
+    return await asyncio.to_thread(get_tcb_pics_rows, ttl)
 
 
 async def get_queue_detect(request: web.Request) -> web.Response:
     """Return list of serials needing detector labels (empty BoxCoordinates)."""
     try:
+        _log_local_mode_once()
         _kickoff_boot_cache_warm_once()
         _kick_detector_warm_task()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
+        rows = await _get_tcb_rows_async(force=force)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
         def _parse_queue_detect_candidates(
@@ -2854,11 +3079,14 @@ async def get_queue_detect(request: web.Request) -> web.Response:
             out_queue.sort(key=lambda item: int(item.get("serial") or 0))
             return out_queue
 
-        queue = await asyncio.to_thread(_parse_queue_detect_candidates, rows, claims, user_id)
+        queue = _parse_queue_detect_candidates(rows, claims, user_id)
+        queue, local_excluded, local_sample = _filter_queue_to_local("detect", queue)
         total = len(queue)
         #Trigger background cache fill for first images in queue (throttled)
         _maybe_schedule_queue_cache_warm("detect", queue)
-        return _with_cors(web.json_response({"queue": queue[:500], "total": total}), request)
+        payload = {"queue": queue[:500], "total": total}
+        payload.update(_local_missing_payload(local_excluded, local_sample))
+        return _with_cors(web.json_response(payload), request)
     except Exception as e:
         log_action("labeler_queue_detect_error", "error", str(e))
         return _with_cors(web.Response(status=500, text="Internal server error"), request)
@@ -2867,9 +3095,11 @@ async def get_queue_detect(request: web.Request) -> web.Response:
 async def get_queue_classify(request: web.Request) -> web.Response:
     """Return serials with boxes but incomplete cat IDs."""
     try:
+        global _queue_classify_slow_last_log_mono
+        _log_local_mode_once()
         _kickoff_boot_cache_warm_once()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
+        rows = await _get_tcb_rows_async(force=force)
         t0 = time.perf_counter()
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
@@ -2893,12 +3123,8 @@ async def get_queue_classify(request: web.Request) -> web.Response:
                 if not box_coords.strip() or box_coords.strip().lower() == "rejected":
                     continue
                 
-                parsed_boxes = [
-                    b
-                    for b in (str(box_coords).split("|") if box_coords else [])
-                    if _parse_yolo_box_str(str(b).strip()) is not None
-                ]
-                num_boxes = len(parsed_boxes)
+                # Queue parsing must stay cheap; full box validation happens in identify/refine paths.
+                num_boxes = len([b for b in str(box_coords).split("|") if str(b).strip()])
                 if num_boxes <= 0:
                     continue
                 labels = box_cat_ids.split("|") if box_cat_ids else []
@@ -2920,87 +3146,106 @@ async def get_queue_classify(request: web.Request) -> web.Response:
                         })
             return out_candidates
 
-        candidates = await asyncio.to_thread(
-            _parse_queue_classify_candidates, rows, claims, user_id
-        )
+        candidates = _parse_queue_classify_candidates(rows, claims, user_id)
 
+        local_only_mode = local_photos.is_local_only()
         queue: List[Dict[str, Any]] = []
         skipped_low_quality = 0
-        auto_reject_items: List[Dict[str, Any]] = []
-        pending_items: List[Dict[str, Any]] = []
-        for item in candidates:
-            cached_eval = _evaluate_cached_classify_quality(int(item.get("serial") or 0))
-            if cached_eval is None:
-                pending_items.append(item)
-                continue
-            passes, meta = cached_eval
-            if bool(passes):
-                queue.append(item)
-                continue
-            skipped_low_quality += 1
-            if bool((meta or {}).get("hard_fail")):
-                auto_reject_items.append({
-                    "serial": int(item.get("serial") or 0),
-                    "num_boxes": int(item.get("num_boxes") or 0),
-                    "url": str(item.get("url") or ""),
-                    "reason": str((meta or {}).get("reason") or "quality_filter"),
-                })
-        
-        t1 = time.perf_counter()
-        if (t1 - t0) > 0.1:
-            log_action("labeler_queue_classify_slow", "get_queue_classify", f"total_ms={int((t1-t0)*1000)}; candidates={len(candidates)}; queue={len(queue)}")
-        # Evaluate only a small subset synchronously to keep queue endpoint fast.
-        sync_n = min(len(pending_items), int(_CLASSIFY_PREFILTER_MAX_SYNC_ITEMS))
-        sync_items = pending_items[:sync_n]
-        deferred_items = pending_items[sync_n:]
-
-        if sync_items:
-            quality_concurrency = max(1, min(6, int(os.getenv("LABELER_CLASSIFY_PREFILTER_CONCURRENCY", "3") or "3")))
-            sem = asyncio.Semaphore(quality_concurrency)
-
-            async def _check_one(item: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
-                async with sem:
-                    try:
-                        return await asyncio.wait_for(
-                            _evaluate_classify_quality(
-                                int(item.get("serial") or 0),
-                                str(item.get("url") or ""),
-                                source="queue_sync",
-                            ),
-                            timeout=_CLASSIFY_PREFILTER_SYNC_ITEM_TIMEOUT_SEC,
-                        )
-                    except Exception:
-                        return False, {"reasons": ["sync_timeout"], "hard_fail": False}
-
-            checks = await asyncio.gather(*[_check_one(item) for item in sync_items], return_exceptions=False)
-            for item, (passes, meta) in zip(sync_items, checks):
+        deferred_for_queue: List[Dict[str, Any]] = []
+        if local_only_mode:
+            # Local-first labeling: skip quality prefilter scans entirely on queue endpoint.
+            # This keeps classify transitions responsive and mirrors the old local tool flow.
+            queue = list(candidates)
+        else:
+            auto_reject_items: List[Dict[str, Any]] = []
+            pending_items: List[Dict[str, Any]] = []
+            for item in candidates:
+                cached_eval = _evaluate_cached_classify_quality(int(item.get("serial") or 0))
+                if cached_eval is None:
+                    pending_items.append(item)
+                    continue
+                passes, meta = cached_eval
                 if bool(passes):
                     queue.append(item)
                     continue
-                hard_fail = bool((meta or {}).get("hard_fail"))
-                if hard_fail:
-                    skipped_low_quality += 1
+                skipped_low_quality += 1
+                if bool((meta or {}).get("hard_fail")):
                     auto_reject_items.append({
                         "serial": int(item.get("serial") or 0),
                         "num_boxes": int(item.get("num_boxes") or 0),
-                        "reason": ",".join((meta or {}).get("reasons") or []),
-                        "pixels": int((meta or {}).get("pixels") or 0),
-                        "blur": float((meta or {}).get("blur") or 0.0),
+                        "url": str(item.get("url") or ""),
+                        "reason": str((meta or {}).get("reason") or "quality_filter"),
                     })
-                else:
-                    deferred_items.append(item)
 
-        # Do not hide pending quality items from the queue.
-        # They remain visible immediately while background scan runs.
-        if deferred_items:
-            for item in deferred_items:
-                row = dict(item)
-                row["quality_pending"] = True
-                queue.append(row)
-            _schedule_classify_quality_scan_from_queue(deferred_items)
-        if auto_reject_items:
-            _schedule_auto_reject_low_quality(auto_reject_items)
+            # Evaluate only a small subset synchronously to keep queue endpoint fast.
+            sync_limit = int(_CLASSIFY_PREFILTER_MAX_SYNC_ITEMS)
+            sync_n = min(len(pending_items), int(max(0, sync_limit)))
+            sync_items = pending_items[:sync_n]
+            deferred_items = pending_items[sync_n:]
 
+            if sync_items:
+                quality_concurrency = max(1, min(6, int(os.getenv("LABELER_CLASSIFY_PREFILTER_CONCURRENCY", "3") or "3")))
+                sem = asyncio.Semaphore(quality_concurrency)
+
+                async def _check_one(item: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+                    async with sem:
+                        try:
+                            return await asyncio.wait_for(
+                                _evaluate_classify_quality(
+                                    int(item.get("serial") or 0),
+                                    str(item.get("url") or ""),
+                                    source="queue_sync",
+                                ),
+                                timeout=_CLASSIFY_PREFILTER_SYNC_ITEM_TIMEOUT_SEC,
+                            )
+                        except Exception:
+                            return False, {"reasons": ["sync_timeout"], "hard_fail": False}
+
+                checks = await asyncio.gather(*[_check_one(item) for item in sync_items], return_exceptions=False)
+                for item, (passes, meta) in zip(sync_items, checks):
+                    if bool(passes):
+                        queue.append(item)
+                        continue
+                    hard_fail = bool((meta or {}).get("hard_fail"))
+                    if hard_fail:
+                        skipped_low_quality += 1
+                        auto_reject_items.append({
+                            "serial": int(item.get("serial") or 0),
+                            "num_boxes": int(item.get("num_boxes") or 0),
+                            "reason": ",".join((meta or {}).get("reasons") or []),
+                            "pixels": int((meta or {}).get("pixels") or 0),
+                            "blur": float((meta or {}).get("blur") or 0.0),
+                        })
+                    else:
+                        deferred_items.append(item)
+
+            # Do not hide pending quality items from the queue.
+            # They remain visible immediately while background scan runs.
+            if deferred_items:
+                deferred_for_queue = deferred_items
+                for item in deferred_for_queue:
+                    row = dict(item)
+                    row["quality_pending"] = True
+                    queue.append(row)
+                _schedule_classify_quality_scan_from_queue(deferred_for_queue)
+            if auto_reject_items:
+                _schedule_auto_reject_low_quality(auto_reject_items)
+
+        t1 = time.perf_counter()
+        elapsed_ms = int((t1 - t0) * 1000)
+        if elapsed_ms >= int(_QUEUE_CLASSIFY_SLOW_LOG_THRESHOLD_MS):
+            now_mono = time.monotonic()
+            cooldown_ok = (now_mono - float(_queue_classify_slow_last_log_mono)) >= float(_QUEUE_CLASSIFY_SLOW_LOG_COOLDOWN_SEC)
+            severe = elapsed_ms >= int(_QUEUE_CLASSIFY_SLOW_LOG_THRESHOLD_MS * 2)
+            if cooldown_ok or severe:
+                _queue_classify_slow_last_log_mono = now_mono
+                log_action(
+                    "labeler_queue_classify_slow",
+                    "get_queue_classify",
+                    f"total_ms={elapsed_ms}; candidates={len(candidates)}; queue={len(queue)}; local_only={1 if local_photos.is_local_only() else 0}",
+                )
+
+        queue, local_excluded, local_sample = _filter_queue_to_local("classify", queue)
         queue.sort(key=lambda item: int(item.get("serial") or 0))
         total = len(queue)
         #Trigger background cache fill for first images in queue (throttled)
@@ -3009,11 +3254,12 @@ async def get_queue_classify(request: web.Request) -> web.Response:
             "queue": queue[:500],
             "total": total,
             "filtered_low_quality": int(skipped_low_quality),
-            "pending_quality_scan": int(len(deferred_items)),
+            "pending_quality_scan": int(len(deferred_for_queue)),
             "classify_min_pixels": int(_CLASSIFY_MIN_PIXELS),
             "classify_min_dim": int(_CLASSIFY_MIN_DIM),
             "classify_min_blur": float(_CLASSIFY_MIN_BLUR),
         }
+        payload.update(_local_missing_payload(local_excluded, local_sample))
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
         log_action("labeler_queue_classify_error", "error", str(e))
@@ -3023,9 +3269,10 @@ async def get_queue_classify(request: web.Request) -> web.Response:
 async def get_queue_manual(request: web.Request) -> web.Response:
     """Return serials with one or more crops marked NeedsReview."""
     try:
+        _log_local_mode_once()
         _kickoff_boot_cache_warm_once()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
+        rows = await _get_tcb_rows_async(force=force)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
         def _parse_queue_manual_candidates(
@@ -3070,12 +3317,27 @@ async def get_queue_manual(request: web.Request) -> web.Response:
             out_queue.sort(key=lambda item: int(item.get("serial") or 0))
             return out_queue
 
-        queue = await asyncio.to_thread(_parse_queue_manual_candidates, rows, claims, user_id)
+        queue = _parse_queue_manual_candidates(rows, claims, user_id)
+        queue, local_excluded, local_sample = _filter_queue_to_local("manual", queue)
         total = len(queue)
         _maybe_schedule_queue_cache_warm("manual", queue)
-        return _with_cors(web.json_response({"queue": queue[:500], "total": total}), request)
+        payload = {"queue": queue[:500], "total": total}
+        payload.update(_local_missing_payload(local_excluded, local_sample))
+        return _with_cors(web.json_response(payload), request)
     except Exception as e:
         log_action("labeler_queue_manual_error", "error", str(e))
+        return _with_cors(web.Response(status=500, text=str(e)), request)
+
+
+async def get_local_missing(request: web.Request) -> web.Response:
+    """Return summary of sheet serials missing from local photo root."""
+    try:
+        force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
+        rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
+        payload = _collect_local_missing_summary(rows, sample_cap=_LOCAL_MISSING_SAMPLE_MAX)
+        return _with_cors(web.json_response(payload), request)
+    except Exception as e:
+        log_action("labeler_local_missing_error", "error", f"{type(e).__name__}: {e!r}")
         return _with_cors(web.Response(status=500, text=str(e)), request)
 
 
@@ -3116,22 +3378,55 @@ async def get_image(request: web.Request) -> web.Response:
 async def get_cached_image(request: web.Request) -> web.Response:
     """Get cached image bytes for a serial. Downloads on-demand if not cached."""
     try:
+        _log_local_mode_once()
         global _DRIVE_PROXY_FAIL_STREAK, _DRIVE_PROXY_BACKOFF_UNTIL_MONO
         sn_str = request.match_info.get("sn", "")
         sn = _parse_serial(sn_str)
         if sn is None:
             return _with_cors(web.Response(status=400, text="Invalid serial"), request)
-        
-        #Try cache first (non-blocking)
+
+        # Local source of truth first.
+        local_path = local_photos.get_local_photo_path(int(sn))
+        if local_path is not None:
+            try:
+                local_data = await asyncio.to_thread(local_path.read_bytes)
+            except Exception:
+                local_data = None
+            if local_data:
+                resp = web.Response(
+                    body=local_data,
+                    content_type=local_photos.content_type_for_path(local_path),
+                )
+                resp.headers["Cache-Control"] = "no-store"
+                resp.headers["X-Labeler-Cache"] = "local"
+                resp.headers["X-Labeler-Image-Path"] = "local"
+                return _with_cors(resp, request)
+
+        if local_photos.is_local_only():
+            log_action(
+                "labeler_local_image_missing",
+                f"sn={int(sn)}",
+                f"root={str(local_photos.photo_root())}",
+            )
+            resp = web.json_response(
+                {"error": "local_image_missing", "serial": int(sn)},
+                status=404,
+            )
+            resp.headers["Cache-Control"] = "no-store"
+            resp.headers["X-Labeler-Cache"] = "local-miss"
+            resp.headers["X-Labeler-Image-Path"] = "local-missing"
+            return _with_cors(resp, request)
+
+        #Try cache next (non-blocking)
         data = await labeler_cache.get_cached_image_async(sn)
         if data:
             resp = web.Response(body=data, content_type="image/jpeg")
             resp.headers["X-Labeler-Image-Path"] = "hit"
             return _with_cors(resp, request)
-        
+
         #Not cached - look up URL and download directly
         rows = await _get_tcb_rows_async(ttl_sec=60)
-        
+
         def _find_url_in_rows(in_rows: List[List[str]], target_sn: int) -> Optional[str]:
             for row in in_rows[1:]:
                 if len(row) <= COL_SERIAL:
@@ -3142,7 +3437,7 @@ async def get_cached_image(request: web.Request) -> web.Response:
             return None
 
         url = await asyncio.to_thread(_find_url_in_rows, rows, sn)
-        
+
         if not url or not url.startswith("http"):
             return _with_cors(web.Response(status=404, text="Image URL not found"), request)
 
@@ -3332,37 +3627,26 @@ async def get_ref_crop(request: web.Request) -> web.Response:
             _ref_crop_negative_cache[neg_key] = time.monotonic() + 20.0
             return _with_cors(web.Response(status=502, text="Source image unavailable"), request)
 
-        img = _open_rgb_image(io.BytesIO(image_bytes))
-        img_w, img_h = img.size
-        cx, cy, w, h = box
-        x1 = (cx - w / 2) * img_w
-        y1 = (cy - h / 2) * img_h
-        x2 = (cx + w / 2) * img_w
-        y2 = (cy + h / 2) * img_h
-        pad = float(settings.cv_pad_pct)
-        bw = x2 - x1
-        bh = y2 - y1
-        px = bw * pad
-        py = bh * pad
-        cx1 = max(0, int(round(x1 - px)))
-        cy1 = max(0, int(round(y1 - py)))
-        cx2 = min(int(img_w), int(round(x2 + px)))
-        cy2 = min(int(img_h), int(round(y2 + py)))
-        if cx2 <= cx1 or cy2 <= cy1:
-            _log_ref_crop_miss(
-                int(sn),
-                int(crop_num),
-                "invalid_bounds",
-                f"img={int(img_w)}x{int(img_h)}",
+        async with _heavy_sem:
+            payload, crop_err, crop_detail = await asyncio.to_thread(
+                _render_ref_crop_jpeg,
+                image_bytes,
+                box,
+                int(thumb_size),
+                float(settings.cv_pad_pct),
             )
-            _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
-            return _with_cors(web.Response(status=422, text="Invalid crop bounds"), request)
-        crop = img.crop((cx1, cy1, cx2, cy2))
-        crop.thumbnail((int(thumb_size), int(thumb_size)))
+        if not payload:
+            if str(crop_err or "") == "invalid_bounds":
+                _log_ref_crop_miss(
+                    int(sn),
+                    int(crop_num),
+                    "invalid_bounds",
+                    str(crop_detail or ""),
+                )
+                _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
+                return _with_cors(web.Response(status=422, text="Invalid crop bounds"), request)
+            return _with_cors(web.Response(status=500, text="Failed to render reference crop"), request)
 
-        out = io.BytesIO()
-        crop.save(out, format="JPEG", quality=86)
-        payload = out.getvalue()
         _cache_set_bytes(
             _ref_crop_result_cache,
             cache_key,
@@ -3391,12 +3675,10 @@ async def post_ui_diag(request: web.Request) -> web.Response:
             "claim_retry",
             "claim_acquire_slow",
             "claim_acquire_error",
-            "detect_item_ready_wait",
             "detect_item_ready_done",
             "detect_item_ready_timeout",
             "detect_next_prime",
             "detect_ready_refine_error",
-            "classify_item_ready_wait",
             "classify_item_ready_done",
             "classify_item_ready_timeout",
         }
@@ -3469,15 +3751,16 @@ async def post_claim(request: web.Request) -> web.Response:
         json_ms = int(round((t_json - t0) * 1000.0))
         acquire_ms = int(round((t_post_acquire - t_pre_acquire) * 1000.0))
         lag_ms = int(loop_lag_at_entry)
-        # Keep claim diagnostics lightweight under heavy load.
-        # Heartbeats are high-frequency; sample them unless they are slow/laggy.
+        # Keep claim diagnostics lightweight: always record slow/laggy claims,
+        # otherwise sample a small share for visibility.
+        is_slow = dt_ms >= int(_CLAIM_DIAG_SLOW_MS)
+        is_laggy = lag_ms >= int(_LOOP_LAG_SHED_BG_WORK_MS)
         should_log_diag = (
-            action != "heartbeat"
-            or dt_ms >= 120
-            or random.random() < 0.01
+            (action != "heartbeat" and (is_slow or is_laggy or random.random() < float(_CLAIM_DIAG_SAMPLE)))
+            or (action == "heartbeat" and (is_slow or is_laggy))
         )
         if should_log_diag:
-            include_census = (action != "heartbeat") and ((dt_ms >= 150) or (lag_ms >= 900))
+            include_census = (action != "heartbeat") and (is_slow or (lag_ms >= 900))
             task_census = _get_task_census() if include_census else "tasks=skip"
             dl_stats = labeler_cache.get_download_stats()
             log_action(
@@ -3559,7 +3842,7 @@ async def post_detect(request: web.Request) -> web.Response:
 
         #If serial provided but not cached and no URL, look up URL by serial
         if serial_i is not None and not image_bytes and not url:
-            rows = await _get_tcb_rows_async(ttl_sec=60)
+            rows = await _get_tcb_rows_async(ttl_sec=_queue_rows_ttl_sec())
             for row in rows[1:]:
                 if len(row) <= COL_SERIAL:
                     continue
@@ -3748,7 +4031,7 @@ async def post_refine(request: web.Request) -> web.Response:
             image_bytes = await labeler_cache.get_cached_image_async(int(serial_i))
 
         if serial_i is not None and not image_bytes and not url:
-            rows = await _get_tcb_rows_async(ttl_sec=60)
+            rows = await _get_tcb_rows_async(ttl_sec=_queue_rows_ttl_sec())
             for row in rows[1:]:
                 if len(row) <= COL_SERIAL:
                     continue
@@ -4072,7 +4355,7 @@ async def post_identify(request: web.Request) -> web.Response:
                     acquired = True
                     sem_wait_ms = (time.perf_counter() - t_sem_wait) * 1000.0
 
-                timeout_sec = (min(2.5, _IDENTIFY_PREFETCH_TIMEOUT_SEC) if prefetch else _IDENTIFY_TIMEOUT_SEC)
+                timeout_sec = (min(8.0, _IDENTIFY_PREFETCH_TIMEOUT_SEC) if prefetch else _IDENTIFY_TIMEOUT_SEC)
                 t_identify = time.perf_counter()
                 result = await asyncio.wait_for(
                     asyncio.to_thread(
@@ -4082,9 +4365,10 @@ async def post_identify(request: web.Request) -> web.Response:
                         rerank=rerank,
                         top_k=top_k,
                         refs_per=refs_per_query,
-                        # Foreground classify requests should return inline thumbs so
-                        # refs paint immediately without ref_crop network churn.
-                        include_ref_thumbs=(not prefetch),
+                        # Prefetch should also include inline thumbs so the next-up
+                        # classify item can render refs without a foreground ref-crop
+                        # catch-up burst.
+                        include_ref_thumbs=True,
                     ),
                     timeout=timeout_sec,
                 )
@@ -4095,10 +4379,10 @@ async def post_identify(request: web.Request) -> web.Response:
                         _identify_prefetch_backoff_until_mono = 0.0
             except asyncio.TimeoutError:
                 if prefetch:
-                    _identify_prefetch_timeout_streak = min(8, int(_identify_prefetch_timeout_streak) + 1)
+                    _identify_prefetch_timeout_streak = min(3, int(_identify_prefetch_timeout_streak) + 1)
                     backoff_sec = min(
-                        45.0,
-                        1.5 * float(2 ** max(0, int(_identify_prefetch_timeout_streak) - 1)),
+                        8.0,
+                        1.0 * float(2 ** max(0, int(_identify_prefetch_timeout_streak) - 1)),
                     )
                     _identify_prefetch_backoff_until_mono = time.monotonic() + backoff_sec
                 log_action("labeler_identify_timeout", f"serial={serial}", f"prefetch={prefetch}")
@@ -4576,7 +4860,7 @@ async def post_save(request: web.Request) -> web.Response:
 
         # Refresh local sheet cache in background to avoid blocking the event loop
         # (gspread/requests is synchronous and can stall Discord heartbeats).
-        _kickoff_force_refresh_tcb_cache()
+        _kickoff_force_refresh_tcb_cache("post_save")
         _manual_sheet_ref_cache = {}
         _manual_sheet_ref_built_mono = 0.0
         _sheet_crop_index_cache = {}
@@ -4757,6 +5041,19 @@ async def post_cache_warm(request: web.Request) -> web.Response:
                 web.json_response({"accepted": False, "queued": 0, "in_flight": labeler_cache.download_inflight_count(), "cache_target": 0}),
                 request,
             )
+        if local_photos.is_local_only():
+            return _with_cors(
+                web.json_response(
+                    {
+                        "accepted": False,
+                        "queued": 0,
+                        "in_flight": 0,
+                        "cache_target": 0,
+                        "reason": "local_only_mode",
+                    }
+                ),
+                request,
+            )
         try:
             data = await request.json()
         except Exception:
@@ -4859,7 +5156,9 @@ async def options_handler(request: web.Request) -> web.Response:
 
 async def kickoff_boot_cache_warm_startup() -> None:
     """Startup hook: fire-and-forget boot cache warming if enabled."""
+    _log_local_mode_once()
     _kickoff_boot_cache_warm_once()
+
 
 def get_labeler_routes() -> List:
     """Return list of labeler API routes for registration in main.py."""

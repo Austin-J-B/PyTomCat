@@ -43,13 +43,30 @@ _CHECKMARK = "\u2705"
 _CROSSMARK = "\u274c"
 
 # TCB Pics Formatted columns (0-based).
+_COL_CAT_ID = 0
+_COL_DATE = 1
+_COL_TIME = 2
+_COL_USERNAME = 3
 _COL_URL = 6
 _COL_SERIAL = 7
 _COL_BOX_COORDS = 8
 _COL_BOX_CAT_IDS = 9
-_DEFAULT_COMMENT_COL = 10
+_COL_LABELED_BY = 10
+_SHEET_ROW_WIDTH = 11  # A:K only
+_BOT_LABELED_BY = "tomcat-identify"
 
 _SN_RE = re.compile(r"sn(\d+)", re.IGNORECASE)
+_CAT_ID_NAME_RE = re.compile(r"^\s*(\d+)\s*[.)\-:]?\s*(.+?)\s*$")
+_SKIP_CATID_LABELS = {
+    "",
+    "rejected",
+    "needsreview",
+    "needs review",
+    "notacat",
+    "not a cat",
+    "0. notacat",
+    "0.notacat",
+}
 _SHEET_LOCK = threading.Lock()
 _DIRS_READY = False
 _SHEET_WRITE_BACKOFF_SEC = max(300, int(os.getenv("VISION_FEEDBACK_SHEET_BACKOFF_SEC", "21600") or "21600"))
@@ -229,27 +246,6 @@ def _purge_expired_pending() -> None:
                 pass
 
 
-def _normalize_header_token(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", str(text or "").strip().lower())
-
-
-def _find_header_col(headers: List[str], candidates: List[str]) -> int | None:
-    wanted = {_normalize_header_token(c) for c in candidates}
-    for idx, h in enumerate(headers):
-        if _normalize_header_token(h) in wanted:
-            return idx
-    return None
-
-
-def _col_to_a1(col_index_1_based: int) -> str:
-    n = int(col_index_1_based)
-    out = ""
-    while n > 0:
-        n, rem = divmod(n - 1, 26)
-        out = chr(ord("A") + rem) + out
-    return out
-
-
 def _is_sheet_cell_limit_error(exc: Exception) -> bool:
     txt = str(exc or "").lower()
     return ("number of cells" in txt and "10000000" in txt) or ("above the limit of 10000000 cells" in txt)
@@ -297,7 +293,7 @@ def _normalize_rows(rows: Any) -> List[List[str]]:
     return out
 
 
-def _open_tcb_sheet_with_rows() -> Tuple[Any, List[List[str]], int]:
+def _open_tcb_sheet_with_rows() -> Tuple[Any, List[List[str]]]:
     gc = sheets_client()
     sh = gc.open_by_key(settings.sheet_catabase_id)
     ws = sh.worksheet("TCB Pics Formatted")
@@ -311,46 +307,151 @@ def _open_tcb_sheet_with_rows() -> Tuple[Any, List[List[str]], int]:
         except Exception:
             raw = sh.values_get("'TCB Pics Formatted'!A:ZZ")
             rows = _normalize_rows((raw or {}).get("values") or [])
-    headers = rows[0] if rows else []
-    comment_col = _find_header_col(
-        headers,
-        [
-            "OfficerComments",
-            "Officer Comments",
-            "Comments",
-            "Comment",
-        ],
-    )
-    return ws, rows, int(comment_col if comment_col is not None else _DEFAULT_COMMENT_COL)
+    return ws, rows
 
 
-def _build_discord_comment(
-    existing: str,
-    *,
-    source_message_id: int,
-    reply_message_id: int,
-    status: str,
-) -> str:
-    txt = str(existing or "").strip()
-    clean_parts: List[str] = []
-    if txt:
-        for part in txt.split(";"):
-            p = part.strip()
-            low = p.lower()
-            if low.startswith("discord_source_msg="):
-                continue
-            if low.startswith("discord_reply_msg="):
-                continue
-            if low.startswith("discord_status="):
-                continue
-            if low.startswith("discord_updated="):
-                continue
-            clean_parts.append(p)
-    clean_parts.append(f"discord_source_msg={int(source_message_id)}")
-    clean_parts.append(f"discord_reply_msg={int(reply_message_id)}")
-    clean_parts.append(f"discord_status={str(status or '').strip().lower() or 'pending'}")
-    clean_parts.append(f"discord_updated={_utc_now_iso()}")
-    return "; ".join(clean_parts)
+def _format_sheet_date_time(iso_text: str) -> Tuple[str, str]:
+    raw = str(iso_text or "").strip()
+    dt_obj: datetime | None = None
+    if raw:
+        try:
+            dt_obj = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except Exception:
+            dt_obj = None
+    if dt_obj is None:
+        dt_obj = datetime.now(timezone.utc)
+    try:
+        dt_obj = dt_obj.astimezone(timezone.utc)
+    except Exception:
+        pass
+    date_text = f"{dt_obj.month}/{dt_obj.day}/{dt_obj.year}"
+    hour12 = dt_obj.hour % 12
+    if hour12 == 0:
+        hour12 = 12
+    am_pm = "AM" if dt_obj.hour < 12 else "PM"
+    time_text = f"{hour12}:{dt_obj.minute:02d}:{dt_obj.second:02d} {am_pm}"
+    return date_text, time_text
+
+
+def _merge_labeled_by(existing: str, actor: str) -> str:
+    actor_clean = str(actor or "").strip()
+    if not actor_clean:
+        return str(existing or "").strip()
+    names: List[str] = []
+    seen = set()
+    for tok in str(existing or "").split(","):
+        name = tok.strip()
+        if not name:
+            continue
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        names.append(name)
+    if actor_clean.casefold() not in seen:
+        names.append(actor_clean)
+    return ", ".join(names)
+
+
+def _norm_cat_lookup_token(text: str) -> str:
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    m = _CAT_ID_NAME_RE.match(raw)
+    if m:
+        raw = m.group(2).strip()
+    return re.sub(r"[^a-z0-9]+", "", raw.lower())
+
+
+def _parse_cat_full_name(full_name: str) -> Tuple[int, str] | None:
+    s = str(full_name or "").strip()
+    if not s:
+        return None
+    m = _CAT_ID_NAME_RE.match(s)
+    if not m:
+        return None
+    try:
+        return int(m.group(1)), m.group(2).strip()
+    except Exception:
+        return None
+
+
+def _build_catid_lookup(cat_rows: List[List[str]]) -> Dict[str, str]:
+    lookup: Dict[str, str] = {}
+    for row in cat_rows[1:]:
+        if not row:
+            continue
+        full_name = str(row[0] if len(row) > 0 else "").strip()
+        parsed = _parse_cat_full_name(full_name)
+        if not parsed:
+            continue
+        cid, name = parsed
+        canonical = f"{cid}. {name}"
+        key_full = _norm_cat_lookup_token(full_name)
+        key_name = _norm_cat_lookup_token(name)
+        if key_full and key_full not in lookup:
+            lookup[key_full] = canonical
+        if key_name and key_name not in lookup:
+            lookup[key_name] = canonical
+    return lookup
+
+
+def _format_catid_cell_from_labels(box_cat_ids: str, lookup: Dict[str, str]) -> str:
+    out: List[str] = []
+    seen = set()
+    for raw in str(box_cat_ids or "").split("|"):
+        token = str(raw or "").strip()
+        if not token:
+            continue
+        if token.strip().lower() in _SKIP_CATID_LABELS:
+            continue
+        key = _norm_cat_lookup_token(token)
+        mapped = lookup.get(key, "")
+        if not mapped:
+            parsed = _parse_cat_full_name(token)
+            if parsed:
+                mapped = f"{parsed[0]}. {parsed[1]}"
+        if not mapped:
+            continue
+        marker = mapped.casefold()
+        if marker in seen:
+            continue
+        seen.add(marker)
+        out.append(mapped)
+    return ", ".join(out)
+
+
+def _load_catid_lookup() -> Dict[str, str]:
+    try:
+        gc = sheets_client()
+        sh = gc.open_by_key(settings.sheet_catabase_id)
+        cat_ws = sh.worksheet("CatDatabase")
+        cat_rows = _normalize_rows(cat_ws.get_all_values())
+    except Exception:
+        return {}
+    return _build_catid_lookup(cat_rows)
+
+
+def _calc_next_serial(rows: List[List[str]]) -> int:
+    max_sn = 0
+    for row in rows[1:]:
+        sn = _parse_serial(str(row[_COL_SERIAL] if len(row) > _COL_SERIAL else ""))
+        if sn:
+            max_sn = max(max_sn, int(sn))
+    return int(max_sn + 1)
+
+
+def _build_intake_row(meta: Dict[str, Any], serial: int) -> List[str]:
+    row = [""] * _SHEET_ROW_WIDTH
+    date_text, time_text = _format_sheet_date_time(str(meta.get("source_created_at") or ""))
+    username = str(meta.get("source_username") or "").strip()
+    source_url = str(meta.get("source_image_url") or "").strip()
+    row[_COL_DATE] = date_text
+    row[_COL_TIME] = time_text
+    row[_COL_USERNAME] = username
+    row[_COL_URL] = source_url
+    row[_COL_SERIAL] = str(int(serial))
+    return row
 
 
 def _cache_labeler_image(serial: int, image_bytes: bytes) -> None:
@@ -378,76 +479,67 @@ def _upsert_sheet_row(
     source_msg = int(meta.get("source_message_id") or 0)
     reply_msg = int(meta.get("reply_message_id") or 0)
     source_url = str(meta.get("source_image_url") or "").strip()
-    source_tag = f"discord_source_msg={source_msg}"
     if _sheet_writes_disabled():
         return 0, 0
     with _SHEET_LOCK:
         try:
-            ws, rows, comment_col = _open_tcb_sheet_with_rows()
-            headers = rows[0] if rows else []
+            ws, rows = _open_tcb_sheet_with_rows()
             matched_row_num = 0
             matched_serial = 0
-            existing_comment = ""
-            for idx, row in enumerate(rows[1:], start=2):
-                comment = row[comment_col] if len(row) > comment_col else ""
-                if source_msg > 0 and source_tag and source_tag in str(comment):
-                    matched_row_num = int(idx)
-                elif source_url and str(row[_COL_URL] if len(row) > _COL_URL else "").strip() == source_url:
-                    matched_row_num = int(idx)
-                else:
-                    continue
-                existing_comment = str(comment or "")
+            pinned_row = int(meta.get("sheet_row") or 0)
+            pinned_serial = int(meta.get("sheet_serial") or 0)
+
+            if pinned_row > 1 and pinned_row <= len(rows):
+                row = rows[pinned_row - 1]
                 sn = _parse_serial(str(row[_COL_SERIAL] if len(row) > _COL_SERIAL else ""))
-                matched_serial = int(sn or 0)
-                break
+                if pinned_serial <= 0 or int(sn or 0) == pinned_serial:
+                    matched_row_num = int(pinned_row)
+                    matched_serial = int(sn or pinned_serial or 0)
+
+            if matched_row_num <= 0 and pinned_serial > 0:
+                for idx, row in enumerate(rows[1:], start=2):
+                    sn = _parse_serial(str(row[_COL_SERIAL] if len(row) > _COL_SERIAL else ""))
+                    if int(sn or 0) == pinned_serial:
+                        matched_row_num = int(idx)
+                        matched_serial = int(sn or 0)
+                        break
+
+            for idx, row in enumerate(rows[1:], start=2):
+                if matched_row_num > 0:
+                    break
+                if source_url and str(row[_COL_URL] if len(row) > _COL_URL else "").strip() == source_url:
+                    matched_row_num = int(idx)
+                    sn = _parse_serial(str(row[_COL_SERIAL] if len(row) > _COL_SERIAL else ""))
+                    matched_serial = int(sn or 0)
+                    break
 
             if matched_row_num <= 0:
-                max_sn = 0
-                for row in rows[1:]:
-                    sn = _parse_serial(str(row[_COL_SERIAL] if len(row) > _COL_SERIAL else ""))
-                    if sn:
-                        max_sn = max(max_sn, int(sn))
-                matched_serial = int(max_sn + 1)
+                matched_serial = _calc_next_serial(rows)
                 matched_row_num = int((len(rows) if rows else 0) + 1)
-
-                width = max(_COL_BOX_CAT_IDS + 1, comment_col + 1, len(headers) if headers else 11)
-                new_row = [""] * int(width)
-                if source_url.startswith("http"):
-                    new_row[_COL_URL] = source_url
-                new_row[_COL_SERIAL] = f"sn{matched_serial:04d}"
-                new_row[comment_col] = _build_discord_comment(
-                    "",
-                    source_message_id=source_msg,
-                    reply_message_id=reply_msg,
-                    status=status,
-                )
-                ws.append_row(new_row, value_input_option="USER_ENTERED")
+                new_row = _build_intake_row(meta, matched_serial)
+                ws.append_row(new_row, value_input_option="USER_ENTERED", table_range="A:K")
             else:
+                row_data = rows[matched_row_num - 1] if 0 < matched_row_num <= len(rows) else []
                 if matched_serial <= 0:
-                    max_sn = 0
-                    for row in rows[1:]:
-                        sn = _parse_serial(str(row[_COL_SERIAL] if len(row) > _COL_SERIAL else ""))
-                        if sn:
-                            max_sn = max(max_sn, int(sn))
-                    matched_serial = int(max_sn + 1)
-                merged_comment = _build_discord_comment(
-                    existing_comment,
-                    source_message_id=source_msg,
-                    reply_message_id=reply_msg,
-                    status=status,
-                )
-                updates = [
-                    {
-                        "range": f"{_col_to_a1(comment_col + 1)}{matched_row_num}",
-                        "values": [[merged_comment]],
-                    }
-                ]
-                if matched_serial > 0:
+                    matched_serial = _calc_next_serial(rows)
+                updates: List[Dict[str, Any]] = []
+                date_text, time_text = _format_sheet_date_time(str(meta.get("source_created_at") or ""))
+                source_username = str(meta.get("source_username") or "").strip()
+                if source_url and not str(row_data[_COL_URL] if len(row_data) > _COL_URL else "").strip():
+                    updates.append({"range": f"G{matched_row_num}", "values": [[source_url]]})
+                if matched_serial > 0 and not str(row_data[_COL_SERIAL] if len(row_data) > _COL_SERIAL else "").strip():
                     updates.append({
                         "range": f"H{matched_row_num}",
-                        "values": [[f"sn{matched_serial:04d}"]],
+                        "values": [[str(int(matched_serial))]],
                     })
-                ws.batch_update(updates)
+                if date_text and not str(row_data[_COL_DATE] if len(row_data) > _COL_DATE else "").strip():
+                    updates.append({"range": f"B{matched_row_num}", "values": [[date_text]]})
+                if time_text and not str(row_data[_COL_TIME] if len(row_data) > _COL_TIME else "").strip():
+                    updates.append({"range": f"C{matched_row_num}", "values": [[time_text]]})
+                if source_username and not str(row_data[_COL_USERNAME] if len(row_data) > _COL_USERNAME else "").strip():
+                    updates.append({"range": f"D{matched_row_num}", "values": [[source_username]]})
+                if updates:
+                    ws.batch_update(updates)
 
             if matched_serial > 0 and image_bytes:
                 _cache_labeler_image(matched_serial, image_bytes)
@@ -511,11 +603,20 @@ def _write_sheet_verified_labels(meta: Dict[str, Any]) -> int:
     serial, row_num = _upsert_sheet_row(meta, status="verified")
     if serial <= 0 or row_num <= 0:
         return 0
+    catid_lookup = _load_catid_lookup()
+    catid_cell = _format_catid_cell_from_labels(box_cat_ids, catid_lookup)
     with _SHEET_LOCK:
-        ws, _, _ = _open_tcb_sheet_with_rows()
+        ws, rows = _open_tcb_sheet_with_rows()
+        existing_labeled = ""
+        if 0 < row_num <= len(rows):
+            row = rows[row_num - 1]
+            existing_labeled = str(row[_COL_LABELED_BY] if len(row) > _COL_LABELED_BY else "")
+        merged_labeled = _merge_labeled_by(existing_labeled, _BOT_LABELED_BY)
         ws.batch_update([
+            {"range": f"A{row_num}", "values": [[catid_cell]]},
             {"range": f"I{row_num}", "values": [[box_coords]]},
             {"range": f"J{row_num}", "values": [[box_cat_ids]]},
+            {"range": f"K{row_num}", "values": [[merged_labeled]]},
         ])
     try:
         force_refresh_tcb_cache()
@@ -529,10 +630,17 @@ def _mark_sheet_incorrect(meta: Dict[str, Any]) -> int:
     if serial <= 0 or row_num <= 0:
         return 0
     with _SHEET_LOCK:
-        ws, _, _ = _open_tcb_sheet_with_rows()
+        ws, rows = _open_tcb_sheet_with_rows()
+        existing_labeled = ""
+        if 0 < row_num <= len(rows):
+            row = rows[row_num - 1]
+            existing_labeled = str(row[_COL_LABELED_BY] if len(row) > _COL_LABELED_BY else "")
+        merged_labeled = _merge_labeled_by(existing_labeled, _BOT_LABELED_BY)
         ws.batch_update([
+            {"range": f"A{row_num}", "values": [[""]]},
             {"range": f"I{row_num}", "values": [[""]]},
             {"range": f"J{row_num}", "values": [[""]]},
+            {"range": f"K{row_num}", "values": [[merged_labeled]]},
         ])
     try:
         force_refresh_tcb_cache()
@@ -551,6 +659,8 @@ def register_identify_feedback(
     image_bytes: bytes,
     results: List[Dict[str, Any]],
     source_image_url: str = "",
+    source_username: str = "",
+    source_created_at: str = "",
 ) -> None:
     """Persist identify result context and ensure source image is represented in sheet."""
     if not image_bytes or not results:
@@ -601,6 +711,8 @@ def register_identify_feedback(
             "source_channel_id": int(source_channel_id),
             "guild_id": int(guild_id or 0),
             "source_image_url": str(source_image_url or "").strip(),
+            "source_username": str(source_username or "").strip(),
+            "source_created_at": str(source_created_at or "").strip(),
             "image_path": str(img_path),
             "results": clean_results,
             "votes": {"correct": [], "incorrect": []},

@@ -18,6 +18,7 @@ from urllib.parse import urlparse, parse_qs
 
 from ..config import settings
 from ..logger import log_action
+from . import local_photos
 
 #Cache config
 LABELER_CACHE_DIR = Path("cache") / "labeler"
@@ -827,6 +828,22 @@ async def ensure_cache_filled(
     target = max(1, target)
     scan_n = int(scan_limit or max(target, CACHE_SIZE))
     scan_n = max(target, scan_n)
+
+    # In local-only mode, skip remote warm/download work entirely.
+    if local_photos.is_local_only():
+        desired_local: set[int] = set()
+        local_serials = local_photos.local_serials(force_refresh=False)
+        for item in (queue or [])[:scan_n]:
+            try:
+                sn = int(item.get("serial") or 0)
+            except Exception:
+                sn = 0
+            if sn > 0 and sn in local_serials:
+                desired_local.add(sn)
+            if len(desired_local) >= target:
+                break
+        _cached_serials = desired_local
+        return len(desired_local)
     
     #Use lock to prevent multiple concurrent fills
     async with _fill_lock:
@@ -906,8 +923,18 @@ async def get_or_download(
     max_attempts: int = 2,
 ) -> Optional[bytes]:
     """Get image from cache, or download and cache it."""
-    #Try cache first (non-blocking)
     serial_i = int(serial)
+
+    # Local source of truth first.
+    local_data = local_photos.read_local_photo_bytes(serial_i)
+    if local_data:
+        _last_fetch_path_by_serial[serial_i] = "local"
+        return local_data
+    if local_photos.is_local_only():
+        _last_fetch_path_by_serial[serial_i] = "local_missing"
+        return None
+
+    #Try cache first (non-blocking)
     data = await get_cached_image_async(serial)
     if data:
         _last_fetch_path_by_serial[serial_i] = "hit"

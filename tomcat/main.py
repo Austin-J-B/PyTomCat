@@ -564,7 +564,8 @@ from datetime import datetime, timezone, timedelta
 from .config import settings
 from .logger import log_event, log_action  #noqa: F401  #imported for shared use
 from .intent_router import IntentRouter, Intent
-from .handlers.misc import handle_channel_image_intake as _handle_image_intake, start_profile_scheduler
+from .handlers.misc import start_profile_scheduler
+from .services.local_photos import ingest_message_images as _ingest_message_images, is_intake_message as _is_intake_message
 from .services.show_cache import warm_cache_on_boot
 from .services.profile_cache import start_profile_cache_scheduler
 from .handlers import feeding as _feed
@@ -1631,19 +1632,19 @@ async def on_ready():
     #Startup health checks (file logs only)
     async def _health_checks():
         try:
-            #Check image intake tabs
-            from .handlers.misc import _open_ws as _open_ws_misc
-            for ch_id, tab in (settings.channel_sheet_map or {}).items():
-                try:
-                    ws = _open_ws_misc(tab)
-                    if ws:
-                        log_event({"event":"health","component":"image_tab","status":"ok","channel_id": ch_id, "tab": tab})
-                    else:
-                        log_event({"event":"health","component":"image_tab","status":"missing","channel_id": ch_id, "tab": tab})
-                except Exception as e:
-                    log_event({"event":"health","component":"image_tab","status":"error","channel_id": ch_id, "tab": tab, "error": str(e)})
+            from .services.local_photos import ensure_storage_ready
+
+            photo_root, metadata_csv = ensure_storage_ready()
+            log_event({
+                "event": "health",
+                "component": "image_intake_local",
+                "status": "ok",
+                "photo_root": str(photo_root),
+                "metadata_csv": str(metadata_csv),
+                "watched_channels": sorted(int(ch) for ch in (settings.channel_sheet_map or {}).keys()),
+            })
         except Exception as e:
-            log_event({"event":"health","component":"image_tab","status":"error","error": str(e)})
+            log_event({"event":"health","component":"image_intake_local","status":"error","error": str(e)})
 
     _start_background_task("health_checks", lambda: _health_checks())
 
@@ -1796,11 +1797,14 @@ async def on_message(message: discord.Message):
         return
     #Channel/DM → Sheet image intake
     try:
-        if getattr(message, "attachments", None):
-            in_map = settings.channel_sheet_map and int(getattr(message.channel, "id", 0) or 0) in settings.channel_sheet_map
-            is_dm = getattr(message, "guild", None) is None
-            if in_map or is_dm:
-                await _handle_image_intake(message)
+        if _is_intake_message(message):
+            result = await _ingest_message_images(message)
+            if result.saved_rows or result.skipped_rows:
+                log_action(
+                    "image_intake_local",
+                    f"channel={getattr(message.channel, 'id', 'dm')}",
+                    f"saved={result.saved_rows}; skipped={result.skipped_rows}",
+                )
     except Exception as e:
         log_action("image_intake_error", f"channel={getattr(message.channel,'id','?')}", str(e))
 

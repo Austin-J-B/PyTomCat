@@ -157,8 +157,6 @@ class Settings:
     bot_dm_id: int | None = int(os.getenv("BOT_DM_ID", "1352882061651873863") or "0") or None
     timezone: str = os.getenv("TIMEZONE", "America/Chicago")
     channel_sheet_map: dict[int, str] = field(default_factory=_build_channel_sheet_map)
-    dm_image_tab: str = os.getenv("DM_IMAGE_TAB", "TCBPicsInput")
-    dm_image_sheet_id: str | None = os.getenv("DM_IMAGE_SHEET_ID") or None
     #Admins
     silent_mode: bool = field(default_factory=lambda: _get_env_bool("SILENT_MODE", False))
 
@@ -239,6 +237,7 @@ class Settings:
     labeler_manual_ref_per_cat: int = int(os.getenv("LABELER_MANUAL_REF_PER_CAT", "50") or "50")
     #Step 1 local labeler photo source
     labeler_local_photo_root: str = os.getenv("LABELER_LOCAL_PHOTO_ROOT", "./cache/PicsOfCats/Pictures")
+    photo_metadata_csv: str = os.getenv("PHOTO_METADATA_CSV", "./TomCatBot Pics.csv")
     labeler_local_only: bool = _get_env_bool("LABELER_LOCAL_ONLY", True)
     labeler_local_allowed_exts: list[str] = field(
         default_factory=lambda: _parse_allowed_image_exts("LABELER_LOCAL_ALLOWED_EXTS")

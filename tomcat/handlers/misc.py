@@ -514,58 +514,6 @@ async def start_profile_scheduler(bot):
         except Exception as e:
             log_action("profiles_scheduler_error", "", str(e))
 
-async def handle_channel_image_intake(message: discord.Message) -> None:
-    """Log attachments dropped into intake channels (or DMs) to the right Sheets tab."""
-    ch_id = getattr(message.channel, "id", None)
-    sheet_override: str | None = None
-    tab = None
-    if ch_id is not None and int(ch_id) in settings.channel_sheet_map:
-        tab = settings.channel_sheet_map.get(int(ch_id))
-
-    is_dm = getattr(message, "guild", None) is None
-    if not tab and is_dm:
-        tab = settings.dm_image_tab or next(iter(settings.channel_sheet_map.values()), None)
-        sheet_override = settings.dm_image_sheet_id
-
-    if isinstance(tab, str) and "::" in tab:
-        sheet_override, tab = [s.strip() for s in tab.split("::", 1)]
-        sheet_override = sheet_override or None
-
-    if tab == "TCBPicsInput" and not sheet_override:
-        sheet_override = settings.sheet_catabase_id or settings.cat_spreadsheet_id or sheet_override
-
-    if not tab:
-        return
-    images = [a for a in (message.attachments or []) if (a.content_type or "").startswith("image/")]
-    if not images:
-        return
-
-    try:
-        ws = _open_ws(tab, preferred_sheet_id=sheet_override)
-        if ws is None:
-            meta = f"no_worksheet tab={tab}"
-            if sheet_override:
-                meta += f" sheet={sheet_override}"
-            log_action("image_intake_error", f"channel={ch_id or 'dm'}", meta)
-            return
-        #Per spec: Column A = direct media link, B = username (the @name), C = timestamp (UTC Z)
-        username = getattr(message.author, 'name', 'user')
-        tsz = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00","Z")
-        rows = [[att.url, username, tsz] for att in images]
-        #Force append into columns A:C so values do not drift to F:H when prior columns have formatting
-        ws.append_rows(
-            rows,
-            value_input_option=cast(Any, "USER_ENTERED"),
-            table_range="A:C",
-        )
-        log_action("image_intake", f"channel={ch_id or 'dm'}", f"rows={len(rows)}")
-    except Exception as e:
-        log_action("image_intake_error", f"channel={ch_id or 'dm'}", str(e))
-
-
-
-
-
 async def handle_misc(message: discord.Message, *, now_ts: float, allow_in_channels: set[int] | None = None):
     """Fallback handler for lightweight keywords and reactions."""
     if message.author.bot:

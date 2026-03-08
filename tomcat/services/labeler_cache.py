@@ -10,11 +10,13 @@ import os
 import time
 import re
 import html as html_lib
+import socket
+import ipaddress
 from concurrent.futures import ThreadPoolExecutor
 import functools
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urljoin
 
 from ..config import settings
 from ..logger import log_action
@@ -24,6 +26,10 @@ from . import local_photos
 LABELER_CACHE_DIR = Path("cache") / "labeler"
 CACHE_SIZE = getattr(settings, "labeler_cache_size", 15)
 _CACHE_VERBOSE = str(os.getenv("LABELER_CACHE_VERBOSE_LOGS", "0")).strip().lower() in {"1", "true", "yes", "on"}
+_SAFE_REMOTE_SCHEMES = {"http", "https"}
+_DRIVE_PRIMARY_HOSTS = {"drive.google.com", "drive.usercontent.google.com"}
+_GOOGLEUSERCONTENT_SUFFIX = "googleusercontent.com"
+_MAX_SAFE_REDIRECTS = 3
 _CACHE_MAX_FILES = max(CACHE_SIZE, int(os.getenv("LABELER_CACHE_MAX_FILES", "300") or "300"))
 _CACHE_MAX_BYTES = max(
     0,
@@ -237,13 +243,97 @@ def _cache_path(serial: int) -> Path:
     """Path to cached image file."""
     return LABELER_CACHE_DIR / f"sn{str(serial).zfill(4)}.jpg"
 
+def _url_hostname(url: str) -> str:
+    try:
+        return str(urlparse(str(url or "").strip()).hostname or "").rstrip(".").lower()
+    except Exception:
+        return ""
+
+
+def _host_matches(hostname: str, expected: str) -> bool:
+    host = str(hostname or "").rstrip(".").lower()
+    want = str(expected or "").rstrip(".").lower()
+    if not host or not want:
+        return False
+    return host == want or host.endswith(f".{want}")
+
+
+def _is_googleusercontent_host(hostname: str) -> bool:
+    return _host_matches(hostname, _GOOGLEUSERCONTENT_SUFFIX)
+
+
+def _is_drive_host(hostname: str) -> bool:
+    host = str(hostname or "").rstrip(".").lower()
+    return host in _DRIVE_PRIMARY_HOSTS
+
+
+def _is_drive_like_hostname(hostname: str) -> bool:
+    return _is_drive_host(hostname) or _is_googleusercontent_host(hostname)
+
+
+def _normalize_public_http_url(url: str) -> Optional[str]:
+    try:
+        parsed = urlparse(str(url or "").strip())
+    except Exception:
+        return None
+    if parsed.scheme not in _SAFE_REMOTE_SCHEMES:
+        return None
+    if not parsed.netloc:
+        return None
+    return parsed.geturl()
+
+
+def _is_safe_remote_url(url: str) -> bool:
+    normalized = _normalize_public_http_url(url)
+    if not normalized:
+        return False
+    hostname = _url_hostname(normalized)
+    if not hostname:
+        return False
+    try:
+        addr_infos = socket.getaddrinfo(hostname, None)
+    except OSError:
+        return False
+    for family, _, _, _, sockaddr in addr_infos:
+        if family == socket.AF_INET:
+            ip_str = sockaddr[0]
+        elif family == socket.AF_INET6:
+            ip_str = sockaddr[0]
+        else:
+            continue
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
+def is_safe_remote_url(url: str) -> bool:
+    """Public wrapper so callers can share the cache's URL safety policy."""
+    return _is_safe_remote_url(url)
+
+
+def is_drive_like_public_url(url: str) -> bool:
+    """Public wrapper for host-checked Drive/googleusercontent detection."""
+    return _is_drive_like_url(url)
+
+
 def _extract_drive_id(url: str) -> Optional[str]:
     """Extract a Google Drive file id from a share URL."""
     try:
         parsed = urlparse(url)
     except Exception:
         return None
-    if "drive.google.com" not in parsed.netloc and "googleusercontent.com" not in parsed.netloc:
+    if not _is_drive_like_hostname(str(parsed.hostname or "")):
         return None
     qs = parse_qs(parsed.query or "")
     if qs.get("id"):
@@ -258,16 +348,7 @@ def _extract_drive_id(url: str) -> Optional[str]:
 
 def _is_drive_like_url(url: str) -> bool:
     """Return True for Google Drive/googleusercontent URLs used by the labeler."""
-    try:
-        parsed = urlparse(str(url or ""))
-        netloc = str(parsed.netloc or "").lower()
-    except Exception:
-        return False
-    return (
-        "drive.google.com" in netloc
-        or "drive.usercontent.google.com" in netloc
-        or "googleusercontent.com" in netloc
-    )
+    return _is_drive_like_hostname(_url_hostname(url))
 
 
 def _extract_drive_html_image_url(page_html: str) -> Optional[str]:
@@ -287,8 +368,9 @@ def _extract_drive_html_image_url(page_html: str) -> Optional[str]:
         url = m.group(1)
         url = html_lib.unescape(str(url or "").strip())
         url = url.replace("\\\\/", "/").replace("\\u003d", "=").replace("\\u0026", "&")
-        if url.startswith("http"):
-            return url
+        normalized = _normalize_public_http_url(url)
+        if normalized and _is_googleusercontent_host(_url_hostname(normalized)):
+            return normalized
     return None
 
 
@@ -331,7 +413,7 @@ def _drive_download_candidates(url: str, drive_id: str) -> List[str]:
     ]
     # Many /file/.../view links return HTML wrappers or hang longer than direct/thumbnail URLs.
     # Prefer direct endpoints first unless the original URL is already a direct image URL.
-    if _is_drive_like_url(original) and "drive.google.com" in str(urlparse(original).netloc or "").lower():
+    if _is_drive_like_url(original) and _is_drive_host(_url_hostname(original)):
         ordered = [*direct_candidates, original]
     else:
         ordered = [original, *direct_candidates]
@@ -364,6 +446,35 @@ def _looks_like_image(data: bytes, content_type: str | None = None) -> bool:
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return True
     return False
+
+
+async def _fetch_url_with_safe_redirects(
+    sess: aiohttp.ClientSession,
+    candidate_url: str,
+    req_timeout_sec: float,
+) -> Tuple[Optional[int], bytes, str, str]:
+    """Fetch a URL without trusting redirects to stay on public infrastructure."""
+    current = _normalize_public_http_url(candidate_url)
+    if not current:
+        return None, b"", "", ""
+
+    for _ in range(_MAX_SAFE_REDIRECTS + 1):
+        if not _is_safe_remote_url(current):
+            return None, b"", "", ""
+        timeout = aiohttp.ClientTimeout(total=max(0.5, float(req_timeout_sec)))
+        async with sess.get(current, allow_redirects=False, timeout=timeout) as resp:
+            if resp.status in {301, 302, 303, 307, 308}:
+                location = str(resp.headers.get("Location") or "").strip()
+                if not location:
+                    return resp.status, b"", str(resp.headers.get("Content-Type") or ""), current
+                next_url = _normalize_public_http_url(urljoin(current, location))
+                if not next_url:
+                    return resp.status, b"", str(resp.headers.get("Content-Type") or ""), current
+                current = next_url
+                continue
+            data = await resp.read()
+            return resp.status, data, str(resp.headers.get("Content-Type") or ""), current
+    return None, b"", "", ""
 
 
 async def _get_http_session() -> aiohttp.ClientSession:
@@ -636,13 +747,16 @@ async def _download_image(
 
     Acquires the global download semaphore to limit total concurrent downloads.
     """
+    normalized_url = _normalize_public_http_url(url)
+    if not normalized_url or not _is_safe_remote_url(normalized_url):
+        return None
     async with _global_download_sem:
         global _active_downloads, _total_downloads_started
         _active_downloads += 1
         _total_downloads_started += 1
         try:
             return await _download_image_inner(
-                url, timeout_sec,
+                normalized_url, timeout_sec,
                 log_errors=log_errors,
                 bypass_backoff=bypass_backoff,
                 max_attempts=max_attempts,
@@ -650,6 +764,23 @@ async def _download_image(
             )
         finally:
             _active_downloads -= 1
+
+
+async def download_remote_image(
+    url: str,
+    *,
+    timeout_sec: float = 10.0,
+    bypass_backoff: bool = False,
+    max_attempts: int = 2,
+) -> Optional[bytes]:
+    """Public helper for safe remote image downloads with redirect validation."""
+    return await _download_image(
+        url,
+        timeout_sec=timeout_sec,
+        bypass_backoff=bypass_backoff,
+        max_attempts=max_attempts,
+        log_errors=_CACHE_VERBOSE,
+    )
 
 
 async def _download_image_inner(
@@ -695,47 +826,51 @@ async def _download_image_inner(
 
         async def _fetch_image_only(candidate_url: str, req_timeout_sec: float) -> Optional[bytes]:
             nonlocal last_error
-            timeout = aiohttp.ClientTimeout(total=max(0.5, float(req_timeout_sec)))
             try:
-                async with sess.get(candidate_url, allow_redirects=True, timeout=timeout) as resp:
-                    if resp.status != 200:
-                        return None
-                    data = await resp.read()
-                    if _looks_like_image(data, resp.headers.get("Content-Type")):
-                        return data
+                status, data, content_type, _ = await _fetch_url_with_safe_redirects(
+                    sess,
+                    candidate_url,
+                    req_timeout_sec,
+                )
+                if status != 200:
                     return None
+                if _looks_like_image(data, content_type):
+                    return data
+                return None
             except Exception as e:
                 last_error = e
                 return None
 
         async def _fetch_candidate(candidate_url: str, req_timeout_sec: float) -> Tuple[Optional[bytes], Optional[str]]:
             nonlocal last_error
-            timeout = aiohttp.ClientTimeout(total=max(0.5, float(req_timeout_sec)))
             try:
-                async with sess.get(candidate_url, allow_redirects=True, timeout=timeout) as resp:
-                    if resp.status != 200:
-                        return None, None
-                    data = await resp.read()
-                    if _looks_like_image(data, resp.headers.get("Content-Type")):
-                        return data, candidate_url
-                    # Some Drive "view" links return HTML wrappers.
-                    ctype = str(resp.headers.get("Content-Type") or "").lower()
-                    if "text/html" in ctype:
-                        try:
-                            page = data.decode("utf-8", errors="ignore")
-                        except Exception:
-                            page = ""
-                        img_url = _extract_drive_html_image_url(page)
-                        nested_timeout = max(0.5, min(float(req_timeout_sec), float(per_request_timeout)))
-                        if img_url:
-                            img_data = await _fetch_image_only(img_url, nested_timeout)
-                            if img_data:
-                                return img_data, img_url
-                        if drive_id and _is_drive_quota_page(page):
-                            for thumb_url in _drive_thumbnail_candidates(drive_id):
-                                thumb_data = await _fetch_image_only(thumb_url, nested_timeout)
-                                if thumb_data:
-                                    return thumb_data, thumb_url
+                status, data, content_type, final_url = await _fetch_url_with_safe_redirects(
+                    sess,
+                    candidate_url,
+                    req_timeout_sec,
+                )
+                if status != 200:
+                    return None, None
+                if _looks_like_image(data, content_type):
+                    return data, final_url or candidate_url
+                # Some Drive "view" links return HTML wrappers.
+                ctype = str(content_type or "").lower()
+                if "text/html" in ctype:
+                    try:
+                        page = data.decode("utf-8", errors="ignore")
+                    except Exception:
+                        page = ""
+                    img_url = _extract_drive_html_image_url(page)
+                    nested_timeout = max(0.5, min(float(req_timeout_sec), float(per_request_timeout)))
+                    if img_url:
+                        img_data = await _fetch_image_only(img_url, nested_timeout)
+                        if img_data:
+                            return img_data, img_url
+                    if drive_id and _is_drive_quota_page(page):
+                        for thumb_url in _drive_thumbnail_candidates(drive_id):
+                            thumb_data = await _fetch_image_only(thumb_url, nested_timeout)
+                            if thumb_data:
+                                return thumb_data, thumb_url
             except Exception as e:
                 last_error = e
             return None, None
@@ -867,7 +1002,7 @@ async def ensure_cache_filled(
             url = item.get("url")
             if isinstance(sn, int):
                 desired_serials.add(sn)
-            if sn and url and sn not in _cached_serials:
+            if sn and url and sn not in _cached_serials and _is_safe_remote_url(str(url)):
                 to_download.append((sn, url))
         
         t_filter = time.perf_counter()
@@ -924,6 +1059,7 @@ async def get_or_download(
 ) -> Optional[bytes]:
     """Get image from cache, or download and cache it."""
     serial_i = int(serial)
+    normalized_url = _normalize_public_http_url(url)
 
     # Local source of truth first.
     local_data = local_photos.read_local_photo_bytes(serial_i)
@@ -939,6 +1075,9 @@ async def get_or_download(
     if data:
         _last_fetch_path_by_serial[serial_i] = "hit"
         return data
+    if not normalized_url or not _is_safe_remote_url(normalized_url):
+        _last_fetch_path_by_serial[serial_i] = "unsafe_url"
+        return None
 
     owner = False
     task: Optional[asyncio.Task] = None
@@ -950,7 +1089,7 @@ async def get_or_download(
         else:
             task = asyncio.create_task(
                 _download_image(
-                    url,
+                    normalized_url,
                     bypass_backoff=bypass_backoff,
                     max_attempts=max_attempts,
                     source_out=source_out,

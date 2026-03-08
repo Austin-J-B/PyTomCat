@@ -305,25 +305,15 @@ def _upsert_schedule_version(schedule: dict, effective_from: str, meta: dict | N
 async def _resolve_member_once(
     user_id: int,
 ) -> tuple[Optional[discord.Guild], Optional[discord.Member]]:
-    """Find a member in the configured guild or any guild the bot is in."""
-    guild = bot.get_guild(YOUR_GUILD_ID) if "bot" in globals() else None
+    """Find a member in the configured UI guild only."""
+    guild_id = int(UI_GUILD_ID or YOUR_GUILD_ID or 0)
+    guild = bot.get_guild(guild_id) if ("bot" in globals() and guild_id > 0) else None
     member = guild.get_member(user_id) if guild else None
     if not member and guild:
         try:
             member = await guild.fetch_member(user_id)
         except Exception:
             member = None
-
-    if not member and "bot" in globals():
-        for g in bot.guilds:
-            try:
-                candidate = g.get_member(user_id)
-                if not candidate:
-                    candidate = await g.fetch_member(user_id)
-                if candidate:
-                    return g, candidate
-            except Exception:
-                continue
     return guild, member
 
 
@@ -359,16 +349,41 @@ def _build_permissions(user_roles: list[int]) -> dict:
     }
 
 
-def _require_permissions(
+async def _get_live_session(
+    request: web.Request,
+) -> tuple[Optional[dict], Optional[web.Response]]:
+    """Re-resolve the session user against Discord so role revocations take effect immediately."""
+    session = _get_session_from_request(request)
+    if not session:
+        _debug("live-session missing session")
+        return None, _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
+
+    try:
+        user_id = int(session.get("user_id"))
+    except Exception:
+        return None, _with_cors(web.Response(status=400, text="Invalid session payload"), request)
+
+    guild, member = await _resolve_member(user_id)
+    if not guild or not member:
+        return None, _with_cors(web.Response(status=403, text="Guild membership required"), request)
+
+    live_session = dict(session)
+    live_session["permissions"] = _build_permissions([r.id for r in member.roles])
+    live_session["username"] = session.get("username") or getattr(member, "name", "")
+    live_session["global_name"] = session.get("global_name") or getattr(member, "global_name", None)
+    return live_session, None
+
+
+async def _require_permissions(
     request: web.Request,
     *,
     require_view: bool = False,
     require_edit: bool = False,
 ) -> tuple[Optional[dict], Optional[web.Response]]:
-    session = _get_session_from_request(request)
-    if not session:
-        _debug(f"_require_permissions missing session require_view={require_view} require_edit={require_edit}")
-        return None, _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
+    session, error = await _get_live_session(request)
+    if error:
+        _debug(f"_require_permissions denied require_view={require_view} require_edit={require_edit}")
+        return None, error
 
     permissions = session.get("permissions", {})
     if require_view and not permissions.get("can_view"):
@@ -491,7 +506,7 @@ async def get_session(request: web.Request):
 #--- The Secure Save Endpoint ---
 async def save_schedule(request):
     """Persist the feeding schedule to a local JSON file."""
-    session, error = _require_permissions(request, require_view=True, require_edit=True)
+    session, error = await _require_permissions(request, require_view=True, require_edit=True)
     if error:
         return error
     csrf_error = _require_csrf(request, session)
@@ -522,7 +537,7 @@ async def save_schedule(request):
 
 async def get_schedule(request):
     """Load the last saved schedule if it exists; otherwise return empty slots."""
-    _, error = _require_permissions(request, require_view=True)
+    _, error = await _require_permissions(request, require_view=True)
     if error:
         return error
     _debug(f"GET /api/schedule session_ok")
@@ -565,7 +580,11 @@ from .config import settings
 from .logger import log_event, log_action  #noqa: F401  #imported for shared use
 from .intent_router import IntentRouter, Intent
 from .handlers.misc import start_profile_scheduler
-from .services.local_photos import ingest_message_images as _ingest_message_images, is_intake_message as _is_intake_message
+from .services.local_photos import (
+    ingest_message_images as _ingest_message_images,
+    is_intake_message as _is_intake_message,
+    start_photo_metadata_sheet_sync_scheduler,
+)
 from .services.show_cache import warm_cache_on_boot
 from .services.profile_cache import start_profile_cache_scheduler
 from .handlers import feeding as _feed
@@ -771,7 +790,7 @@ def _cors_headers(request: web.Request) -> Dict[str, str]:
 
     headers = {
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CSRF-Token, X-TC-CSRF",
         "Vary": "Origin",
     }
     _debug(f"CORS origin={origin!r} allow_origin={allow_origin!r}")
@@ -793,14 +812,19 @@ async def rate_limit_middleware(request: web.Request, handler):
     is_labeler_api = request.path.startswith("/api/labeler") and request.method != "OPTIONS"
     labeler_session: dict | None = None
     if is_labeler_api:
-        session = _get_session_from_request(request)
-        if not session:
-            return _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
+        session, error = await _get_live_session(request)
+        if error:
+            return error
         request["tc_session"] = session
         labeler_session = session
         perms = session.get("permissions", {}) or {}
         if not (perms.get("is_officer") or perms.get("can_label_photos")):
             return _with_cors(web.Response(status=403, text="Not authorized for labeler"), request)
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            expected = str(session.get("csrf") or "")
+            provided = request.headers.get("X-CSRF-Token") or request.headers.get("X-TC-CSRF") or ""
+            if not expected or not provided or not hmac.compare_digest(expected, str(provided)):
+                return _with_cors(web.Response(status=403, text="Missing or invalid CSRF token"), request)
 
     client_ip = request.remote
     if not client_ip:
@@ -895,7 +919,7 @@ async def start_web_server(bot):
 
     async def get_members(request):
         """Return JSON list of members allowed to be scheduled."""
-        _, error = _require_permissions(request, require_view=True)
+        _, error = await _require_permissions(request, require_view=True)
         if error:
             return error
         FEEDING_TEAM_ROLE_ID = None
@@ -949,7 +973,7 @@ async def start_web_server(bot):
 
     async def get_stations_api(request):
         """Return station definitions for a given date (default: today) plus available versions."""
-        _, error = _require_permissions(request, require_view=True)
+        _, error = await _require_permissions(request, require_view=True)
         if error:
             return error
         date_param = request.query.get("date")
@@ -961,7 +985,7 @@ async def start_web_server(bot):
 
     async def save_stations_api(request):
         """Replace station definitions for an effective date; officer only."""
-        session, error = _require_permissions(request, require_view=True, require_edit=True)
+        session, error = await _require_permissions(request, require_view=True, require_edit=True)
         if error:
             return error
         csrf_error = _require_csrf(request, session)
@@ -1001,7 +1025,7 @@ async def start_web_server(bot):
 
     async def get_feeding_checklist(request):
         """Officer-only: read local feeding checklist within a date range."""
-        _, error = _require_permissions(request, require_edit=True)
+        _, error = await _require_permissions(request, require_edit=True)
         if error:
             return error
         q_from = request.query.get("from")
@@ -1011,7 +1035,7 @@ async def start_web_server(bot):
 
     async def save_feeding_checklist(request):
         """Officer-only: replace station fed/unfed state for a date."""
-        session, error = _require_permissions(request, require_edit=True)
+        session, error = await _require_permissions(request, require_edit=True)
         if error:
             return error
         csrf_error = _require_csrf(request, session)
@@ -1040,7 +1064,7 @@ async def start_web_server(bot):
 
     async def submit_subrequest(request):
         """Record a manual sub request."""
-        session, error = _require_permissions(request, require_view=True)
+        session, error = await _require_permissions(request, require_view=True)
         if error: return error
         csrf_error = _require_csrf(request, session)
         if csrf_error:
@@ -1162,7 +1186,7 @@ async def start_web_server(bot):
     
     async def delete_subrequest(request):
         """Physically remove a request from the log file."""
-        session, error = _require_permissions(request, require_view=True)
+        session, error = await _require_permissions(request, require_view=True)
         if error: return error
         csrf_error = _require_csrf(request, session)
         if csrf_error:
@@ -1244,7 +1268,7 @@ async def start_web_server(bot):
     
     async def leave_activity(request):
         """Disconnects the requesting user from their voice channel."""
-        session, error = _require_permissions(request, require_view=True)
+        session, error = await _require_permissions(request, require_view=True)
         if error: return error
         csrf_error = _require_csrf(request, session)
         if csrf_error:
@@ -1269,7 +1293,7 @@ async def start_web_server(bot):
     
     async def list_open_subs(request):
         """List sub requests separated into available, upcoming filled, and past (expired/fulfilled)."""
-        _, error = _require_permissions(request, require_view=True)
+        _, error = await _require_permissions(request, require_view=True)
         if error:
             return error
         import json
@@ -1453,7 +1477,7 @@ async def start_web_server(bot):
 
     async def claim_subs(request):
         """Mark sub requests as accepted by a user."""
-        session, error = _require_permissions(request, require_view=True)
+        session, error = await _require_permissions(request, require_view=True)
         if error:
             return error
         csrf_error = _require_csrf(request, session)
@@ -1641,7 +1665,7 @@ async def on_ready():
                 "status": "ok",
                 "photo_root": str(photo_root),
                 "metadata_csv": str(metadata_csv),
-                "watched_channels": sorted(int(ch) for ch in (settings.channel_sheet_map or {}).keys()),
+                "watched_channels": sorted(int(ch) for ch in (settings.image_intake_channel_map or {}).keys()),
             })
         except Exception as e:
             log_event({"event":"health","component":"image_intake_local","status":"error","error": str(e)})
@@ -1678,6 +1702,10 @@ async def on_ready():
     #Start catabase profile cache scheduler
     try:
         _start_background_task("profile_cache_scheduler", lambda: start_profile_cache_scheduler())
+    except Exception:
+        pass
+    try:
+        _start_background_task("photo_metadata_sheet_sync", lambda: start_photo_metadata_sheet_sync_scheduler())
     except Exception:
         pass
     #Wire gallery retrain notifications into CH_LOGGING.

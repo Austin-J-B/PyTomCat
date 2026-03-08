@@ -1,15 +1,18 @@
-"""Typed helpers for CatDatabase + RecentPics tabs.
+"""Typed helpers for CatDatabase + local photo metadata data sources.
 
-Expected headers (by column index) based on the current sheet:
+Expected headers (by column index) based on the current data sources:
 - CatDatabase: ["67. Microwave", ID_HELPER, LAST_SEEN_DATE, LAST_SEEN_TIME, LAST_SEEN_BY, (spacer), MOST_RECENT_IMAGE_URL,
   LOCATION, PHYSICAL_DESCRIPTION, BIRTHDAY_ESTIMATE, BEHAVIOR, TNRD?, TNR_DATE, SEX, COMMON_NICKNAMES, COMMENTS]
-- RecentPics: [FULL_NAME (e.g., "67. Microwave"), <unused>, TOTAL, URL1, SERIAL1, URL2, SERIAL2, ...]
+- Local photo metadata snapshot: [CAT_LABEL, <unused>, <unused>, <unused>, <unused>, <unused>, DISCORD_URL,
+  SERIAL_NUMBER, BOX_COORDINATES, BOX_CAT_IDS, LABEL_AUTHOR, COMMENTS]
 """
 from __future__ import annotations
 from typing import Any
+import csv
 import datetime as dt
 import json, time
 from .sheets_client import sheets_client
+from . import local_photos
 from ..config import settings
 try:
     from ..utils.text import norm_alnum_lower  #real helper if you have utils/
@@ -20,10 +23,14 @@ except Exception:
 import re #Ensure this is imported at the top of the file
 from pathlib import Path
 
-#Configuration for "TCB Pics Formatted" columns (0-based index)
+#Photo metadata row columns (0-based index)
 COL_LABEL = 0   #Officer ID / Name
 COL_URL = 6     #Picture Link
 COL_SERIAL = 7  #Serial number
+COL_BOX_CAT_IDS = 9
+
+_CAT_PREFIX_RE = re.compile(r"^\s*\d+\s*[.)\-:]?\s*")
+_LABEL_SPLIT_RE = re.compile(r"[|,;/]+")
 
 _TCB_ROWS: list[list[str]] | None = None
 _TCB_TS: float = 0.0  #monotonic for in-memory
@@ -31,7 +38,7 @@ _TCB_SNAPSHOT = Path("cache") / "sheets" / "tcb_pics_formatted.json"
 
 
 def _normalize_rows(rows: Any) -> list[list[str]]:
-    """Normalize raw sheet data into a stable list[list[str]] shape."""
+    """Normalize raw row data into a stable list[list[str]] shape."""
     if not isinstance(rows, list):
         return []
     out: list[list[str]] = []
@@ -47,35 +54,101 @@ def _normalize_rows(rows: Any) -> list[list[str]]:
     return out
 
 
+def _display_label(value: str) -> str:
+    """Drop CatDatabase numeric prefixes while preserving the CV label text."""
+    text = str(value or "").strip()
+    return _CAT_PREFIX_RE.sub("", text, count=1).strip()
+
+
+def _photo_query_key(value: str) -> str:
+    """Normalize cat names so CatDatabase IDs and CV labels compare cleanly."""
+    return norm_alnum_lower(_display_label(value))
+
+
+def _photo_row_label_tokens(row: list[str]) -> list[str]:
+    """Extract all candidate cat-label tokens from one local photo metadata row."""
+    raw_labels = ""
+    if len(row) > COL_BOX_CAT_IDS:
+        raw_labels = str(row[COL_BOX_CAT_IDS] or "").strip()
+    if not raw_labels and len(row) > COL_LABEL:
+        raw_labels = str(row[COL_LABEL] or "").strip()
+    if not raw_labels:
+        return []
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for raw in _LABEL_SPLIT_RE.split(raw_labels):
+        token = _display_label(raw)
+        key = norm_alnum_lower(token)
+        if not token or not key or key in seen:
+            continue
+        seen.add(key)
+        tokens.append(token)
+    return tokens
+
+
+def _photo_row_matches_query(row: list[str], query: str) -> bool:
+    """Return True when the local metadata row contains the requested cat label."""
+    query_key = _photo_query_key(query)
+    if not query_key:
+        return False
+    for token in _photo_row_label_tokens(row):
+        if norm_alnum_lower(token) == query_key:
+            return True
+    return False
+
+
+def _parse_serial_number(value: str) -> int:
+    """Parse a serial token like sn1234 into an integer for sorting/comparison."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    if not digits:
+        return 0
+    try:
+        return int(digits)
+    except Exception:
+        return 0
+
+
 def _fetch_tcb_rows_live() -> list[list[str]]:
-    """Fetch TCB rows from Sheets with fallback to raw values_get if gspread helpers fail."""
-    sid = settings.sheet_catabase_id
-    if not sid:
+    """Build TCB-style rows from the local metadata CSV."""
+    path = local_photos.metadata_csv_path()
+    if not path.is_file():
         return []
-
-    gc = sheets_client()
-    sh = gc.open_by_key(sid)
-    ws = sh.worksheet("TCB Pics Formatted")
-
-    # Primary path: gspread convenience API.
+    rows: list[list[str]] = [[
+        "CatID",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Picture Link",
+        "Serial Number",
+        "Box Coordinates",
+        "Box Cat IDs",
+        "LabeledBy",
+        "Comments",
+    ]]
     try:
-        return _normalize_rows(ws.get_all_values())
-    except Exception:
-        pass
-
-    # Fallback path: raw Sheets values_get avoids gspread fill_gaps edge cases.
-    try:
-        raw = sh.values_get("'TCB Pics Formatted'")
-        return _normalize_rows((raw or {}).get("values") or [])
-    except Exception:
-        pass
-
-    # Last fallback with explicit range in case tab-level fetch is blocked.
-    try:
-        raw = sh.values_get("'TCB Pics Formatted'!A:ZZ")
-        return _normalize_rows((raw or {}).get("values") or [])
+        with path.open("r", newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            for raw in reader:
+                labels = str((raw or {}).get("Box Cat IDs", "") or "").strip()
+                rows.append([
+                    labels.replace("|", ", "),
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    str((raw or {}).get("Discord URL", "") or ""),
+                    str((raw or {}).get("Serial Number", "") or ""),
+                    str((raw or {}).get("Box Coordinates", "") or ""),
+                    labels,
+                    str((raw or {}).get("Label Author", "") or ""),
+                    str((raw or {}).get("Comments", "") or ""),
+                ])
     except Exception:
         return []
+    return rows
 
 def _load_tcb_snapshot() -> tuple[list[list[str]] | None, float]:
     """Load snapshot from disk. Returns (rows, unix_timestamp)."""
@@ -97,8 +170,8 @@ def _write_tcb_snapshot(rows: list[list[str]]) -> None:
     except Exception:
         pass
 
-def force_refresh_tcb_cache() -> list[list[str]]:
-    """Force refresh the TCB pics cache from the live sheet, bypassing TTL."""
+def force_refresh_photo_rows_cache() -> list[list[str]]:
+    """Force refresh the local photo metadata row cache, bypassing TTL."""
     global _TCB_ROWS, _TCB_TS
     try:
         rows = _fetch_tcb_rows_live()
@@ -110,8 +183,8 @@ def force_refresh_tcb_cache() -> list[list[str]]:
     except Exception:
         return _TCB_ROWS or []
 
-def get_tcb_pics_rows(ttl_sec: int | None = None) -> list[list[str]]:
-    """Fetch TCB Pics Formatted rows with in-memory + on-disk caching to reduce API reads."""
+def get_photo_metadata_rows(ttl_sec: int | None = None) -> list[list[str]]:
+    """Fetch local photo metadata rows with in-memory + on-disk caching."""
     global _TCB_ROWS, _TCB_TS
     ttl = int(ttl_sec if ttl_sec is not None else getattr(settings, "show_sheet_recentpics_ttl_sec", 300) or 300)
     ttl = max(1, ttl)
@@ -125,7 +198,7 @@ def get_tcb_pics_rows(ttl_sec: int | None = None) -> list[list[str]]:
     if snap_rows is not None and (now_unix - snap_ts) < ttl:
         _TCB_ROWS, _TCB_TS = snap_rows, now_mono
         return snap_rows
-    #Fetch live sheet
+    #Fetch live photo metadata
     try:
         rows = _fetch_tcb_rows_live()
         if not rows:
@@ -141,52 +214,50 @@ def get_tcb_pics_rows(ttl_sec: int | None = None) -> list[list[str]]:
         return []
 
 async def _get_all_photos_long_format():
-    """Helper to fetch the master photo list from Catabase."""
-    rows = get_tcb_pics_rows()
+    """Helper to fetch the master local photo metadata rows."""
+    rows = get_photo_metadata_rows()
     return rows[1:] if rows else []  #Skip header
 
 async def get_most_recent_photo(full_name: str, _retried: bool = False) -> dict | str:
     """Fetch the most recent photo row for a cat from the long-format list.
     
-    If no photos found, will force-refresh cache and retry once (smart recache).
+    If no photos found, force-refresh cache and retry once.
     """
     try:
         rows = await _get_all_photos_long_format()
     except Exception as e:
-        return f"Sheet error: {e}"
+        return f"Photo metadata error: {e}"
 
-    key = norm_alnum_lower(full_name)
+    display_name = _display_label(full_name) or str(full_name or "").strip()
     matches = []
     
     for r in rows:
         #Safety check for row length
-        if len(r) <= COL_SERIAL: continue
-        
-        if norm_alnum_lower(r[COL_LABEL]) == key:
-            if r[COL_URL].startswith("http"):
-                matches.append(r)
+        if len(r) <= COL_SERIAL:
+            continue
+        if not _photo_row_matches_query(r, full_name):
+            continue
+        serial_num = _parse_serial_number(r[COL_SERIAL] if len(r) > COL_SERIAL else "")
+        if serial_num <= 0 or not local_photos.has_local_photo(serial_num):
+            continue
+        matches.append(r)
 
     if not matches:
-        #Smart recache: force refresh and retry once
+        #Force refresh and retry once
         if not _retried:
-            force_refresh_tcb_cache()
+            force_refresh_photo_rows_cache()
             return await get_most_recent_photo(full_name, _retried=True)
         return f"No photos found for {full_name}."
 
     #Sort by Serial Number (descending)
     def parse_serial(row):
-        try:
-            #Remove non-digits (e.g. "sn123" -> 123)
-            val = row[COL_SERIAL]
-            return int(re.sub(r"\D", "", val) or 0)
-        except:
-            return 0
+        return _parse_serial_number(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
 
     best_row = max(matches, key=parse_serial)
     
     return {
-        "actual_name": best_row[COL_LABEL],
-        "url": best_row[COL_URL],
+        "actual_name": display_name,
+        "url": best_row[COL_URL] if len(best_row) > COL_URL else "",
         "serial": best_row[COL_SERIAL],
         "total_available": len(matches)
     }
@@ -195,20 +266,29 @@ async def get_most_recent_photo(full_name: str, _retried: bool = False) -> dict 
 async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str:
     """Pick a random recent photo from the full history.
     
-    If no photos found, will force-refresh cache and retry once (smart recache).
+    If no photos found, force-refresh cache and retry once.
     """
     try:
         rows = await _get_all_photos_long_format()
     except Exception as e:
-        return f"Sheet error: {e}"
+        return f"Photo metadata error: {e}"
 
-    key = norm_alnum_lower(full_name)
-    matches = [r for r in rows if len(r) > COL_SERIAL and norm_alnum_lower(r[COL_LABEL]) == key and r[COL_URL].startswith("http")]
+    display_name = _display_label(full_name) or str(full_name or "").strip()
+    matches = []
+    for r in rows:
+        if len(r) <= COL_SERIAL:
+            continue
+        if not _photo_row_matches_query(r, full_name):
+            continue
+        serial_num = _parse_serial_number(r[COL_SERIAL] if len(r) > COL_SERIAL else "")
+        if serial_num <= 0 or not local_photos.has_local_photo(serial_num):
+            continue
+        matches.append(r)
 
     if not matches:
-        #Smart recache: force refresh and retry once
+        #Force refresh and retry once
         if not _retried:
-            force_refresh_tcb_cache()
+            force_refresh_photo_rows_cache()
             return await get_recent_photo(full_name, _retried=True)
         return f"No recent photos for '{full_name}'."
 
@@ -216,22 +296,24 @@ async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str
     
     #Sort by serial ascending (oldest=lowest serial first)
     def parse_serial(row):
-        try:
-            return int(re.sub(r"\D", "", row[COL_SERIAL]) or 0)
-        except:
-            return 0
+        return _parse_serial_number(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
     
     matches.sort(key=parse_serial)
     pick = random.choice(matches)
     pick_idx = matches.index(pick)  #0-based position in sorted list
     
     return {
-        "actual_name": pick[COL_LABEL],
-        "url": pick[COL_URL],
+        "actual_name": display_name,
+        "url": pick[COL_URL] if len(pick) > COL_URL else "",
         "serial": pick[COL_SERIAL],
         "total_available": len(matches),
         "reverse_index": pick_idx + 1  #1-based: oldest=1, newest=total
     }
+
+
+# Backward-compatible aliases for older imports during the local migration.
+force_refresh_tcb_cache = force_refresh_photo_rows_cache
+get_tcb_pics_rows = get_photo_metadata_rows
 
 
 
@@ -256,8 +338,7 @@ IDX = {
 }
 
 async def get_cat_profile(query: str) -> dict | str:
-    """Return profile metadata for a cat or a friendly error string."""
-    """Return a dict for a cat profile or a string error message."""
+    """Return a CatDatabase-backed profile dict or a friendly error string."""
     if not settings.sheet_catabase_id:
         return "Catabase sheet ID not configured. Set SHEET_CATABASE_ID in .env."
     gc = sheets_client()
@@ -325,22 +406,17 @@ async def get_random_photo(full_name: str):
     return await get_recent_photo(full_name)
 
 async def build_profile_embed(query: str) -> dict | str:
-    """Construct the embeds used for the "who is" command."""
-    """
-    Returns a dict compatible with discord.Embed.from_dict or a string error.
-    Uses CatDatabase for metadata and RecentPics for a nice image if available.
-    """
+    """Build a legacy profile embed dict using CatDatabase plus local photo metadata."""
     prof = await get_cat_profile(query)
     if isinstance(prof, str):
         return prof  #error string from get_cat_profile
 
-    #Prefer most-recent photo; fall back to CatDatabase image_url
+    # Prefer the most recent photo from local metadata; do not use CatDatabase
+    # image fields for runtime photo selection during the local migration.
     recent = await get_most_recent_photo(prof["actual_name"])
     img_url = None
     if isinstance(recent, dict) and recent.get("url"):
         img_url = recent["url"]
-    elif prof.get("image_url"):
-        img_url = prof["image_url"]
 
     #Match the legacy dense profile card style used in cats-on-campus.
     display = re.sub(r"^\s*\d+\.\s*", "", str(prof.get("actual_name") or query)).strip()

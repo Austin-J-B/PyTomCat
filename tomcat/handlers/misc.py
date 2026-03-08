@@ -50,7 +50,7 @@ def _embed_digest(embed_dict: dict) -> str:
         blob = json.dumps(embed_dict, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     except Exception:
         blob = str(embed_dict)
-    return hashlib.sha1(blob.encode("utf-8")).hexdigest()
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _message_embed_digest(message: discord.Message) -> str | None:

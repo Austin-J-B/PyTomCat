@@ -7,7 +7,7 @@ Routes:
   GET  /api/labeler/cached_image/<sn> - Cached image bytes (fast)
   POST /api/labeler/detect          - Run YOLO+SAM â†’ boxes
   POST /api/labeler/identify        - Run DINOv3 â†’ top-N candidates
-  POST /api/labeler/save            - Batch save annotations to sheet
+  POST /api/labeler/save            - Batch save annotations to local metadata
   POST /api/labeler/flag_incorrect  - Clear labels for one serial for relabel
   GET  /api/labeler/cats            - List all cat names for dropdown
 """
@@ -24,9 +24,6 @@ import asyncio
 import aiohttp
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Set
-import socket
-import ipaddress
-from urllib.parse import urlparse
 
 from aiohttp import web
 from PIL import Image, ImageOps
@@ -34,12 +31,17 @@ from PIL import Image, ImageOps
 from ..config import settings
 from ..logger import log_action
 from ..vision import vision as V
-from ..services.catsheets import get_tcb_pics_rows, force_refresh_tcb_cache
-from ..services.sheets_client import sheets_client
+from ..services.catsheets import get_photo_metadata_rows, force_refresh_photo_rows_cache
 from ..services import labeler_cache, local_photos
 from ..services.gallery_retrain import get_gallery_retrain_status, schedule_gallery_retrain
 
-#Column indices in TCB Pics Formatted (0-indexed)
+_LABELER_ALLOWED_ORIGINS = {
+    origin.strip()
+    for origin in os.getenv("UI_ALLOWED_ORIGINS", "http://localhost:8080").split(",")
+    if origin.strip()
+}
+
+#Column indices in local photo metadata rows (0-indexed)
 COL_CAT_ID = 0       #A: CatID (e.g., "1. Twix")
 COL_URL = 6          #G: Picture Link
 COL_SERIAL = 7       #H: Serial number
@@ -252,19 +254,19 @@ _SKIP_CATID_LABELS = {
     "0.notacat",
 }
 _MANUAL_FALLBACK_REFS_PER_CAT = max(1, int(os.getenv("LABELER_MANUAL_FALLBACK_REFS_PER_CAT", "5") or "5"))
-_MANUAL_SHEET_REF_SAMPLE_PER_CAT = max(
+_MANUAL_METADATA_REF_SAMPLE_PER_CAT = max(
     _MANUAL_FALLBACK_REFS_PER_CAT,
     int(os.getenv("LABELER_MANUAL_SHEET_REF_SAMPLE_PER_CAT", "20") or "20"),
 )
-_MANUAL_SHEET_REF_CROPPED_SAMPLE_PER_CAT = max(
-    _MANUAL_SHEET_REF_SAMPLE_PER_CAT,
+_MANUAL_METADATA_REF_CROPPED_SAMPLE_PER_CAT = max(
+    _MANUAL_METADATA_REF_SAMPLE_PER_CAT,
     int(os.getenv("LABELER_MANUAL_SHEET_REF_CROPPED_SAMPLE_PER_CAT", "40") or "40"),
 )
-_MANUAL_SHEET_REF_UNCROPPED_SAMPLE_PER_CAT = max(
+_MANUAL_METADATA_REF_UNCROPPED_SAMPLE_PER_CAT = max(
     1,
     int(os.getenv("LABELER_MANUAL_SHEET_REF_UNCROPPED_SAMPLE_PER_CAT", "8") or "8"),
 )
-_MANUAL_SHEET_REF_TTL_SEC = max(30, int(os.getenv("LABELER_MANUAL_SHEET_REF_TTL_SEC", "600") or "600"))
+_MANUAL_METADATA_REF_TTL_SEC = max(30, int(os.getenv("LABELER_MANUAL_SHEET_REF_TTL_SEC", "600") or "600"))
 _IDENTIFY_FALLBACK_PREFETCH = str(
     os.getenv("LABELER_IDENTIFY_FALLBACK_PREFETCH", "0")
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -296,12 +298,12 @@ _IDENTIFY_FALLBACK_PREFETCH_MAX_MS = max(
     0.0,
     float(os.getenv("LABELER_IDENTIFY_FALLBACK_PREFETCH_MAX_MS", "300") or "300"),
 )
-_manual_sheet_ref_lock = asyncio.Lock()
-_manual_sheet_ref_cache: Dict[str, List[Dict[str, Any]]] = {}
-_manual_sheet_ref_built_mono: float = 0.0
-_sheet_crop_index_lock = asyncio.Lock()
-_sheet_crop_index_cache: Dict[Tuple[int, int], Dict[str, Any]] = {}
-_sheet_crop_index_built_mono: float = 0.0
+_manual_metadata_ref_lock = asyncio.Lock()
+_manual_metadata_ref_cache: Dict[str, List[Dict[str, Any]]] = {}
+_manual_metadata_ref_built_mono: float = 0.0
+_photo_crop_index_lock = asyncio.Lock()
+_photo_crop_index_cache: Dict[Tuple[int, int], Dict[str, Any]] = {}
+_photo_crop_index_built_mono: float = 0.0
 _ref_crop_result_cache: Dict[str, Tuple[float, bytes]] = {}
 _ref_crop_negative_cache: Dict[Tuple[int, int], float] = {}
 _REF_CROP_RESULT_CACHE_MAX = max(200, int(os.getenv("LABELER_REF_CROP_RESULT_CACHE_MAX", "3000") or "3000"))
@@ -371,12 +373,12 @@ _CLAIM_DIAG_SAMPLE = max(
     0.0,
     min(1.0, float(os.getenv("LABELER_CLAIM_DIAG_SAMPLE", "0.08") or "0.08")),
 )
-_FORCE_REFRESH_TCB_CACHE_COOLDOWN_SEC = max(
+_FORCE_REFRESH_PHOTO_ROWS_CACHE_COOLDOWN_SEC = max(
     2.0,
     float(os.getenv("LABELER_FORCE_REFRESH_TCB_CACHE_COOLDOWN_SEC", "20") or "20"),
 )
-_force_refresh_tcb_cache_task: Optional[asyncio.Task] = None
-_force_refresh_tcb_cache_next_allowed_mono: float = 0.0
+_force_refresh_photo_rows_cache_task: Optional[asyncio.Task] = None
+_force_refresh_photo_rows_cache_next_allowed_mono: float = 0.0
 _QUEUE_CACHE_WARM_COOLDOWN_SEC = max(
     1.0,
     float(os.getenv("LABELER_QUEUE_CACHE_WARM_COOLDOWN_SEC", "8") or "8"),
@@ -507,9 +509,9 @@ def _discard_flagged_ref_serial(serial: Any) -> bool:
 
 
 def _invalidate_labeler_caches_after_label_clears(serials: Optional[List[int]] = None) -> None:
-    """Invalidate in-memory labeler caches after sheet labels are cleared/changed."""
-    global _manual_sheet_ref_cache, _manual_sheet_ref_built_mono
-    global _sheet_crop_index_cache, _sheet_crop_index_built_mono
+    """Invalidate in-memory labeler caches after photo metadata labels change."""
+    global _manual_metadata_ref_cache, _manual_metadata_ref_built_mono
+    global _photo_crop_index_cache, _photo_crop_index_built_mono
     for item in serials or []:
         try:
             sn = int(item)
@@ -525,10 +527,10 @@ def _invalidate_labeler_caches_after_label_clears(serials: Optional[List[int]] =
     _refine_result_cache.clear()
     _identify_result_cache.clear()
     _manual_result_cache.clear()
-    _manual_sheet_ref_cache = {}
-    _manual_sheet_ref_built_mono = 0.0
-    _sheet_crop_index_cache = {}
-    _sheet_crop_index_built_mono = 0.0
+    _manual_metadata_ref_cache = {}
+    _manual_metadata_ref_built_mono = 0.0
+    _photo_crop_index_cache = {}
+    _photo_crop_index_built_mono = 0.0
     _ref_crop_result_cache.clear()
 
 
@@ -668,7 +670,7 @@ def _kickoff_flag_incorrect_queue_worker() -> None:
 
 
 def _flush_flag_incorrect_queue_batch_sync(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Apply queued incorrect flags to Sheets in one batch fetch/update."""
+    """Apply queued incorrect flags to the local metadata CSV."""
     serial_order: List[int] = []
     actor_by_serial: Dict[int, str] = {}
     for item in batch or []:
@@ -684,86 +686,14 @@ def _flush_flag_incorrect_queue_batch_sync(batch: List[Dict[str, Any]]) -> Dict[
         actor_by_serial[int(sn)] = str(item.get("actor_name") or "")
     if not serial_order:
         return {"results": {}, "updated_sheet": False}
-
-    gc = sheets_client()
-    sh = gc.open_by_key(settings.sheet_catabase_id)
-    ws = sh.worksheet("TCB Pics Formatted")
-    rows = ws.get_all_values()
-    headers = rows[0] if rows else []
-    col_labeled_by = _find_header_col(
-        headers,
-        [
-            "LabeledBy",
-            "LabelledBy",
-            "Labeled By",
-            "Labelled By",
-            "labeled_by",
-            "labelled_by",
-        ],
-    )
-
-    serial_to_row: Dict[int, int] = {}
-    serial_to_row_data: Dict[int, List[str]] = {}
-    serial_to_labeled_by: Dict[int, str] = {}
-    for idx, row in enumerate(rows[1:], start=2):
-        if len(row) <= COL_SERIAL:
-            continue
-        sn = _parse_serial(str(row[COL_SERIAL] if len(row) > COL_SERIAL else ""))
-        if sn is None:
-            continue
-        serial_to_row[int(sn)] = int(idx)
-        serial_to_row_data[int(sn)] = row
-        if col_labeled_by is not None:
-            serial_to_labeled_by[int(sn)] = row[col_labeled_by] if len(row) > col_labeled_by else ""
-
-    updates: List[Dict[str, Any]] = []
-    results: Dict[int, Dict[str, Any]] = {}
+    actor_name = ""
     for sn in serial_order:
-        row_num = serial_to_row.get(int(sn))
-        if not row_num:
-            results[int(sn)] = {
-                "ok": False,
-                "not_found": True,
-                "changed": False,
-                "already_unlabeled": False,
-                "error": "Serial not found",
-            }
-            continue
-
-        row_data = serial_to_row_data.get(int(sn), [])
-        prev_cat_id = str(row_data[COL_CAT_ID] if len(row_data) > COL_CAT_ID else "")
-        prev_box_coords = str(row_data[COL_BOX_COORDS] if len(row_data) > COL_BOX_COORDS else "")
-        prev_box_cat_ids = str(row_data[COL_BOX_CAT_IDS] if len(row_data) > COL_BOX_CAT_IDS else "")
-        changed = bool(prev_cat_id.strip() or prev_box_coords.strip() or prev_box_cat_ids.strip())
-        if changed:
-            updates.extend(
-                [
-                    {"range": f"A{row_num}", "values": [[""]]},
-                    {"range": f"I{row_num}", "values": [[""]]},
-                    {"range": f"J{row_num}", "values": [[""]]},
-                ]
-            )
-
-        if col_labeled_by is not None:
-            merged = _merge_labeled_by(serial_to_labeled_by.get(int(sn), ""), actor_by_serial.get(int(sn), ""))
-            if merged != serial_to_labeled_by.get(int(sn), ""):
-                updates.append(
-                    {
-                        "range": f"{_col_to_a1(col_labeled_by + 1)}{row_num}",
-                        "values": [[merged]],
-                    }
-                )
-
-        results[int(sn)] = {
-            "ok": True,
-            "not_found": False,
-            "changed": bool(changed),
-            "already_unlabeled": not bool(changed),
-        }
-
-    if updates:
-        ws.batch_update(updates)
-    return {"results": results, "updated_sheet": bool(updates)}
+        candidate = actor_by_serial.get(int(sn), "").strip()
+        if candidate:
+            actor_name = candidate
+            break
+    outcome = local_photos.clear_metadata_annotations(serial_order, actor_name)
+    return {"results": dict(outcome.get("results") or {}), "updated_sheet": bool(outcome.get("updated_metadata"))}
 
 
 async def _flag_incorrect_queue_worker() -> None:
@@ -874,7 +804,7 @@ async def _flag_incorrect_queue_worker() -> None:
 
         if success_serials:
             _invalidate_labeler_caches_after_label_clears(success_serials)
-            _kickoff_force_refresh_tcb_cache()
+            _kickoff_refresh_photo_rows_cache()
         if success_serials or not_found_serials:
             log_action(
                 "labeler_flag_incorrect_queue_flush",
@@ -908,8 +838,8 @@ def _filter_refs_for_flagged_serials(refs: Any) -> List[Any]:
             and crop_i is not None
             and serial_i > 0
             and crop_i > 0
-            and _sheet_crop_index_cache
-            and (int(serial_i), int(crop_i)) not in _sheet_crop_index_cache
+        and _photo_crop_index_cache
+        and (int(serial_i), int(crop_i)) not in _photo_crop_index_cache
         ):
             continue
         out.append(ref)
@@ -974,7 +904,7 @@ def _queue_items_from_rows(rows: List[List[str]], *, mode: str = "boot", max_ite
         if int(sn) in seen:
             continue
         url = str(row[COL_URL] if len(row) > COL_URL else "").strip()
-        if not url.startswith("http"):
+        if not _is_safe_url_for_fetch(url):
             continue
         box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
         labels = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
@@ -1330,7 +1260,7 @@ def _parse_catid_cell_names(cell_value: str) -> List[str]:
     return out
 
 
-def _manual_sheet_ref_reservoir_add(
+def _manual_metadata_ref_reservoir_add(
     refs: Dict[str, List[Dict[str, Any]]],
     counts: Dict[str, int],
     cat_key: str,
@@ -1340,7 +1270,7 @@ def _manual_sheet_ref_reservoir_add(
 ) -> None:
     if not cat_key:
         return
-    lim = max(1, int(limit if limit is not None else _MANUAL_SHEET_REF_SAMPLE_PER_CAT))
+    lim = max(1, int(limit if limit is not None else _MANUAL_METADATA_REF_SAMPLE_PER_CAT))
     bucket = refs.setdefault(cat_key, [])
     seen_n = int(counts.get(cat_key, 0)) + 1
     counts[cat_key] = seen_n
@@ -1352,8 +1282,8 @@ def _manual_sheet_ref_reservoir_add(
         bucket[j - 1] = entry
 
 
-def _build_manual_sheet_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-    rows = get_tcb_pics_rows(ttl_sec=_queue_rows_ttl_sec())
+def _build_manual_metadata_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    rows = get_photo_metadata_rows(ttl_sec=_queue_rows_ttl_sec())
     refs: Dict[str, List[Dict[str, Any]]] = {}
     counts: Dict[str, int] = {}
 
@@ -1361,7 +1291,7 @@ def _build_manual_sheet_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) -> Di
         if len(row) <= COL_URL:
             continue
         url = str(row[COL_URL] if len(row) > COL_URL else "").strip()
-        if not url.startswith("http"):
+        if not _is_safe_url_for_fetch(url):
             continue
         serial = _parse_serial(str(row[COL_SERIAL] if len(row) > COL_SERIAL else ""))
         if serial is not None and _is_flagged_ref_serial(serial):
@@ -1387,7 +1317,7 @@ def _build_manual_sheet_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) -> Di
             cat_key = str((meta or {}).get("key") or token).strip()
             if cat_key in {"notacat", "needsreview", "rejected"}:
                 continue
-            _manual_sheet_ref_reservoir_add(
+            _manual_metadata_ref_reservoir_add(
                 refs,
                 counts,
                 cat_key,
@@ -1398,7 +1328,7 @@ def _build_manual_sheet_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) -> Di
                     "crop": i + 1,
                     "source": "box_cat_ids",
                 },
-                limit=_MANUAL_SHEET_REF_CROPPED_SAMPLE_PER_CAT,
+                limit=_MANUAL_METADATA_REF_CROPPED_SAMPLE_PER_CAT,
             )
 
         catid_names = _parse_catid_cell_names(catid_cell)
@@ -1418,7 +1348,7 @@ def _build_manual_sheet_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) -> Di
         # Heuristic: single CatID + single box => treat that box as this cat.
         if len(coords) == 1 and len(catid_metas) == 1:
             meta = catid_metas[0]
-            _manual_sheet_ref_reservoir_add(
+            _manual_metadata_ref_reservoir_add(
                 refs,
                 counts,
                 str(meta.get("key") or ""),
@@ -1429,12 +1359,12 @@ def _build_manual_sheet_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) -> Di
                     "crop": 1,
                     "source": "catid_single_box",
                 },
-                limit=_MANUAL_SHEET_REF_CROPPED_SAMPLE_PER_CAT,
+                limit=_MANUAL_METADATA_REF_CROPPED_SAMPLE_PER_CAT,
             )
 
         # Fallback: uncropped row image by CatID.
         for meta in catid_metas:
-            _manual_sheet_ref_reservoir_add(
+            _manual_metadata_ref_reservoir_add(
                 refs,
                 counts,
                 str(meta.get("key") or ""),
@@ -1445,20 +1375,20 @@ def _build_manual_sheet_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) -> Di
                     "crop": None,
                     "source": "catid_uncropped",
                 },
-                limit=_MANUAL_SHEET_REF_UNCROPPED_SAMPLE_PER_CAT,
+                limit=_MANUAL_METADATA_REF_UNCROPPED_SAMPLE_PER_CAT,
             )
 
     return refs
 
 
-def _build_sheet_crop_index_cache() -> Dict[Tuple[int, int], Dict[str, Any]]:
-    rows = get_tcb_pics_rows(ttl_sec=_queue_rows_ttl_sec())
+def _build_photo_crop_index_cache() -> Dict[Tuple[int, int], Dict[str, Any]]:
+    rows = get_photo_metadata_rows(ttl_sec=_queue_rows_ttl_sec())
     out: Dict[Tuple[int, int], Dict[str, Any]] = {}
     for row in rows[1:]:
         if len(row) <= COL_URL:
             continue
         url = str(row[COL_URL] if len(row) > COL_URL else "").strip()
-        if not url.startswith("http"):
+        if not _is_safe_url_for_fetch(url):
             continue
         serial = _parse_serial(str(row[COL_SERIAL] if len(row) > COL_SERIAL else ""))
         if serial is None:
@@ -1507,25 +1437,25 @@ def _build_sheet_crop_index_cache() -> Dict[Tuple[int, int], Dict[str, Any]]:
     return out
 
 
-async def _ensure_sheet_crop_index_cache(force: bool = False) -> None:
-    global _sheet_crop_index_cache, _sheet_crop_index_built_mono
+async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
+    global _photo_crop_index_cache, _photo_crop_index_built_mono
     now = time.monotonic()
     if (
         not force
-        and _sheet_crop_index_cache
-        and (now - float(_sheet_crop_index_built_mono)) < _MANUAL_SHEET_REF_TTL_SEC
+        and _photo_crop_index_cache
+        and (now - float(_photo_crop_index_built_mono)) < _MANUAL_METADATA_REF_TTL_SEC
     ):
         return
-    async with _sheet_crop_index_lock:
+    async with _photo_crop_index_lock:
         now2 = time.monotonic()
         if (
             not force
-            and _sheet_crop_index_cache
-            and (now2 - float(_sheet_crop_index_built_mono)) < _MANUAL_SHEET_REF_TTL_SEC
+            and _photo_crop_index_cache
+            and (now2 - float(_photo_crop_index_built_mono)) < _MANUAL_METADATA_REF_TTL_SEC
         ):
             return
-        _sheet_crop_index_cache = await asyncio.to_thread(_build_sheet_crop_index_cache)
-        _sheet_crop_index_built_mono = time.monotonic()
+        _photo_crop_index_cache = await asyncio.to_thread(_build_photo_crop_index_cache)
+        _photo_crop_index_built_mono = time.monotonic()
 
 
 def _sheet_ref_crop_url(serial: int, crop: int) -> str:
@@ -1560,7 +1490,7 @@ def _map_identify_candidate_refs_to_sheet(
         bad_until = _ref_crop_negative_cache.get(key, 0.0)
         if bad_until and time.monotonic() < float(bad_until):
             continue
-        entry = _sheet_crop_index_cache.get(key) or {}
+        entry = _photo_crop_index_cache.get(key) or {}
         if not entry:
             continue
         seen.add(key)
@@ -1587,32 +1517,32 @@ def _map_identify_candidate_refs_to_sheet(
             "serial": serial,
             "crop": crop,
             "box": box,
-            "source": "sheet_crop",
+            "source": "photo_crop",
         })
         if len(out) >= limit:
             break
     return out
 
 
-async def _ensure_manual_sheet_ref_cache(alias_lookup: Dict[str, Dict[str, Any]], force: bool = False) -> None:
-    global _manual_sheet_ref_cache, _manual_sheet_ref_built_mono
+async def _ensure_manual_metadata_ref_cache(alias_lookup: Dict[str, Dict[str, Any]], force: bool = False) -> None:
+    global _manual_metadata_ref_cache, _manual_metadata_ref_built_mono
     now = time.monotonic()
     if (
         not force
-        and _manual_sheet_ref_cache
-        and (now - float(_manual_sheet_ref_built_mono)) < _MANUAL_SHEET_REF_TTL_SEC
+        and _manual_metadata_ref_cache
+        and (now - float(_manual_metadata_ref_built_mono)) < _MANUAL_METADATA_REF_TTL_SEC
     ):
         return
-    async with _manual_sheet_ref_lock:
+    async with _manual_metadata_ref_lock:
         now2 = time.monotonic()
         if (
             not force
-            and _manual_sheet_ref_cache
-            and (now2 - float(_manual_sheet_ref_built_mono)) < _MANUAL_SHEET_REF_TTL_SEC
+            and _manual_metadata_ref_cache
+            and (now2 - float(_manual_metadata_ref_built_mono)) < _MANUAL_METADATA_REF_TTL_SEC
         ):
             return
-        _manual_sheet_ref_cache = await asyncio.to_thread(_build_manual_sheet_ref_cache, alias_lookup)
-        _manual_sheet_ref_built_mono = time.monotonic()
+        _manual_metadata_ref_cache = await asyncio.to_thread(_build_manual_metadata_ref_cache, alias_lookup)
+        _manual_metadata_ref_built_mono = time.monotonic()
 
 
 def _fallback_refs_for_cat(
@@ -1623,7 +1553,7 @@ def _fallback_refs_for_cat(
     prefer_cached: bool = False,
     prefer_serial: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    entries = list(_manual_sheet_ref_cache.get(str(cat_key or ""), []) or [])
+    entries = list(_manual_metadata_ref_cache.get(str(cat_key or ""), []) or [])
     if entries:
         entries = [
             e for e in entries
@@ -1794,7 +1724,7 @@ async def _materialize_fallback_refs(
         if serial is not None and _is_flagged_ref_serial(serial):
             continue
         url = str(row.get("url") or "").strip()
-        fetch_url = url if url.startswith("http") else ""
+        fetch_url = url if _is_safe_url_for_fetch(url) else ""
 
         data = await _fetch_data(serial, fetch_url)
         if data:
@@ -1907,13 +1837,31 @@ async def _release_claim(mode: str, serial: int, user_id: str) -> bool:
 
 
 def _with_cors(resp: web.Response, request: web.Request) -> web.Response:
-    """Add CORS headers to response."""
-    origin = request.headers.get("Origin", "*")
-    resp.headers["Access-Control-Allow-Origin"] = origin
-    resp.headers["Access-Control-Allow-Credentials"] = "true"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-CSRF-Token"
+    """Add CORS headers to response using the configured UI allowlist."""
+    origin = request.headers.get("Origin")
+    allow_origin = None
+    if origin and ("*" in _LABELER_ALLOWED_ORIGINS or origin in _LABELER_ALLOWED_ORIGINS):
+        allow_origin = origin
+    elif "*" in _LABELER_ALLOWED_ORIGINS:
+        allow_origin = "*"
+
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-Token, X-TC-CSRF"
+    resp.headers["Vary"] = "Origin"
+    if allow_origin:
+        resp.headers["Access-Control-Allow-Origin"] = allow_origin
+    if allow_origin and allow_origin != "*":
+        resp.headers["Access-Control-Allow-Credentials"] = "true"
     return resp
+
+
+def _internal_error_response(
+    request: web.Request,
+    *,
+    message: str = "Internal server error",
+) -> web.Response:
+    """Return a generic 500 without exposing exception details to the client."""
+    return _with_cors(web.Response(status=500, text=message), request)
 
 
 def _open_rgb_image(source: Any) -> Image.Image:
@@ -1996,34 +1944,34 @@ def _hash_cache_key(*parts: Any) -> str:
     return h.hexdigest()
 
 
-def _kickoff_force_refresh_tcb_cache(reason: str = "") -> None:
-    """Refresh sheet cache in a worker thread so the aiohttp/discord loop is not blocked."""
-    global _force_refresh_tcb_cache_task, _force_refresh_tcb_cache_next_allowed_mono
+def _kickoff_refresh_photo_rows_cache(reason: str = "") -> None:
+    """Refresh the local photo metadata cache in a worker thread."""
+    global _force_refresh_photo_rows_cache_task, _force_refresh_photo_rows_cache_next_allowed_mono
     now_mono = time.monotonic()
-    active = _force_refresh_tcb_cache_task
+    active = _force_refresh_photo_rows_cache_task
     if active is not None and not active.done():
         return
-    if now_mono < float(_force_refresh_tcb_cache_next_allowed_mono):
+    if now_mono < float(_force_refresh_photo_rows_cache_next_allowed_mono):
         return
-    _force_refresh_tcb_cache_next_allowed_mono = now_mono + float(_FORCE_REFRESH_TCB_CACHE_COOLDOWN_SEC)
+    _force_refresh_photo_rows_cache_next_allowed_mono = now_mono + float(_FORCE_REFRESH_PHOTO_ROWS_CACHE_COOLDOWN_SEC)
 
     async def _run() -> None:
-        global _force_refresh_tcb_cache_task
+        global _force_refresh_photo_rows_cache_task
         try:
-            await asyncio.to_thread(force_refresh_tcb_cache)
+            await asyncio.to_thread(force_refresh_photo_rows_cache)
         except Exception as e:
             log_action(
-                "labeler_force_refresh_tcb_cache_error",
+                "labeler_force_refresh_photo_rows_cache_error",
                 f"reason={str(reason or '').strip() or 'unknown'}",
                 f"{type(e).__name__}: {e!r}",
             )
         finally:
-            _force_refresh_tcb_cache_task = None
+            _force_refresh_photo_rows_cache_task = None
 
     try:
-        _force_refresh_tcb_cache_task = asyncio.create_task(_run())
+        _force_refresh_photo_rows_cache_task = asyncio.create_task(_run())
     except Exception:
-        _force_refresh_tcb_cache_task = None
+        _force_refresh_photo_rows_cache_task = None
 
 
 def _identify_should_trace(prefetch: bool) -> bool:
@@ -2257,19 +2205,10 @@ async def _fetch_image_bytes_for_labeler(
         return None
 
     u = str(url or "").strip()
-    if not u.startswith("http"):
+    if not labeler_cache.is_safe_remote_url(u):
         return None
 
-    if not _is_safe_url_for_fetch(u):
-        # Reject URLs that resolve to private/loopback/link-local/etc. addresses.
-        return None
-
-    lower_u = u.lower()
-    is_drive_like = (
-        "drive.google.com" in lower_u
-        or "drive.usercontent.google.com" in lower_u
-        or "googleusercontent.com" in lower_u
-    )
+    is_drive_like = labeler_cache.is_drive_like_public_url(u)
 
     if serial_i is not None:
         try:
@@ -2290,13 +2229,12 @@ async def _fetch_image_bytes_for_labeler(
         return None
 
     try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as sess:
-            async with sess.get(u) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.read()
-                return data or None
+        return await labeler_cache.download_remote_image(
+            u,
+            timeout_sec=10.0,
+            bypass_backoff=bypass_backoff,
+            max_attempts=1,
+        )
     except Exception as e:
         log_action("labeler_image_fetch_error", f"serial={serial_i}", f"{type(e).__name__}: {e!r}")
         return None
@@ -2308,45 +2246,7 @@ def _is_safe_url_for_fetch(url: str) -> bool:
     This enforces a safe scheme and rejects URLs that resolve to private or loopback
     IP ranges to mitigate SSRF-style abuse.
     """
-    try:
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            return False
-        if not parsed.hostname:
-            return False
-
-        hostname = parsed.hostname
-        # Resolve the hostname and ensure no private/loopback/etc. addresses are used.
-        try:
-            addr_infos = socket.getaddrinfo(hostname, None)
-        except OSError:
-            return False
-
-        for family, _, _, _, sockaddr in addr_infos:
-            if family == socket.AF_INET:
-                ip_str = sockaddr[0]
-            elif family == socket.AF_INET6:
-                ip_str = sockaddr[0]
-            else:
-                continue
-
-            try:
-                ip = ipaddress.ip_address(ip_str)
-            except ValueError:
-                return False
-
-            if (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_multicast
-                or ip.is_reserved
-            ):
-                return False
-
-        return True
-    except Exception:
-        return False
+    return labeler_cache.is_safe_remote_url(url)
 
 
 def _kickoff_fallback_ref_cache_warm(candidates: List[Tuple[int, str]], *, max_items: int = 12) -> int:
@@ -2361,7 +2261,7 @@ def _kickoff_fallback_ref_cache_warm(candidates: List[Tuple[int, str]], *, max_i
         except Exception:
             continue
         u = str(url or "").strip()
-        if sn <= 0 or not u.startswith("http"):
+        if sn <= 0 or not _is_safe_url_for_fetch(u):
             continue
         if sn in seen:
             continue
@@ -2770,38 +2670,18 @@ def _schedule_classify_quality_scan_from_queue(items: List[Dict[str, Any]]) -> i
 
 
 def _auto_reject_low_quality_sync(items: List[Dict[str, Any]]) -> int:
-    """Mark low-quality classify rows as Rejected in BoxCatIDs."""
+    """Mark low-quality classify rows as Rejected in the local metadata CSV."""
     if not items:
         return 0
-    gc = sheets_client()
-    sh = gc.open_by_key(settings.sheet_catabase_id)
-    ws = sh.worksheet("TCB Pics Formatted")
-    rows = ws.get_all_values()
-    headers = rows[0] if rows else []
-    col_labeled_by = _find_header_col(
-        headers,
-        [
-            "LabeledBy",
-            "LabelledBy",
-            "Labeled By",
-            "Labelled By",
-            "labeled_by",
-            "labelled_by",
-        ],
-    )
-    serial_to_row: Dict[int, int] = {}
+    rows = get_photo_metadata_rows(ttl_sec=_queue_rows_ttl_sec())
     serial_to_row_data: Dict[int, List[str]] = {}
-    serial_to_labeled_by: Dict[int, str] = {}
-    for idx, row in enumerate(rows[1:], start=2):
+    for row in rows[1:]:
         if len(row) <= COL_SERIAL:
             continue
         sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
         if sn is None:
             continue
-        serial_to_row[int(sn)] = int(idx)
         serial_to_row_data[int(sn)] = row
-        if col_labeled_by is not None:
-            serial_to_labeled_by[int(sn)] = row[col_labeled_by] if len(row) > col_labeled_by else ""
 
     updates: List[Dict[str, Any]] = []
     applied = 0
@@ -2810,10 +2690,9 @@ def _auto_reject_low_quality_sync(items: List[Dict[str, Any]]) -> int:
             sn = int(item.get("serial") or 0)
         except Exception:
             continue
-        row_num = serial_to_row.get(sn)
-        if not row_num:
-            continue
         row = serial_to_row_data.get(sn, [])
+        if not row:
+            continue
         cur_box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
         cur_box_cat_ids = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
         if not cur_box_coords or cur_box_coords.lower() == "rejected":
@@ -2823,34 +2702,17 @@ def _auto_reject_low_quality_sync(items: List[Dict[str, Any]]) -> int:
         if cur_boxes and len(cur_labels) >= len(cur_boxes):
             # Skip if this row is no longer waiting in classify queue.
             continue
-        reject_labels = _build_rejected_labels(int(item.get("num_boxes") or 0))
         updates.append({
-            "range": f"J{row_num}",
-            "values": [[reject_labels]],
+            "serial": sn,
+            "box_cat_ids": _build_rejected_labels(int(item.get("num_boxes") or 0)),
         })
-        updates.append({
-            "range": f"A{row_num}",
-            "values": [[""]],
-        })
-        if col_labeled_by is not None:
-            merged = _merge_labeled_by(serial_to_labeled_by.get(sn, ""), "auto-quality-filter")
-            updates.append({
-                "range": f"{_col_to_a1(col_labeled_by + 1)}{row_num}",
-                "values": [[merged]],
-            })
         applied += 1
 
     if not updates:
         return 0
-
-    import time as _time
-    chunk_size = 50
-    for i in range(0, len(updates), chunk_size):
-        ws.batch_update(updates[i:i + chunk_size])
-        if i + chunk_size < len(updates):
-            _time.sleep(1)
+    local_photos.update_metadata_annotations(updates, "auto-quality-filter")
     try:
-        force_refresh_tcb_cache()
+        force_refresh_photo_rows_cache()
     except Exception:
         pass
     return int(applied)
@@ -3040,12 +2902,12 @@ def _queue_rows_ttl_sec() -> int:
 
 
 async def _get_tcb_rows_async(*, force: bool = False, ttl_sec: Optional[int] = None) -> List[List[str]]:
-    """Load TCB sheet rows without blocking the event loop."""
+    """Load photo metadata rows without blocking the event loop."""
     ttl = int(ttl_sec) if ttl_sec is not None else int(_queue_rows_ttl_sec())
     ttl = max(1, ttl)
     if force:
-        return await asyncio.to_thread(force_refresh_tcb_cache)
-    return await asyncio.to_thread(get_tcb_pics_rows, ttl)
+        return await asyncio.to_thread(force_refresh_photo_rows_cache)
+    return await asyncio.to_thread(get_photo_metadata_rows, ttl)
 
 
 async def get_queue_detect(request: web.Request) -> web.Response:
@@ -3074,7 +2936,7 @@ async def get_queue_detect(request: web.Request) -> web.Response:
                 box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
                 if not box_coords.strip():
                     url = row[COL_URL] if len(row) > COL_URL else ""
-                    if url.startswith("http"):
+                    if _is_safe_url_for_fetch(url):
                         out_queue.append({"serial": sn, "url": url})
             out_queue.sort(key=lambda item: int(item.get("serial") or 0))
             return out_queue
@@ -3135,7 +2997,7 @@ async def get_queue_classify(request: web.Request) -> web.Response:
                 
                 if num_labeled < num_boxes:
                     url = row[COL_URL] if len(row) > COL_URL else ""
-                    if url.startswith("http"):
+                    if _is_safe_url_for_fetch(url):
                         out_candidates.append({
                             "serial": sn,
                             "url": url,
@@ -3263,7 +3125,7 @@ async def get_queue_classify(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
         log_action("labeler_queue_classify_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def get_queue_manual(request: web.Request) -> web.Response:
@@ -3303,7 +3165,7 @@ async def get_queue_manual(request: web.Request) -> web.Response:
                 if not review_indices:
                     continue
                 url = row[COL_URL] if len(row) > COL_URL else ""
-                if not str(url).startswith("http"):
+                if not _is_safe_url_for_fetch(str(url)):
                     continue
                 out_queue.append({
                     "serial": sn,
@@ -3326,7 +3188,7 @@ async def get_queue_manual(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
         log_action("labeler_queue_manual_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def get_local_missing(request: web.Request) -> web.Response:
@@ -3338,7 +3200,7 @@ async def get_local_missing(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
         log_action("labeler_local_missing_error", "error", f"{type(e).__name__}: {e!r}")
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def get_image(request: web.Request) -> web.Response:
@@ -3372,7 +3234,7 @@ async def get_image(request: web.Request) -> web.Response:
         return _with_cors(web.Response(status=404, text="Serial not found"), request)
     except Exception as e:
         log_action("labeler_get_image_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def get_cached_image(request: web.Request) -> web.Response:
@@ -3438,16 +3300,11 @@ async def get_cached_image(request: web.Request) -> web.Response:
 
         url = await asyncio.to_thread(_find_url_in_rows, rows, sn)
 
-        if not url or not url.startswith("http"):
+        if not _is_safe_url_for_fetch(str(url or "").strip()):
             return _with_cors(web.Response(status=404, text="Image URL not found"), request)
 
-        url_s = str(url)
-        lower_url = url_s.lower()
-        is_drive_like = (
-            "drive.google.com" in lower_url
-            or "drive.usercontent.google.com" in lower_url
-            or "googleusercontent.com" in lower_url
-        )
+        url_s = str(url).strip()
+        is_drive_like = labeler_cache.is_drive_like_public_url(url_s)
         intent = str(request.query.get("intent") or "foreground").strip().lower()
         if intent not in {"prefetch", "foreground"}:
             intent = "foreground"
@@ -3561,7 +3418,7 @@ async def get_cached_image(request: web.Request) -> web.Response:
         return _with_cors(resp, request)
     except Exception as e:
         log_action("labeler_cached_image_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def get_ref_crop(request: web.Request) -> web.Response:
@@ -3597,13 +3454,13 @@ async def get_ref_crop(request: web.Request) -> web.Response:
         if bad_until and time.monotonic() < float(bad_until):
             return _with_cors(web.Response(status=404, text="Crop not found"), request)
 
-        await _ensure_sheet_crop_index_cache(force=False)
-        entry = _sheet_crop_index_cache.get((int(sn), int(crop_num)))
+        await _ensure_photo_crop_index_cache(force=False)
+        entry = _photo_crop_index_cache.get((int(sn), int(crop_num)))
         if not entry:
-            await _ensure_sheet_crop_index_cache(force=True)
-            entry = _sheet_crop_index_cache.get((int(sn), int(crop_num)))
+            await _ensure_photo_crop_index_cache(force=True)
+            entry = _photo_crop_index_cache.get((int(sn), int(crop_num)))
         if not entry:
-            _log_ref_crop_miss(int(sn), int(crop_num), "sheet_entry_missing")
+            _log_ref_crop_miss(int(sn), int(crop_num), "photo_entry_missing")
             _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
             return _with_cors(web.Response(status=404, text="Crop not found"), request)
 
@@ -3656,7 +3513,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
         return _with_cors(web.Response(body=payload, content_type="image/jpeg"), request)
     except Exception as e:
         log_action("labeler_ref_crop_error", "error", f"{type(e).__name__}: {e!r}")
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def post_ui_diag(request: web.Request) -> web.Response:
@@ -3789,7 +3646,7 @@ async def post_claim(request: web.Request) -> web.Response:
         except Exception:
             trig = "error"
         log_action("labeler_claim_error", trig, f"{type(e).__name__}: {e!r}")
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 #---------- CV Endpoints ----------
@@ -3991,7 +3848,7 @@ async def post_detect(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
         log_action("labeler_detect_error", "error", f"{type(e).__name__}: {e!r}")
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def post_refine(request: web.Request) -> web.Response:
@@ -4114,7 +3971,7 @@ async def post_refine(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
         log_action("labeler_refine_error", "error", f"{type(e).__name__}: {e!r}")
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def post_identify(request: web.Request) -> web.Response:
@@ -4421,10 +4278,10 @@ async def post_identify(request: web.Request) -> web.Response:
 
             # Keep refs strictly query-specific from DINO similarity results.
             # For each predicted cat, use only its DINO-ranked refs and map them
-            # to ref-crop endpoints; no deterministic sheet fallback override.
+            # to ref-crop endpoints; no deterministic metadata fallback override.
             try:
                 t_sheet = time.perf_counter()
-                await _ensure_sheet_crop_index_cache(force=False)
+                await _ensure_photo_crop_index_cache(force=False)
 
                 warm_candidates: List[Tuple[int, str]] = []
                 for crop in [row for row in result.results if isinstance(row, dict)]:
@@ -4470,9 +4327,9 @@ async def post_identify(request: web.Request) -> web.Response:
                             key_sc = (serial_ref, crop_ref)
                             if key_sc in seen_sc:
                                 continue
-                            entry = _sheet_crop_index_cache.get((int(serial_ref), int(crop_ref))) or {}
+                            entry = _photo_crop_index_cache.get((int(serial_ref), int(crop_ref))) or {}
                             if not entry:
-                                # Sheet no longer has this crop (often because it was cleared/flagged).
+                                # Metadata no longer has this crop (often because it was cleared/flagged).
                                 # Drop stale gallery refs instead of showing unlabeled historical thumbnails.
                                 continue
                             seen_sc.add(key_sc)
@@ -4487,7 +4344,7 @@ async def post_identify(request: web.Request) -> web.Response:
                             if img_b64:
                                 seen_img.add(img_b64)
                             src_url = str(entry.get("url") or "").strip()
-                            if (not img_b64) and src_url.startswith("http"):
+                            if (not img_b64) and _is_safe_url_for_fetch(src_url):
                                 warm_candidates.append((int(serial_ref), src_url))
                             if len(selected_refs) >= ref_keep_limit:
                                 break
@@ -4546,7 +4403,7 @@ async def post_identify(request: web.Request) -> web.Response:
                 await _identify_singleflight_finish(cache_key, singleflight_future, payload_for_singleflight)
     except Exception as e:
         log_action("labeler_identify_error", "error", f"{type(e).__name__}: {e!r}")
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def post_manual_candidates(request: web.Request) -> web.Response:
@@ -4633,12 +4490,12 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
 
         alias_lookup, ordered_profile, _ = await asyncio.to_thread(_load_profile_catalog)
         try:
-            await _ensure_manual_sheet_ref_cache(alias_lookup, force=False)
-            await _ensure_sheet_crop_index_cache(force=False)
+            await _ensure_manual_metadata_ref_cache(alias_lookup, force=False)
+            await _ensure_photo_crop_index_cache(force=False)
         except Exception as e:
-            # Keep manual mode usable even if sheet-ref sampling fails.
+            # Keep manual mode usable even if metadata reference sampling fails.
             log_action(
-                "labeler_manual_sheet_ref_cache_error",
+                "labeler_manual_metadata_ref_cache_error",
                 "error",
                 f"{type(e).__name__}: {e!r}",
             )
@@ -4732,112 +4589,21 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
         log_action("labeler_manual_candidates_error", "error", f"{type(e).__name__}: {e!r}")
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 #---------- Save Endpoint ----------
 
 def _apply_save_updates_sync(updates: List[Dict[str, Any]], actor_name: str) -> Dict[str, Any]:
-    """Apply sheet updates synchronously (runs in worker thread via asyncio.to_thread)."""
-    gc = sheets_client()
-    sh = gc.open_by_key(settings.sheet_catabase_id)
-    ws = sh.worksheet("TCB Pics Formatted")
-
-    rows = ws.get_all_values()
-    headers = rows[0] if rows else []
-    col_labeled_by = _find_header_col(
-        headers,
-        [
-            "LabeledBy",
-            "LabelledBy",
-            "Labeled By",
-            "Labelled By",
-            "labeled_by",
-            "labelled_by",
-        ],
-    )
-    needs_catid_sync = any("box_cat_ids" in upd for upd in updates)
-    catid_lookup: Dict[str, str] = {}
-    if needs_catid_sync:
-        try:
-            cat_ws = sh.worksheet("CatDatabase")
-            cat_rows = cat_ws.get_all_values()
-            catid_lookup = _build_catid_lookup(cat_rows)
-        except Exception as e:
-            log_action("labeler_catid_lookup_error", "error", f"{type(e).__name__}: {e!r}")
-    can_sync_catid = bool(catid_lookup)
-
-    serial_to_row: Dict[int, int] = {}
-    serial_to_labeled_by: Dict[int, str] = {}
-    for idx, row in enumerate(rows[1:], start=2):  # 1-indexed, skip header
-        if len(row) <= COL_SERIAL:
-            continue
-        sn = _parse_serial(row[COL_SERIAL])
-        if sn is None:
-            continue
-        serial_to_row[int(sn)] = int(idx)
-        if col_labeled_by is not None:
-            serial_to_labeled_by[int(sn)] = row[col_labeled_by] if len(row) > col_labeled_by else ""
-
-    import time as _time
-
-    cells_to_update: List[Dict[str, Any]] = []
-    labeled_by_serials: Set[int] = set()
-    pending_unblacklist_ref_serials: List[int] = []
-    for upd in updates:
-        sn = _parse_serial(str(upd.get("serial") or ""))
-        if sn is None or int(sn) not in serial_to_row:
-            continue
-        row_num = serial_to_row[int(sn)]
-        touched = False
-        if "box_coords" in upd:
-            cells_to_update.append({
-                "range": f"I{row_num}",
-                "values": [[upd["box_coords"]]],
-            })
-            touched = True
-        if "box_cat_ids" in upd:
-            cells_to_update.append({
-                "range": f"J{row_num}",
-                "values": [[upd["box_cat_ids"]]],
-            })
-            if can_sync_catid:
-                catid_cell = _format_catid_cell_from_labels(str(upd.get("box_cat_ids") or ""), catid_lookup)
-                cells_to_update.append({
-                    "range": f"A{row_num}",
-                    "values": [[catid_cell]],
-                })
-            if _box_cat_ids_has_reviewed_label(upd.get("box_cat_ids")):
-                pending_unblacklist_ref_serials.append(int(sn))
-            touched = True
-        if touched and col_labeled_by is not None and int(sn) not in labeled_by_serials:
-            merged = _merge_labeled_by(serial_to_labeled_by.get(int(sn), ""), actor_name)
-            serial_to_labeled_by[int(sn)] = merged
-            labeled_by_serials.add(int(sn))
-            cells_to_update.append({
-                "range": f"{_col_to_a1(col_labeled_by + 1)}{row_num}",
-                "values": [[merged]],
-            })
-
-    # Batch update with throttling to avoid upstream sheet rate spikes.
-    chunk_size = 50
-    for i in range(0, len(cells_to_update), chunk_size):
-        chunk = cells_to_update[i:i + chunk_size]
-        ws.batch_update(chunk)
-        if i + chunk_size < len(cells_to_update):
-            _time.sleep(1)
-
-    return {
-        "saved": int(len(updates)),
-        "pending_unblacklist_ref_serials": pending_unblacklist_ref_serials,
-    }
+    """Apply annotation updates to the local metadata CSV."""
+    return local_photos.update_metadata_annotations(updates, actor_name)
 
 
 async def post_save(request: web.Request) -> web.Response:
-    """Batch save annotations to the sheet."""
+    """Batch save annotations to the local metadata CSV."""
     try:
-        global _manual_sheet_ref_cache, _manual_sheet_ref_built_mono
-        global _sheet_crop_index_cache, _sheet_crop_index_built_mono
+        global _manual_metadata_ref_cache, _manual_metadata_ref_built_mono
+        global _photo_crop_index_cache, _photo_crop_index_built_mono
         data = await request.json()
         updates = data.get("updates", [])  #List of {serial, box_coords, box_cat_ids}
         _, actor_name = _actor_from_request(request)
@@ -4858,13 +4624,13 @@ async def post_save(request: web.Request) -> web.Response:
             except Exception as e:
                 log_action("labeler_flag_incorrect_queue_drop_error", "error", f"{type(e).__name__}: {e!r}")
 
-        # Refresh local sheet cache in background to avoid blocking the event loop
+    # Refresh local photo metadata cache in background to avoid blocking the event loop
         # (gspread/requests is synchronous and can stall Discord heartbeats).
-        _kickoff_force_refresh_tcb_cache("post_save")
-        _manual_sheet_ref_cache = {}
-        _manual_sheet_ref_built_mono = 0.0
-        _sheet_crop_index_cache = {}
-        _sheet_crop_index_built_mono = 0.0
+        _kickoff_refresh_photo_rows_cache("post_save")
+        _manual_metadata_ref_cache = {}
+        _manual_metadata_ref_built_mono = 0.0
+        _photo_crop_index_cache = {}
+        _photo_crop_index_built_mono = 0.0
         _ref_crop_result_cache.clear()
 
         log_action("labeler_save", "saved", f"{len(updates)} annotations by {actor_name}")
@@ -4875,7 +4641,7 @@ async def post_save(request: web.Request) -> web.Response:
         }), request)
     except Exception as e:
         log_action("labeler_save_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def post_flag_incorrect(request: web.Request) -> web.Response:
@@ -4944,7 +4710,7 @@ async def post_flag_incorrect(request: web.Request) -> web.Response:
         )
     except Exception as e:
         log_action("labeler_flag_incorrect_error", "error", f"{type(e).__name__}: {e!r}")
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 #---------- Cat List Endpoint ----------
@@ -4956,7 +4722,7 @@ async def get_cats(request: web.Request) -> web.Response:
         return _with_cors(web.json_response({"cats": cats}), request)
     except Exception as e:
         log_action("labeler_get_cats_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 #---------- Reference Cache Endpoints ----------
@@ -4974,7 +4740,7 @@ async def post_refs_warm(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(status), request)
     except Exception as e:
         log_action("labeler_refs_warm_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def get_refs_status(request: web.Request) -> web.Response:
@@ -4983,7 +4749,7 @@ async def get_refs_status(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(V.labeler_ref_status()), request)
     except Exception as e:
         log_action("labeler_refs_status_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def post_manual_refs_warm(request: web.Request) -> web.Response:
@@ -4999,7 +4765,7 @@ async def post_manual_refs_warm(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(status), request)
     except Exception as e:
         log_action("labeler_manual_refs_warm_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def get_manual_refs_status(request: web.Request) -> web.Response:
@@ -5008,7 +4774,7 @@ async def get_manual_refs_status(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(V.labeler_manual_ref_status()), request)
     except Exception as e:
         log_action("labeler_manual_refs_status_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def get_gallery_retrain_status_api(request: web.Request) -> web.Response:
@@ -5018,7 +4784,7 @@ async def get_gallery_retrain_status_api(request: web.Request) -> web.Response:
         return _with_cors(web.json_response(status), request)
     except Exception as e:
         log_action("gallery_retrain_status_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def post_gallery_retrain_schedule_api(request: web.Request) -> web.Response:
@@ -5030,7 +4796,7 @@ async def post_gallery_retrain_schedule_api(request: web.Request) -> web.Respons
         return _with_cors(web.json_response(status), request)
     except Exception as e:
         log_action("gallery_retrain_schedule_error", "error", str(e))
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 async def post_cache_warm(request: web.Request) -> web.Response:
@@ -5080,7 +4846,7 @@ async def post_cache_warm(request: web.Request) -> web.Response:
                 except Exception:
                     sn = 0
                 url = str(it.get("url") or "").strip()
-                if sn <= 0 or not url.startswith("http") or sn in seen:
+                if sn <= 0 or not _is_safe_url_for_fetch(url) or sn in seen:
                     continue
                 seen.add(sn)
                 items.append({"serial": sn, "url": url})
@@ -5141,7 +4907,7 @@ async def post_cache_warm(request: web.Request) -> web.Response:
         )
     except Exception as e:
         log_action("labeler_cache_warm_error", "error", f"{type(e).__name__}: {e!r}")
-        return _with_cors(web.Response(status=500, text=str(e)), request)
+        return _internal_error_response(request)
 
 
 #---------- OPTIONS handlers for CORS ----------

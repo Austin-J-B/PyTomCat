@@ -2220,6 +2220,7 @@
         let appInitialized = false;
         let oauthNonce = null;
         let authState = { token: null, user: null, permissions: {}, csrf: null };
+        if (typeof window !== 'undefined') window.__TC_CSRF_TOKEN = '';
         let scheduleReadOnly = false;
         let checklistDate = null;
         let checklistStatus = {};
@@ -2248,6 +2249,20 @@
             if (byId && byId.name) return byId.name;
             if (fallback) return fallback;
             return `User ${id}`;
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        function syncAuthGlobals() {
+            if (typeof window === 'undefined') return;
+            window.__TC_CSRF_TOKEN = authState.csrf || '';
         }
 
         function parseISODate(iso) {
@@ -2723,10 +2738,12 @@
                         td.style.backgroundColor = getVolunteerColor(colorKey);
 
                         const userHandle = member ? `@${member.user}` : '';
+                        const safeDisplayName = escapeHtml(displayName);
+                        const safeUserHandle = escapeHtml(userHandle);
 
                         td.innerHTML = `
-                    <span class="cell-name">${displayName}</span>
-                    ${userHandle ? `<span class="cell-user">${userHandle}</span>` : ''}
+                    <span class="cell-name">${safeDisplayName}</span>
+                    ${safeUserHandle ? `<span class="cell-user">${safeUserHandle}</span>` : ''}
                 `;
                     } else {
                         td.innerHTML = '';
@@ -2918,7 +2935,7 @@
                     const div = document.createElement('div');
                     div.className = 'result-item';
                     div.dataset.index = idx;
-                    div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
+                    div.innerHTML = `<span class="result-name">${escapeHtml(m.name)}</span> <span class="result-user">@${escapeHtml(m.user)}</span>`;
                     div.onmousedown = (ev) => {
                         ev.preventDefault();
                         setVolunteer(m);
@@ -3194,7 +3211,7 @@
                     const div = document.createElement('div');
                     div.className = 'result-item';
                     div.dataset.index = idx;
-                    div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
+                    div.innerHTML = `<span class="result-name">${escapeHtml(m.name)}</span> <span class="result-user">@${escapeHtml(m.user)}</span>`;
                     div.onmousedown = (ev) => { ev.preventDefault(); setSubUser(m); };
                     subUserResults.appendChild(div);
                 });
@@ -3244,7 +3261,7 @@
                     const div = document.createElement('div');
                     div.className = 'result-item';
                     div.dataset.index = idx;
-                    div.innerHTML = `<span class="result-name">${m.name}</span> <span class="result-user">@${m.user}</span>`;
+                    div.innerHTML = `<span class="result-name">${escapeHtml(m.name)}</span> <span class="result-user">@${escapeHtml(m.user)}</span>`;
                     div.onmousedown = (ev) => { ev.preventDefault(); setClaimUser(m); };
                     claimUserResults.appendChild(div);
                 });
@@ -3298,7 +3315,8 @@
             if (status) status.textContent = "";
             checklistStations.forEach(st => {
                 const label = document.createElement('label');
-                label.innerHTML = `<input type="checkbox" value="${st}"> ${st}`;
+                const safeStation = escapeHtml(st);
+                label.innerHTML = `<input type="checkbox" value="${safeStation}"> ${safeStation}`;
                 const input = label.querySelector('input');
                 input.checked = !!checklistStatus[st];
                 input.onchange = (e) => {
@@ -3382,9 +3400,11 @@
                 const div = document.createElement('div');
                 div.className = 'station-row';
                 div.dataset.index = idx;
+                const safeStationName = escapeHtml(row.name || '');
+                const safeAliases = escapeHtml((row.aliases || []).join(', '));
                 div.innerHTML = `
-            <input type="text" class="station-name" value="${row.name || ''}" placeholder="Display name">
-            <input type="text" class="station-aliases" value="${(row.aliases || []).join(', ')}" placeholder="Aliases (comma separated)">
+            <input type="text" class="station-name" value="${safeStationName}" placeholder="Display name">
+            <input type="text" class="station-aliases" value="${safeAliases}" placeholder="Aliases (comma separated)">
             <button type="button" class="remove-btn">Remove</button>
         `;
                 const btn = div.querySelector('.remove-btn');
@@ -3746,7 +3766,9 @@
                 stations.forEach(st => {
                     const id = `station-${dateIso}-${st.replace(/\s+/g, '-')}`;
                     const label = document.createElement('label');
-                    label.innerHTML = `<input type="checkbox" value="${st}" id="${id}"> ${st}`;
+                    const safeStation = escapeHtml(st);
+                    const safeId = escapeHtml(id);
+                    label.innerHTML = `<input type="checkbox" value="${safeStation}" id="${safeId}"> ${safeStation}`;
                     const input = label.querySelector('input');
                     input.checked = selectionSet.has(st);
                     input.onchange = (e) => {
@@ -3843,7 +3865,7 @@
                     const dayStr = (parseISODateLocal(item.date) || new Date(item.date)).toLocaleDateString(undefined, { weekday: 'long', month: 'numeric', day: 'numeric', year: 'numeric' });
                     const requesterName = displayName(item.requester_id, item.requester_name);
                     const line = document.createElement('div');
-                    line.innerHTML = `<strong>${item.station}</strong> on ${dayStr} for ${requesterName}`;
+                    line.innerHTML = `<strong>${escapeHtml(item.station)}</strong> on ${escapeHtml(dayStr)} for ${escapeHtml(requesterName)}`;
                     meta.appendChild(line);
 
                     const status = document.createElement('div');
@@ -4114,6 +4136,7 @@
                 authState.user = data.user;
                 authState.permissions = data.permissions;
                 authState.csrf = data.csrf_token || null;
+                syncAuthGlobals();
                 updateUIForUser();
                 await init(true);
                 return true;
@@ -4154,6 +4177,7 @@
                 authState.user = data.user;
                 authState.permissions = data.permissions;
                 authState.csrf = data.csrf_token || null;
+                syncAuthGlobals();
                 rememberNonce(null);
 
                 updateUIForUser();
@@ -4426,7 +4450,7 @@
                     const requesterName = displayName(item.requester_id, item.requester_name);
 
                     const line = document.createElement('div');
-                    line.innerHTML = `<strong>${item.station}</strong> on ${dayStr} for ${requesterName}`;
+                    line.innerHTML = `<strong>${escapeHtml(item.station)}</strong> on ${escapeHtml(dayStr)} for ${escapeHtml(requesterName)}`;
                     meta.appendChild(line);
 
                     const status = document.createElement('div');

@@ -103,9 +103,9 @@ def _parse_role_id_list_env(key: str) -> list[int]:
             out.append(rid)
     return out
 
-def _build_channel_sheet_map() -> dict[int, str]:
+def _build_image_intake_channel_map() -> dict[int, str]:
     """
-    Build channel->sheetTab map from env.
+    Build image-intake channel map from env.
     Supports either:
       - CHANNEL_SHEET_MAP="CH_PICTURES_OF_CATS:TCBPicsInput,CH_REPORT_NEW_CATS:TCBPicsInput,1344745306620694558:TCBVetBillInput"
         (left side can be an env var name or a raw numeric ID)
@@ -156,7 +156,7 @@ class Settings:
     bot_user_id: int | None = int(os.getenv("BOT_USER_ID", "1341667150066225192") or "0") or None
     bot_dm_id: int | None = int(os.getenv("BOT_DM_ID", "1352882061651873863") or "0") or None
     timezone: str = os.getenv("TIMEZONE", "America/Chicago")
-    channel_sheet_map: dict[int, str] = field(default_factory=_build_channel_sheet_map)
+    image_intake_channel_map: dict[int, str] = field(default_factory=_build_image_intake_channel_map)
     #Admins
     silent_mode: bool = field(default_factory=lambda: _get_env_bool("SILENT_MODE", False))
 
@@ -238,6 +238,10 @@ class Settings:
     #Step 1 local labeler photo source
     labeler_local_photo_root: str = os.getenv("LABELER_LOCAL_PHOTO_ROOT", "./cache/PicsOfCats/Pictures")
     photo_metadata_csv: str = os.getenv("PHOTO_METADATA_CSV", "./TomCatBot Pics.csv")
+    photo_metadata_sheet_title: str = os.getenv("PHOTO_METADATA_SHEET_TITLE", "TomCatBot Pics")
+    photo_metadata_sheet_sync_enabled: bool = _get_env_bool("PHOTO_METADATA_SHEET_SYNC_ENABLED", True)
+    photo_metadata_sheet_sync_interval_sec: int = int(os.getenv("PHOTO_METADATA_SHEET_SYNC_INTERVAL_SEC", "300") or "300")
+    photo_metadata_sheet_sync_chunk_rows: int = int(os.getenv("PHOTO_METADATA_SHEET_SYNC_CHUNK_ROWS", "500") or "500")
     labeler_local_only: bool = _get_env_bool("LABELER_LOCAL_ONLY", True)
     labeler_local_allowed_exts: list[str] = field(
         default_factory=lambda: _parse_allowed_image_exts("LABELER_LOCAL_ALLOWED_EXTS")
@@ -273,7 +277,7 @@ class Settings:
     #Optional: downscale/compress cached JPEGs to speed sending (0 disables)
     show_cache_resize_max_dim: int = int(os.getenv("SHOW_CACHE_RESIZE_MAX_DIM", "0") or "0")
     show_cache_jpeg_quality: int = int(os.getenv("SHOW_CACHE_JPEG_QUALITY", "88") or "88")
-    #Use a small TTL to reuse RecentPics sheet rows in-process and avoid repeated network calls
+    # Use a small TTL to reuse local photo metadata rows in-process and avoid repeated rescans.
     show_sheet_recentpics_ttl_sec: int = int(os.getenv("SHOW_SHEET_RECENTPICS_TTL_SEC", "300") or "300")
     #Optionally skip auto-crop during cache fill to speed up
     show_cache_crop_on_fill: bool = _get_env_bool("SHOW_CACHE_CROP_ON_FILL", True)

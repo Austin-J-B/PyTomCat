@@ -7,7 +7,6 @@ from typing import Dict, Any
 from ..config import settings
 from ..logger import log_action
 from ..services.show_cache import ensure_cat_cache
-from ..services.catsheets import sheets_client  #type: ignore
 from ..services import profile_cache as PC
 from .. import aliases as ALIAS
 from ..utils.permissions import is_officer
@@ -106,8 +105,8 @@ async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any])
 
 
 async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
-    """Officer-only: Clear and re-download SHOW_CACHE_PER_CAT images per cat from RecentPics.
-    Scans RecentPics to get the cat list, wipes existing cached files per cat, and refills.
+    """Officer-only: Clear and rebuild SHOW_CACHE_PER_CAT local images per cat.
+    Uses CatDatabase/profile cache names, wipes existing cached files per cat, and refills.
     """
     message: discord.Message = ctx["message"]
     author = ctx["author"]
@@ -123,63 +122,31 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
     names: list[str] = []
     name_arg = str(args.get("name") or "").strip()
     try:
-        sheet_id = getattr(settings, "sheet_catabase_id", None)
-        if not sheet_id:
-            try:
-                await message.channel.send("Sheet ID is not configured.")
-            except Exception:
-                pass
-            log_action("recache_error", "sheet", "missing sheet_catabase_id")
-            return
-        gc = sheets_client()
-        #Use the same formatted tab the cache now relies on
-        ws = gc.open_by_key(str(sheet_id)).worksheet("TCB Pics Formatted")
-        rows = ws.get_all_values()
         if name_arg:
             if name_arg.lower() in {"all", "*", "photos", "cache", "profiles"}:
                 names = []
             else:
-                #Resolve one cat to actual FULL_NAME from CatDatabase if possible
                 from ..services.catsheets import get_cat_profile
                 prof = await get_cat_profile(name_arg)
                 if isinstance(prof, dict) and prof.get("actual_name"):
                     names = [prof["actual_name"]]
                 else:
-                    #fallback: try to match first column loosely
-                    q = name_arg.lower()
-                    for r in rows[1:]:
-                        full = (r[0] if r else '').strip()
-                        if full and q in full.lower():
-                            names = [full]
-                            break
-                    if not names:
-                        names = [name_arg]
+                    names = [name_arg]
         else:
-            #Prefer the authoritative CatDatabase list so counts reflect real cats
-            try:
-                cd_ws = gc.open_by_key(str(sheet_id)).worksheet("CatDatabase")
-                cd_rows = cd_ws.get_all_values()
-                for r in cd_rows[1:]:
-                    full = (r[0] if r else '').strip()
-                    if full:
-                        names.append(full)
-            except Exception:
-                for r in rows[1:]:
-                    full = (r[0] if r else '').strip()
-                    if full:
-                        names.append(full)
+            if PC.cached_count() == 0:
+                await PC.refresh_async()
+            names = PC.all_actual_names()
     except Exception as e:
-        log_action("recache_error", "sheet", str(e))
+        log_action("recache_error", "profiles", str(e))
         try:
-            await message.channel.send(f"Sheet error: {e}")
+            await message.channel.send(f"Profile cache error: {e}")
         except Exception:
             pass
         return
 
-    #Fallback to profile cache if we failed to collect names from RecentPics
+    # Fallback to the profile cache if we still do not have a usable list.
     if not names:
         try:
-            from ..services import profile_cache as PC
             if PC.cached_count() == 0:
                 await PC.refresh_async()
             names = PC.all_actual_names()

@@ -1824,6 +1824,7 @@ def _expand_handle_variants(handles: list[str]) -> list[str]:
     """Generate neighbor variants for common typo patterns without exploding search space.
     - If a handle ends with digits, add +/-1 variants.
     - Normalize common spelling: sourcerer <-> sorcerer.
+    - Strip parenthetical notes sometimes appended in the membership sheet.
     """
     out: list[str] = []
     seen: set[str] = set()
@@ -1835,6 +1836,9 @@ def _expand_handle_variants(handles: list[str]) -> list[str]:
             if k and k not in seen:
                 seen.add(k); out.append(s)
         add(h)
+        no_paren = re.sub(r"\s*\([^)]*\)\s*", "", h).strip()
+        if no_paren and no_paren != h:
+            add(no_paren)
         m = re.search(r"^(.*?)(\d+)$", h)
         if m:
             base, num = m.group(1), m.group(2)

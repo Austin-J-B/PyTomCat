@@ -134,6 +134,11 @@
         return window.location.origin;
     }
 
+    function getCsrfToken() {
+        if (typeof window === 'undefined') return '';
+        return typeof window.__TC_CSRF_TOKEN === 'string' ? window.__TC_CSRF_TOKEN : '';
+    }
+
     function buildApiUrl(path) {
         const base = getApiBase();
         if (!path) return base;
@@ -281,13 +286,19 @@
     }
 
     function isLikelyDriveImageUrl(url) {
-        const s = String(url || '').trim().toLowerCase();
-        if (!s) return false;
-        return (
-            s.includes('drive.google.com')
-            || s.includes('drive.usercontent.google.com')
-            || s.includes('googleusercontent.com')
-        );
+        try {
+            const parsed = new URL(String(url || '').trim(), window.location.origin);
+            const host = String(parsed.hostname || '').replace(/\.+$/, '').toLowerCase();
+            if (!host) return false;
+            return (
+                host === 'drive.google.com'
+                || host === 'drive.usercontent.google.com'
+                || host === 'googleusercontent.com'
+                || host.endsWith('.googleusercontent.com')
+            );
+        } catch (e) {
+            return false;
+        }
     }
 
     //State
@@ -847,10 +858,20 @@
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), timeoutMs);
             try {
-                const resp = await fetch(buildApiUrl(endpoint), {
+                const method = String((init && init.method) || 'GET').toUpperCase();
+                const requestInit = {
                     ...init,
                     credentials: 'include',
                     signal: controller.signal,
+                };
+                const csrfToken = getCsrfToken();
+                if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+                    const headers = new Headers(init.headers || {});
+                    headers.set('X-CSRF-Token', csrfToken);
+                    requestInit.headers = headers;
+                }
+                const resp = await fetch(buildApiUrl(endpoint), {
+                    ...requestInit,
                 });
                 if (resp.ok) {
                     return resp.json();

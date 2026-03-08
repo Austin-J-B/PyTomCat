@@ -70,9 +70,9 @@ _manual_ref_per_cat: int = 0
 _thumb_cache: dict[tuple[str, int], str] = {}
 _thumb_cache_max: int = max(200, int(os.getenv("LABELER_THUMB_CACHE_MAX", "2000") or "2000"))
 _resolved_gallery_path_cache: dict[str, str] = {}
-_sheet_crop_roots: Optional[List[Path]] = None
+_gallery_crop_roots: Optional[List[Path]] = None
 
-#Sheet column indices (0-based) for TCB Pics Formatted
+# Local photo metadata columns (0-based).
 COL_URL = 6
 COL_SERIAL = 7
 COL_BOX_COORDS = 8
@@ -424,9 +424,10 @@ def _slug_text(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")
     return s or "cat"
 
-def _parse_sheet_gallery_uri(path: str) -> Tuple[str, str]:
+def _parse_gallery_crop_uri(path: str) -> Tuple[str, str]:
     raw = str(path or "").strip()
-    if not raw.lower().startswith("sheet://"):
+    lower = raw.lower()
+    if not (lower.startswith("sheet://") or lower.startswith("crop://")):
         return "", ""
     body = raw.split("://", 1)[1]
     if ":" in body:
@@ -435,11 +436,11 @@ def _parse_sheet_gallery_uri(path: str) -> Tuple[str, str]:
         crop_id, cat_name = body, ""
     return str(crop_id).strip(), str(cat_name).strip()
 
-def _get_sheet_crop_roots() -> List[Path]:
-    """Return candidate local crop roots for resolving sheet:// gallery paths."""
-    global _sheet_crop_roots
-    if _sheet_crop_roots is not None:
-        return _sheet_crop_roots
+def _get_gallery_crop_roots() -> List[Path]:
+    """Return candidate local crop roots for resolving gallery crop URIs."""
+    global _gallery_crop_roots
+    if _gallery_crop_roots is not None:
+        return _gallery_crop_roots
     roots: List[Path] = []
     active = Path("cache") / "gallery_retrain" / "active_crops"
     if active.exists():
@@ -455,7 +456,7 @@ def _get_sheet_crop_roots() -> List[Path]:
             crops = run / "crops"
             if crops.exists():
                 roots.append(crops)
-    _sheet_crop_roots = roots
+    _gallery_crop_roots = roots
     return roots
 
 def _resolve_gallery_path(path: str) -> str:
@@ -466,10 +467,10 @@ def _resolve_gallery_path(path: str) -> str:
     if cached:
         return cached
     resolved = path
-    crop_id, cat_name = _parse_sheet_gallery_uri(path)
+    crop_id, cat_name = _parse_gallery_crop_uri(path)
     if crop_id:
         slug = _slug_text(cat_name)
-        for root in _get_sheet_crop_roots():
+        for root in _get_gallery_crop_roots():
             # Current updater layout: <root>/<cat_slug>/<crop_id>.jpg
             candidate = root / slug / f"{crop_id}.jpg"
             if candidate.exists():
@@ -995,13 +996,13 @@ async def _build_ref_cache(
     thumb_size: int,
     progress_hook: Optional[Callable[[int, int], None]] = None,
 ) -> dict[str, dict[str, Any]]:
-    """Build a per-cat embedding+thumbnail cache from labeled sheet rows."""
+    """Build a per-cat embedding+thumbnail cache from labeled local metadata rows."""
     await asyncio.to_thread(_ensure_classifier)
     cat_list = await asyncio.to_thread(get_all_cats)
     cat_map = {c.lower(): c for c in cat_list}
 
     from ..services.catsheets import get_tcb_pics_rows
-    from ..services import labeler_cache
+    from ..services import labeler_cache, local_photos
 
     rows = get_tcb_pics_rows(ttl_sec=60)
     samples: dict[str, List[Tuple[int, str, str, int]]] = {c: [] for c in cat_list}
@@ -1014,8 +1015,6 @@ async def _build_ref_cache(
         if sn is None:
             continue
         url = row[COL_URL] if len(row) > COL_URL else ""
-        if not url.startswith("http"):
-            continue
         box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
         box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
         if not box_coords or not box_cat_ids:
@@ -1061,7 +1060,9 @@ async def _build_ref_cache(
             coord = _parse_yolo_box_str(coord_str)
             if coord is None:
                 continue
-            data = await labeler_cache.get_or_download(sn, url)
+            data = local_photos.read_local_photo_bytes(int(sn))
+            if not data and str(url or "").startswith("http"):
+                data = await labeler_cache.get_or_download(sn, url)
             if not data:
                 continue
             try:
@@ -1096,7 +1097,7 @@ async def _build_ref_cache(
 
 
 async def warm_labeler_refs(force: bool = False) -> dict:
-    """Warm per-cat reference cache from TCB Pics Formatted rows."""
+    """Warm per-cat reference cache from local photo metadata rows."""
     global _labeler_ref_ready, _labeler_ref_building, _labeler_ref_task, _labeler_ref_cache
     global _labeler_ref_progress_total, _labeler_ref_progress_built
     if _labeler_ref_building:
@@ -1566,7 +1567,7 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
     global _gallery_emb, _gallery_names, _gallery_paths, _labeler_ref_cache, _labeler_ref_ready, _labeler_ref_task
     global _labeler_ref_progress_total, _labeler_ref_progress_built
     global _manual_ref_cache, _manual_ref_ready, _manual_ref_task, _manual_ref_progress_total, _manual_ref_progress_built, _manual_ref_per_cat
-    global _thumb_cache, _resolved_gallery_path_cache, _sheet_crop_roots
+    global _thumb_cache, _resolved_gallery_path_cache, _gallery_crop_roots
     _ensure_device_only()
     try:
         if path:
@@ -1607,7 +1608,7 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
         _manual_ref_per_cat = 0
         _thumb_cache = {}
         _resolved_gallery_path_cache = {}
-        _sheet_crop_roots = None
+        _gallery_crop_roots = None
 
         return {
             "ok": True,
@@ -1618,4 +1619,3 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
     except Exception as e:
         log_action("viz_gallery_refresh_error", "error", str(e))
         return {"ok": False, "error": str(e)}
-

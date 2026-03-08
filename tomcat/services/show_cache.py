@@ -2,28 +2,16 @@
 
 from __future__ import annotations
 import os, re, io, asyncio
-import ipaddress
 from typing import Optional, List, Tuple, Dict
 from pathlib import Path
-import aiohttp
 import time
-from urllib.parse import urlparse
 
 from ..config import settings
 from ..logger import log_action
 from ..vision import vision as V
 from PIL import Image
-from .catsheets import get_most_recent_photo, get_cat_profile, get_tcb_pics_rows
-from .catsheets import sheets_client  #type: ignore
-
-_SHOW_CACHE_FAIL_LOG_COOLDOWN_SEC = max(
-    5.0,
-    float(os.getenv("SHOW_CACHE_FAIL_LOG_COOLDOWN_SEC", "45") or "45"),
-)
-_SHOW_CACHE_LOG_DOWNLOAD_FAILS = str(
-    os.getenv("SHOW_CACHE_LOG_DOWNLOAD_FAILS", "0")
-).strip().lower() in {"1", "true", "yes", "on"}
-_show_cache_fail_next_mono: Dict[str, float] = {}
+from .catsheets import get_cat_profile, get_photo_metadata_rows
+from . import local_photos
 
 def _primary_label(full_name: str) -> str:
     """Canonicalize labels by taking the first comma-separated cat token."""
@@ -34,22 +22,43 @@ def _primary_label(full_name: str) -> str:
     return first or raw
 
 
-def _log_show_cache_download_fail(url: str, sn: str, attempt: int, error: Exception) -> None:
-    """Throttle noisy per-attempt download errors from show cache warming."""
-    if not _SHOW_CACHE_LOG_DOWNLOAD_FAILS:
-        return
-    key = f"{str(sn or '').strip()}:{str(url or '').strip()[:180]}"
-    now = time.monotonic()
-    next_allowed = float(_show_cache_fail_next_mono.get(key, 0.0))
-    # Always log the terminal retry attempt; throttle intermediate retries.
-    if int(attempt) < 3 and now < next_allowed:
-        return
-    _show_cache_fail_next_mono[key] = now + float(_SHOW_CACHE_FAIL_LOG_COOLDOWN_SEC)
-    log_action(
-        "show_cache_download_fail",
-        url,
-        f"sn={sn} attempt={attempt} err={type(error).__name__}:{error}",
-    )
+def _display_label(value: str) -> str:
+    """Drop the numeric CatDatabase prefix so local CV labels still match."""
+    return re.sub(r"^\s*\d+\s*[.)\-:]?\s*", "", str(value or "").strip(), count=1).strip()
+
+
+def _query_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", _display_label(value).lower())
+
+
+def _row_label_tokens(row: list[str]) -> list[str]:
+    raw = ""
+    if len(row) > 9:
+        raw = str(row[9] or "").strip()
+    if not raw and row:
+        raw = str(row[0] or "").strip()
+    if not raw:
+        return []
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for part in re.split(r"[|,;/]+", raw):
+        token = _display_label(part)
+        key = _query_key(token)
+        if not token or not key or key in seen:
+            continue
+        seen.add(key)
+        tokens.append(token)
+    return tokens
+
+
+def _row_matches_query(row: list[str], full_name: str) -> bool:
+    key = _query_key(full_name)
+    if not key:
+        return False
+    for token in _row_label_tokens(row):
+        if _query_key(token) == key:
+            return True
+    return False
 
 
 def _cache_dir_for(cat_id: int) -> str:
@@ -68,8 +77,7 @@ def _cat_id_from_full(full_name: str) -> Optional[int]:
         return None
 
 def latest_cached_bytes(full_name: str) -> Optional[bytes]:
-    """Load the newest cached JPEG bytes for a cat if present."""
-    """Return bytes of the most recent cached JPG for this cat (highest sn), or None if missing."""
+    """Return the most recent cached JPG bytes for this cat, if present."""
     cid = _cat_id_from_full(full_name)
     if cid is None:
         #Try to resolve via sidecar name index
@@ -100,28 +108,6 @@ def latest_cached_bytes(full_name: str) -> Optional[bytes]:
     except Exception:  #file read failed (deleted, permissions, etc.)
         return None
 
-async def _download_bytes(url: str, timeout_sec: float = 6.0) -> Optional[bytes]:
-    """Fetch raw bytes from a show-photo URL with a timeout."""
-    try:
-        parsed = urlparse(url)
-        host = parsed.hostname
-        if host:
-            if host.lower() == "localhost" or host.lower().endswith(".local"):
-                return None
-            try:
-                ip = ipaddress.ip_address(host)
-                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                    return None
-            except ValueError:
-                pass
-        timeout = aiohttp.ClientTimeout(total=timeout_sec)
-        async with aiohttp.ClientSession(timeout=timeout) as sess:
-            async with sess.get(url) as resp:
-                resp.raise_for_status()
-                return await resp.read()
-    except Exception:  #network/parse error; caller handles None
-        return None
-
 def _maybe_crop_single(raw: bytes) -> Optional[bytes]:
     """Run the vision cropper and return the single crop if available."""
     try:
@@ -143,14 +129,14 @@ _RECENTPICS_ROWS: Optional[List[List[str]]] = None
 _RECENTPICS_TS: float = 0.0
 
 def _set_recentpics_rows(rows: Optional[List[List[str]]]) -> None:
-    """Seed the in-memory view of RecentPics."""
+    """Seed the in-memory view of local photo metadata rows."""
     global _RECENTPICS_ROWS, _RECENTPICS_TS
     _RECENTPICS_ROWS = rows
     _RECENTPICS_TS = time.monotonic()
 
 
 def reset_recentpics_cache() -> None:
-    """Clear the cached RecentPics rows so the next call refetches from Sheets."""
+    """Clear the cached local photo metadata rows so the next call reloads them."""
     global _RECENTPICS_ROWS, _RECENTPICS_TS
     _RECENTPICS_ROWS = None
     _RECENTPICS_TS = 0.0
@@ -158,9 +144,9 @@ def reset_recentpics_cache() -> None:
 #--- INSERT IN tomcat/services/show_cache.py ---
 
 async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
-    """Return URL/SERIAL pairs from TCB Pics Formatted for a given FULL_NAME."""
+    """Return URL/SERIAL pairs from local photo metadata for a given cat."""
     try:
-        #Reuse the existing row caching mechanism, but fetch from the new sheet
+        # Reuse the existing row caching mechanism, but fetch from local metadata.
         rows = None
         now = time.monotonic()
         ttl = max(1, int(getattr(settings, 'show_sheet_recentpics_ttl_sec', 300) or 300))
@@ -169,38 +155,29 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
             rows = _RECENTPICS_ROWS
         
         if rows is None:
-            rows = get_tcb_pics_rows(ttl)
+            rows = get_photo_metadata_rows(ttl)
             if rows:
                 _set_recentpics_rows(rows)
         if not rows:
             return []
 
-        #Normalize query
-        key = re.sub(r"[^a-z0-9]+", "", (full_name or "").lower())
-        
-        #Columns in TCB Pics Formatted
-        COL_LABEL = 0
-        COL_URL = 6
-        COL_SERIAL = 7
-
         matches = []
-        #Skip header row (rows[1:])
         for r in rows[1:]:
-            if len(r) > COL_SERIAL:
-                #Check name match
-                if re.sub(r"[^a-z0-9]+", "", (r[COL_LABEL] or "").lower()) == key:
-                    if (r[COL_URL] or "").startswith("http"):
-                        matches.append(r)
+            if len(r) <= 7:
+                continue
+            if not _row_matches_query(r, full_name):
+                continue
+            serial = _serial_from_name(str(r[7] or ""))
+            if serial <= 0 or not local_photos.has_local_photo(serial):
+                continue
+            matches.append(r)
 
         if not matches:
             return []
 
         #Sort by serial; report reverse_index from the bottom so higher serials show larger numbers
         def parse_serial(row):
-            try:
-                return int(re.sub(r"\D", "", row[COL_SERIAL]) or 0)
-            except:
-                return 0
+            return _serial_from_name(str(row[7] if len(row) > 7 else ""))
         
         matches.sort(key=parse_serial, reverse=True)
         
@@ -210,8 +187,8 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
         for idx, r in enumerate(matches):
             #(URL, Serial, Reverse Index, Total)
             out.append((
-                r[COL_URL], 
-                r[COL_SERIAL] or "0", 
+                str(r[6] if len(r) > 6 else ""),
+                str(r[7] if len(r) > 7 else "0"),
                 total - idx,
                 total
             ))
@@ -249,7 +226,7 @@ def _serial_from_name(name: str) -> int:
         return -1
 
 def _normalize_cached_names(cat_dir: str) -> None:
-    """Rename legacy catId_sn#### files to sn#### to mirror sheet naming."""
+    """Rename legacy catId_sn#### files to sn#### to mirror serial naming."""
     if not os.path.isdir(cat_dir):
         return
     for fn in list(os.listdir(cat_dir)):
@@ -318,7 +295,7 @@ def _prune_cache(cat_dir: str, keep: int) -> int:
     return min(keep, len(paths[:keep]))
 
 async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, exclude_serials: Optional[set[str]] = None, *, prefer_random: bool = False) -> int:
-    """Guarantee at least min_count cached photos for a cat, downloading as needed."""
+    """Guarantee at least min_count cached photos for a cat, reading local bytes as needed."""
     """Ensure at least min_count images exist for the cat; returns total count after fill."""
     full_name = _primary_label(full_name)
     min_count = max(0, int(min_count or settings.show_cache_per_cat))
@@ -378,33 +355,23 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
     #If stale files accumulate, manual cleanup or a separate maintenance task can handle it.
 
     total = len(existing)
-    #Reuse a single HTTP session for downloads to cut overhead
-    timeout = aiohttp.ClientTimeout(total=8.0)
-    headers = {"User-Agent": "TomCatShowCache/1.0 (+https://example.invalid)"}
-    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as sess:
-      for url, serial, reverse_index, total_available in pairs:
-        #CHANGE 1: Do not break early! We need to scan existing files to update totals.
-        #if total >= min_count: break 
-
+    for url, serial, reverse_index, total_available in pairs:
         sn = re.sub(r"[^0-9]", "", serial or "") or "0"
         
         if sn in have_serials:
-            #CHANGE 2: "Heal" stale metadata in existing files without re-downloading images
+            # Heal stale metadata in existing files without rewriting image bytes.
             try:
                 base = f"sn{str(sn).zfill(4)}"
                 jp = os.path.join(cdir, f"{base}.json")
                 if os.path.exists(jp):
                     import json as _json
-                    #Read current meta
                     meta = _json.loads(Path(jp).read_text(encoding='utf-8'))
 
                     changed = False
-                    #If total count or index has drifted, update the file
                     if meta.get("total_available") != total_available or meta.get("reverse_index") != reverse_index:
                         meta["total_available"] = total_available
                         meta["reverse_index"] = reverse_index
                         changed = True
-                    #Canonicalize stale sidecars so later pops don't emit ambiguous labels.
                     canon_full = str(full_name)
                     canon_disp = display_name or re.sub(r"^\s*\d+\.\s*", "", canon_full).strip()
                     if str(meta.get("full_name") or "").strip() != canon_full:
@@ -426,26 +393,16 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
                 pass
             continue
 
-        #CHANGE 3: Only apply the limit when considering a NEW download
         if total >= min_count:
             continue
 
-        #... (rest of download logic remains the same) ...
-        #Download with shared session
-        raw = None
-        #Try a couple of times to download; some hosts are flaky
-        for attempt in range(1, 4):
-            try:
-                async with sess.get(url) as resp:
-                    resp.raise_for_status()
-                    raw = await resp.read()
-                if raw:
-                    break
-            except Exception as e:
-                _log_show_cache_download_fail(url, sn, attempt, e)
-                raw = None
-                await asyncio.sleep(0.15 * attempt)
+        try:
+            serial_i = int(sn)
+        except Exception:
+            continue
+        raw = await asyncio.to_thread(local_photos.read_local_photo_bytes, serial_i)
         if not raw:
+            log_action('show_cache_local_missing', full_name, f"sn={sn}")
             continue
         #Optional crop during fill; run CV work off the event loop.
         data = raw
@@ -483,7 +440,7 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
         try:
             with open(fn, 'wb') as f:
                 f.write(data)
-            #Write sidecar JSON with metadata
+            # Write sidecar JSON with metadata.
             meta = {
                 "serial": serial,
                 "reverse_index": reverse_index,
@@ -516,7 +473,7 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
 
 def _build_name_index() -> None:
-    """Populate the alias index from RecentPics rows."""
+    """Populate the alias index from cached local sidecar metadata."""
     global _NAME_INDEX
     _NAME_INDEX = {}
     base = settings.show_cache_dir
@@ -684,10 +641,10 @@ def _pop_from_files(files: list[str], expected_cid: Optional[int] = None) -> tup
     return None, None
 
 async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Optional[bytes], Optional[dict]]:
-    """Return and remove one cached image entry, optionally refilling from Sheets.
+    """Return and remove one cached image entry, optionally consulting CatDatabase.
     
     Optimized for instant cache hits: if cat ID resolves locally and files exist,
-    returns immediately without any sheet API calls.
+    returns immediately without any CatDatabase reads.
     """
     cid = _cat_id_from_full(full_name)
     if cid is None:
@@ -731,23 +688,33 @@ async def warm_cache_on_boot() -> None:
     if not settings.show_cache_prefill_on_boot:
         return
     try:
-        rows = get_tcb_pics_rows(getattr(settings, 'show_sheet_recentpics_ttl_sec', 300))
+        rows = get_photo_metadata_rows(getattr(settings, 'show_sheet_recentpics_ttl_sec', 300))
         if not rows:
-            log_action('show_cache_warm_error', 'sheet', 'no rows fetched')
+            log_action('show_cache_warm_error', 'local_metadata', 'no rows fetched')
             return
     except Exception as e:
-        log_action('show_cache_warm_error', 'sheet', str(e))
+        log_action('show_cache_warm_error', 'local_metadata', str(e))
         return
-    #Seed row cache so list_recent_pairs doesn't re-hit sheet immediately
+    # Seed row cache so list_recent_pairs doesn't re-scan immediately.
     try:
         _set_recentpics_rows(rows)
     except Exception:
         pass
-    names = []
-    for r in rows[1:]:
-        full = (r[0] if r else '').strip()
-        if full:
-            names.append(full)
+    names: list[str] = []
+    try:
+        from . import profile_cache as PC
+        if PC.cached_count() == 0:
+            await PC.refresh_async()
+        names = PC.all_actual_names()
+    except Exception:
+        names = []
+    if not names:
+        seen: set[str] = set()
+        for r in rows[1:]:
+            for token in _row_label_tokens(r):
+                if token and token not in seen:
+                    seen.add(token)
+                    names.append(token)
     if settings.show_cache_warm_limit > 0:
         names = names[:settings.show_cache_warm_limit]
 

@@ -1,4 +1,4 @@
-"""Build and publish a refreshed DINOv3 gallery from labeled sheet crops."""
+"""Build and publish a refreshed DINOv3 gallery from labeled local-photo crops."""
 
 from __future__ import annotations
 
@@ -20,15 +20,13 @@ from torch import Tensor
 
 from ..config import settings
 from ..logger import log_action
-from ..services.catsheets import force_refresh_tcb_cache
-from ..services.sheets_client import sheets_client
 from ..services import labeler_cache
 from ..services import local_photos
 from ..services.vision_feedback import load_verified_gallery_records
 from ..vision.vision import DINOv3Wrapper, refresh_gallery
 
 
-# TCB Pics Formatted columns (0-based).
+# Local photo metadata columns (0-based).
 COL_URL = 6
 COL_SERIAL = 7
 COL_BOX_COORDS = 8
@@ -248,10 +246,7 @@ def _prune_old_versioned_galleries(weights_dir: Path, keep_version_path: Path) -
 
 
 def _load_rows() -> List[List[str]]:
-    gc = sheets_client()
-    sh = gc.open_by_key(settings.sheet_catabase_id)
-    ws = sh.worksheet("TCB Pics Formatted")
-    return ws.get_all_values()
+    return local_photos.read_metadata_table()
 
 
 def _load_encoder(device: torch.device) -> torch.nn.Module:
@@ -288,7 +283,7 @@ def run_gallery_update(
     download_chunk_size: int = _DEFAULT_DOWNLOAD_CHUNK_SIZE,
     progress_log_sec: float = _DEFAULT_PROGRESS_LOG_SEC,
 ) -> Dict[str, Any]:
-    """Rebuild the gallery from sheet labels and publish the newest versioned gallery.
+    """Rebuild the gallery from local metadata labels and publish the newest versioned gallery.
 
     Mode is currently coerced to `full` to ensure label corrections are reflected.
     """
@@ -355,15 +350,12 @@ def run_gallery_update(
     try:
         rows = _load_rows()
         stats["rows"] = max(0, len(rows) - 1)
-        row_jobs: List[Tuple[int, str, List[str], List[str]]] = []
+        row_jobs: List[Tuple[int, List[str], List[str]]] = []
         for row in rows[1:]:
             if len(row) <= COL_SERIAL:
                 continue
             serial = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
             if serial is None:
-                continue
-            url = (row[COL_URL] if len(row) > COL_URL else "").strip()
-            if not url.startswith("http"):
                 continue
             box_coords = (row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
             box_labels = (row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
@@ -378,7 +370,7 @@ def run_gallery_update(
                 continue
 
             stats["rows_with_boxes"] += 1
-            row_jobs.append((int(serial), url, coords, labels))
+            row_jobs.append((int(serial), coords, labels))
 
         workers = int(max(1, download_workers))
         chunk_size = int(max(16, download_chunk_size))
@@ -386,9 +378,9 @@ def run_gallery_update(
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 for start in range(0, len(row_jobs), chunk_size):
                     chunk = row_jobs[start:start + chunk_size]
-                    req_by_serial: Dict[int, str] = {}
-                    for serial, url, _, _ in chunk:
-                        req_by_serial.setdefault(int(serial), str(url))
+                    req_by_serial: Dict[int, None] = {}
+                    for serial, _, _ in chunk:
+                        req_by_serial.setdefault(int(serial), None)
                     stats["images_requested"] += int(len(req_by_serial))
 
                     future_map = {
@@ -419,7 +411,7 @@ def run_gallery_update(
                             if source == "local_missing":
                                 stats["images_missing_local"] += 1
 
-                    for serial, _, coords, labels in chunk:
+                    for serial, coords, labels in chunk:
                         stats["rows_processed"] += 1
                         image_bytes = image_by_serial.get(int(serial))
                         if not image_bytes:
@@ -537,7 +529,7 @@ def run_gallery_update(
                 all_labels.extend([cat_idx] * emb.shape[0])
                 embedded_done += int(emb.shape[0])
                 for crop_id in ids:
-                    all_paths.append(f"sheet://{crop_id}:{cat}")
+                    all_paths.append(f"crop://{crop_id}:{cat}")
                 _log_progress(
                     "embedding",
                     extra=f"embedded={embedded_done}/{expected_embeddings}; cats={len(class_to_idx)}",
@@ -581,8 +573,8 @@ def run_gallery_update(
             stats["env_gallery_env_error"] = str(env_update.get("error") or "unknown")
             log_action("gallery_updater_env_error", "CV_GALLERY_PATH", str(env_update.get("error") or "unknown"))
 
-        # Persist the latest crop tree so sheet:// gallery refs can resolve locally
-        # without rebuilding thumbs from remote URLs at runtime.
+        # Persist the latest crop tree so crop:// gallery refs can resolve locally
+        # without rebuilding thumbs from source images at runtime.
         active_crops_root = Path("cache") / "gallery_retrain" / "active_crops"
         try:
             active_crops_root.parent.mkdir(parents=True, exist_ok=True)
@@ -599,7 +591,6 @@ def run_gallery_update(
 
         # Switch runtime to the newest version immediately after build.
         refresh_state = refresh_gallery(str(version_path.resolve()))
-        force_refresh_tcb_cache()
 
         result = {
             "status": "ok",

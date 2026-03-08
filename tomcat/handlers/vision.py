@@ -175,12 +175,15 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
                 image_bytes=data,
                 results=list(out.results or []),
                 source_image_url=str(getattr(att, "url", "") or ""),
+                source_author_id=str(getattr(getattr(source_msg or message, "author", None), "id", "") or ""),
                 source_username=str(getattr(getattr(source_msg, "author", None), "name", "") or ""),
                 source_created_at=str(
                     (
                         getattr(source_msg, "created_at", None) or message.created_at
                     ).astimezone(timezone.utc).isoformat()
                 ),
+                source_filename=str(getattr(att, "filename", "") or ""),
+                source_content_type=str(getattr(att, "content_type", "") or ""),
             )
         except Exception as e:
             log_action("viz_feedback_register_error", f"msg={getattr(reply_msg, 'id', 0)}", str(e))

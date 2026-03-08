@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..aliases import resolve_station_or_cat, resolve_stations
+from . import local_photos
 
 _CSV_PATHS = [Path("Catabase - CatDatabase.csv")]
 _PROFILE_CACHE_PATHS = [Path("cache/catabase/profiles.json")]
-_PICS_FORMATTED_PATHS = [Path("Catabase - TCB Pics Formatted.csv")]
 _ACTIVE_LOOKBACK_DAYS = 90
 
 _BROWN_POS = ("brown", "tan", "buff", "gold", "cinnamon", "chocolate")
@@ -426,7 +426,7 @@ def _split_photo_name_cells(raw: str) -> List[str]:
     txt = _clean_text(raw)
     if not txt:
         return []
-    # Export uses "|" for multi-cat tags and sometimes comma-delimited ID labels.
+    # Local metadata uses "|" for multi-cat tags and sometimes comma-delimited ID labels.
     parts = [p.strip() for p in txt.split("|") if _clean_text(p)]
     if len(parts) == 1 and "," in txt and re.search(r"\d+\.\s*", txt):
         parts = [p.strip() for p in txt.split(",") if _clean_text(p)]
@@ -435,34 +435,23 @@ def _split_photo_name_cells(raw: str) -> List[str]:
 
 def _load_photo_counts() -> Dict[str, int]:
     global _PHOTO_COUNTS_CACHE, _PHOTO_COUNTS_CACHE_SIG
-    sig = _photo_source_signature(_PICS_FORMATTED_PATHS)
+    sig = _photo_source_signature([local_photos.metadata_csv_path()])
     if _PHOTO_COUNTS_CACHE is not None and sig == _PHOTO_COUNTS_CACHE_SIG:
         return dict(_PHOTO_COUNTS_CACHE)
 
     counts: Dict[str, int] = {}
-    for path in _PICS_FORMATTED_PATHS:
-        if not path.exists():
-            continue
-        try:
-            with path.open("r", encoding="utf-8", newline="") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    if not isinstance(row, dict):
-                        continue
-                    # Prefer explicit model-labeled cat IDs; fall back to first cat column.
-                    raw_cell = (
-                        row.get("BoxCatIDs")
-                        or row.get("CatID")
-                        or row.get("Full Name")
-                        or ""
-                    )
-                    for raw_name in _split_photo_name_cells(raw_cell):
-                        display = _display_name(raw_name)
-                        key = _norm_name(display)
-                        if key:
-                            counts[key] = counts.get(key, 0) + 1
-        except Exception:
-            continue
+    try:
+        for row in local_photos.read_metadata_rows():
+            if not isinstance(row, dict):
+                continue
+            raw_cell = row.get("Box Cat IDs") or ""
+            for raw_name in _split_photo_name_cells(raw_cell):
+                display = _display_name(raw_name)
+                key = _norm_name(display)
+                if key:
+                    counts[key] = counts.get(key, 0) + 1
+    except Exception:
+        pass
 
     _PHOTO_COUNTS_CACHE = dict(counts)
     _PHOTO_COUNTS_CACHE_SIG = sig

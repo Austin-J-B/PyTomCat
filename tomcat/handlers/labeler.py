@@ -21,7 +21,6 @@ import random
 import hashlib
 import base64
 import asyncio
-import aiohttp
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Set
 
@@ -214,16 +213,6 @@ _IDENTIFY_DEBUG_PREFETCH_SAMPLE = max(
 )
 _IDENTIFY_REF_PIPELINE_VERSION = "dino_refs_v4"
 _LABELER_CLAIM_TTL_SEC = max(30, int(os.getenv("LABELER_CLAIM_TTL_SEC", "180") or "180"))
-_DRIVE_PROXY_FAIL_STREAK: int = 0
-_DRIVE_PROXY_BACKOFF_UNTIL_MONO: float = 0.0
-_DRIVE_PROXY_BACKOFF_BASE_SEC = max(
-    2.0,
-    float(os.getenv("LABELER_DRIVE_PROXY_BACKOFF_BASE_SEC", "10") or "10"),
-)
-_DRIVE_PROXY_BACKOFF_MAX_SEC = max(
-    _DRIVE_PROXY_BACKOFF_BASE_SEC,
-    float(os.getenv("LABELER_DRIVE_PROXY_BACKOFF_MAX_SEC", "180") or "180"),
-)
 _claim_lock = asyncio.Lock()
 _active_claims: Dict[Tuple[str, int], Dict[str, Any]] = {}
 _detector_warm_task: Optional[asyncio.Task] = None
@@ -256,47 +245,39 @@ _SKIP_CATID_LABELS = {
 _MANUAL_FALLBACK_REFS_PER_CAT = max(1, int(os.getenv("LABELER_MANUAL_FALLBACK_REFS_PER_CAT", "5") or "5"))
 _MANUAL_METADATA_REF_SAMPLE_PER_CAT = max(
     _MANUAL_FALLBACK_REFS_PER_CAT,
-    int(os.getenv("LABELER_MANUAL_SHEET_REF_SAMPLE_PER_CAT", "20") or "20"),
+    int(
+        os.getenv(
+            "LABELER_MANUAL_METADATA_REF_SAMPLE_PER_CAT",
+            os.getenv("LABELER_MANUAL_SHEET_REF_SAMPLE_PER_CAT", "20"),
+        ) or "20"
+    ),
 )
 _MANUAL_METADATA_REF_CROPPED_SAMPLE_PER_CAT = max(
     _MANUAL_METADATA_REF_SAMPLE_PER_CAT,
-    int(os.getenv("LABELER_MANUAL_SHEET_REF_CROPPED_SAMPLE_PER_CAT", "40") or "40"),
+    int(
+        os.getenv(
+            "LABELER_MANUAL_METADATA_REF_CROPPED_SAMPLE_PER_CAT",
+            os.getenv("LABELER_MANUAL_SHEET_REF_CROPPED_SAMPLE_PER_CAT", "40"),
+        ) or "40"
+    ),
 )
 _MANUAL_METADATA_REF_UNCROPPED_SAMPLE_PER_CAT = max(
     1,
-    int(os.getenv("LABELER_MANUAL_SHEET_REF_UNCROPPED_SAMPLE_PER_CAT", "8") or "8"),
+    int(
+        os.getenv(
+            "LABELER_MANUAL_METADATA_REF_UNCROPPED_SAMPLE_PER_CAT",
+            os.getenv("LABELER_MANUAL_SHEET_REF_UNCROPPED_SAMPLE_PER_CAT", "8"),
+        ) or "8"
+    ),
 )
-_MANUAL_METADATA_REF_TTL_SEC = max(30, int(os.getenv("LABELER_MANUAL_SHEET_REF_TTL_SEC", "600") or "600"))
-_IDENTIFY_FALLBACK_PREFETCH = str(
-    os.getenv("LABELER_IDENTIFY_FALLBACK_PREFETCH", "0")
-).strip().lower() in {"1", "true", "yes", "on"}
-_IDENTIFY_FALLBACK_SCAN_MULT = max(
-    1,
-    min(12, int(os.getenv("LABELER_IDENTIFY_FALLBACK_SCAN_MULT", "4") or "4")),
-)
-_IDENTIFY_FALLBACK_REMOTE_MAX_TOTAL = max(
-    0,
-    int(os.getenv("LABELER_IDENTIFY_FALLBACK_REMOTE_MAX_TOTAL", "48") or "48"),
-)
-_IDENTIFY_FALLBACK_REMOTE_MAX_PER_CAND = max(
-    0,
-    int(os.getenv("LABELER_IDENTIFY_FALLBACK_REMOTE_MAX_PER_CAND", "5") or "5"),
-)
-_IDENTIFY_FALLBACK_REMOTE_TIMEOUT_SEC = max(
-    0.2,
-    float(os.getenv("LABELER_IDENTIFY_FALLBACK_REMOTE_TIMEOUT_SEC", "0.6") or "0.6"),
-)
-_IDENTIFY_FALLBACK_BG_WARM_MAX = max(
-    0,
-    int(os.getenv("LABELER_IDENTIFY_FALLBACK_BG_WARM_MAX", "12") or "12"),
-)
-_IDENTIFY_FALLBACK_MAX_MS = max(
-    0.0,
-    float(os.getenv("LABELER_IDENTIFY_FALLBACK_MAX_MS", "1200") or "1200"),
-)
-_IDENTIFY_FALLBACK_PREFETCH_MAX_MS = max(
-    0.0,
-    float(os.getenv("LABELER_IDENTIFY_FALLBACK_PREFETCH_MAX_MS", "300") or "300"),
+_MANUAL_METADATA_REF_TTL_SEC = max(
+    30,
+    int(
+        os.getenv(
+            "LABELER_MANUAL_METADATA_REF_TTL_SEC",
+            os.getenv("LABELER_MANUAL_SHEET_REF_TTL_SEC", "600"),
+        ) or "600"
+    ),
 )
 _manual_metadata_ref_lock = asyncio.Lock()
 _manual_metadata_ref_cache: Dict[str, List[Dict[str, Any]]] = {}
@@ -373,12 +354,17 @@ _CLAIM_DIAG_SAMPLE = max(
     0.0,
     min(1.0, float(os.getenv("LABELER_CLAIM_DIAG_SAMPLE", "0.08") or "0.08")),
 )
-_FORCE_REFRESH_PHOTO_ROWS_CACHE_COOLDOWN_SEC = max(
+_PHOTO_METADATA_CACHE_REFRESH_COOLDOWN_SEC = max(
     2.0,
-    float(os.getenv("LABELER_FORCE_REFRESH_TCB_CACHE_COOLDOWN_SEC", "20") or "20"),
+    float(
+        os.getenv(
+            "PHOTO_METADATA_CACHE_REFRESH_COOLDOWN_SEC",
+            os.getenv("LABELER_FORCE_REFRESH_TCB_CACHE_COOLDOWN_SEC", "20"),
+        ) or "20"
+    ),
 )
-_force_refresh_photo_rows_cache_task: Optional[asyncio.Task] = None
-_force_refresh_photo_rows_cache_next_allowed_mono: float = 0.0
+_photo_metadata_cache_refresh_task: Optional[asyncio.Task] = None
+_photo_metadata_cache_refresh_next_allowed_mono: float = 0.0
 _QUEUE_CACHE_WARM_COOLDOWN_SEC = max(
     1.0,
     float(os.getenv("LABELER_QUEUE_CACHE_WARM_COOLDOWN_SEC", "8") or "8"),
@@ -697,7 +683,7 @@ def _flush_flag_incorrect_queue_batch_sync(batch: List[Dict[str, Any]]) -> Dict[
 
 
 async def _flag_incorrect_queue_worker() -> None:
-    """Drain queued incorrect flags in background with batched sheet updates."""
+    """Drain queued incorrect flags in background with batched metadata updates."""
     while True:
         batch: List[Dict[str, Any]] = []
         async with _flag_incorrect_queue_lock:
@@ -804,7 +790,7 @@ async def _flag_incorrect_queue_worker() -> None:
 
         if success_serials:
             _invalidate_labeler_caches_after_label_clears(success_serials)
-            _kickoff_refresh_photo_rows_cache()
+            _kickoff_photo_metadata_cache_refresh()
         if success_serials or not_found_serials:
             log_action(
                 "labeler_flag_incorrect_queue_flush",
@@ -831,8 +817,8 @@ def _filter_refs_for_flagged_serials(refs: Any) -> List[Any]:
         except Exception:
             serial_i = None
             crop_i = None
-        # If a ref claims a concrete sheet serial/crop but that crop no longer exists in the
-        # current sheet state, treat it as stale gallery metadata and hide it.
+    # If a ref claims a concrete metadata serial/crop but that crop no longer exists in the
+    # current metadata state, treat it as stale gallery metadata and hide it.
         if (
             serial_i is not None
             and crop_i is not None
@@ -863,9 +849,7 @@ def _has_reviewed_cat_label_token(label: Any) -> bool:
 
 
 def _maybe_schedule_queue_cache_warm(mode: str, queue: List[Dict[str, Any]]) -> None:
-    """Throttle repeated queue cache warm kicks to reduce redundant disk/network churn."""
-    if local_photos.is_local_only():
-        return
+    """Throttle repeated queue cache warm kicks to reduce redundant local disk churn."""
     if not queue:
         return
     if float(_loop_lag_ms) >= float(_LOOP_LAG_SHED_BG_WORK_MS):
@@ -891,6 +875,14 @@ def _maybe_schedule_queue_cache_warm(mode: str, queue: List[Dict[str, Any]]) -> 
         pass
 
 
+def _has_local_photo_serial(serial: Any) -> bool:
+    try:
+        sn = int(serial)
+    except Exception:
+        return False
+    return sn > 0 and local_photos.has_local_photo(sn, force_refresh=False)
+
+
 def _queue_items_from_rows(rows: List[List[str]], *, mode: str = "boot", max_items: int = 0) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     seen: Set[int] = set()
@@ -904,8 +896,6 @@ def _queue_items_from_rows(rows: List[List[str]], *, mode: str = "boot", max_ite
         if int(sn) in seen:
             continue
         url = str(row[COL_URL] if len(row) > COL_URL else "").strip()
-        if not _is_safe_url_for_fetch(url):
-            continue
         box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
         labels = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
         include = True
@@ -928,8 +918,6 @@ def _queue_items_from_rows(rows: List[List[str]], *, mode: str = "boot", max_ite
 def _kickoff_boot_cache_warm_once() -> None:
     """Start one boot-time cache warm task (best effort)."""
     global _boot_cache_warm_task, _boot_cache_warm_started
-    if local_photos.is_local_only():
-        return
     if not _BOOT_WARM_ENABLE:
         return
     if _boot_cache_warm_started:
@@ -940,7 +928,7 @@ def _kickoff_boot_cache_warm_once() -> None:
 
     async def _runner() -> None:
         try:
-            rows = await _get_tcb_rows_async(ttl_sec=120)
+            rows = await _get_photo_metadata_rows_async(ttl_sec=120)
             boot_items = _queue_items_from_rows(rows, mode="boot", max_items=int(_BOOT_WARM_SCAN_LIMIT))
             if not boot_items:
                 return
@@ -1290,11 +1278,11 @@ def _build_manual_metadata_ref_cache(alias_lookup: Dict[str, Dict[str, Any]]) ->
     for row in rows[1:]:
         if len(row) <= COL_URL:
             continue
-        url = str(row[COL_URL] if len(row) > COL_URL else "").strip()
-        if not _is_safe_url_for_fetch(url):
-            continue
         serial = _parse_serial(str(row[COL_SERIAL] if len(row) > COL_SERIAL else ""))
-        if serial is not None and _is_flagged_ref_serial(serial):
+        if serial is None or not _has_local_photo_serial(serial):
+            continue
+        url = str(row[COL_URL] if len(row) > COL_URL else "").strip()
+        if _is_flagged_ref_serial(serial):
             continue
         box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
         box_cat_ids = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
@@ -1387,12 +1375,10 @@ def _build_photo_crop_index_cache() -> Dict[Tuple[int, int], Dict[str, Any]]:
     for row in rows[1:]:
         if len(row) <= COL_URL:
             continue
-        url = str(row[COL_URL] if len(row) > COL_URL else "").strip()
-        if not _is_safe_url_for_fetch(url):
-            continue
         serial = _parse_serial(str(row[COL_SERIAL] if len(row) > COL_SERIAL else ""))
-        if serial is None:
+        if serial is None or not _has_local_photo_serial(serial):
             continue
+        url = str(row[COL_URL] if len(row) > COL_URL else "").strip()
         if _is_flagged_ref_serial(serial):
             continue
         box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
@@ -1458,11 +1444,11 @@ async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
         _photo_crop_index_built_mono = time.monotonic()
 
 
-def _sheet_ref_crop_url(serial: int, crop: int) -> str:
+def _photo_ref_crop_url(serial: int, crop: int) -> str:
     return f"/api/labeler/ref_crop/{int(serial)}/{int(crop)}"
 
 
-def _map_identify_candidate_refs_to_sheet(
+def _map_identify_candidate_refs_to_metadata(
     refs: List[Dict[str, Any]],
     *,
     refs_per: int,
@@ -1513,7 +1499,7 @@ def _map_identify_candidate_refs_to_sheet(
     for serial, crop, box in ordered:
         out.append({
             "img": "",
-            "url": _sheet_ref_crop_url(serial, crop),
+            "url": _photo_ref_crop_url(serial, crop),
             "serial": serial,
             "crop": crop,
             "box": box,
@@ -1641,7 +1627,7 @@ def _fallback_refs_for_cat(
         ref_url = ""
         try:
             if serial is not None and crop_num is not None and crop_num > 0:
-                ref_url = _sheet_ref_crop_url(int(serial), int(crop_num))
+                ref_url = _photo_ref_crop_url(int(serial), int(crop_num))
         except Exception:
             ref_url = ""
         if not ref_url:
@@ -1674,39 +1660,19 @@ async def _materialize_fallback_refs(
     refs: List[Dict[str, Any]],
     *,
     thumb_size: int = 128,
-    allow_remote_fetch: bool = False,
-    remote_timeout_sec: float = 0.0,
 ) -> List[Dict[str, Any]]:
     if not refs:
         return []
-    image_cache: Dict[Tuple[Optional[int], str], Optional[bytes]] = {}
+    image_cache: Dict[Optional[int], Optional[bytes]] = {}
     out: List[Dict[str, Any]] = []
-    sem = asyncio.Semaphore(4)
 
-    async def _fetch_data(serial: Optional[int], url: str) -> Optional[bytes]:
-        key = (serial, url)
+    async def _fetch_data(serial: Optional[int]) -> Optional[bytes]:
+        key = serial
         if key in image_cache:
             return image_cache[key]
-        if not allow_remote_fetch:
-            data: Optional[bytes] = None
-            if serial is not None:
-                try:
-                    data = await labeler_cache.get_cached_image_async(int(serial))
-                except Exception:
-                    data = None
-            image_cache[key] = data
-            return data
-        async with sem:
-            if float(remote_timeout_sec or 0.0) > 0.0:
-                try:
-                    data = await asyncio.wait_for(
-                        _fetch_image_bytes_for_labeler(serial, url),
-                        timeout=float(remote_timeout_sec),
-                    )
-                except asyncio.TimeoutError:
-                    data = None
-            else:
-                data = await _fetch_image_bytes_for_labeler(serial, url)
+        data: Optional[bytes] = None
+        if serial is not None:
+            data = await _fetch_image_bytes_for_labeler(serial)
         image_cache[key] = data
         return data
 
@@ -1723,10 +1689,7 @@ async def _materialize_fallback_refs(
             serial = None
         if serial is not None and _is_flagged_ref_serial(serial):
             continue
-        url = str(row.get("url") or "").strip()
-        fetch_url = url if _is_safe_url_for_fetch(url) else ""
-
-        data = await _fetch_data(serial, fetch_url)
+        data = await _fetch_data(serial)
         if data:
             try:
                 img = _open_rgb_image(io.BytesIO(data))
@@ -1760,7 +1723,6 @@ async def _materialize_fallback_refs(
             except Exception:
                 pass
 
-        # Keep legacy URL fallback for refs that could not be materialized.
         if not str(row.get("img") or "").strip():
             if serial is not None and not str(row.get("url") or "").strip():
                 row["url"] = f"/api/labeler/cached_image/{int(serial)}"
@@ -1944,34 +1906,34 @@ def _hash_cache_key(*parts: Any) -> str:
     return h.hexdigest()
 
 
-def _kickoff_refresh_photo_rows_cache(reason: str = "") -> None:
+def _kickoff_photo_metadata_cache_refresh(reason: str = "") -> None:
     """Refresh the local photo metadata cache in a worker thread."""
-    global _force_refresh_photo_rows_cache_task, _force_refresh_photo_rows_cache_next_allowed_mono
+    global _photo_metadata_cache_refresh_task, _photo_metadata_cache_refresh_next_allowed_mono
     now_mono = time.monotonic()
-    active = _force_refresh_photo_rows_cache_task
+    active = _photo_metadata_cache_refresh_task
     if active is not None and not active.done():
         return
-    if now_mono < float(_force_refresh_photo_rows_cache_next_allowed_mono):
+    if now_mono < float(_photo_metadata_cache_refresh_next_allowed_mono):
         return
-    _force_refresh_photo_rows_cache_next_allowed_mono = now_mono + float(_FORCE_REFRESH_PHOTO_ROWS_CACHE_COOLDOWN_SEC)
+    _photo_metadata_cache_refresh_next_allowed_mono = now_mono + float(_PHOTO_METADATA_CACHE_REFRESH_COOLDOWN_SEC)
 
     async def _run() -> None:
-        global _force_refresh_photo_rows_cache_task
+        global _photo_metadata_cache_refresh_task
         try:
             await asyncio.to_thread(force_refresh_photo_rows_cache)
         except Exception as e:
             log_action(
-                "labeler_force_refresh_photo_rows_cache_error",
+                "labeler_photo_metadata_cache_refresh_error",
                 f"reason={str(reason or '').strip() or 'unknown'}",
                 f"{type(e).__name__}: {e!r}",
             )
         finally:
-            _force_refresh_photo_rows_cache_task = None
+            _photo_metadata_cache_refresh_task = None
 
     try:
-        _force_refresh_photo_rows_cache_task = asyncio.create_task(_run())
+        _photo_metadata_cache_refresh_task = asyncio.create_task(_run())
     except Exception:
-        _force_refresh_photo_rows_cache_task = None
+        _photo_metadata_cache_refresh_task = None
 
 
 def _identify_should_trace(prefetch: bool) -> bool:
@@ -2180,11 +2142,11 @@ async def _fetch_image_bytes_for_labeler(
     *,
     bypass_backoff: bool = False,
 ) -> Optional[bytes]:
-    """Best-effort image fetch: cache first, then cache downloader, then direct HTTP fallback."""
+    """Best-effort image fetch from local storage and local cache only."""
+    del url, bypass_backoff
     data: Optional[bytes] = None
     serial_i = int(serial) if serial is not None else None
 
-    # Local source of truth for Step 1.
     if serial_i is not None:
         try:
             data = local_photos.read_local_photo_bytes(int(serial_i))
@@ -2200,105 +2162,7 @@ async def _fetch_image_bytes_for_labeler(
             data = None
     if data:
         return data
-
-    if local_photos.is_local_only():
-        return None
-
-    u = str(url or "").strip()
-    if not labeler_cache.is_safe_remote_url(u):
-        return None
-
-    is_drive_like = labeler_cache.is_drive_like_public_url(u)
-
-    if serial_i is not None:
-        try:
-            data = await labeler_cache.get_or_download(
-                serial_i,
-                u,
-                bypass_backoff=bypass_backoff,
-                max_attempts=(5 if bypass_backoff else 2),
-            )
-        except Exception:
-            data = None
-    if data:
-        return data
-
-    # labeler_cache already tries multiple Google Drive URL variants; avoid a second
-    # long fallback request path that tends to duplicate timeout noise.
-    if is_drive_like:
-        return None
-
-    try:
-        return await labeler_cache.download_remote_image(
-            u,
-            timeout_sec=10.0,
-            bypass_backoff=bypass_backoff,
-            max_attempts=1,
-        )
-    except Exception as e:
-        log_action("labeler_image_fetch_error", f"serial={serial_i}", f"{type(e).__name__}: {e!r}")
-        return None
-
-
-def _is_safe_url_for_fetch(url: str) -> bool:
-    """Return True if the URL is acceptable for server-side fetching.
-
-    This enforces a safe scheme and rejects URLs that resolve to private or loopback
-    IP ranges to mitigate SSRF-style abuse.
-    """
-    return labeler_cache.is_safe_remote_url(url)
-
-
-def _kickoff_fallback_ref_cache_warm(candidates: List[Tuple[int, str]], *, max_items: int = 12) -> int:
-    """Best-effort background warm of missing fallback ref source images."""
-    if local_photos.is_local_only():
-        return 0
-    uniq: List[Tuple[int, str]] = []
-    seen: Set[int] = set()
-    for serial, url in candidates:
-        try:
-            sn = int(serial)
-        except Exception:
-            continue
-        u = str(url or "").strip()
-        if sn <= 0 or not _is_safe_url_for_fetch(u):
-            continue
-        if sn in seen:
-            continue
-        seen.add(sn)
-        uniq.append((sn, u))
-        if len(uniq) >= max(1, int(max_items)):
-            break
-    if not uniq:
-        return 0
-
-    async def _runner(rows: List[Tuple[int, str]]) -> None:
-        queue: asyncio.Queue[Tuple[int, str]] = asyncio.Queue()
-        for r in rows:
-            queue.put_nowait(r)
-
-        async def _worker() -> None:
-            while True:
-                try:
-                    sn, u = queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-                try:
-                    await labeler_cache.get_or_download(int(sn), str(u))
-                except Exception:
-                    pass
-
-        try:
-            concurrency = 4
-            await asyncio.gather(*[_worker() for _ in range(concurrency)])
-        except Exception:
-            pass
-
-    try:
-        asyncio.create_task(_runner(uniq))
-    except Exception:
-        return 0
-    return len(uniq)
+    return None
 
 
 async def _identify_singleflight_enter(cache_key: str) -> Tuple[asyncio.Future, bool]:
@@ -2846,9 +2710,7 @@ def _log_local_filter_throttled(mode: str, excluded: int, sample: List[int]) -> 
 
 
 def _filter_queue_to_local(mode: str, items: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int, List[int]]:
-    """Filter queue entries down to local serials when local-only mode is enabled."""
-    if not local_photos.is_local_only():
-        return list(items or []), 0, []
+    """Filter queue entries down to serials with locally available bytes."""
     local_serials = local_photos.local_serials(force_refresh=False)
     out: List[Dict[str, Any]] = []
     excluded = 0
@@ -2869,7 +2731,7 @@ def _filter_queue_to_local(mode: str, items: List[Dict[str, Any]]) -> Tuple[List
 
 
 def _collect_local_missing_summary(rows: List[List[str]], *, sample_cap: int = _LOCAL_MISSING_SAMPLE_MAX) -> Dict[str, Any]:
-    """Compare sheet serials against local index and return missing summary."""
+    """Compare metadata serials against local index and return missing summary."""
     local_serials = local_photos.local_serials(force_refresh=False)
     sheet_serials: Set[int] = set()
     missing: List[int] = []
@@ -2901,7 +2763,7 @@ def _queue_rows_ttl_sec() -> int:
     return int(_QUEUE_ROWS_TTL_SEC)
 
 
-async def _get_tcb_rows_async(*, force: bool = False, ttl_sec: Optional[int] = None) -> List[List[str]]:
+async def _get_photo_metadata_rows_async(*, force: bool = False, ttl_sec: Optional[int] = None) -> List[List[str]]:
     """Load photo metadata rows without blocking the event loop."""
     ttl = int(ttl_sec) if ttl_sec is not None else int(_queue_rows_ttl_sec())
     ttl = max(1, ttl)
@@ -2917,7 +2779,7 @@ async def get_queue_detect(request: web.Request) -> web.Response:
         _kickoff_boot_cache_warm_once()
         _kick_detector_warm_task()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = await _get_tcb_rows_async(force=force)
+        rows = await _get_photo_metadata_rows_async(force=force)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
         def _parse_queue_detect_candidates(
@@ -2936,8 +2798,7 @@ async def get_queue_detect(request: web.Request) -> web.Response:
                 box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
                 if not box_coords.strip():
                     url = row[COL_URL] if len(row) > COL_URL else ""
-                    if _is_safe_url_for_fetch(url):
-                        out_queue.append({"serial": sn, "url": url})
+                    out_queue.append({"serial": sn, "url": url})
             out_queue.sort(key=lambda item: int(item.get("serial") or 0))
             return out_queue
 
@@ -2961,7 +2822,7 @@ async def get_queue_classify(request: web.Request) -> web.Response:
         _log_local_mode_once()
         _kickoff_boot_cache_warm_once()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = await _get_tcb_rows_async(force=force)
+        rows = await _get_photo_metadata_rows_async(force=force)
         t0 = time.perf_counter()
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
@@ -2997,15 +2858,14 @@ async def get_queue_classify(request: web.Request) -> web.Response:
                 
                 if num_labeled < num_boxes:
                     url = row[COL_URL] if len(row) > COL_URL else ""
-                    if _is_safe_url_for_fetch(url):
-                        out_candidates.append({
-                            "serial": sn,
-                            "url": url,
-                            "boxes": box_coords,
-                            "labels": box_cat_ids,
-                            "num_boxes": num_boxes,
-                            "num_labeled": num_labeled,
-                        })
+                    out_candidates.append({
+                        "serial": sn,
+                        "url": url,
+                        "boxes": box_coords,
+                        "labels": box_cat_ids,
+                        "num_boxes": num_boxes,
+                        "num_labeled": num_labeled,
+                    })
             return out_candidates
 
         candidates = _parse_queue_classify_candidates(rows, claims, user_id)
@@ -3134,7 +2994,7 @@ async def get_queue_manual(request: web.Request) -> web.Response:
         _log_local_mode_once()
         _kickoff_boot_cache_warm_once()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = await _get_tcb_rows_async(force=force)
+        rows = await _get_photo_metadata_rows_async(force=force)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
         def _parse_queue_manual_candidates(
@@ -3165,8 +3025,6 @@ async def get_queue_manual(request: web.Request) -> web.Response:
                 if not review_indices:
                     continue
                 url = row[COL_URL] if len(row) > COL_URL else ""
-                if not _is_safe_url_for_fetch(str(url)):
-                    continue
                 out_queue.append({
                     "serial": sn,
                     "url": url,
@@ -3192,10 +3050,10 @@ async def get_queue_manual(request: web.Request) -> web.Response:
 
 
 async def get_local_missing(request: web.Request) -> web.Response:
-    """Return summary of sheet serials missing from local photo root."""
+    """Return summary of metadata serials missing from local photo root."""
     try:
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
-        rows = await _get_tcb_rows_async(force=force, ttl_sec=60)
+        rows = await _get_photo_metadata_rows_async(force=force, ttl_sec=60)
         payload = _collect_local_missing_summary(rows, sample_cap=_LOCAL_MISSING_SAMPLE_MAX)
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
@@ -3211,7 +3069,7 @@ async def get_image(request: web.Request) -> web.Response:
         if sn is None:
             return _with_cors(web.Response(status=400, text="Invalid serial"), request)
         
-        rows = await _get_tcb_rows_async(ttl_sec=60)
+        rows = await _get_photo_metadata_rows_async(ttl_sec=60)
         def _get_image_data_from_rows(in_rows: List[List[str]], target_sn: int) -> Optional[Dict[str, Any]]:
             for row in in_rows[1:]:
                 if len(row) <= COL_SERIAL:
@@ -3238,10 +3096,9 @@ async def get_image(request: web.Request) -> web.Response:
 
 
 async def get_cached_image(request: web.Request) -> web.Response:
-    """Get cached image bytes for a serial. Downloads on-demand if not cached."""
+    """Get image bytes for a serial from local storage or local cache."""
     try:
         _log_local_mode_once()
-        global _DRIVE_PROXY_FAIL_STREAK, _DRIVE_PROXY_BACKOFF_UNTIL_MONO
         sn_str = request.match_info.get("sn", "")
         sn = _parse_serial(sn_str)
         if sn is None:
@@ -3264,157 +3121,26 @@ async def get_cached_image(request: web.Request) -> web.Response:
                 resp.headers["X-Labeler-Image-Path"] = "local"
                 return _with_cors(resp, request)
 
-        if local_photos.is_local_only():
-            log_action(
-                "labeler_local_image_missing",
-                f"sn={int(sn)}",
-                f"root={str(local_photos.photo_root())}",
-            )
-            resp = web.json_response(
-                {"error": "local_image_missing", "serial": int(sn)},
-                status=404,
-            )
-            resp.headers["Cache-Control"] = "no-store"
-            resp.headers["X-Labeler-Cache"] = "local-miss"
-            resp.headers["X-Labeler-Image-Path"] = "local-missing"
-            return _with_cors(resp, request)
-
-        #Try cache next (non-blocking)
         data = await labeler_cache.get_cached_image_async(sn)
         if data:
             resp = web.Response(body=data, content_type="image/jpeg")
-            resp.headers["X-Labeler-Image-Path"] = "hit"
+            resp.headers["Cache-Control"] = "no-store"
+            resp.headers["X-Labeler-Cache"] = "cache"
+            resp.headers["X-Labeler-Image-Path"] = "cache"
             return _with_cors(resp, request)
 
-        #Not cached - look up URL and download directly
-        rows = await _get_tcb_rows_async(ttl_sec=60)
-
-        def _find_url_in_rows(in_rows: List[List[str]], target_sn: int) -> Optional[str]:
-            for row in in_rows[1:]:
-                if len(row) <= COL_SERIAL:
-                    continue
-                row_sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-                if row_sn == target_sn:
-                    return row[COL_URL] if len(row) > COL_URL else ""
-            return None
-
-        url = await asyncio.to_thread(_find_url_in_rows, rows, sn)
-
-        if not _is_safe_url_for_fetch(str(url or "").strip()):
-            return _with_cors(web.Response(status=404, text="Image URL not found"), request)
-
-        url_s = str(url).strip()
-        is_drive_like = labeler_cache.is_drive_like_public_url(url_s)
-        intent = str(request.query.get("intent") or "foreground").strip().lower()
-        if intent not in {"prefetch", "foreground"}:
-            intent = "foreground"
-        foreground_intent = intent == "foreground"
-        prefetch_intent = intent == "prefetch"
-        force_proxy = str(request.query.get("proxy") or "").strip().lower() in {"1", "true", "yes", "on"}
-        drive_proxy_backoff_active = (
-            is_drive_like
-            and (not force_proxy)
-            and (time.monotonic() < float(_DRIVE_PROXY_BACKOFF_UNTIL_MONO))
+        log_action(
+            "labeler_local_image_missing",
+            f"sn={int(sn)}",
+            f"root={str(local_photos.photo_root())}",
         )
-
-        # For Drive-backed images, prefer a server-side proxy fetch on cache miss.
-        # This avoids browser-side Drive image failures that can cause queue skips.
-        # Important: skip slow proxy attempts for prefetch traffic to avoid building
-        # long request backlogs that can delay lightweight claim calls.
-        allow_proxy_attempt = bool(force_proxy or (is_drive_like and foreground_intent))
-        if allow_proxy_attempt:
-            async with _heavy_sem:
-                proxy_t0 = time.perf_counter()
-                proxy_data: Optional[bytes] = None
-                proxy_status = "miss"
-                proxy_timeout_sec = 18.0 if force_proxy else (3.5 if foreground_intent else 10.0)
-                proxy_bypass_backoff = bool(force_proxy or foreground_intent)
-                try:
-                    proxy_data = await asyncio.wait_for(
-                        _fetch_image_bytes_for_labeler(int(sn), url_s, bypass_backoff=proxy_bypass_backoff),
-                        timeout=proxy_timeout_sec,
-                    )
-                    proxy_status = "ok" if proxy_data else "empty"
-                except asyncio.TimeoutError:
-                    proxy_status = "timeout"
-                except Exception as e:
-                    proxy_status = f"error:{type(e).__name__}"
-                    log_action(
-                        "labeler_cached_image_proxy_error",
-                        f"sn={int(sn)}",
-                        f"forced={1 if force_proxy else 0}; drive={1 if is_drive_like else 0}; {type(e).__name__}: {e!r}",
-                    )
-                proxy_ms = int(round((time.perf_counter() - proxy_t0) * 1000.0))
-                if proxy_data:
-                    if is_drive_like:
-                        _DRIVE_PROXY_FAIL_STREAK = 0
-                        _DRIVE_PROXY_BACKOFF_UNTIL_MONO = 0.0
-                    resp = web.Response(body=proxy_data, content_type="image/jpeg")
-                    resp.headers["Cache-Control"] = "no-store"
-                    resp.headers["X-Labeler-Cache"] = "miss-proxy"
-                    proxy_path = str(labeler_cache.get_last_fetch_path(int(sn)) or "").strip().lower()
-                    if proxy_path in {"drive_api", "drive_api_fallback"}:
-                        resp.headers["X-Labeler-Image-Path"] = proxy_path
-                    elif force_proxy:
-                        resp.headers["X-Labeler-Image-Path"] = "proxy_forced"
-                    else:
-                        resp.headers["X-Labeler-Image-Path"] = "proxy"
-                    return _with_cors(resp, request)
-                if is_drive_like and not force_proxy:
-                    _DRIVE_PROXY_FAIL_STREAK = min(8, int(_DRIVE_PROXY_FAIL_STREAK) + 1)
-                    step = max(0, int(_DRIVE_PROXY_FAIL_STREAK) - 1)
-                    delay = min(
-                        float(_DRIVE_PROXY_BACKOFF_MAX_SEC),
-                        float(_DRIVE_PROXY_BACKOFF_BASE_SEC) * float(2 ** step),
-                    )
-                    _DRIVE_PROXY_BACKOFF_UNTIL_MONO = max(
-                        float(_DRIVE_PROXY_BACKOFF_UNTIL_MONO),
-                        time.monotonic() + float(delay),
-                    )
-                log_action(
-                    "labeler_cached_image_proxy_fail",
-                    f"sn={int(sn)}",
-                    (
-                        f"ms={proxy_ms}; status={proxy_status}; "
-                        f"forced={1 if force_proxy else 0}; drive={1 if is_drive_like else 0}; "
-                        f"intent={intent}; bypass={1 if proxy_bypass_backoff else 0}"
-                    ),
-                )
-                if force_proxy:
-                    return _with_cors(web.Response(status=503, text="Image proxy fetch failed"), request)
-        elif drive_proxy_backoff_active:
-            pass
-
-        # Do not block UI response on backend cache download attempts.
-        # Serve source immediately and warm cache in background.
-        async def _warm() -> None:
-            try:
-                await labeler_cache.get_or_download(
-                    int(sn),
-                    str(url),
-                    bypass_backoff=bool(foreground_intent),
-                    max_attempts=1 if prefetch_intent else 3,
-                )
-            except Exception:
-                pass
-
-        try:
-            asyncio.create_task(_warm())
-        except Exception:
-            pass
-
-        if is_drive_like:
-            log_action(
-                "labeler_cached_image_miss_redirect",
-                f"sn={int(sn)}",
-                "drive=1; reason=proxy_failed_or_miss",
-            )
-
-        resp = web.Response(status=307)
-        resp.headers["Location"] = url_s
+        resp = web.json_response(
+            {"error": "local_image_missing", "serial": int(sn)},
+            status=404,
+        )
         resp.headers["Cache-Control"] = "no-store"
-        resp.headers["X-Labeler-Cache"] = "miss-redirect"
-        resp.headers["X-Labeler-Image-Path"] = "redirect"
+        resp.headers["X-Labeler-Cache"] = "local-miss"
+        resp.headers["X-Labeler-Image-Path"] = "local-missing"
         return _with_cors(resp, request)
     except Exception as e:
         log_action("labeler_cached_image_error", "error", str(e))
@@ -3699,7 +3425,7 @@ async def post_detect(request: web.Request) -> web.Response:
 
         #If serial provided but not cached and no URL, look up URL by serial
         if serial_i is not None and not image_bytes and not url:
-            rows = await _get_tcb_rows_async(ttl_sec=_queue_rows_ttl_sec())
+            rows = await _get_photo_metadata_rows_async(ttl_sec=_queue_rows_ttl_sec())
             for row in rows[1:]:
                 if len(row) <= COL_SERIAL:
                     continue
@@ -3888,7 +3614,7 @@ async def post_refine(request: web.Request) -> web.Response:
             image_bytes = await labeler_cache.get_cached_image_async(int(serial_i))
 
         if serial_i is not None and not image_bytes and not url:
-            rows = await _get_tcb_rows_async(ttl_sec=_queue_rows_ttl_sec())
+            rows = await _get_photo_metadata_rows_async(ttl_sec=_queue_rows_ttl_sec())
             for row in rows[1:]:
                 if len(row) <= COL_SERIAL:
                     continue
@@ -4041,11 +3767,11 @@ async def post_identify(request: web.Request) -> web.Response:
         image_fetch_ms = 0.0
         image_source = "none"
         enrich_ms = 0.0
-        sheet_ref_ms = 0.0
-        sheet_ref_applied = 0
-        sheet_ref_total = 0
-        sheet_ref_gallery = 0
-        sheet_ref_fallback = 0
+        metadata_ref_ms = 0.0
+        metadata_ref_applied = 0
+        metadata_ref_total = 0
+        metadata_ref_gallery = 0
+        metadata_ref_fallback = 0
         singleflight_wait_ms = 0.0
         payload_for_singleflight: Optional[Dict[str, Any]] = None
 
@@ -4280,10 +4006,9 @@ async def post_identify(request: web.Request) -> web.Response:
             # For each predicted cat, use only its DINO-ranked refs and map them
             # to ref-crop endpoints; no deterministic metadata fallback override.
             try:
-                t_sheet = time.perf_counter()
+                t_metadata_refs = time.perf_counter()
                 await _ensure_photo_crop_index_cache(force=False)
 
-                warm_candidates: List[Tuple[int, str]] = []
                 for crop in [row for row in result.results if isinstance(row, dict)]:
                     for cand in crop.get("candidates", []) or []:
                         refs_raw = cand.get("refs")
@@ -4333,7 +4058,7 @@ async def post_identify(request: web.Request) -> web.Response:
                                 # Drop stale gallery refs instead of showing unlabeled historical thumbnails.
                                 continue
                             seen_sc.add(key_sc)
-                            ref_url = _sheet_ref_crop_url(serial_ref, crop_ref)
+                            ref_url = _photo_ref_crop_url(serial_ref, crop_ref)
                             selected_refs.append({
                                 "img": img_b64,
                                 "url": ref_url,
@@ -4343,28 +4068,19 @@ async def post_identify(request: web.Request) -> web.Response:
                             })
                             if img_b64:
                                 seen_img.add(img_b64)
-                            src_url = str(entry.get("url") or "").strip()
-                            if (not img_b64) and _is_safe_url_for_fetch(src_url):
-                                warm_candidates.append((int(serial_ref), src_url))
                             if len(selected_refs) >= ref_keep_limit:
                                 break
 
                         cand["refs"] = selected_refs
                         if cand["refs"]:
-                            sheet_ref_applied += 1
-                        sheet_ref_total += len(cand["refs"])
-                        sheet_ref_gallery += int(len(cand["refs"]))
+                            metadata_ref_applied += 1
+                        metadata_ref_total += len(cand["refs"])
+                        metadata_ref_gallery += int(len(cand["refs"]))
 
-                if warm_candidates:
-                    _kickoff_fallback_ref_cache_warm(
-                        warm_candidates,
-                        max_items=max(12, min(len(warm_candidates), int(refs_per_target) * int(top_k))),
-                    )
-
-                sheet_ref_ms = (time.perf_counter() - t_sheet) * 1000.0
+                metadata_ref_ms = (time.perf_counter() - t_metadata_refs) * 1000.0
             except Exception as e:
                 log_action(
-                    "labeler_identify_sheet_refs_error",
+                    "labeler_identify_metadata_refs_error",
                     "error",
                     f"{type(e).__name__}: {e!r}",
                 )
@@ -4386,14 +4102,14 @@ async def post_identify(request: web.Request) -> web.Response:
                     (
                         f"ms total={int(round(total_ms))} img={int(round(image_fetch_ms))} "
                         f"sem={int(round(sem_wait_ms))} id={int(round(identify_ms))} "
-                        f"enrich={int(round(enrich_ms))} sheet={int(round(sheet_ref_ms))}; "
+                        f"enrich={int(round(enrich_ms))} metadata_refs={int(round(metadata_ref_ms))}; "
                         f"src={image_source}; crops={stats['crops']}; cands={stats['cands']}; "
                         f"with_refs={stats['with_refs']}; zero_refs={stats['zero_refs']}; "
                         f"avg_refs={stats['avg_refs']}; max_refs={stats['max_refs']}; "
                         f"inline_refs={stats['inline_refs']}; url_refs={stats['url_refs']}; "
                         f"inline_cands={stats['inline_cands']}; url_only_cands={stats['url_only_cands']}; "
-                        f"sheet_applied={int(sheet_ref_applied)}; sheet_total={int(sheet_ref_total)}; "
-                        f"sheet_gallery={int(sheet_ref_gallery)}; sheet_fallback={int(sheet_ref_fallback)}; "
+                        f"metadata_applied={int(metadata_ref_applied)}; metadata_total={int(metadata_ref_total)}; "
+                        f"metadata_gallery={int(metadata_ref_gallery)}; metadata_fallback={int(metadata_ref_fallback)}; "
                         f"sf_wait={int(round(singleflight_wait_ms))}"
                     ),
                 )
@@ -4626,7 +4342,7 @@ async def post_save(request: web.Request) -> web.Response:
 
     # Refresh local photo metadata cache in background to avoid blocking the event loop
         # (gspread/requests is synchronous and can stall Discord heartbeats).
-        _kickoff_refresh_photo_rows_cache("post_save")
+        _kickoff_photo_metadata_cache_refresh("post_save")
         _manual_metadata_ref_cache = {}
         _manual_metadata_ref_built_mono = 0.0
         _photo_crop_index_cache = {}
@@ -4645,7 +4361,7 @@ async def post_save(request: web.Request) -> web.Response:
 
 
 async def post_flag_incorrect(request: web.Request) -> web.Response:
-    """Blacklist a reference serial immediately and queue sheet label-clears in background."""
+    """Blacklist a reference serial immediately and queue metadata label clears in background."""
     try:
         data = await request.json()
     except Exception:
@@ -4700,7 +4416,7 @@ async def post_flag_incorrect(request: web.Request) -> web.Response:
                     "sheet_update": "queued",
                     "queue_pending": int(queue_info.get("pending_count") or 0),
                     "queue_deduped": not bool(queue_info.get("queued_new")),
-                    # Sheet clear runs in background now, so immediate changed-state is unknown.
+                    # Metadata clear runs in background now, so immediate changed-state is unknown.
                     "changed": None,
                     "already_unlabeled": None,
                     "blacklisted_for_refs": True,
@@ -4807,19 +4523,6 @@ async def post_cache_warm(request: web.Request) -> web.Response:
                 web.json_response({"accepted": False, "queued": 0, "in_flight": labeler_cache.download_inflight_count(), "cache_target": 0}),
                 request,
             )
-        if local_photos.is_local_only():
-            return _with_cors(
-                web.json_response(
-                    {
-                        "accepted": False,
-                        "queued": 0,
-                        "in_flight": 0,
-                        "cache_target": 0,
-                        "reason": "local_only_mode",
-                    }
-                ),
-                request,
-            )
         try:
             data = await request.json()
         except Exception:
@@ -4846,14 +4549,14 @@ async def post_cache_warm(request: web.Request) -> web.Response:
                 except Exception:
                     sn = 0
                 url = str(it.get("url") or "").strip()
-                if sn <= 0 or not _is_safe_url_for_fetch(url) or sn in seen:
+                if sn <= 0 or sn in seen:
                     continue
                 seen.add(sn)
                 items.append({"serial": sn, "url": url})
                 if len(items) >= scan_limit:
                     break
         else:
-            rows = await _get_tcb_rows_async(ttl_sec=120)
+            rows = await _get_photo_metadata_rows_async(ttl_sec=120)
             items = _queue_items_from_rows(rows, mode=mode, max_items=scan_limit)
 
         if not items:

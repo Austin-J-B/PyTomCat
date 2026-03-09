@@ -210,7 +210,7 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
     target_count = len(unique_names)
 
     from ..services import show_cache as _sc
-    _sc.reset_recentpics_cache()
+    _sc.reset_photo_metadata_cache()
 
     queue: asyncio.Queue[str] = asyncio.Queue()
     for nm in unique_names:

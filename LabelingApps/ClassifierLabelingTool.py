@@ -6,6 +6,7 @@ import csv
 import re
 import warnings
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 
@@ -29,7 +30,11 @@ DIR_KNOWN     = os.path.join(BASE_DIR, "known_cats")
 DIR_TARGET    = os.path.join(BASE_DIR, "HITL_labeled_crops")
 DIR_REJECT    = os.path.join(BASE_DIR, "HITL_rejects")
 
-CSV_PATH      = os.path.join(BASE_DIR, "Catabase - TCB Pics Formatted.csv")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CSV_PATHS = [
+    REPO_ROOT / "TomCatBot Pics.csv",
+    Path(BASE_DIR) / "TomCatBot Pics.csv",
+]
 
 #ReIDencoder+gallery (new format)
 ENCODER_WEIGHTS = r"C:\Users\austi\Documents\TomCat VI Training\Weights\DINOv3 Classifier\R4_cat_DINOv3_encoder.pth"
@@ -212,14 +217,16 @@ class CatSorterApp:
 
     def parse_csv(self):
         print("Parsing CSV...")
-        if not os.path.exists(CSV_PATH):
+        csv_path = next((str(path) for path in CSV_PATHS if path.exists()), "")
+        if not csv_path:
             messagebox.showwarning("Warning", "CSV not found. Logic selection won't work.")
             return
 
         pattern = re.compile(r'\d+\.\s*([^,]+)')
+        skip_labels = {"", "rejected", "needsreview", "needs review", "notacat", "not a cat"}
 
         try:
-            df = pd.read_csv(CSV_PATH)
+            df = pd.read_csv(csv_path)
             
             #--- Column Detection ---
             #Clean whitespaces from column names
@@ -244,9 +251,18 @@ class CatSorterApp:
 
             print(f"Using column '{sn_col_name}' for Serial Numbers.")
 
+            box_label_col_name = None
+            for col in df.columns:
+                low = col.lower()
+                if "box" in low and "cat" in low:
+                    box_label_col_name = col
+                    break
+            use_box_labels = bool(box_label_col_name)
+            if use_box_labels:
+                print(f"Using column '{box_label_col_name}' for box labels.")
+
             for index, row in df.iterrows():
-                #Column 0 is always CatID info
-                raw_names = str(row.iloc[0]) 
+                raw_names = str(row[box_label_col_name]) if use_box_labels else str(row.iloc[0])
                 raw_sn = str(row[sn_col_name])
                 
                 #Clean SN: remove .jpg, handle float->int (9.0 -> "9")
@@ -256,9 +272,20 @@ class CatSorterApp:
                 sn = raw_sn.replace(".jpg", "").strip()
                 
                 if sn == "nan" or not sn: continue
-                
-                matches = pattern.findall(raw_names)
-                cleaned_names = [m.strip() for m in matches]
+
+                if use_box_labels:
+                    cleaned_names = []
+                    seen_names = set()
+                    for token in str(raw_names).split("|"):
+                        name = token.strip()
+                        low = name.lower()
+                        if low in skip_labels or low in seen_names:
+                            continue
+                        seen_names.add(low)
+                        cleaned_names.append(name)
+                else:
+                    matches = pattern.findall(raw_names)
+                    cleaned_names = [m.strip() for m in matches]
                 
                 if cleaned_names:
                     self.sn_map[sn] = cleaned_names

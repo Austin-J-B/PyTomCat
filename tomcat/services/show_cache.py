@@ -125,21 +125,24 @@ def _maybe_crop_single(raw: bytes) -> Optional[bytes]:
     except Exception:  #vision model unavailable or failed; return uncropped
         return None
 
-_RECENTPICS_ROWS: Optional[List[List[str]]] = None
-_RECENTPICS_TS: float = 0.0
+_PHOTO_METADATA_ROWS_CACHE: Optional[List[List[str]]] = None
+_PHOTO_METADATA_ROWS_CACHE_TS: float = 0.0
 
-def _set_recentpics_rows(rows: Optional[List[List[str]]]) -> None:
+def _set_photo_metadata_rows_cache(rows: Optional[List[List[str]]]) -> None:
     """Seed the in-memory view of local photo metadata rows."""
-    global _RECENTPICS_ROWS, _RECENTPICS_TS
-    _RECENTPICS_ROWS = rows
-    _RECENTPICS_TS = time.monotonic()
+    global _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_CACHE_TS
+    _PHOTO_METADATA_ROWS_CACHE = rows
+    _PHOTO_METADATA_ROWS_CACHE_TS = time.monotonic()
 
 
-def reset_recentpics_cache() -> None:
+def reset_photo_metadata_cache() -> None:
     """Clear the cached local photo metadata rows so the next call reloads them."""
-    global _RECENTPICS_ROWS, _RECENTPICS_TS
-    _RECENTPICS_ROWS = None
-    _RECENTPICS_TS = 0.0
+    global _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_CACHE_TS
+    _PHOTO_METADATA_ROWS_CACHE = None
+    _PHOTO_METADATA_ROWS_CACHE_TS = 0.0
+
+
+reset_recentpics_cache = reset_photo_metadata_cache
 
 #--- INSERT IN tomcat/services/show_cache.py ---
 
@@ -149,15 +152,15 @@ async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
         # Reuse the existing row caching mechanism, but fetch from local metadata.
         rows = None
         now = time.monotonic()
-        ttl = max(1, int(getattr(settings, 'show_sheet_recentpics_ttl_sec', 300) or 300))
+        ttl = max(1, int(getattr(settings, 'photo_metadata_cache_ttl_sec', 300) or 300))
         
-        if _RECENTPICS_ROWS is not None and (now - _RECENTPICS_TS) < ttl:
-            rows = _RECENTPICS_ROWS
+        if _PHOTO_METADATA_ROWS_CACHE is not None and (now - _PHOTO_METADATA_ROWS_CACHE_TS) < ttl:
+            rows = _PHOTO_METADATA_ROWS_CACHE
         
         if rows is None:
             rows = get_photo_metadata_rows(ttl)
             if rows:
-                _set_recentpics_rows(rows)
+                _set_photo_metadata_rows_cache(rows)
         if not rows:
             return []
 
@@ -688,7 +691,7 @@ async def warm_cache_on_boot() -> None:
     if not settings.show_cache_prefill_on_boot:
         return
     try:
-        rows = get_photo_metadata_rows(getattr(settings, 'show_sheet_recentpics_ttl_sec', 300))
+        rows = get_photo_metadata_rows(getattr(settings, 'photo_metadata_cache_ttl_sec', 300))
         if not rows:
             log_action('show_cache_warm_error', 'local_metadata', 'no rows fetched')
             return
@@ -697,7 +700,7 @@ async def warm_cache_on_boot() -> None:
         return
     # Seed row cache so list_recent_pairs doesn't re-scan immediately.
     try:
-        _set_recentpics_rows(rows)
+        _set_photo_metadata_rows_cache(rows)
     except Exception:
         pass
     names: list[str] = []

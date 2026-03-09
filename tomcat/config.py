@@ -106,8 +106,12 @@ def _parse_role_id_list_env(key: str) -> list[int]:
 def _build_image_intake_channel_map() -> dict[int, str]:
     """
     Build image-intake channel map from env.
+
+    In local-photo mode, the mapped values are descriptive only; runtime intake
+    currently uses this as a channel allowlist.
+
     Supports either:
-      - CHANNEL_SHEET_MAP="CH_PICTURES_OF_CATS:TCBPicsInput,CH_REPORT_NEW_CATS:TCBPicsInput,1344745306620694558:TCBVetBillInput"
+      - CHANNEL_SHEET_MAP="CH_PICTURES_OF_CATS:photo_metadata,CH_REPORT_NEW_CATS:photo_metadata,1344745306620694558:vet_bills"
         (left side can be an env var name or a raw numeric ID)
       - Or, if unset, a sane default using named channels.
     """
@@ -139,9 +143,9 @@ def _build_image_intake_channel_map() -> dict[int, str]:
             return None
     pics = _id("CH_PICTURES_OF_CATS")
     rpt  = _id("CH_REPORT_NEW_CATS")
-    if pics: out[pics] = "TCBPicsInput"
-    if rpt:  out[rpt]  = "TCBPicsInput"
-    #add more named channels later if you introduce them (e.g., CH_VET_BILLS -> "TCBVetBillInput")
+    if pics: out[pics] = "photo_metadata"
+    if rpt:  out[rpt]  = "photo_metadata"
+    # add more named channels later if you introduce them (e.g., CH_VET_BILLS -> "vet_bills")
     return out
 
 
@@ -277,8 +281,13 @@ class Settings:
     #Optional: downscale/compress cached JPEGs to speed sending (0 disables)
     show_cache_resize_max_dim: int = int(os.getenv("SHOW_CACHE_RESIZE_MAX_DIM", "0") or "0")
     show_cache_jpeg_quality: int = int(os.getenv("SHOW_CACHE_JPEG_QUALITY", "88") or "88")
-    # Use a small TTL to reuse local photo metadata rows in-process and avoid repeated rescans.
-    show_sheet_recentpics_ttl_sec: int = int(os.getenv("SHOW_SHEET_RECENTPICS_TTL_SEC", "300") or "300")
+    # Reuse local photo metadata rows in-process to avoid repeated rescans.
+    photo_metadata_cache_ttl_sec: int = int(
+        os.getenv(
+            "PHOTO_METADATA_CACHE_TTL_SEC",
+            os.getenv("SHOW_SHEET_RECENTPICS_TTL_SEC", "300"),
+        ) or "300"
+    )
     #Optionally skip auto-crop during cache fill to speed up
     show_cache_crop_on_fill: bool = _get_env_bool("SHOW_CACHE_CROP_ON_FILL", True)
 

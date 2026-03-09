@@ -73,7 +73,6 @@ _resolved_gallery_path_cache: dict[str, str] = {}
 _gallery_crop_roots: Optional[List[Path]] = None
 
 # Local photo metadata columns (0-based).
-COL_URL = 6
 COL_SERIAL = 7
 COL_BOX_COORDS = 8
 COL_BOX_CAT_IDS = 9
@@ -1001,10 +1000,10 @@ async def _build_ref_cache(
     cat_list = await asyncio.to_thread(get_all_cats)
     cat_map = {c.lower(): c for c in cat_list}
 
-    from ..services.catsheets import get_tcb_pics_rows
-    from ..services import labeler_cache, local_photos
+    from ..services.catsheets import get_photo_metadata_rows
+    from ..services import local_photos
 
-    rows = get_tcb_pics_rows(ttl_sec=60)
+    rows = get_photo_metadata_rows(ttl_sec=60)
     samples: dict[str, List[Tuple[int, str, str, int]]] = {c: [] for c in cat_list}
     counts: dict[str, int] = {c: 0 for c in cat_list}
 
@@ -1014,7 +1013,6 @@ async def _build_ref_cache(
         sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
         if sn is None:
             continue
-        url = row[COL_URL] if len(row) > COL_URL else ""
         box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
         box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
         if not box_coords or not box_cat_ids:
@@ -1031,7 +1029,7 @@ async def _build_ref_cache(
             if not cat:
                 continue
             counts[cat] += 1
-            entry = (sn, url, coords[i], i + 1)
+            entry = (sn, coords[i], i + 1)
             bucket = samples[cat]
             if len(bucket) < max_per_cat:
                 bucket.append(entry)
@@ -1056,13 +1054,11 @@ async def _build_ref_cache(
 
         crops: List[Image.Image] = []
         refs: List[dict] = []
-        for sn, url, coord_str, crop_idx in entries:
+        for sn, coord_str, crop_idx in entries:
             coord = _parse_yolo_box_str(coord_str)
             if coord is None:
                 continue
             data = local_photos.read_local_photo_bytes(int(sn))
-            if not data and str(url or "").startswith("http"):
-                data = await labeler_cache.get_or_download(sn, url)
             if not data:
                 continue
             try:

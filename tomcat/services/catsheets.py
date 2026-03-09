@@ -32,9 +32,10 @@ COL_BOX_CAT_IDS = 9
 _CAT_PREFIX_RE = re.compile(r"^\s*\d+\s*[.)\-:]?\s*")
 _LABEL_SPLIT_RE = re.compile(r"[|,;/]+")
 
-_TCB_ROWS: list[list[str]] | None = None
-_TCB_TS: float = 0.0  #monotonic for in-memory
-_TCB_SNAPSHOT = Path("cache") / "sheets" / "tcb_pics_formatted.json"
+_PHOTO_METADATA_ROWS_CACHE: list[list[str]] | None = None
+_PHOTO_METADATA_ROWS_TS: float = 0.0  # monotonic for in-memory cache
+_PHOTO_METADATA_SNAPSHOT = Path("cache") / "sheets" / "photo_metadata_rows.json"
+_LEGACY_PHOTO_METADATA_SNAPSHOT = Path("cache") / "sheets" / "tcb_pics_formatted.json"
 
 
 def _normalize_rows(rows: Any) -> list[list[str]]:
@@ -108,8 +109,8 @@ def _parse_serial_number(value: str) -> int:
         return 0
 
 
-def _fetch_tcb_rows_live() -> list[list[str]]:
-    """Build TCB-style rows from the local metadata CSV."""
+def _fetch_photo_metadata_rows_live() -> list[list[str]]:
+    """Build labeler-compatible photo metadata rows from the local metadata CSV."""
     path = local_photos.metadata_csv_path()
     if not path.is_file():
         return []
@@ -150,66 +151,75 @@ def _fetch_tcb_rows_live() -> list[list[str]]:
         return []
     return rows
 
-def _load_tcb_snapshot() -> tuple[list[list[str]] | None, float]:
-    """Load snapshot from disk. Returns (rows, unix_timestamp)."""
-    try:
-        data = json.loads(_TCB_SNAPSHOT.read_text(encoding="utf-8"))
-        rows = data.get("rows")
-        ts = float(data.get("ts") or 0.0)
-        if isinstance(rows, list):
-            return rows, ts
-    except Exception:
-        pass
+def _load_photo_metadata_snapshot() -> tuple[list[list[str]] | None, float]:
+    """Load the cached photo metadata snapshot from disk.
+
+    Returns (rows, unix_timestamp). Falls back to the legacy snapshot filename so
+    cache continuity survives the rename.
+    """
+    for path in (_PHOTO_METADATA_SNAPSHOT, _LEGACY_PHOTO_METADATA_SNAPSHOT):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            rows = data.get("rows")
+            ts = float(data.get("ts") or 0.0)
+            if isinstance(rows, list):
+                return rows, ts
+        except Exception:
+            continue
     return None, 0.0
 
-def _write_tcb_snapshot(rows: list[list[str]]) -> None:
-    """Write snapshot to disk with current Unix timestamp."""
+def _write_photo_metadata_snapshot(rows: list[list[str]]) -> None:
+    """Write the photo metadata snapshot to disk with current Unix timestamp."""
     try:
-        _TCB_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
-        _TCB_SNAPSHOT.write_text(json.dumps({"ts": time.time(), "rows": rows}), encoding="utf-8")
+        _PHOTO_METADATA_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+        _PHOTO_METADATA_SNAPSHOT.write_text(json.dumps({"ts": time.time(), "rows": rows}), encoding="utf-8")
     except Exception:
         pass
 
 def force_refresh_photo_rows_cache() -> list[list[str]]:
     """Force refresh the local photo metadata row cache, bypassing TTL."""
-    global _TCB_ROWS, _TCB_TS
+    global _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS
     try:
-        rows = _fetch_tcb_rows_live()
+        rows = _fetch_photo_metadata_rows_live()
         if not rows:
-            return _TCB_ROWS or []
-        _TCB_ROWS, _TCB_TS = rows, time.monotonic()
-        _write_tcb_snapshot(rows)
+            return _PHOTO_METADATA_ROWS_CACHE or []
+        _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = rows, time.monotonic()
+        _write_photo_metadata_snapshot(rows)
         return rows
     except Exception:
-        return _TCB_ROWS or []
+        return _PHOTO_METADATA_ROWS_CACHE or []
 
 def get_photo_metadata_rows(ttl_sec: int | None = None) -> list[list[str]]:
     """Fetch local photo metadata rows with in-memory + on-disk caching."""
-    global _TCB_ROWS, _TCB_TS
-    ttl = int(ttl_sec if ttl_sec is not None else getattr(settings, "show_sheet_recentpics_ttl_sec", 300) or 300)
+    global _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS
+    ttl = int(
+        ttl_sec
+        if ttl_sec is not None
+        else getattr(settings, "photo_metadata_cache_ttl_sec", 300) or 300
+    )
     ttl = max(1, ttl)
     now_mono = time.monotonic()
     now_unix = time.time()
-    #In-memory cache (uses monotonic, session-only)
-    if _TCB_ROWS is not None and (now_mono - _TCB_TS) < ttl:
-        return _TCB_ROWS
-    #On-disk snapshot (uses Unix epoch, survives restarts)
-    snap_rows, snap_ts = _load_tcb_snapshot()
+    # In-memory cache (uses monotonic, session-only)
+    if _PHOTO_METADATA_ROWS_CACHE is not None and (now_mono - _PHOTO_METADATA_ROWS_TS) < ttl:
+        return _PHOTO_METADATA_ROWS_CACHE
+    # On-disk snapshot (uses Unix epoch, survives restarts)
+    snap_rows, snap_ts = _load_photo_metadata_snapshot()
     if snap_rows is not None and (now_unix - snap_ts) < ttl:
-        _TCB_ROWS, _TCB_TS = snap_rows, now_mono
+        _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = snap_rows, now_mono
         return snap_rows
-    #Fetch live photo metadata
+    # Fetch live photo metadata
     try:
-        rows = _fetch_tcb_rows_live()
+        rows = _fetch_photo_metadata_rows_live()
         if not rows:
-            return snap_rows or _TCB_ROWS or []
-        _TCB_ROWS, _TCB_TS = rows, now_mono
-        _write_tcb_snapshot(rows)
+            return snap_rows or _PHOTO_METADATA_ROWS_CACHE or []
+        _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = rows, now_mono
+        _write_photo_metadata_snapshot(rows)
         return rows
     except Exception:
-        #Fallback to whatever snapshot we have
+        # Fallback to whatever snapshot we have
         if snap_rows is not None:
-            _TCB_ROWS, _TCB_TS = snap_rows, now_mono
+            _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = snap_rows, now_mono
             return snap_rows
         return []
 
@@ -312,8 +322,8 @@ async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str
 
 
 # Backward-compatible aliases for older imports during the local migration.
-force_refresh_tcb_cache = force_refresh_photo_rows_cache
-get_tcb_pics_rows = get_photo_metadata_rows
+force_refresh_photo_metadata_cache = force_refresh_photo_rows_cache
+get_photo_metadata_table_rows = get_photo_metadata_rows
 
 
 

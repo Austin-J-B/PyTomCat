@@ -16,7 +16,7 @@ from tomcat.services.gallery_updater import run_gallery_update
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Rebuild gallery from labeled crops in TCB Pics Formatted.")
+    parser = argparse.ArgumentParser(description="Rebuild gallery from labeled crops in local photo metadata.")
     parser.add_argument(
         "--mode",
         default="full",

@@ -209,6 +209,21 @@ class LocalLLMParser:
             log_action("local_llm_parse_error", "exception", str(e))
             return LocalParseResult(route="none", confidence=0.0, reason="exception")
 
+    def shutdown(self, *, wait: bool = False) -> None:
+        """Release the single-flight executor during process shutdown."""
+        with self._submit_lock:
+            inflight = self._inflight
+            self._inflight = None
+        if inflight is not None and not inflight.done():
+            try:
+                inflight.cancel()
+            except Exception:
+                pass
+        try:
+            self._executor.shutdown(wait=wait, cancel_futures=True)
+        except Exception:
+            pass
+
     def _parse_sync(self, text: str) -> LocalParseResult:
         csv_columns = _csv_columns_for_prompt()
         system_prompt = (

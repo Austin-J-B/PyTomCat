@@ -11,7 +11,6 @@ from collections import deque, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from typing import Any, Deque, Dict, List, Optional, Tuple
-#easter egg. hi
 
 import discord
 
@@ -25,13 +24,13 @@ try:
 except Exception:
     _safe_send = None
 
-#---- handlers weâ€™ll dispatch to ----------------------------------------------
-#Cats: â€œshow me â€¦â€ and â€œwho is â€¦â€
+#---- handlers used by router dispatch ----------------------------------------
+# Cat lookups such as "show me" and "who is"
 from .handlers.cats import handle_cat_photo, handle_cat_show
-#Vision CV: detect / crop / identify (we already added these earlier)
+# Vision requests such as detect, crop, and identify
 from .handlers.vision import handle_cv_detect, handle_cv_crop, handle_cv_identify
-#Feeding: import the handlers module inside this package
-from .handlers import feeding  #type: ignore
+# Import the feeding module as a namespace to keep the dispatch table compact.
+from .handlers import feeding  # type: ignore
 
 from .handlers.misc import (
     handle_profiles_create,
@@ -44,10 +43,9 @@ from UserInterface.feeding_schedule_linker import handle_feeding_schedule_link
 from UserInterface.sub_request_linker import handle_sub_request_link
 from .services.cat_query import infer_query_from_text, looks_like_cat_query_text
 
-#---- Aliases and optional NLP ------------------------------------------------
+#---- Aliases and local parser ------------------------------------------------
 from .aliases import resolve_station_or_cat, alias_vocab
 from .utils.fuzzy import fuzzy_ratio, levenshtein_distance
-from .nlp.model import NLPModel  #returns None if not available
 from .nlp.local_parser import LocalLLMParser
 
 #---- Time zone handling (America/Chicago) -----------------------------------
@@ -58,7 +56,7 @@ except Exception:
 
 CENTRAL_TZ = ZoneInfo("America/Chicago") if ZoneInfo else None
 
-#Optional bot mention pattern (uses configured bot_user_id)
+# Optional bot mention pattern built from the configured bot user ID.
 try:
     _BOT_ID_INT = int(getattr(settings, "bot_user_id", 0) or 0)
 except Exception:
@@ -304,7 +302,7 @@ except Exception:
 
 class ClarifyView(discord.ui.View):
     def __init__(self, author_id: int, on_yes):
-        super().__init__(timeout=120)  #2 minutes is plenty; you can set None to keep forever
+        super().__init__(timeout=120)  # Let stale clarification buttons expire quickly.
         self.author_id = author_id
         self.on_yes = on_yes  #async callback
 
@@ -339,11 +337,10 @@ class ClarifyView(discord.ui.View):
 #------------------------------------------------------------------------------
 
 class IntentRouter:
-    """Route Discord messages through the NLP/alias pipelines to handlers."""
+    """Route Discord messages through alias rules and the local parser."""
     def __init__(self):
         #ring buffer: per (channel_id, user_id) last ~100 rows
         self._buf: Dict[Tuple[int,int], Deque[MachineRow]] = defaultdict(lambda: deque(maxlen=100))
-        self._nlp: Optional[NLPModel] = NLPModel.maybe_load(settings)  #returns None if disabled
         self._local_llm: Optional[LocalLLMParser] = LocalLLMParser.maybe_load(settings)
         self._alias_vocab = alias_vocab()  #{"stations":[names...], "cats":[names...], "all":[...]}
         #ephemeral memory for clarify actions: msg_id -> payload
@@ -354,6 +351,16 @@ class IntentRouter:
         self._pending_feed: Dict[Tuple[int,int], Dict[str, Any]] = {}
         #decision traces for logging: message_id -> [steps]
         self._traces: Dict[int, List[str]] = {}
+
+    def shutdown(self, *, wait: bool = False) -> None:
+        """Release optional local parser runtimes during process shutdown."""
+        parser = self._local_llm
+        self._local_llm = None
+        if parser is not None:
+            try:
+                parser.shutdown(wait=wait)
+            except Exception:
+                pass
 
     #---------- public entry ----------
     async def handle_message(self, message: Any, ctx: Dict[str, Any]) -> None:
@@ -663,7 +670,8 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
 
-            #Officer-only: recache catabase profiles/names (check this BEFORE show-photo recache)
+            # Check this branch ahead of the generic photo recache path so
+            # "recache catabase" does not fall through to photo-cache commands.
             recache_catabase_like = bool(
                 RECACHE_CATABASE_RE.search(text_wo)
                 or _fuzzy_command_present(
@@ -1028,8 +1036,8 @@ class IntentRouter:
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
                                    message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-        #2) Local LLM fallback: addressed router misses should be interpreted before
-        #feeding-channel station heuristics can hijack the message.
+        # Addressed messages get a local-LLM fallback here so feeding-channel
+        # heuristics do not claim them first.
         if addressed and self._local_llm and len(text) >= 3:
             text_wo = self._strip_wake_tokens(raw_text, message)
             if text_wo:
@@ -1044,7 +1052,7 @@ class IntentRouter:
                 if parsed.route != "none" and parsed.confidence >= conf_min:
                     if parsed.route == "dispatch_existing":
                         cat_hint = parsed.cat_name or text_wo
-                        cat = self._extract_best_entity(cat_hint, want="cat", allow_model=True)
+                        cat = self._extract_best_entity(cat_hint, want="cat")
                         if cat and parsed.intent == "show_photo":
                             trace.append(f"slot:cat={cat}")
                             trace.append("intent:show_photo(local_llm)")
@@ -1203,20 +1211,6 @@ class IntentRouter:
             self._traces[row["message_id"]] = trace
             return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
 
-        #3) If needed, run NLP fallback (intent + station scorer)
-        #Guard: only consult NLP if addressed OR in feeding-team (to avoid false positives on general chatter).
-        if self._nlp and len(text) >= 3 and (addressed or in_feeding):
-            nlp_intent, nlp_prob = self._nlp.predict_intent(text)
-            if nlp_intent in {"feed_update"} and nlp_prob >= CONF_MID:
-                station = self._extract_best_entity(text, want="station", allow_model=True, allow_stopword_aliases=True)
-                if nlp_intent == "feed_update" and station:
-                    return IntentEvent(
-                        type="feed_update", confidence=max(nlp_prob, 0.8),
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        station=station, dates=[self._today()]
-                    )
-
         #Default: none
         self._traces[row["message_id"]] = trace
         return IntentEvent(type="none", confidence=0.0,
@@ -1316,7 +1310,7 @@ class IntentRouter:
             return
 
         if event.type == "gmail_auth_code":
-            #Extract the code/url from the original text (preserve case!) after stripping wake tokens
+            # Preserve case so pasted Gmail codes and URLs survive unchanged.
             text_wo = self._strip_wake_tokens((event.text or ""), message)
             m = AUTH_CODE_RE.search(text_wo)
             auth = m.group(1).strip() if m else ""
@@ -1536,10 +1530,9 @@ class IntentRouter:
         self,
         text: str,
         want: str,
-        allow_model: bool = False,
         allow_stopword_aliases: bool = False,
     ) -> Optional[str]:
-        """want in {'cat','station'}. Try aliases, then fuzzy, then optional NLP scorer."""
+        """want in {'cat','station'}. Try aliases, then fuzzy matching."""
         #1) alias exact/normalized
         found = resolve_station_or_cat(text, want=want, include_stopword_aliases=allow_stopword_aliases)
         if found:
@@ -1576,12 +1569,6 @@ class IntentRouter:
                     dist = levenshtein_distance(token_clean, name_clean)
                     if 0 < dist <= CAT_TYPO_MAX_DISTANCE:
                         return best_name
-
-        #3) optional model scoring
-        if allow_model and self._nlp is not None:
-            best, prob = self._nlp.score_entity(text, vocab)
-            if prob >= CONF_HIGH:
-                return best
 
         return None
 
@@ -1720,9 +1707,9 @@ class IntentRouter:
                 except Exception:
                     continue
 
-        #If someone says â€œI fed microwave saturday before I left vacationâ€
+        # "Fed ... Saturday" without a date usually refers to the most recent Saturday.
         if "saturday" in text and "fed" in text:
-            #interpret as last Saturday
+            # Interpret the message as "last Saturday."
             out.append(self._prev_weekday(today, WEEKDAYS["sat"]))
 
         #dedupe and sort

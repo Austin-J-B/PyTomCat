@@ -1,6 +1,7 @@
-"""Spam heuristics, NLP backstop, and trusted-member exemptions."""
+"""Spam heuristics and trusted-member exemptions."""
 
 import re
+import time
 from collections import defaultdict
 from typing import Optional, Tuple
 
@@ -50,8 +51,24 @@ except Exception:  #rapidfuzz not installed; use simple substring fallback
             return False
         return phrase.lower() in (text or "").lower()
 
-_nlp_cached = None
 _MESSAGE_COUNTS: dict[Tuple[int, int], int] = defaultdict(int)
+_MESSAGE_COUNTS_TS: dict[Tuple[int, int], float] = {}
+_MESSAGE_COUNTS_EVICTION_INTERVAL_SEC = 3600
+_MESSAGE_COUNTS_LAST_EVICTION: float = 0.0
+
+
+def _evict_stale_message_counts() -> None:
+    """Remove message count entries older than the eviction interval."""
+    global _MESSAGE_COUNTS_LAST_EVICTION
+    now = time.monotonic()
+    if now - _MESSAGE_COUNTS_LAST_EVICTION < 600:
+        return
+    _MESSAGE_COUNTS_LAST_EVICTION = now
+    cutoff = now - _MESSAGE_COUNTS_EVICTION_INTERVAL_SEC
+    stale = [k for k, ts in _MESSAGE_COUNTS_TS.items() if ts < cutoff]
+    for k in stale:
+        _MESSAGE_COUNTS.pop(k, None)
+        _MESSAGE_COUNTS_TS.pop(k, None)
 
 
 def _message_count_key(message) -> Tuple[int, int]:
@@ -65,23 +82,6 @@ def _message_count_key(message) -> Tuple[int, int]:
     except Exception:  #malformed author attr; default to 0
         user_id = 0
     return (guild_id, user_id)
-
-def _nlp_predict_spam(settings, text: str) -> float:
-    """Run the optional NLP model and return a spam probability."""
-    global _nlp_cached
-    if _nlp_cached is None:
-        try:
-            from .nlp.model import NLPModel
-            _nlp_cached = NLPModel.maybe_load(settings)
-        except Exception:  #NLP import/init failed; disable permanently
-            _nlp_cached = False
-    if not _nlp_cached:
-        return 0.0
-    try:
-        #zero-shot: higher prob => more likely spam
-        return float(_nlp_cached.predict_spam(text))
-    except Exception:  #prediction failed; return neutral score
-        return 0.0
 
 def _has_privileged_role(member, settings) -> Optional[str]:
     """Check for role-based exemptions and explain the trust reason."""
@@ -102,7 +102,7 @@ def _is_trusted_member(message, settings, *, prior_count: int = 0) -> Optional[s
     try:
         member = getattr(message, 'author', None)
         if not member:
-            return False
+            return None
         if is_officer(member, settings):
             return "trusted_officer"
         msg_threshold = int(getattr(settings, 'spam_trust_message_threshold', 50) or 50)
@@ -114,16 +114,18 @@ def _is_trusted_member(message, settings, *, prior_count: int = 0) -> Optional[s
             return role_reason
         return None
     except Exception:  #trust evaluation failed; do not trust
-        return False
+        return None
 
 def check_spam(message, settings) -> tuple[bool, str]:
     """Main spam check: returns (is_spam, reason)."""
+    _evict_stale_message_counts()
     text = (getattr(message, 'content', None) or '').strip()
     if not text:
         return (False, "empty")
     key = _message_count_key(message)
     prior_count = _MESSAGE_COUNTS.get(key, 0)
     _MESSAGE_COUNTS[key] = prior_count + 1
+    _MESSAGE_COUNTS_TS[key] = time.monotonic()
     trust = _is_trusted_member(message, settings, prior_count=prior_count)
     if trust:
         return (False, trust)
@@ -159,10 +161,6 @@ def check_spam(message, settings) -> tuple[bool, str]:
         if _fuzzy_hit(text, ph, 86):
             score += 1
             fuzzy_hits.append(ph)
-    #NLP backstop
-    spam_prob = _nlp_predict_spam(settings, text)
-    if spam_prob >= float(getattr(settings, 'spam_nlp_conf', 0.9)):
-        score += 3
     #Logging for visibility
     try:
         author_id = getattr(getattr(message, 'author', None), 'id', 'unknown')
@@ -176,8 +174,6 @@ def check_spam(message, settings) -> tuple[bool, str]:
             details_parts.append(f"regex={'|'.join(matched_rules)}")
         if fuzzy_hits:
             details_parts.append(f"fuzzy={len(fuzzy_hits)}")
-        if spam_prob > 0:
-            details_parts.append(f"nlp={spam_prob:.2f}")
         if details_parts:
             detail_msg = "; ".join(details_parts)
             if score >= MIN_SPAM_SCORE:
@@ -188,8 +184,6 @@ def check_spam(message, settings) -> tuple[bool, str]:
         pass
 
     if score >= MIN_SPAM_SCORE:
-        reason = "rules"
-        if spam_prob >= float(getattr(settings, 'spam_nlp_conf', 0.9)):
-            reason = "nlp"
-        return (True, reason)
+        return (True, "rules")
     return (False, "none")
+

@@ -1,26 +1,4 @@
-#tomcat/config.py
-"""
-Configuration and tuning knobs for TomCat.
-
-Future idea: Intent policy map
---------------------------------
-If you later want to tune behavior without code changes, consider adding an
-`intent_policy` structure here which the router can read, e.g.:
-
-    intent_policy = {
-        "cv_identify": {"require_wake": True},
-        "show_photo":  {"require_wake": True},
-        "who_is":      {"require_wake": True},
-        "feeding_status": {"require_wake": True},
-        "feed_update": {"allowed_channels": [CH_FEEDING_TEAM]},
-        "sub_request": {"allowed_channels": [CH_FEEDING_TEAM]},
-        "sub_accept":  {"allowed_channels": [CH_FEEDING_TEAM]},
-    }
-
-By expressing wake requirements and allowed channels here, you can flip
-policies via environment variables without code edits. For now, the router
-implements the equivalent logic inline.
-"""
+"""Configuration and tuning knobs for TomCat."""
 from __future__ import annotations
 import os
 import re
@@ -103,6 +81,27 @@ def _parse_role_id_list_env(key: str) -> list[int]:
             out.append(rid)
     return out
 
+def _parse_profile_messages() -> dict[str, int]:
+    """Parse PROFILE_MESSAGES env var into {cat_id_str: discord_message_id}.
+
+    Expected format: "1:123456789,2:987654321,..."
+    """
+    raw = (os.getenv("PROFILE_MESSAGES", "") or "").strip()
+    if not raw:
+        return {}
+    out: dict[str, int] = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if ":" not in pair:
+            continue
+        cat_id, msg_id_str = pair.split(":", 1)
+        cat_id = cat_id.strip()
+        try:
+            out[cat_id] = int(msg_id_str.strip())
+        except ValueError:
+            continue
+    return out
+
 def _build_image_intake_channel_map() -> dict[int, str]:
     """
     Build image-intake channel map from env.
@@ -118,7 +117,6 @@ def _build_image_intake_channel_map() -> dict[int, str]:
     raw = os.getenv("CHANNEL_SHEET_MAP", "").strip()
     out: dict[int, str] = {}
     if raw:
-        out: Dict[int, str] = {}
         for pair in (p.strip() for p in raw.split(",") if p.strip()):
             if ":" not in pair:
                 continue
@@ -145,7 +143,7 @@ def _build_image_intake_channel_map() -> dict[int, str]:
     rpt  = _id("CH_REPORT_NEW_CATS")
     if pics: out[pics] = "photo_metadata"
     if rpt:  out[rpt]  = "photo_metadata"
-    # add more named channels later if you introduce them (e.g., CH_VET_BILLS -> "vet_bills")
+    # Extend this map as additional intake tabs are added.
     return out
 
 
@@ -185,22 +183,21 @@ class Settings:
     role_due_paying_id: int | None = int(os.getenv("ROLE_DUE_PAYING", "0") or "0") or None
     role_holiday_feeder_id: int | None = int(os.getenv("ROLE_HOLIDAY_FEEDER", "0") or "0") or None
     role_dues_perks_id: int | None = int(os.getenv("ROLE_DUES_PERKS", "0") or "0") or None
-    #Channels allowed to mark feed updates (default empty → no restriction). You set this in .env as
-    #allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
+    # Channels allowed to mark feed updates. An empty list means no restriction.
+    # Example in .env: allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
     allowed_feeding_channel_ids: list[int] = field(default_factory=lambda: _parse_channel_list_env("allowed_feeding_channel_ids"))
 
     #Google service account
     google_service_account_json: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "credentials/service_account.json")
-    #Retain the legacy name as well
+    # Mirror the same path under both field names used elsewhere in the codebase.
     google_sa_json: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "credentials/service_account.json")
 
-    #Sheets (support both old and new env names)
-    #Legacy names in .env: SHEET_CATABASE_ID, SHEET_VISION_ID, SHEET_MEGASHEET_ID
+    # Sheet IDs are accepted under both the SHEET_* and *_SPREADSHEET_ID env names.
     sheet_catabase_id: str | None = os.getenv("SHEET_CATABASE_ID") or os.getenv("CAT_SPREADSHEET_ID")
     sheet_vision_id: str | None = os.getenv("SHEET_VISION_ID") or os.getenv("AUX_SPREADSHEET_ID")
     sheet_megasheet_id: str | None = os.getenv("SHEET_MEGASHEET_ID")
 
-    #Also keep the new-style names some modules were using
+    # Mirror the same values under the alternate attribute names read elsewhere.
     cat_spreadsheet_id: str | None = os.getenv("CAT_SPREADSHEET_ID") or os.getenv("SHEET_CATABASE_ID")
     aux_spreadsheet_id: str | None = os.getenv("AUX_SPREADSHEET_ID") or os.getenv("SHEET_VISION_ID")
 
@@ -212,18 +209,18 @@ class Settings:
     #Channels where misc handlers like "meow" are allowed (empty set means everywhere)
     misc_channels: set[int] = field(default_factory=set)
 
-        #======== CV CONFIG (v5.6 parity; easy to tweak) ========
-    #Paths (drop-and-play). Change these when you retrain/move weights.
+    #======== CV CONFIG (v5.6 parity; easy to tweak) ========
+    # Paths for the current CV assets.
     cv_detect_weights: str = os.getenv(
         "CV_DETECT_WEIGHTS",
         os.path.join("weights", "984_917_yolo12s.pt"),
     )
-    #Point this to your R4.5 .pth file
+    # Encoder checkpoint path.
     cv_encoder_weights: str = os.getenv(
         "CV_ENCODER_WEIGHTS",
         os.path.join("weights", "R4.5_cat_DINOv3.pth"),
     )
-    #Point this to your R4.5 .pt gallery file
+    # Gallery embedding checkpoint path.
     cv_gallery_path: str = os.getenv(
         "CV_GALLERY_PATH",
         os.path.join("weights", "R4.5_cat_DINOv3_gallery_tta.pt"),
@@ -285,7 +282,7 @@ class Settings:
     photo_metadata_cache_ttl_sec: int = int(
         os.getenv(
             "PHOTO_METADATA_CACHE_TTL_SEC",
-            os.getenv("SHOW_SHEET_RECENTPICS_TTL_SEC", "300"),
+            "300",
         ) or "300"
     )
     #Optionally skip auto-crop during cache fill to speed up
@@ -295,26 +292,12 @@ class Settings:
     cv_lookback_seconds_before: int = int(os.getenv("CV_LOOKBACK_SECONDS_BEFORE", "30"))
     cv_pending_minutes_after: int = int(os.getenv("CV_PENDING_MINUTES_AFTER", "5"))
 
-    #Stored profile message IDs from v5.6 (cat ID -> Discord message ID)
-    profile_messages: dict[str, int] = field(default_factory=lambda: {
-        "1": 1361917184254935093,
-        "2": 1361917363993182368,
-        "4": 1361917392208531518,
-        "5": 1361917398168371280,
-        "6": 1361917404208304309,
-        "7": 1361917410331856976,
-        "9": 1361917519883010269,
-        "17": 1361917533564702791,
-        "67": 1361917567291363348,
-    })
+    #Stored profile message IDs (cat ID -> Discord message ID), loaded from env.
+    #Env format: PROFILE_MESSAGES="1:123456789,2:987654321,..."
+    profile_messages: dict[str, int] = field(default_factory=lambda: _parse_profile_messages())
 
-    #======== NLP CONFIG (optional DeBERTa ONNX) ========
-    #If provided, we enable zero-shot intent + entity scoring via ONNXRuntime.
-    nlp_model_path: str | None = os.getenv("NLP_MODEL_PATH") or os.getenv("DEBERTA_ONNX_PATH")
-    nlp_tokenizer_path: str | None = os.getenv("NLP_TOKENIZER_PATH") or os.getenv("DEBERTA_TOKENIZER_JSON")
-    nlp_conf_high: float = float(os.getenv("NLP_CONF_HIGH", "0.88"))
-    nlp_conf_mid: float = float(os.getenv("NLP_CONF_MID", "0.75"))
-    #Local LLM fallback parser (structured routing only; deterministic execution downstream)
+    #======== NLP CONFIG ========
+    #Local LLM is the only language-model runtime used by the bot.
     local_llm_enabled: bool = _get_env_bool("LOCAL_LLM_ENABLED", True)
     local_llm_runtime: str = os.getenv("LOCAL_LLM_RUNTIME", "llama_cpp").strip().lower()
     local_llm_gguf_path: str = os.getenv(
@@ -341,9 +324,6 @@ class Settings:
     ])
     #Minimum account age in days to skip spam checks
     spam_min_account_days: int = int(os.getenv("SPAM_MIN_ACCOUNT_DAYS", "30"))
-    #NLP spam threshold if ONNX model is configured
-    spam_nlp_conf: float = float(os.getenv("SPAM_NLP_CONF", "0.9"))
-
     #======== Gmail / Email logging ========
     gmail_enabled: bool = _get_env_bool("GMAIL_ENABLED", False)
     gmail_log_manual_delay_sec: float = float(os.getenv("GMAIL_LOG_MANUAL_DELAY_SEC", "0.25"))
@@ -362,8 +342,6 @@ class Settings:
         int(x) for x in _get_env_list("DUES_ALLOWED_AMOUNTS") if x.strip().lstrip("-").isdigit()
     ] or [15, 20, 25])
     membership_ws_title: str = os.getenv("MEMBERSHIP_WS_TITLE", "Membership Application List")
-    dues_nlp_enabled: bool = _get_env_bool("DUES_NLP_ENABLED", False)
-    dues_nlp_max_calls: int = int(os.getenv("DUES_NLP_MAX_CALLS", "50"))
     #Cat aliases/profile TTLs
     cat_aliases_ttl_sec: int = int(os.getenv("CAT_ALIASES_TTL_SEC", "7200") or "7200")
     cat_profile_ttl_sec: int = int(os.getenv("CAT_PROFILE_TTL_SEC", "3600") or "3600")

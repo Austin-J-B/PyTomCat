@@ -256,8 +256,10 @@ def _open_ws(worksheet_title: str, *, preferred_sheet_id: str | None = None):
 
 
 async def handle_profiles_create(intent, ctx):
-    """Create a new profile worksheet tab when staff request it."""
-    """TomCat, create profile(s) <startId> [through <endId>]"""
+    """Create one or more profile worksheet tabs.
+
+    Command form: create profile(s) <start_id> [through <end_id>]
+    """
     msg: discord.Message = ctx["message"]
     author = ctx["author"]
     if not is_officer(author, settings):
@@ -316,7 +318,7 @@ async def handle_profiles_create(intent, ctx):
             embed = discord.Embed.from_dict(embed_dict)
             sent = await ch.send(embed=embed)
             made += 1
-            #Log mapping so you can copy back into config if you want
+            # Log the created message ID so profile-message mappings can be updated later.
             log_action("profile_created", f"id={id_str}", f"msg={sent.id}")
         except Exception as e:
             failed.append(id_str)

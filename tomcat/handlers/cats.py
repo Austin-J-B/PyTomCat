@@ -384,7 +384,7 @@ async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
     #Try cached photo first for speed without hitting Sheets
     cached_bytes: Optional[bytes] = None
     cached_meta = None
-    cached_bytes, cached_meta = await pop_one_cached(name, use_sheet=False)
+    cached_bytes, cached_meta = await pop_one_cached(name, allow_profile_lookup=False)
     if cached_bytes:
         #Send immediate embed; enrich from cached sidecar profile if available (no live sheet)
         display = _single_display_name(cached_meta.get('display_name') or name, name) if isinstance(cached_meta, dict) else _single_display_name(name, name)
@@ -449,7 +449,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
         return
 
     #Try cache first without hitting Sheets
-    cached_bytes2, cached_meta2 = await pop_one_cached(name, use_sheet=False)
+    cached_bytes2, cached_meta2 = await pop_one_cached(name, allow_profile_lookup=False)
     full_for_button = name
     if cached_bytes2:
         ex2 = set()
@@ -514,8 +514,6 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
     await ch.send(embed=embed, view=PhotoView(full_for_button))
 
 
-
-#Optional: tiny wrapper to expose a strict "who is" alias if you want a separate name
 async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
     """Render a cat profile card sourced from cached Sheets data."""
     ch: discord.abc.MessageableChannel = ctx["channel"]

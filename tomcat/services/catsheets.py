@@ -15,12 +15,12 @@ from .sheets_client import sheets_client
 from . import local_photos
 from ..config import settings
 try:
-    from ..utils.text import norm_alnum_lower  #real helper if you have utils/
+    from ..utils.text import norm_alnum_lower
 except Exception:
     import re as _re
     def norm_alnum_lower(s: str) -> str:
         return _re.sub(r"[^a-z0-9]+", "", (s or "").lower())
-import re #Ensure this is imported at the top of the file
+import re
 from pathlib import Path
 
 #Photo metadata row columns (0-based index)
@@ -35,7 +35,6 @@ _LABEL_SPLIT_RE = re.compile(r"[|,;/]+")
 _PHOTO_METADATA_ROWS_CACHE: list[list[str]] | None = None
 _PHOTO_METADATA_ROWS_TS: float = 0.0  # monotonic for in-memory cache
 _PHOTO_METADATA_SNAPSHOT = Path("cache") / "sheets" / "photo_metadata_rows.json"
-_LEGACY_PHOTO_METADATA_SNAPSHOT = Path("cache") / "sheets" / "tcb_pics_formatted.json"
 
 
 def _normalize_rows(rows: Any) -> list[list[str]]:
@@ -152,20 +151,15 @@ def _fetch_photo_metadata_rows_live() -> list[list[str]]:
     return rows
 
 def _load_photo_metadata_snapshot() -> tuple[list[list[str]] | None, float]:
-    """Load the cached photo metadata snapshot from disk.
-
-    Returns (rows, unix_timestamp). Falls back to the legacy snapshot filename so
-    cache continuity survives the rename.
-    """
-    for path in (_PHOTO_METADATA_SNAPSHOT, _LEGACY_PHOTO_METADATA_SNAPSHOT):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            rows = data.get("rows")
-            ts = float(data.get("ts") or 0.0)
-            if isinstance(rows, list):
-                return rows, ts
-        except Exception:
-            continue
+    """Load the cached photo metadata snapshot from disk."""
+    try:
+        data = json.loads(_PHOTO_METADATA_SNAPSHOT.read_text(encoding="utf-8"))
+        rows = data.get("rows")
+        ts = float(data.get("ts") or 0.0)
+        if isinstance(rows, list):
+            return rows, ts
+    except Exception:
+        pass
     return None, 0.0
 
 def _write_photo_metadata_snapshot(rows: list[list[str]]) -> None:
@@ -272,7 +266,6 @@ async def get_most_recent_photo(full_name: str, _retried: bool = False) -> dict 
         "total_available": len(matches)
     }
 
-#Optional: Update get_recent_photo to use the new source too
 async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str:
     """Pick a random recent photo from the full history.
     
@@ -319,14 +312,6 @@ async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str
         "total_available": len(matches),
         "reverse_index": pick_idx + 1  #1-based: oldest=1, newest=total
     }
-
-
-# Backward-compatible aliases for older imports during the local migration.
-force_refresh_photo_metadata_cache = force_refresh_photo_rows_cache
-get_photo_metadata_table_rows = get_photo_metadata_rows
-
-
-
 
 IDX = {
     "full_name": 0,
@@ -416,7 +401,7 @@ async def get_random_photo(full_name: str):
     return await get_recent_photo(full_name)
 
 async def build_profile_embed(query: str) -> dict | str:
-    """Build a legacy profile embed dict using CatDatabase plus local photo metadata."""
+    """Build a profile embed from CatDatabase fields and local photo metadata."""
     prof = await get_cat_profile(query)
     if isinstance(prof, str):
         return prof  #error string from get_cat_profile
@@ -428,7 +413,7 @@ async def build_profile_embed(query: str) -> dict | str:
     if isinstance(recent, dict) and recent.get("url"):
         img_url = recent["url"]
 
-    #Match the legacy dense profile card style used in cats-on-campus.
+    # Match the compact profile card layout used in the cats-on-campus channel.
     display = re.sub(r"^\s*\d+\.\s*", "", str(prof.get("actual_name") or query)).strip()
     lines: list[str] = []
 

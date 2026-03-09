@@ -10,7 +10,7 @@ import secrets
 import socket
 from typing import Any, Callable, Dict, Optional, Union
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import os
 import json
@@ -18,9 +18,8 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 import logging
-#Import settings before first use
 from .config import settings
-#Config specific to your Discord App (from Developer Portal)
+# Discord application identifiers used by the activity UI.
 CLIENT_ID = getattr(settings, 'ui_activity_app_id', None) or os.getenv("UITEST_ACTIVITY_APP_ID")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 
@@ -29,9 +28,9 @@ if not SESSION_SECRET:
     raise RuntimeError("UI_SESSION_SECRET is required to issue UI session cookies (set a long random value in .env)")
 
 SESSION_TTL_SECONDS = int(os.getenv("UI_SESSION_TTL_SECONDS", "3600"))
-#Default secure cookies ON so cross-site (e.g., github pages -> your domain) can send them.
+# Secure cookies allow cross-site UI requests when SameSite=None is used.
 _COOKIE_SECURE = os.getenv("UI_COOKIE_SECURE", "true").lower() == "true"
-#If secure, use SameSite=None (required for third-party); otherwise keep Lax for localhost testing.
+# Local HTTP testing falls back to Lax because insecure cookies cannot use SameSite=None.
 _COOKIE_SAMESITE = "None" if _COOKIE_SECURE else "Lax"
 
 _ALLOWED_ORIGINS = {
@@ -60,7 +59,7 @@ def _debug(msg: str) -> None:
     if _AUTH_DEBUG:
         print(f"[UI-AUTH] {msg}")
 
-#Local persistence for the UI schedule (ndjson), with legacy JSON fallback for migration
+# The UI stores schedules in NDJSON and can still read the older JSON file.
 SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.ndjson"
 LEGACY_SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
 #Versioned schedule helpers
@@ -83,8 +82,14 @@ LABELER_RATE_LIMIT_SPLIT = os.getenv("LABELER_RATE_LIMIT_SPLIT", "1").strip().lo
 LABELER_PREFETCH_RETRY_FIX = os.getenv("LABELER_PREFETCH_RETRY_FIX", "1").strip().lower() in {"1", "true", "yes", "on"}
 LABELER_CLASSIFY_READY_RELAX = os.getenv("LABELER_CLASSIFY_READY_RELAX", "1").strip().lower() in {"1", "true", "yes", "on"}
 _rate_limit_counters: dict[str, deque] = {}
+_RATE_LIMIT_LAST_EVICTION: float = 0.0
+_RATE_LIMIT_EVICTION_INTERVAL_SEC = 300
 _background_tasks: dict[str, asyncio.Task] = {}
 _singleton_guard_socket: Optional[socket.socket] = None
+_SHUTDOWN_TIMEOUT_SEC = max(
+    1.0,
+    min(5.0, float(os.getenv("TOMCAT_SHUTDOWN_TIMEOUT_SEC", "5") or "5")),
+)
 
 
 def _start_background_task(name: str, coro_factory: Callable[[], Any]) -> None:
@@ -94,16 +99,65 @@ def _start_background_task(name: str, coro_factory: Callable[[], Any]) -> None:
         return
     _background_tasks[name] = asyncio.create_task(coro_factory())
 
-#Define your Role IDs for permissions
+
+async def _cancel_background_tasks(timeout_sec: float) -> None:
+    current = asyncio.current_task()
+    pending: list[asyncio.Task] = []
+    for name, task in list(_background_tasks.items()):
+        if task is None or task.done() or task is current:
+            continue
+        task.cancel()
+        pending.append(task)
+    if not pending:
+        return
+    try:
+        done, still_pending = await asyncio.wait(
+            pending,
+            timeout=max(0.1, float(timeout_sec)),
+        )
+    except Exception:
+        return
+    for task in done:
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            log_action("shutdown_task_error", "background_task", f"{type(e).__name__}: {e!r}")
+    for task in still_pending:
+        task.cancel()
+
+
+def _shutdown_runtime_helpers() -> None:
+    try:
+        intent_router.shutdown(wait=False)
+    except Exception:
+        pass
+    try:
+        from .services import labeler_cache as _labeler_cache
+
+        _labeler_cache.shutdown_cache_executor(wait=False)
+    except Exception:
+        pass
+    global _singleton_guard_socket
+    sock = _singleton_guard_socket
+    _singleton_guard_socket = None
+    if sock is not None:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+# Role IDs used by the web UI permission checks.
 ROLES = {
     "FEEDING_MANAGER": int(getattr(settings, "role_feeding_manager_id", 0) or 0),
     "PHOTO_LABELER": int(getattr(settings, "role_photo_labeler_id", 0) or 0),
     "VIEWER": int(getattr(settings, "role_viewer_id", 0) or 0),
 }
 
-#Your main guild ID (replace with your actual guild/server ID)
+# Primary guild used for UI lookups and admin tasks.
 YOUR_GUILD_ID = int(getattr(settings, "ui_guild_id", None) or getattr(settings, "target_guild_id", None) or 0)
-#UI can override via env if needed
+# The UI can override this through environment variables when needed.
 UI_GUILD_ID = YOUR_GUILD_ID
 
 
@@ -155,7 +209,7 @@ def _issue_session_response(user_info: dict, permissions: dict, request: web.Req
     """Sign a session payload and return a JSON response with cookie set."""
     now_ts = int(time.time())
     csrf_token = secrets.token_urlsafe(32)
-    #CRITICAL FIX: Ensure user_id is a string to prevent JS integer precision loss
+    # Serialize Discord snowflakes as strings so browsers do not lose precision.
     user_id_str = str(user_info.get("id"))
     
     session_payload = {
@@ -574,7 +628,7 @@ async def get_schedule(request):
 
 import discord
 from discord.ext import commands
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from .config import settings
 from .logger import log_event, log_action  #noqa: F401  #imported for shared use
@@ -594,7 +648,17 @@ from UserInterface.sub_request_linker import build_open_sub_requests_view
 
 intent_router = IntentRouter()
 
-SPAM_ALERTS: Dict[int, Dict[str, int]] = {}
+SPAM_ALERTS: Dict[int, Dict[str, Any]] = {}
+_SPAM_ALERT_TTL_SEC = 86400
+
+
+def _evict_stale_spam_alerts() -> None:
+    """Remove spam alert entries that moderators never acted on within the TTL."""
+    now = time.time()
+    stale = [mid for mid, data in SPAM_ALERTS.items()
+             if (now - data.get("timestamp", now)) > _SPAM_ALERT_TTL_SEC]
+    for mid in stale:
+        SPAM_ALERTS.pop(mid, None)
 
 #------- Discord intents & bot -------
 intents = discord.Intents.default()
@@ -603,7 +667,29 @@ intents.members = True
 intents.guilds = True
 intents.reactions = True
 
-bot = commands.Bot(command_prefix=settings.command_prefix, intents=intents)
+
+class TomCatBot(commands.Bot):
+    async def close(self) -> None:
+        if getattr(self, "_tomcat_shutdown_started", False):
+            await super().close()
+            return
+        self._tomcat_shutdown_started = True
+        shutdown_started = time.perf_counter()
+        log_action("shutdown_start", "bot", f"timeout_sec={_SHUTDOWN_TIMEOUT_SEC:.1f}")
+        try:
+            await _cancel_background_tasks(timeout_sec=min(2.0, float(_SHUTDOWN_TIMEOUT_SEC)))
+        except Exception as e:
+            log_action("shutdown_cancel_error", "background_tasks", f"{type(e).__name__}: {e!r}")
+        remaining = max(0.5, float(_SHUTDOWN_TIMEOUT_SEC) - (time.perf_counter() - shutdown_started))
+        try:
+            await asyncio.wait_for(super().close(), timeout=remaining)
+        except asyncio.TimeoutError:
+            log_action("shutdown_timeout", "bot.close", f"timeout_sec={_SHUTDOWN_TIMEOUT_SEC:.1f}")
+        finally:
+            _shutdown_runtime_helpers()
+
+
+bot = TomCatBot(command_prefix=settings.command_prefix, intents=intents)
 
 #------- Import real handlers -------
 #Cats / Feeding and Dues handlers already use the (intent, ctx) signature
@@ -624,7 +710,7 @@ from .utils.permissions import is_officer
 
 #--- Muted wrappers: run handlers but drop outbound sends ---
 class _MuteChannel:
-    """Proxy channel object that logs outbound messages instead of sending."""
+    """Proxy channel object that records outbound messages without sending them."""
     def __init__(self, real, label_fn):
         self._real = real
         self._label_fn = label_fn
@@ -723,10 +809,6 @@ async def handle_cat_show(intent: Intent, ctx: Dict[str, Any]) -> None:
 async def handle_feeding_status(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_feeding_status(intent, ctx)
 
-async def handle_dues_notice(intent: Intent, ctx: Dict[str, Any]) -> None:
-    #Deprecated placeholder; kept for compatibility if referenced elsewhere
-    pass
-
 #Admin handler expects (args, ctx) where args == intent.data
 async def handle_silent_mode(intent: Intent, ctx: Dict[str, Any]) -> None:
     await _handle_silent_mode_raw(intent.data, ctx)
@@ -809,6 +891,20 @@ def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResp
 @web.middleware
 async def rate_limit_middleware(request: web.Request, handler):
     """Limit requests per client to reduce abuse of the web API."""
+    #Periodically prune stale rate-limit buckets to prevent unbounded growth.
+    global _RATE_LIMIT_LAST_EVICTION
+    now_mono = time.monotonic()
+    if now_mono - _RATE_LIMIT_LAST_EVICTION > _RATE_LIMIT_EVICTION_INTERVAL_SEC:
+        _RATE_LIMIT_LAST_EVICTION = now_mono
+        now_wall = time.time()
+        stale_keys = [
+            k for k, dq in _rate_limit_counters.items()
+            if not dq or (now_wall - dq[-1]) > RATE_LIMIT_WINDOW_SECONDS
+        ]
+        for k in stale_keys:
+            _rate_limit_counters.pop(k, None)
+    #Evict expired spam alerts while we are already doing periodic work.
+    _evict_stale_spam_alerts()
     is_labeler_api = request.path.startswith("/api/labeler") and request.method != "OPTIONS"
     labeler_session: dict | None = None
     if is_labeler_api:
@@ -953,22 +1049,9 @@ async def start_web_server(bot):
         resp.headers["Cache-Control"] = "no-store"
         return _with_cors(resp, request)
 
-    async def options_members(request):
-        return _with_cors(web.Response(status=204), request)
 
-    async def options_schedule(request):
-        return _with_cors(web.Response(status=204), request)
-
-    async def options_schedule_save(request):
-        return _with_cors(web.Response(status=204), request)
-
-    async def options_stations(request):
-        return _with_cors(web.Response(status=204), request)
-
-    async def options_auth_token(request):
-        return _with_cors(web.Response(status=204), request)
-
-    async def options_auth_session(request):
+    async def _options_preflight(request):
+        """Shared CORS preflight handler for all non-labeler API routes."""
         return _with_cors(web.Response(status=204), request)
 
     async def get_stations_api(request):
@@ -1011,17 +1094,6 @@ async def start_web_server(bot):
         #Reload and return updated list
         return _with_cors(web.json_response({"stations": station_definitions(effective_from), "versions": versions}), request)
 
-    async def options_subrequest(request):
-        return _with_cors(web.Response(status=204), request)
-
-    async def options_sub_open(request):
-        return _with_cors(web.Response(status=204), request)
-
-    async def options_sub_claim(request):
-        return _with_cors(web.Response(status=204), request)
-
-    async def options_feeding_checklist(request):
-        return _with_cors(web.Response(status=204), request)
 
     async def get_feeding_checklist(request):
         """Officer-only: read local feeding checklist within a date range."""
@@ -1194,7 +1266,7 @@ async def start_web_server(bot):
 
         try:
             data = await request.json()
-        except:
+        except Exception:
             return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
         target_id = data.get("id")
@@ -1238,7 +1310,7 @@ async def start_web_server(bot):
                             deleted_item = rec
                             continue #Skip this line (Delete)
                         new_lines.append(line)
-                    except:
+                    except Exception: # Catch JSON parsing errors for malformed lines
                         new_lines.append(line)
             
             if deleted_item:
@@ -1325,7 +1397,7 @@ async def start_web_server(bot):
                         if assignee:
                             try:
                                 missing_assignee_ids.add(int(assignee))
-                            except Exception:
+                            except ValueError: # Catch non-integer assignee IDs
                                 pass
                         for st in stations:
                             accepted_map[(rec.get("parent_id") or parent_id, st, date_iso)] = assignee
@@ -1335,7 +1407,7 @@ async def start_web_server(bot):
                         if requester and not requester_name:
                             try:
                                 missing_requester_ids.add(int(requester))
-                            except Exception:
+                            except ValueError: # Catch non-integer requester IDs
                                 pass
                         for st in stations:
                             requested_items.append({
@@ -1347,7 +1419,7 @@ async def start_web_server(bot):
                                 "assignee_id": None,
                                 "assignee_name": rec.get("assignee_name") or "",
                             })
-            except Exception:
+            except Exception: # Catch JSON parsing errors for malformed lines
                 continue
 
         #Resolve display names for any requester IDs that were missing names in the log.
@@ -1409,7 +1481,7 @@ async def start_web_server(bot):
                 if display:
                     assignee_name_cache[uid] = display
 
-        #After reading all records, populate requester/assignee names and assignee ids from the accept map
+        # Fill requester and assignee details from the acceptance map built above.
         for item in requested_items:
             key = (item.get("id"), item.get("station"), item.get("date"))
             assignee = accepted_map.get(key)
@@ -1418,12 +1490,12 @@ async def start_web_server(bot):
                 if not item.get("assignee_name"):
                     try:
                         item["assignee_name"] = assignee_name_cache.get(int(assignee), "")
-                    except Exception:
+                    except ValueError: # Catch non-integer assignee IDs
                         item["assignee_name"] = ""
             if item.get("requester_id") and not item.get("requester_name"):
                 try:
                     item["requester_name"] = name_cache.get(int(item["requester_id"]), "")
-                except Exception:
+                except ValueError: # Catch non-integer requester IDs
                     item["requester_name"] = ""
 
         available = []
@@ -1451,7 +1523,7 @@ async def start_web_server(bot):
             out = dict(item)
             out["date_raw"] = date_iso
             out["date"] = safe_date
-            #CRITICAL FIX: Strict string conversion for output
+            # Serialize IDs as strings so the UI receives stable JSON values.
             if out.get("requester_id"):
                 out["requester_id"] = str(out["requester_id"])
             if out.get("requester"):
@@ -1462,7 +1534,7 @@ async def start_web_server(bot):
                 if not out.get("assignee_name"):
                     try:
                         out["assignee_name"] = assignee_name_cache.get(int(assignee), "")
-                    except Exception:
+                    except ValueError: # Catch non-integer assignee IDs
                         out["assignee_name"] = ""
             
             target_list.append(out)
@@ -1594,31 +1666,31 @@ async def start_web_server(bot):
         web.get('/', get_index),
         web.get('/labeler.js', get_labeler_js),
         web.get('/api/members', get_members),
-        web.options('/api/members', options_members),
+        web.options('/api/members', _options_preflight),
         web.post('/api/auth/token', auth_token_exchange),
         web.get('/api/auth/session', get_session),
-        web.options('/api/auth/token', options_auth_token),
-        web.options('/api/auth/session', options_auth_session),
+        web.options('/api/auth/token', _options_preflight),
+        web.options('/api/auth/session', _options_preflight),
         web.post('/api/schedule/save', save_schedule),
         web.get('/api/schedule', get_schedule),
-        web.options('/api/schedule', options_schedule),
-        web.options('/api/schedule/save', options_schedule_save),
+        web.options('/api/schedule', _options_preflight),
+        web.options('/api/schedule/save', _options_preflight),
         web.get('/api/stations', get_stations_api),
         web.post('/api/stations', save_stations_api),
-        web.options('/api/stations', options_stations),
+        web.options('/api/stations', _options_preflight),
         web.get('/api/feeding/checklist', get_feeding_checklist),
         web.post('/api/feeding/checklist', save_feeding_checklist),
-        web.options('/api/feeding/checklist', options_feeding_checklist),
+        web.options('/api/feeding/checklist', _options_preflight),
         web.post('/api/subrequest', submit_subrequest),
-        web.options('/api/subrequest', options_subrequest),
+        web.options('/api/subrequest', _options_preflight),
         web.get('/api/subs/open', list_open_subs),
-        web.options('/api/subs/open', options_sub_open),
+        web.options('/api/subs/open', _options_preflight),
         web.post('/api/subs/claim', claim_subs),
-        web.options('/api/subs/claim', options_sub_claim),
+        web.options('/api/subs/claim', _options_preflight),
         web.post('/api/subrequest/delete', delete_subrequest),
-        web.options('/api/subrequest/delete', options_subrequest), 
+        web.options('/api/subrequest/delete', _options_preflight), 
         web.post('/api/activity/leave', leave_activity),
-        web.options('/api/activity/leave', options_subrequest),
+        web.options('/api/activity/leave', _options_preflight),
         #Labeler API routes
         *get_labeler_routes(),
     ])
@@ -1626,9 +1698,10 @@ async def start_web_server(bot):
     runner = web.AppRunner(app)
     try:
         await runner.setup()
-        #Listen on localhost to avoid exposing the UI externally by default
-        site = web.TCPSite(runner, '0.0.0.0', 8080)
-        print("[TomCat-UI] Web server starting on http://localhost:8080")
+        #Bind to localhost by default so only the Cloudflare tunnel is the public entry point.
+        web_host = os.getenv("TOMCAT_WEB_HOST", "127.0.0.1") or "127.0.0.1"
+        site = web.TCPSite(runner, web_host, 8080)
+        print(f"[TomCat-UI] Web server starting on http://{web_host}:8080")
         await site.start()
         # Keep task alive so on_ready reconnects do not spawn duplicate servers.
         await asyncio.Event().wait()
@@ -1688,7 +1761,7 @@ async def on_ready():
         _start_background_task("show_cache_warm", lambda: warm_cache_on_boot())
     except Exception:
         pass
-    #start feeding scheduler after the bot is ready and loop is running
+    # Start schedulers only after the Discord client is fully ready.
     _start_background_task("feeding_scheduler", lambda: start_feeding_scheduler(bot))
     _start_background_task("morning_scheduler", lambda: start_morning_scheduler(bot))
     #Start Gmail logging scheduler if enabled
@@ -1758,7 +1831,7 @@ async def on_message(message: discord.Message):
         "attachments": len(message.attachments) if hasattr(message, "attachments") else 0,
     })
 
-    #Spam protection (text + heuristics + NLP backstop for new/untrusted accounts)
+    # Run spam checks before routing normal commands.
     from .spam import check_spam
     spam_flag, reason = check_spam(message, settings)
     if spam_flag:
@@ -1812,12 +1885,13 @@ async def on_message(message: discord.Message):
                             log_action("spam_alert_error", f"ch={getattr(ch,'id',None)}", str(send_exc))
                     if alert_msg:
                         try:
+                            SPAM_ALERTS[alert_msg.id] = {
+                                "user_id": int(getattr(message.author, 'id', 0) or 0),
+                                "guild_id": int(getattr(message.guild, 'id', 0) or 0),
+                                "timestamp": time.time(), # Add timestamp for TTL
+                            }
                             await alert_msg.add_reaction('🔨')
                             await alert_msg.add_reaction('✅')
-                            target_id = int(getattr(message.author, 'id', 0) or 0)
-                            guild_id = int(getattr(message.guild, 'id', 0) or 0)
-                            if target_id:
-                                SPAM_ALERTS[alert_msg.id] = {"user_id": target_id, "guild_id": guild_id}
                         except Exception as react_exc:
                             log_action("spam_alert_react_error", "add_reaction", str(react_exc))
         except Exception:
@@ -1867,7 +1941,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     """Handle reaction-based workflows (feeding + spam ban)."""
     if payload.user_id == getattr(bot.user, 'id', None):
         return
-    #General reaction logging (keeps legacy behavior)
+    # Log reactions for audit trails and moderator tooling.
     try:
         ch = bot.get_channel(int(payload.channel_id))
         msg = None
@@ -1925,7 +1999,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         log_action('spam_safe', f"msg={payload.message_id}", f"by={payload.user_id}")
         return
     
-    #Only handle hammer for ban (ignore legacy X and other reactions)
+    # Only hammer-style reactions trigger the ban workflow.
     if emoji_str not in {'🔨', '🛠', '🛠️'}:
         return
     guild_id = payload.guild_id or data.get('guild_id', 0)
@@ -2135,16 +2209,6 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     except Exception:
         pass
 
-#Optional: parity command (kept tiny)
-@bot.command(name="members")
-async def members(ctx: commands.Context):
-    log_event({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "event": "command",
-        "cmd": "members",
-        "by": ctx.author.id
-    })
-    await ctx.send("Members count: (hook up to Members sheet)")
 
 def run():
     # Prevent multiple bot instances from connecting with the same token.
@@ -2188,7 +2252,10 @@ def run():
         "%Y-%m-%d %H:%M:%S",
         style="{",
     )
-    bot.run(settings.discord_token, log_formatter=log_formatter)
+    try:
+        bot.run(settings.discord_token, log_formatter=log_formatter)
+    finally:
+        _shutdown_runtime_helpers()
 
 if __name__ == "__main__":
     run()

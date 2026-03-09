@@ -1,6 +1,6 @@
 # TomCat VI
 
-TomCat is the Campus Cat Coalition’s Discord automation bot. The bot checks feeding,
+TomCat is the Campus Cat Coalitionâ€™s Discord automation bot. The bot checks feeding,
 documents dues and finances, runs computer vision tasks, and keeps large amounts
 of data stored and organized for each of the campus cats.
 The codebase is built around our 'Intent_router' to keep things modular, which
@@ -19,24 +19,24 @@ the Computer Vision system are still in development.
 
 ## Main Funcitons
 
-- **Intent-driven sorting** – every message is normalized, evaluated for
+- **Intent-driven sorting** â€“ every message is normalized, evaluated for
   wake words/mentions, matched through aliases/fuzzy/NLP, and routed to the
   appropriate handler.
-- **Feeding coordination** – logs stations as fed in the CCC's google sheet,
-  tracks volunteer substitution requests, posts nightly 8 PM feeding reminders,
+- **Feeding coordination** â€“ logs stations as fed in the CCC's google sheet,
+  tracks volunteer substitution requests, posts nightly 8â€¯PM feeding reminders,
   and keeps uses the github page website as a user interface.
-- **Finance automation** – harvests Gmail payment notifications, separates dues
+- **Finance automation** â€“ harvests Gmail payment notifications, separates dues
   from other income/expenses, inputs financial data to Google Sheets, and uses
   the logs as a way to understand what type of income or expense any given
   payment is.
-- **Cat profiles & photos** – serves profile embeds, random photos, and uses
+- **Cat profiles & photos** â€“ serves profile embeds, random photos, and uses
   the computer vision capability to auto-crop 'Show me' images. On top of that,
   the bot maintains a local cache of images so follow-up requests get quick responses.
-- **Computer vision** – detect/crop/identify workflows using Ultralytics YOLOv8 and
+- **Computer vision** â€“ detect/crop/identify workflows using Ultralytics YOLOv8 and
   a lightweight classifier. Currently still in development.
-- **Spam mitigation** – regex heuristics, fuzzy phrase matching, and an optional
-  DeBERTa MNLI model; moderators can ban straight from the alert reaction.
-- **Audit trail** – human-readable daily logs plus machine NDJSON for every
+- **Spam mitigation** â€“ regex heuristics and fuzzy phrase matching; moderators
+  can ban straight from the alert reaction.
+- **Audit trail** â€“ human-readable daily logs plus machine NDJSON for every
   message, edit, reaction, role change, health check, and financial event.
 
 ---
@@ -47,7 +47,7 @@ the Computer Vision system are still in development.
 
 - **Discord stack:** `discord.py`, `aiohttp`, `python-dotenv`.
 - **Google APIs:** `gspread`, `google-api-python-client`, `google-auth-*`.
-- **NLP:** `onnxruntime`, `tokenizers` (for zero-shot MNLI + spam entailment).
+- **NLP:** `llama-cpp-python` with a local GGUF model for structured routing fallback.
 - **CV:** `ultralytics`, `opencv-python-headless`, `torch`, `torchvision` with
   CUDA 12.1 wheels.
 - **Parsing:** `numpy`, `Pillow`, `rapidfuzz`, `beautifulsoup4`, `requests`.
@@ -59,8 +59,7 @@ on whether `nvidia-smi` is available (override with `--gpu` or `--cpu`).
 
 ## Prerequisites
 
-- Python **3.11** (recommended) or 3.10. Python 3.12 works with the pinned
-  `tokenizers`/PyTorch builds, but 3.11 has the broadest wheel coverage.
+- Python **3.11** (recommended) or 3.12.
 - NVIDIA drivers supporting CUDA 12.1 (Windows) or CUDA toolkit/driver available
   under WSL
 - Google Cloud project with a Gmail API OAuth client + Google Sheets service
@@ -82,18 +81,18 @@ on whether `nvidia-smi` is available (override with `--gpu` or `--cpu`).
    ```bash
    python scripts/install.py
    ```
-   The installer is idempotent – run it any time to refresh dependencies. It will:
+   The installer is idempotent â€“ run it any time to refresh dependencies. It will:
    - Reuse or create `.venv`
    - Install/upgrade core Python dependencies
    - Install PyTorch with CUDA 12.1 wheels when an NVIDIA GPU is detected (fallback to CPU otherwise)
-   - Download & convert the DeBERTa MNLI model to ONNX if the files are missing
-   - Smoke test the ONNX model and create a placeholder `.env` when none exists
+   - Install the local LLM runtime and download the default GGUF model when missing
+   - Create a placeholder `.env` when none exists
    
    Optional flags:
    ```bash
    python scripts/install.py --cpu           #force CPU-only wheels
    python scripts/install.py --gpu           #force CUDA wheels even if nvidia-smi is absent
-   python scripts/install.py --resume-model  #rerun only the DeBERTa download/test step
+   python scripts/install.py --resume-model  #rerun only the local-model/runtime step
    python scripts/install.py --clean-hf-cache --resume-model  #clear HF cache then redo the model stage
    ```
 

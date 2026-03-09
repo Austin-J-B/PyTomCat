@@ -39,7 +39,7 @@ CAT_NAMES: List[str] = [
     "Pallas", "Honda", "Bandit", "Vincente", "Petal", "Chimichanga", "Butter", "Cloudy", "Meatball", "Itztli",
 ]
 
-#Optional nickname map you can extend over time (display names as keys)
+# Optional nickname aliases that are not sourced from CatDatabase.
 CAT_NICKNAMES: Dict[str, List[str]] = {
     "Microwave": ["Professor Sprinkles", "Buddy", "Apollo", "Mike", "Michael", "Micro"],
     "Eraser": ["Bacon", "Tuxedo"],
@@ -287,7 +287,7 @@ def _fallback_lookup_cat(text_norm: str, tokens: Iterable[str]) -> Optional[str]
 
     return None
 
-#Canonical display names (capitalization as you want to show)
+# Canonical display names used when no dynamic alias source overrides them.
 _DISPLAY = {
     #Cats (subset will be overridden by alias_vocab() aggregation anyway)
     **{name.lower(): name for name in CAT_NAMES},

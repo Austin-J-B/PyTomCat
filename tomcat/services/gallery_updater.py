@@ -589,7 +589,7 @@ def run_gallery_update(
         except Exception as e:
             log_action("gallery_updater_active_crops_error", "error", str(e))
 
-        # Switch runtime to the newest version immediately after build.
+        # Refresh the live gallery pointer as soon as the build completes.
         refresh_state = refresh_gallery(str(version_path.resolve()))
 
         result = {

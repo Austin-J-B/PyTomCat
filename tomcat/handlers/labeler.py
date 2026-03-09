@@ -248,7 +248,7 @@ _MANUAL_METADATA_REF_SAMPLE_PER_CAT = max(
     int(
         os.getenv(
             "LABELER_MANUAL_METADATA_REF_SAMPLE_PER_CAT",
-            os.getenv("LABELER_MANUAL_SHEET_REF_SAMPLE_PER_CAT", "20"),
+            "20",
         ) or "20"
     ),
 )
@@ -257,7 +257,7 @@ _MANUAL_METADATA_REF_CROPPED_SAMPLE_PER_CAT = max(
     int(
         os.getenv(
             "LABELER_MANUAL_METADATA_REF_CROPPED_SAMPLE_PER_CAT",
-            os.getenv("LABELER_MANUAL_SHEET_REF_CROPPED_SAMPLE_PER_CAT", "40"),
+            "40",
         ) or "40"
     ),
 )
@@ -266,7 +266,7 @@ _MANUAL_METADATA_REF_UNCROPPED_SAMPLE_PER_CAT = max(
     int(
         os.getenv(
             "LABELER_MANUAL_METADATA_REF_UNCROPPED_SAMPLE_PER_CAT",
-            os.getenv("LABELER_MANUAL_SHEET_REF_UNCROPPED_SAMPLE_PER_CAT", "8"),
+            "8",
         ) or "8"
     ),
 )
@@ -275,7 +275,7 @@ _MANUAL_METADATA_REF_TTL_SEC = max(
     int(
         os.getenv(
             "LABELER_MANUAL_METADATA_REF_TTL_SEC",
-            os.getenv("LABELER_MANUAL_SHEET_REF_TTL_SEC", "600"),
+            "600",
         ) or "600"
     ),
 )
@@ -359,7 +359,7 @@ _PHOTO_METADATA_CACHE_REFRESH_COOLDOWN_SEC = max(
     float(
         os.getenv(
             "PHOTO_METADATA_CACHE_REFRESH_COOLDOWN_SEC",
-            os.getenv("LABELER_FORCE_REFRESH_TCB_CACHE_COOLDOWN_SEC", "20"),
+            "20",
         ) or "20"
     ),
 )
@@ -645,7 +645,7 @@ async def _enqueue_flag_incorrect_job(
 
 
 def _kickoff_flag_incorrect_queue_worker() -> None:
-    """Start the background sheet-clear worker if it is not already running."""
+    """Start the background metadata-clear worker if it is not already running."""
     global _flag_incorrect_worker_task
     try:
         if _flag_incorrect_worker_task and not _flag_incorrect_worker_task.done():
@@ -671,7 +671,7 @@ def _flush_flag_incorrect_queue_batch_sync(batch: List[Dict[str, Any]]) -> Dict[
         serial_order.append(int(sn))
         actor_by_serial[int(sn)] = str(item.get("actor_name") or "")
     if not serial_order:
-        return {"results": {}, "updated_sheet": False}
+        return {"results": {}, "updated_metadata": False}
     actor_name = ""
     for sn in serial_order:
         candidate = actor_by_serial.get(int(sn), "").strip()
@@ -679,7 +679,7 @@ def _flush_flag_incorrect_queue_batch_sync(batch: List[Dict[str, Any]]) -> Dict[
             actor_name = candidate
             break
     outcome = local_photos.clear_metadata_annotations(serial_order, actor_name)
-    return {"results": dict(outcome.get("results") or {}), "updated_sheet": bool(outcome.get("updated_metadata"))}
+    return {"results": dict(outcome.get("results") or {}), "updated_metadata": bool(outcome.get("updated_metadata"))}
 
 
 async def _flag_incorrect_queue_worker() -> None:
@@ -1398,8 +1398,8 @@ def _build_photo_crop_index_cache() -> Dict[Tuple[int, int], Dict[str, Any]]:
             continue
 
         # Only expose crops that are still actively labeled.
-        # This prevents old cleared/incorrect refs (coords left behind, labels removed)
-        # from reappearing in the reference gallery.
+        # Ignore crops whose labels were cleared so the reference gallery only
+        # shows active annotations.
         single_box_cid_fallback = False
         if len(valid_coords) == 1:
             active_cats = [n for n in _parse_catid_cell_names(catid_cell) if _has_reviewed_cat_label_token(n)]
@@ -2433,7 +2433,7 @@ async def _evaluate_classify_quality(
                 return shared  # type: ignore[return-value]
         except Exception:
             pass
-        # If the owner failed unexpectedly, try cache one more time before recomputing.
+        # If the owner lookup fails, try the cached score once more before recomputing.
         cached = _cache_get_classify_quality(sn)
         if cached is not None:
             ok, width, height, blur = cached
@@ -2733,7 +2733,7 @@ def _filter_queue_to_local(mode: str, items: List[Dict[str, Any]]) -> Tuple[List
 def _collect_local_missing_summary(rows: List[List[str]], *, sample_cap: int = _LOCAL_MISSING_SAMPLE_MAX) -> Dict[str, Any]:
     """Compare metadata serials against local index and return missing summary."""
     local_serials = local_photos.local_serials(force_refresh=False)
-    sheet_serials: Set[int] = set()
+    metadata_serials: Set[int] = set()
     missing: List[int] = []
     for row in rows[1:]:
         if len(row) <= COL_SERIAL:
@@ -2742,12 +2742,12 @@ def _collect_local_missing_summary(rows: List[List[str]], *, sample_cap: int = _
         if sn is None:
             continue
         serial = int(sn)
-        if serial in sheet_serials:
+        if serial in metadata_serials:
             continue
-        sheet_serials.add(serial)
+        metadata_serials.add(serial)
         if serial not in local_serials and len(missing) < int(max(1, sample_cap)):
             missing.append(serial)
-    total_missing = max(0, len(sheet_serials) - len(local_serials.intersection(sheet_serials)))
+    total_missing = max(0, len(metadata_serials) - len(local_serials.intersection(metadata_serials)))
     missing.sort()
     return {
         "total_missing": int(total_missing),
@@ -2875,8 +2875,7 @@ async def get_queue_classify(request: web.Request) -> web.Response:
         skipped_low_quality = 0
         deferred_for_queue: List[Dict[str, Any]] = []
         if local_only_mode:
-            # Local-first labeling: skip quality prefilter scans entirely on queue endpoint.
-            # This keeps classify transitions responsive and mirrors the old local tool flow.
+            # Local-only mode skips the quality prefilter so queue responses stay fast.
             queue = list(candidates)
         else:
             auto_reject_items: List[Dict[str, Any]] = []
@@ -3148,7 +3147,7 @@ async def get_cached_image(request: web.Request) -> web.Response:
 
 
 async def get_ref_crop(request: web.Request) -> web.Response:
-    """Return one sheet-defined crop as JPEG for classifier/manual reference cards."""
+    """Return one metadata-defined crop as JPEG for classifier/manual reference cards."""
     try:
         sn = _parse_serial(str(request.match_info.get("sn", "")).strip())
         if sn is None:
@@ -3478,7 +3477,7 @@ async def post_detect(request: web.Request) -> web.Response:
                 acquired = True
                 sem_wait_ms = (time.perf_counter() - t_sem) * 1000.0
 
-            # Always run one YOLO pass first; avoid rerunning YOLO after a SAM timeout.
+            # Run YOLO once, then reuse that result even if SAM times out.
             detect_timeout = _DETECT_PREFETCH_TIMEOUT_SEC if prefetch else _DETECT_TIMEOUT_SEC
             t_detect = time.perf_counter()
             detect_result = await asyncio.wait_for(
@@ -3727,12 +3726,11 @@ async def post_identify(request: web.Request) -> web.Response:
             int(getattr(settings, "labeler_ref_per_candidate_prefetch", refs_per_prefetch_default) or refs_per_prefetch_default),
         ) if prefetch else refs_per_full
         refs_per_target = int(refs_per)
-        # Keep a small hidden buffer so the UI can still render N refs after
-        # local-only filtering (flagged refs in browser cache, decode errors, etc.).
+        # Ask for a slightly deeper pool so filtered or broken refs do not leave
+        # visible gaps in the UI.
         refs_per_keep = max(refs_per_target, refs_per_target + 4)
-        # Ask vision for a deeper pool, then keep only the first valid refs.
-        # Prefetch also needs extra depth now; otherwise hidden/flagged refs can
-        # consume the visible slots and leave gaps until a foreground refresh.
+        # Prefetch uses the same deeper pool because hidden refs can consume
+        # visible slots until the next foreground refresh.
         refs_per_query = max(
             refs_per_keep,
             refs_per_target * (3 if (not prefetch) else 2),
@@ -4054,8 +4052,8 @@ async def post_identify(request: web.Request) -> web.Response:
                                 continue
                             entry = _photo_crop_index_cache.get((int(serial_ref), int(crop_ref))) or {}
                             if not entry:
-                                # Metadata no longer has this crop (often because it was cleared/flagged).
-                                # Drop stale gallery refs instead of showing unlabeled historical thumbnails.
+                                # Skip refs whose metadata entry was removed so
+                                # the gallery does not resurrect stale thumbnails.
                                 continue
                             seen_sc.add(key_sc)
                             ref_url = _photo_ref_crop_url(serial_ref, crop_ref)
@@ -4389,7 +4387,7 @@ async def post_flag_incorrect(request: web.Request) -> web.Response:
             source_serial=source_serial,
             source_crop=source_crop,
         )
-        # Flush any stale cached ref payloads immediately so new requests honor blacklist.
+        # Clear stale ref payloads so blacklist changes take effect on the next request.
         _invalidate_labeler_caches_after_label_clears([int(serial)])
 
         src_parts: List[str] = []
@@ -4416,7 +4414,7 @@ async def post_flag_incorrect(request: web.Request) -> web.Response:
                     "sheet_update": "queued",
                     "queue_pending": int(queue_info.get("pending_count") or 0),
                     "queue_deduped": not bool(queue_info.get("queued_new")),
-                    # Metadata clear runs in background now, so immediate changed-state is unknown.
+                    # Background metadata clearing means the immediate changed-state is unknown.
                     "changed": None,
                     "already_unlabeled": None,
                     "blacklisted_for_refs": True,

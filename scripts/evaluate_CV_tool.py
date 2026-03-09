@@ -16,20 +16,19 @@ os.chdir(project_root)
 #Add the root directory to Python's import path so 'from tomcat...' works
 sys.path.insert(0, str(project_root))
 
-#1. Extreme TTA: 9 rotation angles + horizontal flips (18 variants per crop)
+# Expanded test-time augmentation: nine rotation angles plus horizontal flips.
 os.environ["LABELER_RERANK_ANGLES"] = "-20,-15,-10,-5,0,5,10,15,20"
-#2. Deep Pool: Rerank the top 100 candidates instead of just 15
+# Rerank the top 100 candidates for a deeper second pass.
 os.environ["LABELER_RERANK_TOP_N"] = "100"
 os.environ["LABELER_RERANK_HFLIP"] = "1"
 os.environ["LABELER_RERANK_ENABLED"] = "1"
 
-#Now import TomCat modules
+# Import project modules once environment overrides are set.
 from tomcat.vision import vision
 from tomcat.config import settings
 from tomcat.services import local_photos
 
-#3. Point to the exact gallery version you want to evaluate
-#Change this to your specific R4.5.3 or R4.5.2 .pt file
+# Gallery checkpoint to evaluate.
 settings.cv_gallery_path = "weights/R4.5.4_cat_DINOv3_gallery.pt"
 
 #Quality filter thresholds (override via env if needed)
@@ -220,8 +219,7 @@ async def main():
     skipped_no_prediction = 0
     failed_download_or_decode = 0
 
-    #Set how many images to process at the exact same time.
-    #If you get a CUDA Out of Memory error, lower this number.
+    # Lower this if GPU memory is limited.
     concurrency_limit = 6
     sem = asyncio.Semaphore(concurrency_limit)
 

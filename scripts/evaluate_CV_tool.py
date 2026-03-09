@@ -26,7 +26,7 @@ os.environ["LABELER_RERANK_ENABLED"] = "1"
 #Now import TomCat modules
 from tomcat.vision import vision
 from tomcat.config import settings
-from tomcat.services import labeler_cache
+from tomcat.services import local_photos
 
 #3. Point to the exact gallery version you want to evaluate
 #Change this to your specific R4.5.3 or R4.5.2 .pt file
@@ -111,7 +111,7 @@ async def main():
     print(f"Found {len(gallery_sns)} unique Serial Numbers currently in R4.5.3.")
     
     test_cases = []
-    csv_path = "Catabase - TCB Pics Formatted.csv"
+    csv_path = local_photos.metadata_csv_path()
     
     total_rows = 0
     holdout_rows = 0
@@ -129,13 +129,12 @@ async def main():
         reader = csv.reader(f)
         next(reader)
         for row in reader:
-            if len(row) < 10:
+            if len(row) < 9:
                 continue
-                
-            url = row[6]
-            sn_str = row[7]
-            box_coords = row[8]
-            box_cats = row[9]
+
+            sn_str = row[6]
+            box_coords = row[7]
+            box_cats = row[8]
             
             if not sn_str.strip().isdigit():
                 continue
@@ -194,7 +193,6 @@ async def main():
             holdout_crops += len(labeled_crops)
             test_cases.append({
                 'sn': sn,
-                'url': url,
                 'crops': labeled_crops,
             })
             
@@ -229,7 +227,7 @@ async def main():
 
     async def process_single_case(tc):
         async with sem:
-            img_bytes = await labeler_cache.get_or_download(tc['sn'], tc['url'])
+            img_bytes = await asyncio.to_thread(local_photos.read_local_photo_bytes, tc['sn'])
             if not img_bytes:
                 return {
                     "targets": [],

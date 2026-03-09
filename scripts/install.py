@@ -69,7 +69,7 @@ CH_CATDOCDUMP=
 CH_MEMBER_NAMES=
 CH_CATS_ON_CAMPUS=                   # Optional alias for profile cards channel (preferred over CH_MEMBER_NAMES)
 TARGET_GUILD_ID=
-CHANNEL_SHEET_MAP=CH_PICTURES_OF_CATS:TCBPicsInput, CH_REPORT_NEW_CATS:TCBPicsInput, CH_TOMCAT_SANDBOX:TCBPicsInput, CH_CATDOCDUMP:TCBVetBillInput
+CHANNEL_SHEET_MAP=CH_PICTURES_OF_CATS:photo_metadata, CH_REPORT_NEW_CATS:photo_metadata, CH_TOMCAT_SANDBOX:photo_metadata, CH_CATDOCDUMP:TCBVetBillInput
 allowed_feeding_channel_ids=[CH_FEEDING_TEAM, CH_TOMCAT_SANDBOX]
 
 # ===== Google Service Account =====
@@ -520,7 +520,7 @@ def _check_yolo_weights() -> None:
         print(f"The following files are missing in {WEIGHTS_DIR}:")
         for m in missing:
             print(f"  - {m}")
-        print("\nManually copy these from backup or Google Drive.")
+print("\nManually copy these from backup if needed.")
 
 def _test_model() -> None:
     _print_header("Validating model")

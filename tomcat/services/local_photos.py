@@ -404,7 +404,7 @@ def _refresh_photo_metadata_consumers() -> None:
     try:
         from . import show_cache
 
-        show_cache.reset_recentpics_cache()
+        show_cache.reset_photo_metadata_cache()
     except Exception:
         pass
 

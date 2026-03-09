@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import existing detector and classifier labels into Google Sheet.
+"""Legacy utility for importing existing detector and classifier labels into TCB Pics Formatted.
 
 Reads:
   - LabelingApps/PreviousDetectorLabels/labels/snXXXX.txt → BoxCoordinates (col I)

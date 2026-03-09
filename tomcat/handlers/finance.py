@@ -25,6 +25,7 @@ FINANCE_LOCK = asyncio.Lock()
 
 _EMAIL_LOGS_DIR = os.path.join("logs", "emails")
 _DUES_INDEX_PATH = os.path.join("logs", "dues", "index.jsonl")
+_RESOLVED_DUES_FILE = os.path.join(FINANCE_DIR, "resolved_dues_emails.jsonl")
 
 _DONATION_DEFAULT = "Donations"
 _INCOME_TYPES = {
@@ -335,12 +336,65 @@ def _iter_email_logs_newest_first() -> Iterable[dict]:
 
 
 def _load_dues_message_ids() -> Set[str]:
-    """Return set of email message IDs already consumed by the dues pipeline."""
+    """Return identifiers already consumed by the dues pipeline.
+
+    Historical dues logs stored Discord portal `message_id` values in the index,
+    while monthly dues analysis logs also contain the Gmail `primary_email.id`.
+    Finance needs the Gmail ids to avoid reprocessing those payment emails.
+    """
     ids: Set[str] = set()
     if not os.path.exists(_DUES_INDEX_PATH):
+        pass
+    else:
+        try:
+            with open(_DUES_INDEX_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except Exception:
+                        continue
+                    mid = obj.get("message_id")
+                    if isinstance(mid, str) and mid:
+                        ids.add(mid)
+        except Exception:
+            return ids
+    dues_dir = os.path.dirname(_DUES_INDEX_PATH)
+    if os.path.isdir(dues_dir):
+        try:
+            for name in os.listdir(dues_dir):
+                if not name.endswith(".ndjson") or name == os.path.basename(_DUES_INDEX_PATH):
+                    continue
+                path = os.path.join(dues_dir, name)
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                obj = json.loads(line)
+                            except Exception:
+                                continue
+                            email_obj = obj.get("primary_email") or {}
+                            email_id = email_obj.get("id")
+                            if isinstance(email_id, str) and email_id:
+                                ids.add(email_id)
+                except Exception:
+                    continue
+        except Exception:
+            return ids
+    return ids
+
+
+def _load_resolved_dues_email_ids() -> Set[str]:
+    ids: Set[str] = set()
+    if not os.path.exists(_RESOLVED_DUES_FILE):
         return ids
     try:
-        with open(_DUES_INDEX_PATH, "r", encoding="utf-8") as f:
+        with open(_RESOLVED_DUES_FILE, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -349,12 +403,26 @@ def _load_dues_message_ids() -> Set[str]:
                     obj = json.loads(line)
                 except Exception:
                     continue
-                mid = obj.get("message_id")
-                if isinstance(mid, str) and mid:
-                    ids.add(mid)
+                eid = obj.get("email_id")
+                if isinstance(eid, str) and eid:
+                    ids.add(eid)
     except Exception:
         return ids
     return ids
+
+
+def _append_resolved_dues_email_id(email_id: str, reason: str) -> None:
+    if not email_id:
+        return
+    try:
+        with open(_RESOLVED_DUES_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "email_id": email_id,
+                "reason": reason,
+                "ts": _now_iso(),
+            }, ensure_ascii=False) + "\n")
+    except Exception as e:
+        log_action("pending_dues_resolve_write_error", f"email_id={email_id}", str(e))
 
 
 def _clean_counterparty(name: str) -> str:
@@ -427,6 +495,8 @@ def _save_pending_dues(records: List[dict]) -> None:
 def _add_pending_due(event: "FinanceEvent") -> None:
     """Add a $15 payment to pending dues for later corroboration check."""
     from datetime import timedelta
+    if event.email_id in _load_resolved_dues_email_ids():
+        return
     records = _load_pending_dues()
     #Skip if already pending
     if any(r.get("email_id") == event.email_id for r in records):
@@ -1078,6 +1148,7 @@ def _fetch_recent_records(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> 
                 'provider': provider,
                 'counterparty': counterparty,
                 'note': note,
+                'recorded_by_bot': '[Recorded by the TomCat bot]' in name_field,
             })
         except Exception:
             continue
@@ -1118,83 +1189,44 @@ def _clean_sheet_text(text: str) -> str:
     return t
 
 def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
-    """Heuristic duplicate detection that tolerates close-day repeats."""
-    #Allow small transactions (likely food/goods) to duplicate 
-    #because people often buy multiple items (e.g. cookies) in one day.
-    #We rely on email_id/txn_id checks to catch true system duplicates.
-    if ev.direction == 'income' and ev.amount < 15.0:
-        return False
+    """Sheet fallback duplicate check.
 
+    This is intentionally strict: if note or counterparty differ, treat them as
+    different payments even when the amount and day match.
+    """
     ev_date = ev.ts.date()
     ev_amt = float(ev.amount)
     ev_counterparty = ev.counterparty or ""
     ev_note = ev.note or ""
     ev_provider = (ev.payment_type or "").strip().lower()
-    norm_counterparty = _norm_text(ev_counterparty)
-    norm_note = _norm_text(ev_note)
 
     for r in recs:
         r_date = r.get('date')
         if not r_date:
             continue
         day_gap = abs((r_date - ev_date).days)
-        if day_gap > 3:
+        if day_gap > 1:
             continue
         amt = r.get('amount')
         if amt is None:
             continue
-        if abs(float(amt) - ev_amt) > (0.25 if ev_amt < 5 else 1.00):
+        if abs(float(amt) - ev_amt) > 0.01:
             continue
-        
-        #Provider check (Venmo vs Cashapp)
+
         provider = (r.get('provider') or '').strip().lower()
         if provider and ev_provider and provider != ev_provider:
             continue
 
         counterparty = r.get('counterparty') or ''
         note = r.get('note') or ''
-        norm_counter = _norm_text(counterparty)
-        norm_note_sheet = _norm_text(note)
-        
-        combined_sheet = r.get('text') or ''
-        combined_event = f"{ev_counterparty} (Message: {ev_note})".strip()
-        
-        #Clean the sheet text of "Recorded by" suffixes for better fuzzy matching
-        clean_sheet_text = _clean_sheet_text(combined_sheet)
-        clean_event_text = _clean_sheet_text(combined_event) #Also clean event to match
-        
-        combined_match = False
-        if combined_sheet and combined_event:
-            #Try precise clean match first
-            if _similar_enough(clean_sheet_text, clean_event_text):
-                combined_match = True
-            #Fallback to full match
-            elif _similar_enough(combined_sheet, combined_event):
-                combined_match = True
-
-        counterparty_match = bool(norm_counter and norm_counterparty and _similar_enough(counterparty, ev_counterparty))
+        counterparty_match = _similar_enough(counterparty, ev_counterparty)
         note_match = False
-        if norm_note_sheet and norm_note:
+        if (note or '').strip() or (ev_note or '').strip():
             note_match = _similar_enough(note, ev_note)
-        elif not norm_note_sheet and not norm_note:
+        else:
             note_match = True
 
-        #Strict same-day match on counterparty or combined text
-        if day_gap == 0 and (counterparty_match or note_match or combined_match):
-            return True
-
-        #Near-day match requires stronger agreement
-        if day_gap <= 2:
-            if counterparty_match and (note_match or not norm_note_sheet or not norm_note or combined_match):
-                return True
-            if note_match and counterparty_match:
-                return True
-            #Treat refund/reimbursement adjustments as duplicates even if wording differs
-            if counterparty_match and (_has_refund_word(note) or _has_refund_word(ev_note)):
-                return True
-
-        #Fallback: if the full text matches closely within a short window, treat as duplicate
-        if day_gap <= 3 and combined_match:
+        if counterparty_match and note_match:
             return True
     return False
 
@@ -1203,29 +1235,18 @@ def _events_maybe_duplicate(a: "FinanceEvent", b: "FinanceEvent") -> bool:
         return False
     if (a.provider or "").lower() != (b.provider or "").lower():
         return False
-    if abs(float(a.amount) - float(b.amount)) > (0.25 if a.amount < 5 else 1.00):
+    if abs(float(a.amount) - float(b.amount)) > 0.01:
         return False
-    day_gap = abs((a.ts.date() - b.ts.date()).days)
-    if day_gap > 3:
+    ts_a = a.provider_ts or a.ts
+    ts_b = b.provider_ts or b.ts
+    time_gap = abs((ts_a - ts_b).total_seconds())
+    if time_gap > 5 * 60:
         return False
-    
-    #Compare names & notes
-    if _similar_enough(a.counterparty, b.counterparty):
-        if not a.note and not b.note:
-            return True
-        if a.note and b.note and _similar_enough(a.note, b.note):
-            return True
-        if day_gap == 0:
-            return True
-        if _has_refund_word(a.note) or _has_refund_word(b.note):
-            return True
-    
-    #Fallback text match
-    combined_a = f"{a.counterparty} {a.note}".strip()
-    combined_b = f"{b.counterparty} {b.note}".strip()
-    if combined_a and combined_b and _similar_enough(combined_a, combined_b) and day_gap <= 2:
-        return True
-    return False
+    if not _similar_enough(a.counterparty, b.counterparty):
+        return False
+    if (a.note or '').strip() or (b.note or '').strip():
+        return _similar_enough(a.note, b.note)
+    return True
 
 
 async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bool, str]]:
@@ -1484,6 +1505,7 @@ def _collect_recent_finance_events(limit: int) -> Tuple[List[FinanceEvent], int,
     if limit <= 0:
         return [], 0, 0
     dues_ids = _load_dues_message_ids()
+    resolved_dues_ids = _load_resolved_dues_email_ids()
     if dues_ids:
         _DUES_MESSAGE_IDS.update(dues_ids)
     events: List[FinanceEvent] = []
@@ -1495,6 +1517,9 @@ def _collect_recent_finance_events(limit: int) -> Tuple[List[FinanceEvent], int,
             continue
         scanned += 1
         if email_id in dues_ids:
+            skipped_dues += 1
+            continue
+        if email_id in resolved_dues_ids:
             skipped_dues += 1
             continue
         event, status = _classify_email(email)
@@ -1712,6 +1737,7 @@ async def _process_pending_dues(bot) -> None:
         corroborated = await _check_dues_corroboration(counterparty, provider, bot)
         
         if corroborated:
+            _append_resolved_dues_email_id(email_id, "corroborated_as_dues")
             to_remove.append(email_id)
             log_action("pending_dues_resolved", f"counterparty={counterparty}", "corroborated_as_dues")
             continue
@@ -1738,6 +1764,7 @@ async def _process_pending_dues(bot) -> None:
                 message_blank=not bool(rec.get("note", "").strip()),
             )
             income_events.append(event)
+            _append_resolved_dues_email_id(email_id, "expired_to_income")
             to_remove.append(email_id)
             log_action("pending_dues_resolved", f"counterparty={counterparty}", "expired_to_income")
     
@@ -1757,6 +1784,7 @@ async def process_financial_emails(bot) -> None:
         processed = _load_index()
         processed_ids = set(processed.keys())
         dues_ids = _load_dues_message_ids()
+        resolved_dues_ids = _load_resolved_dues_email_ids()
         pending_ids = _get_pending_due_ids()
         events: List[FinanceEvent] = []
         seen_this_batch: set[str] = set()  #Prevent same-batch duplicates
@@ -1767,6 +1795,8 @@ async def process_financial_emails(bot) -> None:
             if email_id in processed_ids:
                 continue
             if email_id in dues_ids:
+                continue
+            if email_id in resolved_dues_ids:
                 continue
             if email_id in pending_ids:
                 continue

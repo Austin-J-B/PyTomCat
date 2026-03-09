@@ -475,6 +475,114 @@ def _is_explicit_payment_message(text: str) -> bool:
 
 _MEMBERSHIP_ROWS_CACHE: Optional[list[dict]] = None
 _MEMBERSHIP_ROWS_TS: float = 0.0
+_MEMBERSHIP_ROWS_LAST_SOURCE: str = 'uninitialized'
+_MEMBERSHIP_ROWS_LAST_ERROR: str = ''
+_MEMBERSHIP_ROWS_LAST_AUTHORITATIVE: bool = False
+
+def _set_membership_load_state(source: str, *, error: str = '', authoritative: bool = False) -> None:
+    global _MEMBERSHIP_ROWS_LAST_SOURCE, _MEMBERSHIP_ROWS_LAST_ERROR, _MEMBERSHIP_ROWS_LAST_AUTHORITATIVE
+    _MEMBERSHIP_ROWS_LAST_SOURCE = str(source or 'unknown')
+    _MEMBERSHIP_ROWS_LAST_ERROR = str(error or '')
+    _MEMBERSHIP_ROWS_LAST_AUTHORITATIVE = bool(authoritative)
+
+def _membership_snapshot_paths() -> list[Path]:
+    candidates = [
+        Path('CCC megasheet - Membership Application List.csv'),
+        Path('Membership Application List.csv'),
+    ]
+    try:
+        candidates.extend(sorted(Path('.').glob('*Membership Application List*.csv')))
+    except Exception:
+        pass
+    out: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
+
+def _parse_membership_table(rows: list[list[str]]) -> list[dict]:
+    if not rows:
+        return []
+    def hkey(s: str) -> str:
+        return re.sub(r"[^a-z]+", "", (s or '').lower())
+    target_keys = {
+        'fullname','fulllegalname','legalname','name',
+        'discordusername','discordhandle','discord','discordname','discordtag','discordid',
+        'paymentusername','paymenthandle','payhandle','paymentuser','paymenttag',
+        'paidwhere','paidvia','provider','method','wherepaid',
+        'duesordonation','duesdonation','type','reason','category','donation','donations',
+        'verified','isverified','email','semester'
+    }
+    header_idx = 0
+    best_hits = -1
+    sample_limit = min(len(rows), 30)
+    for i in range(sample_limit):
+        row = rows[i]
+        keys = {hkey(c) for c in row if c}
+        hits = len(keys & target_keys)
+        if hits > best_hits and hits >= 2:
+            best_hits = hits
+            header_idx = i
+    header = rows[header_idx]
+    data = rows[header_idx+1:]
+    log_action('dues_membership_header', f'row={header_idx}', '|'.join(header[:12]))
+    idx = {hkey(h): i for i, h in enumerate(header)}
+    def col(name_keys: List[str]) -> int:
+        for k in name_keys:
+            if k in idx:
+                return idx[k]
+        return -1
+    i_date = col(['date','timestamp','submittedat'])
+    i_full = col(['fullname','fulllegalname','legalname','name'])
+    i_disc = col(['discordusername','discordhandle','discord','discordname','discordtag','discordid'])
+    i_payu = col(['paymentusername','paymenthandle','payhandle','paymentuser','paymenttag'])
+    i_where= col(['paidwhere','paidvia','provider','method','wherepaid'])
+    i_kind = col(['duesordonation','duesdonation','type','reason','category'])
+    i_email= col(['email'])
+    i_sem  = col(['semester'])
+    i_ver  = col(['verified','isverified'])
+    i_inv  = col(['mavorgsinvite','invite','mavorgs'])
+    i_don  = col(['donation','donations','donationamount','donation?'])
+    out = []
+    for r in data:
+        def get(i):
+            if i < 0 or i >= len(r):
+                return ''
+            val = r[i]
+            if isinstance(val, str):
+                return val.strip()
+            if val is None:
+                return ''
+            return str(val).strip()
+        def _truthy(s: str) -> bool:
+            v = (s or '').strip().lower()
+            return v in {'true','yes','y','1','paid','verified','done','ok','x','âœ…'}
+        row = {
+            'date': get(i_date),
+            'full_name': get(i_full),
+            'discord_username': get(i_disc),
+            'payment_username': get(i_payu),
+            'paid_where': get(i_where),
+            'kind': get(i_kind),
+            'email': get(i_email),
+            'semester': get(i_sem),
+            'verified': _truthy(get(i_ver)) if i_ver >= 0 else False,
+            'mavorgs_invite': _truthy(get(i_inv)) if i_inv >= 0 else False,
+            'donation_amount': get(i_don),
+        }
+        if any(bool(v) for v in row.values()):
+            out.append(row)
+    log_action('dues_membership_rows', f'total={len(rows)-1}', f'usable={len(out)}')
+    return out
+
+def _load_membership_rows_from_csv(path: Path) -> list[dict]:
+    with path.open('r', encoding='utf-8-sig', newline='') as f:
+        rows = [list(row) for row in csv.reader(f)]
+    return _parse_membership_table(rows)
 
 def _load_membership_rows():
     try:
@@ -482,17 +590,19 @@ def _load_membership_rows():
         if not sid:
             raise RuntimeError('missing_sheet_id')
         from ..services.sheets_client import sheets_client as _sc
-        ws_name = getattr(settings,'membership_ws_title','Membership Application List')
+        ws_name = getattr(settings, 'membership_ws_title', 'Membership Application List')
         log_action('dues_membership_open', f'sheet={sid}', f'ws={ws_name}')
-        #Use a small TTL to avoid 429s when the command is run back-to-back
+        # Use a small TTL to avoid 429s when the command is run back-to-back.
         global _MEMBERSHIP_ROWS_CACHE, _MEMBERSHIP_ROWS_TS
         import time as _time
         ttl = max(1, int(getattr(settings, 'dues_membership_ttl_sec', 300) or 300))
         if _MEMBERSHIP_ROWS_CACHE is not None and (_time.monotonic() - _MEMBERSHIP_ROWS_TS) < ttl:
+            _set_membership_load_state('cache_ttl', authoritative=True)
             return list(_MEMBERSHIP_ROWS_CACHE)
         ws = _sc().open_by_key(sid).worksheet(ws_name)
         rows = ws.get_all_values()
         if not rows:
+            _set_membership_load_state('sheets', authoritative=True)
             return []
         def hkey(s: str) -> str:
             return re.sub(r"[^a-z]+", "", (s or '').lower())
@@ -565,9 +675,34 @@ def _load_membership_rows():
         log_action('dues_membership_rows', f'total={len(rows)-1}', f'usable={len(out)}')
         _MEMBERSHIP_ROWS_CACHE = list(out)
         _MEMBERSHIP_ROWS_TS = _time.monotonic()
+        _set_membership_load_state('sheets', authoritative=True)
         return list(out)
     except Exception as e:
-        log_action('dues_membership_error', 'read', str(e))
+        error_text = str(e)
+        log_action('dues_membership_error', 'read', error_text)
+        if _MEMBERSHIP_ROWS_CACHE is not None:
+            _set_membership_load_state('cache_stale', error=error_text, authoritative=False)
+            try:
+                log_action('dues_membership_fallback', 'cache_stale', f'usable={len(_MEMBERSHIP_ROWS_CACHE)}')
+            except Exception:
+                pass
+            return list(_MEMBERSHIP_ROWS_CACHE)
+        for path in _membership_snapshot_paths():
+            try:
+                if not path.exists():
+                    continue
+                out = _load_membership_rows_from_csv(path)
+                if not out:
+                    continue
+                _set_membership_load_state('csv_snapshot', error=error_text, authoritative=False)
+                try:
+                    log_action('dues_membership_fallback', 'csv_snapshot', f'path={path.name}; usable={len(out)}')
+                except Exception:
+                    pass
+                return out
+            except Exception:
+                continue
+        _set_membership_load_state('error', error=error_text, authoritative=False)
         return []
 
 #--- Semester helpers ---
@@ -3131,6 +3266,9 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
     
     #Load all membership rows
     rows = _load_membership_rows()
+    membership_source = _MEMBERSHIP_ROWS_LAST_SOURCE
+    membership_authoritative = _MEMBERSHIP_ROWS_LAST_AUTHORITATIVE
+    membership_error = _MEMBERSHIP_ROWS_LAST_ERROR
     
     #Build set of valid handles for members with non-expired, verified dues
     valid_handle_keys: set[str] = set()
@@ -3149,12 +3287,35 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
             if key:
                 valid_handle_keys.add(key)
     try:
-        log_action('dues_role_sync_valid', f'handles={len(valid_handle_keys)}', '')
+        log_action(
+            'dues_role_sync_valid',
+            f'handles={len(valid_handle_keys)}',
+            f'source={membership_source}; authoritative={int(membership_authoritative)}'
+        )
     except Exception:
         pass
+
+    if not membership_authoritative and not valid_handle_keys:
+        try:
+            detail = f'source={membership_source}'
+            if membership_error:
+                detail += f'; error={membership_error}'
+            log_action('dues_role_sync_abort', 'membership_unavailable', detail)
+        except Exception:
+            pass
+        return [], []
     
     added = []
     removed = []
+    allow_removals = membership_authoritative
+    if not allow_removals:
+        try:
+            detail = f'source={membership_source}'
+            if membership_error:
+                detail += f'; error={membership_error}'
+            log_action('dues_role_sync_mode', 'add_only', detail)
+        except Exception:
+            pass
     
     #Get full member list (avoid partial cache so role removals aren't skipped)
     members_list = await _ensure_guild_members(guild, force_fetch=True)
@@ -3219,6 +3380,8 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
         
         #=== ROLE REMOVAL ===
         elif has_role and not member_has_valid_dues:
+            if not allow_removals:
+                continue
             try:
                 await member.remove_roles(role_obj, reason="TomCat: dues expired, not renewed")
                 removed.append(member)
@@ -3229,7 +3392,7 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
         log_action(
             'dues_role_sync_stats',
             f'role_holders={role_holder_count} valid={valid_role_holder_count}',
-            f'members={len(members_list)}'
+            f'members={len(members_list)}; source={membership_source}; authoritative={int(membership_authoritative)}'
         )
     except Exception:
         pass

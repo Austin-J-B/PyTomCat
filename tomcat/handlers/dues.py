@@ -198,7 +198,7 @@ INDEX_FILE = f"{EMAILS_DIR}/index.jsonl"
 _EMAIL_LOG_LOCK = asyncio.Lock()
 
 #============================
-#Dues analysis refactor (new algorithm)
+# Dues analysis helpers
 #============================
 
 DUES_DIR = os.path.join("logs", "dues")
@@ -401,7 +401,7 @@ def _parse_portal_message(msg) -> Dict[str, Any]:
     venmo_handles = _VENMO_HANDLE_RE.findall(text)
     cash_handles = _CASHAPP_RE.findall(text)
 
-    #name extraction: try parentheses first; otherwise leading name or after paid-phrase
+    # Extract the payer name from parentheses first, then fall back to text patterns.
     name = None
     paren = re.search(r"\(([^(]{1,60})\)", text)
     if paren:
@@ -466,9 +466,9 @@ def _is_explicit_payment_message(text: str) -> bool:
     #"via/through <provider>"
     if (" via " in t or " through " in t):
         return True
-    #NEW: In dues portal, just having a provider mentioned is enough
-    #since the channel context already implies it's about payments.
-    #This handles formats like "Charlotte Brownlee PayPal" or "John Smith venmo"
+    # In the dues portal, a provider name alone is enough because the channel
+    # already establishes payment context. This covers formats such as
+    # "Charlotte Brownlee PayPal" or "John Smith Venmo".
     return True
 
 #--- Sheet ingress (via Sheets API) ---
@@ -777,7 +777,7 @@ def _get_semester_expiry(semester_label: str) -> date:
         #Spring expires Sept 15 of SAME year
         return date(year, 9, 15)
     else:
-        #Default: 6 months from now
+        # Fall back to a date six months ahead when the semester is unknown.
         return (datetime.now() + timedelta(days=180)).date()
 
 
@@ -1393,7 +1393,7 @@ async def _cleanup_portal_messages_for_emails(bot, rows: list[dict], emails_with
                 ids.append(mid)
     if not ids:
         return deleted
-    #Deduplicate ids before delete
+    # Remove duplicates so the same portal message is not deleted twice.
     ids = list(dict.fromkeys(ids))
     deleted += await _delete_portal_messages(bot, ids)
     return deleted
@@ -1484,7 +1484,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
         return
     global _MEMBERSHIP_ROWS_CACHE, _MEMBERSHIP_ROWS_TS
     
-    #Step 0: Scan and log new emails first
+    # Scan and log new payment emails before syncing sheet state.
     email_status_msg = None
     try:
         email_status_msg = await ch.send('Scanning emails…')
@@ -1513,7 +1513,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
             except Exception:
                 pass
         
-        #Also run finance processing on new emails
+        # Process finance emails from the same Gmail batch.
         try:
             await finance.process_financial_emails(bot)
         except Exception as e:
@@ -2039,7 +2039,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
                 (r.get('payment_username') or '').strip(),
             ])
         m, sc, _, mode = _best_member_match(sheet_handles, r.get('full_name') or '', members)
-        #Check if we already resolved this sheet username before; prefer that binding
+        # Reuse a previously resolved username-to-member binding when available.
         key = _norm_user_key(r.get('discord_username') or '')
         if key and key in _RESOLVED_SHEET_USERNAME_TO_UID:
             mid = _RESOLVED_SHEET_USERNAME_TO_UID[key]
@@ -2488,7 +2488,8 @@ def _provider_from_email(frm: str, subj: str, body: str) -> Optional[str]:
         if ('paid you' in s) or ('sent you' in s) or ('paid you' in b):
             return 'venmo'
     if 'cash.app' in f or 'squareup.com' in f or 'square.com' in f:
-        #Cash App emails may have subject 'Payment received' and body 'You were sent $X by [Name]'
+        # Cash App notices often use "Payment received" in the subject and a
+        # sender-name pattern in the body.
         if ('paid you' in s) or ('sent you' in s) or ('paid you' in b) or ('payment received' in s) or ('you were sent' in b):
             return 'cashapp'
     if 'paypal.com' in f:
@@ -2528,7 +2529,7 @@ def _payment_username_from_email(em: dict) -> str | None:
         m2 = re.search(r"\b([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})\b.*sent\s+you\s+\$?\d", body, re.I)
         if m2:
             return m2.group(1).strip()
-        #Handle 'You were sent $X by [Name]' format (common in newer Cash App emails)
+        # Cash App body pattern with amount followed by sender name.
         m3 = re.search(r"you were sent\s+\$?[\d.,]+\s+by\s+([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})", body, re.I)
         if m3:
             return m3.group(1).strip()
@@ -2546,42 +2547,13 @@ def _payment_username_from_email(em: dict) -> str | None:
     m2 = re.search(r"\b([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})\b\s+paid\s+you\b", subj, re.I)
     if m2:
         return m2.group(1).strip()
-    #Generic fallback for 'You were sent $X by [Name]' format
+    # Fallback Cash App body pattern with amount followed by sender name.
     m3 = re.search(r"you were sent\s+\$?[\d.,]+\s+by\s+([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})", body, re.I)
     if m3:
         return m3.group(1).strip()
     return None
 
-#--- NLP hooks (kept available, but not required for scoring) ---
-try:
-    from ..nlp.model import NLPModel  #optional
-except Exception:
-    NLPModel = None  #type: ignore
-
-_NLP_CACHE = None
 _RESOLVED_SHEET_USERNAME_TO_UID: Dict[str, int] = {}
-
-def _nlp_dues_bias_sync(text: str) -> int:
-    global _NLP_CACHE
-    if not getattr(settings, 'dues_nlp_enabled', False):
-        return 0
-    if NLPModel is None:
-        return 0
-    if _NLP_CACHE is None:
-        try:
-            _NLP_CACHE = NLPModel.maybe_load(settings)
-        except Exception:
-            _NLP_CACHE = False
-    if not _NLP_CACHE:
-        return 0
-    try:
-        _, p = _NLP_CACHE.score_entity(text, ["dues payment"])  #simple bias
-        prob = float(p)
-        if prob >= float(getattr(settings,'nlp_conf_mid',0.75)):
-            return 20
-        return 0
-    except Exception:
-        return 0
 
 #--- Debug helper ---
 

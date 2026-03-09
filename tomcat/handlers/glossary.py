@@ -58,13 +58,13 @@ def _build_pages(commands: List[Tuple[str, str]], header: str = "") -> List[str]
     
     if header:
         current_lines.append(header)
-        current_line_count = _count_lines(header) + 1  #+1 for blank after header
+        current_line_count = _count_lines(header) + 1  # Reserve one blank line after the header.
     
     for cmd, desc in commands:
         entry = _format_entry(cmd, desc)
         entry_lines = _count_lines(entry)
         
-        #If adding this entry would exceed limit, start new page
+        # Start a fresh page before the next entry would exceed the limit.
         if current_line_count + entry_lines > MAX_LINES_PER_PAGE and current_lines:
             pages.append("\n".join(current_lines))
             current_lines = []

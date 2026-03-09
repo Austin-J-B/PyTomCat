@@ -505,11 +505,9 @@ def _extract_venmo_note(subject: str, body: str, existing: Optional[str] = None)
     if existing:
         candidates.append(existing)
     
-    #Venmo Subject: "Name paid you $X.XX" -> Usually doesn't have note
-    #Venmo Body usually looks like:
-    #Name paid you
-    #$
-    #15
+    # Venmo subjects usually include the payer and amount inline.
+    # Venmo bodies often split the payer name, dollar sign, amount, and note
+    # across separate lines.
     #.
     #00
     #
@@ -542,7 +540,7 @@ def _extract_cashapp_note(subject: str, body: str, existing: Optional[str] = Non
     if existing:
         candidates.append(existing)
     
-    #CashApp Subject: "[Name] sent you $[Amount] for [Note]" - PRIORITIZE THIS
+    # Cash App subjects often include payer, amount, and note in one line.
     m = re.search(r"sent you \$[0-9.,]+\s+for\s+(.+)", subject or "", re.I)
     if m:
         candidates.insert(0, m.group(1)) #Top priority
@@ -627,7 +625,7 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     message_id = email.get("message_id")
     txn_id = _extract_txn_id(subject, content)
 
-    #Paid you
+    # Match person-to-person payments received.
     m = re.match(r"^(?P<name>.+?)\s+(?:paid|sent)\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
     if m:
         name = _clean_counterparty(m.group("name"))
@@ -654,7 +652,7 @@ def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             txn_id=txn_id,
         ), "income")
 
-    #You paid someone
+    # Match person-to-person payments sent.
     m = re.match(r"^you\s+paid\s+(?P<name>.+?)\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
     if m:
         name = _clean_counterparty(m.group("name"))
@@ -718,7 +716,7 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
             txn_id=txn_id,
         ), "income")
 
-    #You sent $X to [Name] (person-to-person CashApp transfer, e.g. reimbursements)
+    # Match Cash App transfers sent from the account holder.
     m = re.match(r"^You sent \$?(?P<amount>[0-9.,]+)\s+to\s+(?P<name>.+?)(?:\s+for\s+(?P<note>.+))?$", text, re.I)
     if m:
         name = _clean_counterparty(m.group("name"))
@@ -833,7 +831,7 @@ def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     if re.search(r"statement", text, re.I):
         return (None, "ignore")
 
-    #Fallback: [Name] sent you $[Amount]
+    # Fallback for compact "[Name]: $Amount" style lines.
     m = re.match(r"^(?P<name>.+?):\s*\$?(?P<amount>[0-9.,]+)\s*(?:usd)?", text, re.I)
     if not m:
          m = re.match(r"^(?P<name>.+?)\s+sent\s+you\s+\$?(?P<amount>[0-9.,]+)", text, re.I)
@@ -896,8 +894,8 @@ def _categorize_income(text: str, subject_hint: str = "") -> Optional[str]:
     if any(word in lower for word in OTHER_FUNDRAISER_KEYWORDS):
         return _INCOME_TYPES["other"]
     if lower.strip():
-        #If we have a note but no match, it might be a donation or unclassified
-        #Default to Donations for now per specs, unless it looks like dues (handled elsewhere)
+        # A free-form note with no stronger match is treated as a donation
+        # unless the dues pipeline claims it elsewhere.
         pass
     return _INCOME_TYPES["donations"]
 
@@ -1035,7 +1033,8 @@ def _fetch_recent_records(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> 
         vals = ws.get_all_values()
     except Exception as e:
         log_action('finance_sheet_error', f'{kind}_fetch', str(e))
-        return None #CRITICAL FIX: Return None instead of empty list on error
+        # Return None so callers can distinguish sheet errors from empty results.
+        return None
         
     if not vals:
         return []
@@ -1753,7 +1752,7 @@ async def _process_pending_dues(bot) -> None:
 
 
 async def process_financial_emails(bot) -> None:
-    """Main entrypoint: read new email logs, file into Sheets, notify Discord."""
+    """Read new finance emails, write sheet rows, and notify Discord."""
     async with FINANCE_LOCK:
         processed = _load_index()
         processed_ids = set(processed.keys())

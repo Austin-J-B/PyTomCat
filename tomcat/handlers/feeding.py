@@ -38,11 +38,11 @@ SUBS_LEGACY_FILE = SUBS_ROOT / "subs.jsonl"
 MACHINE_LOG_ROOT = _PACKAGE_ROOT / "logs" / "machine"
 _SUBS_LOCK = asyncio.Lock()
 
-#UI-provided schedule cache (ndjson primary, legacy JSON fallback)
+# Feeding schedule cache written by the UI. Older JSON data remains readable.
 UI_SCHEDULE_PATH = _PACKAGE_ROOT / "cache" / "feeding_schedule.ndjson"
 UI_SCHEDULE_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_schedule.json"
 _DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
-#Feeding checklist store (ndjson primary, legacy JSON fallback)
+# Feeding checklist storage uses the same NDJSON-with-JSON-fallback layout.
 FEEDING_CHECKLIST_PATH = _PACKAGE_ROOT / "cache" / "feeding_checklist.ndjson"
 FEEDING_CHECKLIST_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_checklist.json"
 _FEEDING_CHECKLIST_LOCK = asyncio.Lock()
@@ -799,8 +799,8 @@ async def handle_feeding_inquiry(intent, ctx: Dict[str, Any]) -> None:
     today_sched = _read_schedule_for_weekday(weekday, today)  #{station: [user_ids]}
     stations = sorted(today_sched.keys())
 
-    unfed = await _list_unfed_stations_today()  #TODO: wire to Sheets
-    #If we don’t know all stations from Sheets yet, assume schedule defines the universe
+    unfed = await _list_unfed_stations_today()  # Checklist data currently comes from the local store.
+    # If the schedule is empty, derive the station universe from saved checklist data.
     if not stations:
         stations = sorted(set(_sheet_station_names() or unfed))  #fallback to sheet header or unfed list
     fed = [s for s in stations if s not in set(unfed)]
@@ -814,10 +814,7 @@ async def handle_feeding_inquiry(intent, ctx: Dict[str, Any]) -> None:
 
 #------------- public handler entry points -------
 async def handle_feed_update_event(event, ctx: Dict[str, Any]) -> None:
-    """
-    Event carries: station, dates[], has_image, attachment_ids.
-    We mark all given dates as fed in the Sheet (stubbed) and log.
-    """
+    """Record one feeding update for each station/date pair and add an audit log entry."""
     ch: discord.abc.MessageableChannel = ctx["channel"]
     stations_raw = event.stations if getattr(event, "stations", None) else [event.station]
     stations: List[str] = []
@@ -1209,7 +1206,7 @@ async def start_morning_scheduler(bot: discord.Client) -> None:
                     message_content, view = await build_morning_message(bot)
                     await ch.send(message_content, view=view)
                     
-                    #Mark this date as sent AFTER successful send
+                    # Record the send only when the message succeeds.
                     _LAST_MORNING_MESSAGE_KEY = today_key
                     log_action("morning_scheduler", "sent", f"channel={channel_id}; date={today_key}")
 
@@ -1374,7 +1371,7 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> bool:
     today_key = now.date().isoformat()
 
     if not force:
-        #Do not send outside the daily 8:00 PM window, except short catch-up after reboot/reconnect.
+        # Outside the send window, skip routine alerts unless this is a forced run.
         if now < send_start:
             return False
         if now > send_deadline:

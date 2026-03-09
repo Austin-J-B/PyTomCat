@@ -3595,6 +3595,20 @@
             //Skip detect inference during classify mode to free GPU for identify
             if (labelerMode !== 'classify') {
                 detectTodo.forEach((item) => tasks.push(ensureDetectItemReady(item, false)));
+
+                // Proactively refine detect items that have raw results but no refined boxes
+                const refineTargets = detectTargets.filter((item) => {
+                    const key = String(item.serial || '');
+                    const entry = detectPrefetch.get(key);
+                    return (
+                        isDetectEntryUsable(entry)
+                        && !isDetectEntryReady(entry)
+                        && !detectExtraRefinedSerials.has(key)
+                        && !detectAutoRefineInFlight.has(key)
+                        && !detectRefineInFlight.has(key)
+                    );
+                }).slice(0, 2);
+                refineTargets.forEach((item) => tasks.push(ensureDetectItemDisplayReady(item, false)));
             }
             classifyTodo.forEach((item) => tasks.push(ensureClassifyItemReady(item, false, true)));
             if (tasks.length) {

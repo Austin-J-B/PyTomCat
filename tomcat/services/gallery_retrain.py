@@ -51,7 +51,7 @@ def _default_state() -> Dict[str, Any]:
 
 
 def set_gallery_retrain_notifier(fn: Optional[Callable[[str], Awaitable[None]]]) -> None:
-    """Register async callback used to post human-facing retrain status updates."""
+    """Register an async callback that receives retrain status messages."""
     global _NOTIFY_FN
     _NOTIFY_FN = fn
 

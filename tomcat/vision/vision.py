@@ -1427,7 +1427,11 @@ def _sam_refine_box(img_array: Any, prompt_box: List[float]) -> Tuple[float, flo
     masks_data = results[0].masks.data.cpu().numpy()
     px1, py1, px2, py2 = prompt_box
 
-    best_box = None
+    # OVERLAP_THRESHOLD ensures we don't pick a tiny speck that happens to be inside the prompt
+    OVERLAP_THRESHOLD = 0.7
+    best_tight = None
+    best_tight_area = float('inf')
+    best_iou_box = None
     best_iou = -1.0
 
     for idx in range(masks_data.shape[0]):
@@ -1448,12 +1452,21 @@ def _sam_refine_box(img_array: Any, prompt_box: List[float]) -> Tuple[float, flo
         inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
         area_m = (mx2 - mx1) * (my2 - my1)
         area_p = (px2 - px1) * (py2 - py1)
+        
+        # Select the tightest mask (smallest area) that still covers at least 70% of the prompt subject
+        overlap_ratio = inter / area_p if area_p > 0 else 0.0
+        if overlap_ratio >= OVERLAP_THRESHOLD and area_m < best_tight_area:
+            best_tight_area = area_m
+            best_tight = (mx1, my1, mx2, my2)
+            
         union = area_m + area_p - inter
         iou = inter / union if union > 0 else 0.0
 
         if iou > best_iou:
             best_iou = iou
-            best_box = (mx1, my1, mx2, my2)
+            best_iou_box = (mx1, my1, mx2, my2)
+
+    best_box = best_tight if best_tight is not None else best_iou_box
 
     if best_box is not None:
         h, w = masks_data.shape[-2:]

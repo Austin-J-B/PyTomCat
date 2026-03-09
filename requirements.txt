@@ -19,10 +19,6 @@ Pillow==12.1.1
 rapidfuzz==3.10.1
 beautifulsoup4==4.12.3
 
-#NLP + ONNX
-onnxruntime==1.19.2
-tokenizers==0.19.1
-
 #Computer vision helpers
 opencv-python-headless==4.10.0.84
 ultralytics>=8.3.200

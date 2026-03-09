@@ -138,7 +138,7 @@ def refresh_sync() -> int:
         ws = sheets_client().open_by_key(sid).worksheet("CatDatabase")
         rows = ws.get_all_values()
     except Exception:
-        #Attempt snapshot load; still return 0 to indicate no new refresh
+        # Fall back to the snapshot and report that no fresh sheet read occurred.
         _load_snapshot()
         return 0
     if not rows:

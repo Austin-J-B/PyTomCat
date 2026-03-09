@@ -34,9 +34,6 @@ SHEET_MEGASHEET_ID=                   # Members/finance megasheet (used for dues
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
 # ===== ML Model Paths =====
-INSTALL_DEBERTA_MODEL=0              # Optional. Set 1 to download/validate DeBERTa ONNX during install
-NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
-NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
 LOCAL_LLM_ENABLED=true
 LOCAL_LLM_RUNTIME=llama_cpp
 LOCAL_LLM_GGUF_PATH=weights/SmolLM2-1.7B-Instruct-Q6_K.gguf
@@ -68,8 +65,8 @@ LABELER_RERANK_HFLIP=1                # Include horizontal-flip variants during 
 LABELER_REF_EMBED_BATCH_SIZE=8        # Batch size for building labeler ref embeddings
 LABELER_MANUAL_REF_PER_CAT=50         # Manual review cache sample count per cat (lighter all-cat view)
 LABELER_MANUAL_FALLBACK_REFS_PER_CAT=5 # Random fallback refs for cats not in current gallery embeddings
-LABELER_MANUAL_SHEET_REF_SAMPLE_PER_CAT=20 # Reservoir sample size per cat from sheet rows (manual fallback source)
-LABELER_MANUAL_SHEET_REF_TTL_SEC=600  # Cache TTL (seconds) for manual fallback sheet index
+LABELER_MANUAL_METADATA_REF_SAMPLE_PER_CAT=20 # Reservoir sample size per cat from photo metadata rows
+LABELER_MANUAL_METADATA_REF_TTL_SEC=600  # Cache TTL (seconds) for manual fallback metadata index
 LABELER_PROFILE_REFRESH_MIN_SEC=300   # Minimum seconds between CatDatabase refresh attempts during manual review
 LABELER_CLASSIFY_MIN_PIXELS=122500    # Classifier queue pre-filter: minimum image area in pixels (w*h)
 LABELER_CLASSIFY_MIN_DIM=0            # Optional classifier queue pre-filter: minimum width/height (0 disables)
@@ -99,7 +96,6 @@ DUES_ALLOWED_AMOUNTS=15               # Base dues amount (comma-list if multiple
 DUES_EMAIL_WINDOW_DAYS=5              # Only consider payment emails this many days back
 DUES_SCAN_SKIP_OLDEST=3               # Skip this many oldest sheet rows when scanning in batches
 DUES_SCAN_LIMIT=500                   # Cap rows reviewed per pass to limit Sheets API usage
-DUES_NLP_ENABLED=true                 # Enable NLP heuristics for intent/donation parsing
 DUES_MEMBERSHIP_TTL_SEC=300           # Cache TTL for dues membership lookups (seconds)
 DUES_FAST_MAP=1                       # Use fast user map resolver (set 0 to force slower fallback)
 DUES_AUTO_VERIFY_THRESHOLD=0.90       # Auto-verify members with score >= this threshold

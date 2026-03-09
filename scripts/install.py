@@ -23,8 +23,6 @@ from typing import Iterable, List
 ROOT = Path(__file__).resolve().parent.parent
 VENV_DIR = ROOT / ".venv"
 WEIGHTS_DIR = ROOT / "weights"
-ONNX_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.onnx"
-TOKENIZER_PATH = WEIGHTS_DIR / "deberta-v3-small-mnli.tokenizer.json"
 LOCAL_LLM_GGUF_NAME = "SmolLM2-1.7B-Instruct-Q6_K.gguf"
 LOCAL_LLM_GGUF_PATH = WEIGHTS_DIR / LOCAL_LLM_GGUF_NAME
 LOCAL_LLM_GGUF_URL = (
@@ -45,7 +43,7 @@ TORCH_GPU_SPEC = [
     "torchvision==0.19.1+cu121",
 ]
 
-#Environment template used to scaffold a fresh .env file
+# Template content used when scaffolding a fresh .env file.
 ENV_TEMPLATE_CONTENT = """# ===== Discord =====
 DISCORD_TOKEN=
 DISCORD_CLIENT_SECRET=
@@ -82,9 +80,6 @@ SHEET_MEGASHEET_ID=                   # Members/finance megasheet (used for dues
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
 # ===== ML Model Paths =====
-INSTALL_DEBERTA_MODEL=0              # Optional. Set 1 to download/validate DeBERTa ONNX during install
-NLP_MODEL_PATH=weights/deberta-v3-small-mnli.onnx
-NLP_TOKENIZER_PATH=weights/deberta-v3-small-mnli.tokenizer.json
 LOCAL_LLM_ENABLED=true
 LOCAL_LLM_RUNTIME=llama_cpp
 LOCAL_LLM_GGUF_PATH=weights/SmolLM2-1.7B-Instruct-Q6_K.gguf
@@ -113,7 +108,6 @@ DUES_ALLOWED_AMOUNTS=15               # Base dues amount (comma-list if multiple
 DUES_EMAIL_WINDOW_DAYS=5              # Only consider payment emails this many days back
 DUES_SCAN_SKIP_OLDEST=3               # Skip this many oldest sheet rows when scanning in batches
 DUES_SCAN_LIMIT=200                   # Max Discord portal messages to fetch per scan
-DUES_NLP_ENABLED=true                 # Enable NLP heuristics for intent/donation parsing
 DUES_MEMBERSHIP_TTL_SEC=300           # Cache TTL for dues membership lookups (seconds)
 DUES_FAST_MAP=1                       # Use fast user map resolver (set 0 to force slower fallback)
 DUES_AUTO_VERIFY_THRESHOLD=0.90       # Auto-verify members with score >= this threshold
@@ -147,12 +141,6 @@ CLOUDFLARE_TUNNEL_NAME=               # Optional: create tunnel if credentials a
 """
 ENV_TEMPLATE_PATH = ROOT / ".env TEMPLATE"
 
-
-def _env_bool(key: str, default: bool = False) -> bool:
-    raw = os.getenv(key)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 class InstallError(RuntimeError):
     """Raised when a provisioning step cannot be recovered automatically."""
@@ -402,16 +390,6 @@ def _install_torch(force: str | None = None) -> None:
             return
         raise
 
-def _ensure_extra_models() -> None:
-    _pip([
-        "huggingface_hub>=0.35.1,<0.36",
-        "transformers==4.43.3",
-        "safetensors>=0.4.4",
-        "sentencepiece>=0.1.99",
-        "onnx>=1.16.2,<1.17",
-        "onnxscript" 
-    ])
-
 def _ensure_llama_cpp_runtime() -> None:
     """Install llama.cpp Python bindings used by local structured fallback parsing."""
     _print_header("Installing local LLM runtime (llama-cpp-python)")
@@ -485,30 +463,6 @@ def _ensure_local_llm_model() -> None:
         print(f"Warning: failed to download local LLM GGUF: {e}")
         print("You can add the model manually to weights/ and set LOCAL_LLM_GGUF_PATH in .env.")
 
-def _cleanup_tokenizer_artifacts() -> None:
-    leftovers = [
-        WEIGHTS_DIR / "added_tokens.json",
-        WEIGHTS_DIR / "special_tokens_map.json",
-        WEIGHTS_DIR / "spm.model",
-        WEIGHTS_DIR / "tokenizer_config.json",
-    ]
-    for path in leftovers:
-        try:
-            if path.exists():
-                path.unlink()
-        except Exception:
-            pass
-
-def _ensure_deberta_model() -> None:
-    WEIGHTS_DIR.mkdir(exist_ok=True)
-    if ONNX_PATH.exists() and TOKENIZER_PATH.exists():
-        print("DeBERTa model files are present.")
-        return
-    _print_header("Downloading & converting DeBERTa (MNLI) model")
-    _ensure_extra_models()
-    _run([str(_venv_python()), "scripts/convert_model.py"], cwd=ROOT)
-    _cleanup_tokenizer_artifacts()
-
 def _check_yolo_weights() -> None:
     missing = []
     for w in REQUIRED_WEIGHTS:
@@ -521,10 +475,6 @@ def _check_yolo_weights() -> None:
         for m in missing:
             print(f"  - {m}")
 print("\nManually copy these from backup if needed.")
-
-def _test_model() -> None:
-    _print_header("Validating model")
-    _run([str(_venv_python()), "scripts/test_model.py"], cwd=ROOT)
 
 def _maybe_create_env_template() -> None:
     env_path = ROOT / ".env"
@@ -555,12 +505,11 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     python_exe = args.python.resolve() if args.python else Path(sys.executable)
-    install_deberta = _env_bool("INSTALL_DEBERTA_MODEL", False)
     
     _print_header("TomCat Installer")
     print(f"Root: {ROOT}")
     print(f"Python: {python_exe}")
-    print(f"Install DeBERTa NLP model: {'yes' if install_deberta else 'no (set INSTALL_DEBERTA_MODEL=1 to enable)'}")
+    print(f"Local LLM model path: {LOCAL_LLM_GGUF_PATH}")
 
     #Check if we are running from within the .venv we are trying to manage
     if str(VENV_DIR) in str(python_exe):
@@ -591,9 +540,6 @@ def main() -> None:
         if args.clean_hf_cache:
             _clean_hf_cache()
         _ensure_local_llm_model()
-        if install_deberta:
-            _ensure_deberta_model()
-            _test_model()
         _check_yolo_weights()
         _maybe_create_env_template()
     else:
@@ -623,9 +569,6 @@ def main() -> None:
             if args.clean_hf_cache:
                 _clean_hf_cache()
             _ensure_local_llm_model()
-            if install_deberta:
-                _ensure_deberta_model()
-                _test_model()
 
         _check_yolo_weights()
         _maybe_create_env_template()

@@ -244,7 +244,7 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
 
 async def handle_recache_catabase(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
     """Officer-only: Refresh the Catabase cache and write the CSV snapshot.
-    Also refreshes the dynamic alias map so new names resolve immediately.
+    Also refreshes the dynamic alias map so freshly cached names resolve immediately.
     """
     message: discord.Message = ctx["message"]
     author = ctx["author"]
@@ -257,7 +257,7 @@ async def handle_recache_catabase(args: Dict[str, Any], ctx: Dict[str, Any]) -> 
         pass
     try:
         n = await PC.refresh_async()
-        #Force-refresh dynamic aliases so router sees new names immediately
+        # Refresh aliases so the router can resolve freshly cached names immediately.
         try:
             ALIAS.refresh_aliases_now()
         except Exception:

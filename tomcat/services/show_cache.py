@@ -141,9 +141,6 @@ def reset_photo_metadata_cache() -> None:
     _PHOTO_METADATA_ROWS_CACHE = None
     _PHOTO_METADATA_ROWS_CACHE_TS = 0.0
 
-
-reset_recentpics_cache = reset_photo_metadata_cache
-
 #--- INSERT IN tomcat/services/show_cache.py ---
 
 async def list_recent_pairs(full_name: str) -> List[Tuple[str, str, int, int]]:
@@ -229,14 +226,14 @@ def _serial_from_name(name: str) -> int:
         return -1
 
 def _normalize_cached_names(cat_dir: str) -> None:
-    """Rename legacy catId_sn#### files to sn#### to mirror serial naming."""
+    """Rename cached files to the serial-based naming scheme used by the current cache."""
     if not os.path.isdir(cat_dir):
         return
     for fn in list(os.listdir(cat_dir)):
         renamed = False
         src = os.path.join(cat_dir, fn)
 
-        #Case 1: legacy catId_sn1234.jpg -> sn1234.jpg
+        # Rename files like 123_sn456.jpg to sn456.jpg.
         m = re.match(r"(\d+)_sn(\d+)(\.[a-z0-9]+)$", fn, flags=re.IGNORECASE)
         if m:
             serial = m.group(2)
@@ -324,7 +321,7 @@ async def ensure_cat_cache(full_name: str, min_count: Optional[int] = None, excl
     if len(existing) >= min_count:
         return len(existing)
     pairs = await list_recent_pairs(full_name)
-    #Always shuffle so new cache entries vary across the full history
+    # Shuffle the pool so fresh cache entries do not always dominate.
     try:
         import random as _rand
         _rand.shuffle(pairs)  #vary cache entries across full history
@@ -519,7 +516,7 @@ def rebuild_name_index() -> None:
     _build_name_index()
 
 def _fix_cached_reverse_index(meta: Optional[dict]) -> Optional[dict]:
-    """Pass-through for backwards compatibility - indices are now stored correctly."""
+    """Normalize older sidecar metadata so cached entries use current fields."""
     if isinstance(meta, dict):
         # Older sidecars may store multi-cat labels; normalize to one canonical full name.
         full = str(meta.get("full_name") or "").strip()
@@ -643,7 +640,7 @@ def _pop_from_files(files: list[str], expected_cid: Optional[int] = None) -> tup
 
     return None, None
 
-async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Optional[bytes], Optional[dict]]:
+async def pop_one_cached(full_name: str, allow_profile_lookup: bool = True) -> tuple[Optional[bytes], Optional[dict]]:
     """Return and remove one cached image entry, optionally consulting CatDatabase.
     
     Optimized for instant cache hits: if cat ID resolves locally and files exist,
@@ -662,7 +659,7 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
     if cid is None:
         cid = _resolve_cat_id(full_name)
     
-    #Quick path: if we resolved cat ID, check for files before any sheet calls
+    # When the cat ID is already known, check on-disk cache files before Sheets.
     if cid is not None:
         cdir = _cache_dir_for(cid)
         if os.path.isdir(cdir):
@@ -672,7 +669,7 @@ async def pop_one_cached(full_name: str, use_sheet: bool = True) -> tuple[Option
                 return _pop_from_files(files, expected_cid=cid)
     
     #Slow path: need sheet to resolve cat ID
-    if cid is None and use_sheet:
+    if cid is None and allow_profile_lookup:
         prof = await get_cat_profile(full_name)
         if isinstance(prof, dict):
             cid = _cat_id_from_full(prof.get('actual_name') or '')

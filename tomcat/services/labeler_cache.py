@@ -37,7 +37,7 @@ _disk_io_pool = ThreadPoolExecutor(
     thread_name_prefix="labeler_disk_io",
 )
 
-# Keep the old env fallback for concurrency so existing config stays valid.
+# Read both concurrency env names so existing deployments keep the same limit.
 _CACHE_FILL_CONCURRENCY = max(
     1,
     int(
@@ -58,8 +58,21 @@ _active_fills: int = 0
 _total_fills_started: int = 0
 
 
+def shutdown_cache_executor(*, wait: bool = False) -> None:
+    """Release the persistent cache executor during process shutdown."""
+    global _disk_io_pool
+    pool = _disk_io_pool
+    if pool is None:
+        return
+    _disk_io_pool = None
+    try:
+        pool.shutdown(wait=wait, cancel_futures=True)
+    except Exception:
+        pass
+
+
 def get_download_stats() -> str:
-    """Return cache-fill diagnostics in the legacy download-stats format."""
+    """Return cache-fill diagnostics formatted for labeler status reporting."""
     return (
         f"active={_active_fills}/{_CACHE_FILL_CONCURRENCY}; "
         f"inflight_tasks={len(_fill_inflight)}; "
@@ -170,6 +183,8 @@ def get_cached_image(serial: int) -> Optional[bytes]:
 
 async def get_cached_image_async(serial: int) -> Optional[bytes]:
     """Non-blocking version of get_cached_image for async callers."""
+    if _disk_io_pool is None:
+        return get_cached_image(serial)
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_disk_io_pool, get_cached_image, serial)
 
@@ -184,6 +199,8 @@ def has_cached_image(serial: int) -> bool:
 
 async def has_cached_image_async(serial: int) -> bool:
     """Non-blocking version of has_cached_image for async callers."""
+    if _disk_io_pool is None:
+        return has_cached_image(serial)
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_disk_io_pool, has_cached_image, serial)
 
@@ -200,11 +217,15 @@ def _write_cached_image(serial: int, data: bytes) -> bool:
 
 async def _write_cached_image_async(serial: int, data: bytes) -> bool:
     """Non-blocking version of _write_cached_image."""
+    if _disk_io_pool is None:
+        return _write_cached_image(serial, data)
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_disk_io_pool, _write_cached_image, serial, data)
 
 
 async def _read_local_photo_bytes_async(serial: int) -> Optional[bytes]:
+    if _disk_io_pool is None:
+        return local_photos.read_local_photo_bytes(serial)
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_disk_io_pool, local_photos.read_local_photo_bytes, serial)
 

@@ -16,6 +16,7 @@ credentials/*
 weights/
 !weights/.gitkeep
 !weights/984_917_yolo12s.pt
+!weights/R4.5.*_cat_DINOv3_gallery.pt
 
 
 ## Cached spreadsheet exports checked in for local reference only

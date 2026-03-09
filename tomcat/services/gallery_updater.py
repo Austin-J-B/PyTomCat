@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import time
+import contextlib
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -27,21 +28,47 @@ from ..vision.vision import DINOv3Wrapper, refresh_gallery
 
 
 # Local photo metadata columns (0-based).
-COL_URL = 6
-COL_SERIAL = 7
-COL_BOX_COORDS = 8
-COL_BOX_CAT_IDS = 9
+COL_URL = 0
+COL_SERIAL = 6
+COL_BOX_COORDS = 7
+COL_BOX_CAT_IDS = 8
 
 SN_PATTERN = re.compile(r"sn(\d+)", re.IGNORECASE)
 _REJECTED = {"rejected", "needsreview", "needs review", "0. notacat", "notacat"}
 _DEFAULT_MIN_PIXELS = int(os.getenv("GALLERY_MIN_PIXELS", "122500") or "122500")
 _DEFAULT_MIN_PER_CAT = int(os.getenv("GALLERY_MIN_PER_CAT", "4") or "4")
 _DEFAULT_BATCH_SIZE = int(os.getenv("GALLERY_EMBED_BATCH_SIZE", "32") or "32")
+_DEFAULT_EMBED_BATCH_MAX = max(1, int(os.getenv("GALLERY_EMBED_BATCH_MAX", "256") or "256"))
 _DEFAULT_TTA_HFLIP = str(os.getenv("GALLERY_TTA_HFLIP", "1")).strip().lower() in {"1", "true", "yes", "on"}
-_DEFAULT_DOWNLOAD_WORKERS = max(1, int(os.getenv("GALLERY_DOWNLOAD_WORKERS", "10") or "10"))
-_DEFAULT_DOWNLOAD_CHUNK_SIZE = max(16, int(os.getenv("GALLERY_DOWNLOAD_CHUNK_SIZE", "128") or "128"))
 _DEFAULT_PROGRESS_LOG_SEC = max(5.0, float(os.getenv("GALLERY_PROGRESS_LOG_SEC", "15") or "15"))
 _DEFAULT_USE_LOCAL_PHOTOS = str(os.getenv("GALLERY_USE_LOCAL_PHOTOS", "1")).strip().lower() in {"1", "true", "yes", "on"}
+_DEFAULT_OVERWRITE_ACTIVE_VERSION = str(os.getenv("GALLERY_OVERWRITE_ACTIVE_VERSION", "0")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_download_workers() -> int:
+    raw = str(os.getenv("GALLERY_DOWNLOAD_WORKERS", "") or "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except Exception:
+            pass
+    cpu_total = int(os.cpu_count() or 8)
+    # Use most of the machine during dedicated retrain windows, but keep some headroom.
+    return max(4, min(24, int(round(cpu_total * 0.75))))
+
+
+def _default_download_chunk_size(workers: int) -> int:
+    raw = str(os.getenv("GALLERY_DOWNLOAD_CHUNK_SIZE", "") or "").strip()
+    if raw:
+        try:
+            return max(16, int(raw))
+        except Exception:
+            pass
+    return max(128, min(1024, int(max(1, workers) * 32)))
+
+
+_DEFAULT_DOWNLOAD_WORKERS = _default_download_workers()
+_DEFAULT_DOWNLOAD_CHUNK_SIZE = _default_download_chunk_size(_DEFAULT_DOWNLOAD_WORKERS)
 
 
 def _project_root() -> Path:
@@ -180,31 +207,91 @@ def _get_image_bytes(
     serial: int,
     *,
     use_local_photos: bool = _DEFAULT_USE_LOCAL_PHOTOS,
-) -> Tuple[Optional[bytes], str]:
+) -> Tuple[Optional[bytes], Optional[str], str]:
     # Fast path: labeler cache.
     try:
         cached = labeler_cache.get_cached_image(int(serial))
         if cached:
-            return cached, "labeler_cache"
+            return cached, None, "labeler_cache"
     except Exception:
         pass
 
     # Preferred path: manually supervised local photo store.
     if use_local_photos:
         try:
-            local_data = local_photos.read_local_photo_bytes(int(serial))
-            if local_data:
-                try:
-                    cache_dir = Path("cache") / "labeler"
-                    cache_dir.mkdir(parents=True, exist_ok=True)
-                    (cache_dir / f"sn{int(serial):04d}.jpg").write_bytes(local_data)
-                except Exception:
-                    pass
-                return local_data, "local_photo"
+            local_path = local_photos.get_local_photo_path(int(serial))
+            if local_path and local_path.is_file():
+                return None, str(local_path), "local_photo"
         except Exception:
             pass
 
-    return None, "local_missing"
+    return None, None, "local_missing"
+
+
+def _build_row_crops(
+    serial: int,
+    coords: List[str],
+    labels: List[str],
+    *,
+    image_bytes: Optional[bytes],
+    image_path: Optional[str],
+    crop_root: Path,
+    min_pixels: int,
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
+        "serial": int(serial),
+        "saved": [],
+        "crop_candidates": 0,
+        "crop_filtered_small": 0,
+    }
+    try:
+        if image_path:
+            image = Image.open(image_path).convert("RGB")
+        elif image_bytes:
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        else:
+            return out
+    except Exception:
+        return out
+
+    iw, ih = image.size
+    limit = min(len(coords), len(labels))
+    saved: List[Tuple[str, str, str]] = []
+    filtered_small = 0
+    for idx in range(limit):
+        out["crop_candidates"] += 1
+        cat_name = _normalize_label(labels[idx])
+        if not cat_name:
+            continue
+        box = _parse_box(coords[idx])
+        if box is None:
+            continue
+        cx, cy, w, h = box
+        x1 = (cx - w / 2) * iw
+        y1 = (cy - h / 2) * ih
+        x2 = (cx + w / 2) * iw
+        y2 = (cy + h / 2) * ih
+        ex1, ey1, ex2, ey2 = _expand_box(x1, y1, x2, y2, float(settings.cv_pad_pct), iw, ih)
+        if ex2 <= ex1 or ey2 <= ey1:
+            continue
+        area = (ex2 - ex1) * (ey2 - ey1)
+        if area < int(min_pixels):
+            filtered_small += 1
+            continue
+        crop = image.crop((ex1, ey1, ex2, ey2))
+        crop_id = f"sn{int(serial):04d}_c{idx + 1:02d}"
+        cat_slug = _slug(cat_name)
+        cat_dir = crop_root / cat_slug
+        try:
+            cat_dir.mkdir(parents=True, exist_ok=True)
+            crop_path = cat_dir / f"{crop_id}.jpg"
+            crop.save(crop_path, format="JPEG", quality=95)
+        except Exception:
+            continue
+        saved.append((cat_name, crop_id, str(crop_path)))
+    out["saved"] = saved
+    out["crop_filtered_small"] = int(filtered_small)
+    return out
 
 
 def _next_version_path(weights_dir: Path) -> Path:
@@ -219,6 +306,10 @@ def _next_version_path(weights_dir: Path) -> Path:
                 except Exception:
                     pass
     return weights_dir / f"R4.5.{max_n + 1}_cat_DINOv3_gallery.pt"
+
+
+def _is_versioned_gallery_path(path: Path) -> bool:
+    return bool(re.match(r"^R4\.5\.\d+_cat_DINOv3_gallery\.pt$", path.name, re.IGNORECASE))
 
 
 def _prune_old_versioned_galleries(weights_dir: Path, keep_version_path: Path) -> int:
@@ -269,6 +360,26 @@ def _prep_tensor(img: Image.Image) -> Tensor:
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
     return tfm(img)
+
+
+def _initial_embed_batch_size(device: torch.device, base_batch: int) -> int:
+    batch = max(1, int(base_batch))
+    if device.type != "cuda":
+        return batch
+    try:
+        free_bytes, _ = torch.cuda.mem_get_info(device)
+    except Exception:
+        return batch
+    free_gib = float(free_bytes) / float(1024 ** 3)
+    if free_gib >= 5.0:
+        batch *= 8
+    elif free_gib >= 3.5:
+        batch *= 6
+    elif free_gib >= 2.5:
+        batch *= 4
+    elif free_gib >= 1.5:
+        batch *= 2
+    return max(1, min(int(batch), int(_DEFAULT_EMBED_BATCH_MAX)))
 
 
 def run_gallery_update(
@@ -391,16 +502,17 @@ def run_gallery_update(
                         ): int(serial)
                         for serial, url in req_by_serial.items()
                     }
-                    image_by_serial: Dict[int, bytes] = {}
+                    image_ref_by_serial: Dict[int, Tuple[Optional[bytes], Optional[str], str]] = {}
                     for fut in as_completed(future_map):
                         serial = future_map[fut]
                         source = ""
                         try:
-                            data, source = fut.result()
+                            data, image_path, source = fut.result()
                         except Exception:
                             data = None
-                        if data:
-                            image_by_serial[int(serial)] = data
+                            image_path = None
+                        if data or image_path:
+                            image_ref_by_serial[int(serial)] = (data, image_path, source)
                             stats["images_loaded"] += 1
                             if source == "labeler_cache":
                                 stats["images_loaded_cache"] += 1
@@ -411,54 +523,43 @@ def run_gallery_update(
                             if source == "local_missing":
                                 stats["images_missing_local"] += 1
 
+                    crop_future_map = {}
                     for serial, coords, labels in chunk:
-                        stats["rows_processed"] += 1
-                        image_bytes = image_by_serial.get(int(serial))
-                        if not image_bytes:
+                        image_ref = image_ref_by_serial.get(int(serial))
+                        if not image_ref:
+                            stats["rows_processed"] += 1
                             _log_progress("crop-build")
                             continue
+                        image_bytes, image_path, _ = image_ref
+                        crop_future_map[
+                            pool.submit(
+                                _build_row_crops,
+                                int(serial),
+                                coords,
+                                labels,
+                                image_bytes=image_bytes,
+                                image_path=image_path,
+                                crop_root=crop_root,
+                                min_pixels=int(min_pixels),
+                            )
+                        ] = int(serial)
+
+                    for fut in as_completed(crop_future_map):
+                        serial = crop_future_map[fut]
+                        stats["rows_processed"] += 1
                         try:
-                            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                            crop_result = fut.result()
                         except Exception:
                             _log_progress("crop-build")
                             continue
-                        iw, ih = image.size
-                        limit = min(len(coords), len(labels))
-                        for idx in range(limit):
-                            stats["crop_candidates"] += 1
-                            cat_name = _normalize_label(labels[idx])
-                            if not cat_name:
-                                continue
-                            box = _parse_box(coords[idx])
-                            if box is None:
-                                continue
-                            cx, cy, w, h = box
-                            x1 = (cx - w / 2) * iw
-                            y1 = (cy - h / 2) * ih
-                            x2 = (cx + w / 2) * iw
-                            y2 = (cy + h / 2) * ih
-                            ex1, ey1, ex2, ey2 = _expand_box(x1, y1, x2, y2, float(settings.cv_pad_pct), iw, ih)
-                            if ex2 <= ex1 or ey2 <= ey1:
-                                continue
-                            area = (ex2 - ex1) * (ey2 - ey1)
-                            if area < int(min_pixels):
-                                stats["crop_filtered_small"] += 1
-                                continue
-                            crop = image.crop((ex1, ey1, ex2, ey2))
-                            crop_id = f"sn{int(serial):04d}_c{idx + 1:02d}"
-                            unique_key = f"{cat_name.casefold()}::{crop_id}"
+                        stats["crop_candidates"] += int(crop_result.get("crop_candidates", 0) or 0)
+                        stats["crop_filtered_small"] += int(crop_result.get("crop_filtered_small", 0) or 0)
+                        for cat_name, crop_id, crop_path_str in crop_result.get("saved") or []:
+                            unique_key = f"{str(cat_name).casefold()}::{crop_id}"
                             if unique_key in unique_crops:
                                 continue
                             unique_crops.add(unique_key)
-                            cat_slug = _slug(cat_name)
-                            cat_dir = crop_root / cat_slug
-                            cat_dir.mkdir(parents=True, exist_ok=True)
-                            crop_path = cat_dir / f"{crop_id}.jpg"
-                            try:
-                                crop.save(crop_path, format="JPEG", quality=95)
-                            except Exception:
-                                continue
-                            cat_to_crops[cat_name].append((crop_id, crop_path))
+                            cat_to_crops[str(cat_name)].append((str(crop_id), Path(str(crop_path_str))))
                             stats["crop_saved"] += 1
                         _log_progress("crop-build")
 
@@ -494,6 +595,11 @@ def run_gallery_update(
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = _load_encoder(device)
+        embed_batch_size = _initial_embed_batch_size(device, int(batch_size))
+        stats["embed_batch_requested"] = int(batch_size)
+        stats["embed_batch_initial"] = int(embed_batch_size)
+        stats["embed_batch_max"] = int(_DEFAULT_EMBED_BATCH_MAX)
+        stats["embed_autocast_fp16"] = int(device.type == "cuda")
 
         class_to_idx = {cat: i for i, cat in enumerate(eligible_cats)}
         all_emb: List[Tensor] = []
@@ -505,8 +611,10 @@ def run_gallery_update(
         for cat in eligible_cats:
             items = cat_to_crops[cat]
             cat_idx = class_to_idx[cat]
-            for start in range(0, len(items), int(max(1, batch_size))):
-                batch = items[start:start + int(max(1, batch_size))]
+            start = 0
+            while start < len(items):
+                cur_batch_size = int(max(1, embed_batch_size))
+                batch = items[start:start + cur_batch_size]
                 tensors: List[Tensor] = []
                 ids: List[str] = []
                 for crop_id, crop_path in batch:
@@ -517,22 +625,70 @@ def run_gallery_update(
                     tensors.append(_prep_tensor(img))
                     ids.append(crop_id)
                 if not tensors:
+                    start += len(batch)
                     continue
-                batch_t = torch.stack(tensors).to(device)
-                with torch.inference_mode():
-                    emb = model(batch_t)
-                    if tta_hflip:
-                        emb_flip = model(torch.flip(batch_t, dims=[3]))
-                        emb = torch.nn.functional.normalize((emb + emb_flip) / 2.0, p=2, dim=1)
-                    emb = emb.detach().cpu()
+                while True:
+                    batch_t = torch.stack(tensors).to(device, non_blocking=(device.type == "cuda"))
+                    try:
+                        with torch.inference_mode():
+                            autocast_ctx = (
+                                torch.autocast(device_type="cuda", dtype=torch.float16)
+                                if device.type == "cuda"
+                                else contextlib.nullcontext()
+                            )
+                            with autocast_ctx:
+                                emb = model(batch_t)
+                                if tta_hflip:
+                                    emb_flip = model(torch.flip(batch_t, dims=[3]))
+                                    emb = (emb + emb_flip) / 2.0
+                            emb = torch.nn.functional.normalize(emb, p=2, dim=1)
+                            emb = emb.detach().float().cpu()
+                        break
+                    except RuntimeError as e:
+                        oom = device.type == "cuda" and "out of memory" in str(e).lower()
+                        if not oom or cur_batch_size <= 1:
+                            raise
+                        try:
+                            torch.cuda.empty_cache()
+                        except Exception:
+                            pass
+                        cur_batch_size = max(1, cur_batch_size // 2)
+                        embed_batch_size = cur_batch_size
+                        stats["embed_batch_initial"] = min(
+                            int(stats.get("embed_batch_initial", cur_batch_size)),
+                            int(cur_batch_size),
+                        )
+                        batch = items[start:start + cur_batch_size]
+                        tensors = []
+                        ids = []
+                        for crop_id, crop_path in batch:
+                            try:
+                                img = Image.open(crop_path).convert("RGB")
+                            except Exception:
+                                continue
+                            tensors.append(_prep_tensor(img))
+                            ids.append(crop_id)
+                        if not tensors:
+                            break
+                        continue
+                    finally:
+                        try:
+                            del batch_t
+                        except Exception:
+                            pass
+                if not tensors:
+                    start += len(batch)
+                    continue
                 all_emb.append(emb)
                 all_labels.extend([cat_idx] * emb.shape[0])
                 embedded_done += int(emb.shape[0])
                 for crop_id in ids:
                     all_paths.append(f"crop://{crop_id}:{cat}")
+                start += len(ids)
+                stats["embed_batch_effective"] = int(embed_batch_size)
                 _log_progress(
                     "embedding",
-                    extra=f"embedded={embedded_done}/{expected_embeddings}; cats={len(class_to_idx)}",
+                    extra=f"embedded={embedded_done}/{expected_embeddings}; cats={len(class_to_idx)}; batch={embed_batch_size}",
                 )
 
         _log_progress(
@@ -557,12 +713,17 @@ def run_gallery_update(
         previous_active_gallery_path = Path(settings.cv_gallery_path)
         weights_dir = previous_active_gallery_path.parent if previous_active_gallery_path.parent else Path("weights")
         weights_dir.mkdir(parents=True, exist_ok=True)
-        version_path = _next_version_path(weights_dir)
+        overwrite_active_version = bool(_DEFAULT_OVERWRITE_ACTIVE_VERSION)
+        if overwrite_active_version and _is_versioned_gallery_path(previous_active_gallery_path):
+            version_path = previous_active_gallery_path
+        else:
+            version_path = _next_version_path(weights_dir)
 
         # Write only the versioned gallery; baseline galleries remain untouched.
         torch.save(gallery_obj, version_path)
         removed_old_versions = _prune_old_versioned_galleries(weights_dir, version_path)
         stats["old_versions_pruned"] = int(removed_old_versions)
+        stats["overwrite_active_version"] = int(overwrite_active_version)
 
         env_gallery_path = _gallery_path_for_env(version_path)
         env_update = _update_cv_gallery_path_in_env(env_gallery_path)

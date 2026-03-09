@@ -637,6 +637,7 @@ from .handlers.misc import start_profile_scheduler
 from .services.local_photos import (
     ingest_message_images as _ingest_message_images,
     is_intake_message as _is_intake_message,
+    sync_missing_local_photos as _sync_missing_local_photos,
     start_photo_metadata_sheet_sync_scheduler,
 )
 from .services.show_cache import warm_cache_on_boot
@@ -1744,6 +1745,10 @@ async def on_ready():
             log_event({"event":"health","component":"image_intake_local","status":"error","error": str(e)})
 
     _start_background_task("health_checks", lambda: _health_checks())
+    try:
+        _start_background_task("photo_sync_missing", lambda: _sync_missing_local_photos(bot))
+    except Exception:
+        pass
 
     #Seed invite caches for all guilds (for join attribution)
     try:

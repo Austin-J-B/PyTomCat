@@ -458,6 +458,19 @@ def _load_photo_counts() -> Dict[str, int]:
     return counts
 
 
+def _lookup_photo_count(*names: Any) -> Optional[int]:
+    """Resolve a numeric photo count from local metadata using any known cat label."""
+    counts = _load_photo_counts()
+    for name in names:
+        key = _norm_name(_display_name(name))
+        if not key:
+            continue
+        value = counts.get(key)
+        if value is not None:
+            return value
+    return None
+
+
 def _canonical_station(raw_location: Optional[str]) -> Optional[str]:
     txt = _clean_text(raw_location)
     if not txt:
@@ -972,19 +985,18 @@ def _run_generic_plan_query(query: Dict[str, Any], header: List[str], rows: List
                 "message": message,
             }
         row0 = matched_rows[0]
-        cat_name = _display_name(row0[full_idx] if 0 <= full_idx < len(row0) else subject_hint) or subject_hint
+        full_name = row0[full_idx] if 0 <= full_idx < len(row0) else subject_hint
+        cat_name = _display_name(full_name) or subject_hint
         raw_value = row0[select_idx] if 0 <= select_idx < len(row0) else ""
-        value_num = _coerce_int(raw_value, minimum=0)
+        value_num = _photo_count(raw_value)
         if value_num is None:
-            clean_value = _clean_text(raw_value)
-            if clean_value:
-                message = f"{cat_name} has {clean_value} photos in the catabase."
-            else:
-                message = f"I couldn't find a photo count for {cat_name}."
-            out_values = [clean_value] if clean_value else []
-        else:
+            value_num = _lookup_photo_count(full_name, cat_name, subject_hint)
+        if value_num is not None:
             message = f"{cat_name} has {value_num} photos in the catabase."
             out_values = [str(value_num)]
+        else:
+            message = f"I couldn't find a photo count for {cat_name}."
+            out_values = []
         return {
             "ok": True,
             "op": "generic_plan",

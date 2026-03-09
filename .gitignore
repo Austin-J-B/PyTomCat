@@ -54,8 +54,6 @@ ENV/
 .mypy_cache/
 .ruff_cache/
 
-## Transient image downloads
-temp_images/
 
 tests/
 

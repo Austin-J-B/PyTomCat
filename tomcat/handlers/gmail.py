@@ -24,6 +24,7 @@ GMAIL_SCOPES = [
 ]
 
 _PENDING_OAUTH: Dict[int, Any] = {}
+_PENDING_POST_AUTH: Dict[int, Dict[str, Any]] = {}
 _MONTH_NAMES = {
     1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
     7: "Jul", 8: "Aug", 9: "Sept", 10: "Oct", 11: "Nov", 12: "Dec",
@@ -51,6 +52,27 @@ def _new_flow():
     cred_path, _ = _paths()
     flow = InstalledAppFlow.from_client_secrets_file(cred_path, scopes=GMAIL_SCOPES)
     return flow
+
+
+def _oauth_key(channel) -> int:
+    try:
+        return int(getattr(getattr(channel, 'guild', None), 'id', 0) or 0)
+    except Exception:
+        return 0
+
+
+def _set_post_auth_action(channel, action: Dict[str, Any]) -> None:
+    key = _oauth_key(channel)
+    payload = dict(action or {})
+    _PENDING_POST_AUTH[key] = payload
+    _PENDING_POST_AUTH[-1] = payload
+
+
+def _pop_post_auth_action(channel) -> Optional[Dict[str, Any]]:
+    key = _oauth_key(channel)
+    action = _PENDING_POST_AUTH.pop(key, None)
+    fallback = _PENDING_POST_AUTH.pop(-1, None)
+    return action or fallback
 
 async def _build_gmail_service(channel) -> Any:
     from google.oauth2.credentials import Credentials
@@ -80,7 +102,7 @@ async def _build_gmail_service(channel) -> Any:
         flow.redirect_uri = f"http://localhost:{port}/"
         auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
         #Store flow for callback
-        gid = int(getattr(getattr(channel, 'guild', None), 'id', 0)) or 0
+        gid = _oauth_key(channel)
         _PENDING_OAUTH[gid] = flow
         _PENDING_OAUTH[-1] = flow
         try:
@@ -226,6 +248,7 @@ async def _log_emails_batch(svc, messages: List[Dict[str, Any]], delay_sec: floa
 async def handle_check_last_email(intent, ctx) -> None:
     ch = ctx["channel"]
     try:
+        _set_post_auth_action(ch, {"type": "gmail_check_last"})
         svc = await _build_gmail_service(ch)
         q = os.getenv("GMAIL_LAST_QUERY", "in:inbox -from:me")
         res = await asyncio.to_thread(lambda: svc.users().messages().list(userId="me", q=q, maxResults=1).execute())
@@ -236,6 +259,10 @@ async def handle_check_last_email(intent, ctx) -> None:
         msg = await asyncio.to_thread(lambda: svc.users().messages().get(userId="me", id=msgs[0]['id'], format="metadata").execute())
         headers = {h['name']: h['value'] for h in msg.get('payload', {}).get('headers', [])}
         await safe_send(ch, f"Last email:\nSubject: {headers.get('Subject')}\nFrom: {headers.get('From')}")
+        _pop_post_auth_action(ch)
+    except RuntimeError as e:
+        if str(e) != "gmail_auth_pending":
+            await safe_send(ch, f"Gmail error: {e}")
     except Exception as e:
         await safe_send(ch, f"Gmail error: {e}")
 
@@ -250,14 +277,30 @@ async def handle_gmail_auth_code(intent, ctx) -> None:
         if not code:
             await safe_send(ch, "No code found.")
             return
-        flow = _PENDING_OAUTH.get(-1) or _new_flow()
+        flow = _PENDING_OAUTH.get(_oauth_key(ch)) or _PENDING_OAUTH.get(-1) or _new_flow()
         port = int(os.getenv("GMAIL_LOCAL_PORT", "8765"))
         flow.redirect_uri = f"http://localhost:{port}/"
         await asyncio.to_thread(flow.fetch_token, code=code)
         _, token_path = _paths()
         token_path = _maybe_migrate_token(token_path)
-        with open(token_path, "w") as f: f.write(flow.credentials.to_json())
+        with open(token_path, "w", encoding="utf-8") as f:
+            f.write(flow.credentials.to_json())
+        try:
+            _PENDING_OAUTH.pop(_oauth_key(ch), None)
+            _PENDING_OAUTH.pop(-1, None)
+        except Exception:
+            pass
         await safe_send(ch, "Gmail authorized.")
+        action = _pop_post_auth_action(ch)
+        if action:
+            action_type = str(action.get("type") or "").strip().lower()
+            if action_type == "gmail_log_recent":
+                count = int(action.get("count") or 10)
+                await safe_send(ch, f"Continuing email check ({count})...")
+                await handle_log_recent_emails(type("Intent", (), {"data": {"count": count}})(), ctx)
+            elif action_type == "gmail_check_last":
+                await safe_send(ch, "Continuing last-email check...")
+                await handle_check_last_email(type("Intent", (), {"data": {}})(), ctx)
     except Exception as e:
         await safe_send(ch, f"Auth error: {e}")
 
@@ -267,6 +310,7 @@ async def handle_log_recent_emails(intent, ctx) -> None:
     await safe_send(ch, "Scanning emails...")
     async with _EMAIL_LOG_LOCK:
         try:
+            _set_post_auth_action(ch, {"type": "gmail_log_recent", "count": n})
             svc = await _build_gmail_service(ch)
             res = await asyncio.to_thread(lambda: svc.users().messages().list(userId="me", q="in:inbox -from:me", maxResults=n).execute())
             msgs = res.get("messages", [])
@@ -274,7 +318,12 @@ async def handle_log_recent_emails(intent, ctx) -> None:
             await safe_send(ch, f"Logged {logged} new email(s).")
             #Trigger finance
             bot = ctx.get("bot")
-            if bot: await finance.process_financial_emails(bot)
+            if bot:
+                await finance.process_financial_emails(bot)
+            _pop_post_auth_action(ch)
+        except RuntimeError as e:
+            if str(e) != "gmail_auth_pending":
+                await safe_send(ch, f"Error: {e}")
         except Exception as e:
             await safe_send(ch, f"Error: {e}")
 

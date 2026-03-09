@@ -1057,21 +1057,33 @@ async def _throttle_sheet_call() -> None:
         await asyncio.sleep(delay)
 
 
+def _sheet_row_key(row: List[str]) -> Tuple[str, ...]:
+    return tuple((str(cell) if cell is not None else "").strip() for cell in row)
+
+
+def _recent_sheet_row_counts(ws, label: str, max_rows: int = _RECENT_ROWS_LIMIT) -> Optional[Counter]:
+    try:
+        vals = ws.get_all_values()
+    except Exception as e:
+        log_action('finance_sheet_error', f'{label}_verify_fetch', str(e))
+        return None
+    if not vals:
+        return Counter()
+    limit = max_rows if max_rows > 0 else _RECENT_ROWS_LIMIT
+    rows = vals[-limit:] if len(vals) > limit else vals
+    return Counter(_sheet_row_key(row) for row in rows if row)
+
+
 async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List[Tuple[bool, str]]:
-    """Batch append rows while automatically backing off on quota/service errors."""
+    """Append rows safely without retrying blindly after ambiguous Sheets failures."""
     if not rows:
         return []
-    if hasattr(ws, "append_rows"):
-        try:
-            await _throttle_sheet_call()
-            ws.append_rows(rows, value_input_option='USER_ENTERED')
-            return [(True, "ok") for _ in rows]
-        except Exception as e:
-            #Fallback to row-by-row if batch fails, but log first
-            log_action('finance_sheet_error', f'{label}_append_batch', str(e))
-            
+
+    observed_counts = _recent_sheet_row_counts(ws, label)
     results: List[Tuple[bool, str]] = []
     for row in rows:
+        row_key = _sheet_row_key(row)
+        baseline_count = observed_counts.get(row_key, 0) if observed_counts is not None else None
         delay = 1.0
         success = False
         last_error = "ok"
@@ -1081,11 +1093,28 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
                 ws.append_row(row, value_input_option='USER_ENTERED')
                 success = True
                 last_error = "ok"
+                if observed_counts is not None:
+                    observed_counts[row_key] = observed_counts.get(row_key, 0) + 1
                 break
             except Exception as e:
                 last_error = str(e)
-                msg_lower = last_error.lower()
-                #Retry on Quota (429) AND Service Unavailable (500/502/503)
+                verified_counts = _recent_sheet_row_counts(ws, label)
+                if verified_counts is not None:
+                    current_count = verified_counts.get(row_key, 0)
+                    previous_count = baseline_count if baseline_count is not None else 0
+                    if current_count > previous_count:
+                        observed_counts = verified_counts
+                        success = True
+                        last_error = "ok_verified"
+                        log_action('finance_sheet_error', f'{label}_append_verified', str(e))
+                        break
+                    observed_counts = verified_counts
+                    baseline_count = current_count
+                else:
+                    last_error = f'unverified_append_failure: {last_error}'
+                    break
+
+                msg_lower = str(e).lower()
                 if any(code in msg_lower for code in ('quota', '429', '500', '502', '503')):
                     await asyncio.sleep(delay)
                     delay = min(delay * 2.0, 8.0)

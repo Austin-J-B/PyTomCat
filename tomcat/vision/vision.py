@@ -13,7 +13,7 @@ import random
 import re
 from pathlib import Path
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Any, Callable, cast
+from typing import Dict, List, Tuple, Optional, Any, Callable, cast
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import torch
@@ -35,6 +35,7 @@ except Exception:
 
 from ..config import settings
 from ..logger import log_action
+from ..services.station_residents import get_active_cat_station_membership
 
 #---------- Constants ----------
 _PURPLE = "#4C007F"
@@ -86,6 +87,10 @@ _RERANK_ENABLED = str(os.getenv("LABELER_RERANK_ENABLED", "1")).strip().lower() 
 _RERANK_TOP_N = max(1, int(os.getenv("LABELER_RERANK_TOP_N", "15") or "15"))
 _RERANK_HFLIP = str(os.getenv("LABELER_RERANK_HFLIP", "1")).strip().lower() in {"1", "true", "yes", "on"}
 _LABELER_REF_SEARCH_POOL = max(5, int(os.getenv("LABELER_REF_SEARCH_POOL", "250") or "250"))
+_IDENTIFY_STATION_PRIOR_ENABLED = str(os.getenv("IDENTIFY_STATION_PRIOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+_IDENTIFY_STATION_PRIOR_SEED_CONF = float(os.getenv("IDENTIFY_STATION_PRIOR_SEED_CONF", "0.72") or "0.72")
+_IDENTIFY_STATION_PRIOR_SEED_GAP = float(os.getenv("IDENTIFY_STATION_PRIOR_SEED_GAP", "0.04") or "0.04")
+_IDENTIFY_STATION_PRIOR_MAX_DELTA = float(os.getenv("IDENTIFY_STATION_PRIOR_MAX_DELTA", "0.06") or "0.06")
 
 
 def _parse_rerank_angles() -> List[float]:
@@ -194,6 +199,281 @@ def _rebuild_gallery_cat_indices() -> None:
         for name, idxs in by_cat.items()
         if idxs
     }
+
+
+def _sort_candidate_rows(rows: List[Tuple[str, float, float]]) -> List[Tuple[str, float, float]]:
+    rows.sort(key=lambda item: (-float(item[1]), -float(item[2]), str(item[0] or "").lower()))
+    return rows
+
+
+def _rank_unique_candidates_for_similarity(
+    sims: Tensor,
+    *,
+    crop: Optional[Image.Image] = None,
+    rerank: bool = True,
+) -> List[Tuple[str, float, float]]:
+    """Return one scored row per cat, optionally reranked, sorted best-first."""
+    if not _gallery_names:
+        return []
+    vals, idxs = torch.sort(sims, descending=True)
+    rows: List[Tuple[str, float, float]] = []
+    seen: set[str] = set()
+    target_unique = len(_gallery_cat_indices) if _gallery_cat_indices else 0
+    total = int(idxs.numel()) if hasattr(idxs, "numel") else len(_gallery_names)
+    for j in range(total):
+        try:
+            cat_idx = int(idxs[j].item())
+        except Exception:
+            continue
+        if cat_idx < 0 or cat_idx >= len(_gallery_names):
+            continue
+        cat_name = str(_gallery_names[cat_idx] or "").strip()
+        if not cat_name or cat_name in seen:
+            continue
+        try:
+            base_conf = float(vals[j].item())
+        except Exception:
+            continue
+        if not math.isfinite(base_conf):
+            continue
+        rows.append((cat_name, base_conf, base_conf))
+        seen.add(cat_name)
+        if target_unique and len(seen) >= target_unique:
+            break
+
+    if bool(rerank) and bool(_RERANK_ENABLED) and crop is not None and rows:
+        rerank_pool = [name for name, _, _ in rows[: min(len(rows), int(_RERANK_TOP_N))]]
+        reranked = _rerank_scores_for_crop(crop, rerank_pool)
+        if reranked:
+            updated: List[Tuple[str, float, float]] = []
+            for name, _, base_conf in rows:
+                score = float(reranked.get(name, base_conf))
+                updated.append((name, score, base_conf))
+            rows = updated
+
+    return _sort_candidate_rows(rows)
+
+
+def _hungarian_min_cost(cost_rows: List[List[float]]) -> List[int]:
+    """Solve a rectangular min-cost assignment with rows <= cols."""
+    if not cost_rows:
+        return []
+    n = len(cost_rows)
+    m = max((len(row) for row in cost_rows), default=0)
+    if n <= 0 or m <= 0:
+        return [-1] * n
+    if n > m:
+        raise ValueError("Hungarian assignment requires columns >= rows")
+
+    u = [0.0] * (n + 1)
+    v = [0.0] * (m + 1)
+    p = [0] * (m + 1)
+    way = [0] * (m + 1)
+
+    for i in range(1, n + 1):
+        p[0] = i
+        j0 = 0
+        minv = [float("inf")] * (m + 1)
+        used = [False] * (m + 1)
+        while True:
+            used[j0] = True
+            i0 = p[j0]
+            delta = float("inf")
+            j1 = 0
+            for j in range(1, m + 1):
+                if used[j]:
+                    continue
+                cur = float(cost_rows[i0 - 1][j - 1]) - u[i0] - v[j]
+                if cur < minv[j]:
+                    minv[j] = cur
+                    way[j] = j0
+                if minv[j] < delta:
+                    delta = minv[j]
+                    j1 = j
+            for j in range(m + 1):
+                if used[j]:
+                    u[p[j]] += delta
+                    v[j] -= delta
+                else:
+                    minv[j] -= delta
+            j0 = j1
+            if p[j0] == 0:
+                break
+        while True:
+            j1 = way[j0]
+            p[j0] = p[j1]
+            j0 = j1
+            if j0 == 0:
+                break
+
+    assignment = [-1] * n
+    for j in range(1, m + 1):
+        if p[j] != 0:
+            assignment[p[j] - 1] = j - 1
+    return assignment
+
+
+def _assign_unique_cat_names(
+    candidate_rows_by_crop: List[List[Tuple[str, float, float]]],
+) -> List[Optional[str]]:
+    """Choose one unique cat per crop that maximizes total confidence."""
+    if not candidate_rows_by_crop:
+        return []
+
+    label_names: List[str] = []
+    label_to_idx: Dict[str, int] = {}
+    max_score = float("-inf")
+    min_score = float("inf")
+    for rows in candidate_rows_by_crop:
+        for name, score, _ in rows:
+            cat_name = str(name or "").strip()
+            if not cat_name:
+                continue
+            if cat_name not in label_to_idx:
+                label_to_idx[cat_name] = len(label_names)
+                label_names.append(cat_name)
+            max_score = max(max_score, float(score))
+            min_score = min(min_score, float(score))
+
+    if not label_names:
+        return [None] * len(candidate_rows_by_crop)
+
+    if not math.isfinite(max_score):
+        max_score = 0.0
+    if not math.isfinite(min_score):
+        min_score = 0.0
+    missing_score = float(min_score) - max(1.0, abs(min_score) + abs(max_score) + 1.0)
+
+    if len(label_names) < len(candidate_rows_by_crop):
+        for idx in range(len(candidate_rows_by_crop) - len(label_names)):
+            dummy_name = f"__dummy__{idx + 1}"
+            label_to_idx[dummy_name] = len(label_names)
+            label_names.append(dummy_name)
+
+    score_rows: List[List[float]] = []
+    for rows in candidate_rows_by_crop:
+        score_row = [missing_score] * len(label_names)
+        for name, score, _ in rows:
+            cat_name = str(name or "").strip()
+            if not cat_name:
+                continue
+            col = label_to_idx.get(cat_name)
+            if col is None:
+                continue
+            score_row[col] = float(score)
+        score_rows.append(score_row)
+
+    score_ceiling = max(max(row) for row in score_rows) if score_rows else 0.0
+    cost_rows = [
+        [float(score_ceiling) - float(score) for score in row]
+        for row in score_rows
+    ]
+    assignment = _hungarian_min_cost(cost_rows)
+
+    out: List[Optional[str]] = []
+    for row_idx, col_idx in enumerate(assignment):
+        if 0 <= col_idx < len(label_names):
+            assigned = str(label_names[col_idx] or "").strip()
+            if assigned and not assigned.startswith("__dummy__"):
+                out.append(assigned)
+                continue
+        fallback = next((str(name or "").strip() for name, _, _ in candidate_rows_by_crop[row_idx] if str(name or "").strip()), None)
+        out.append(fallback or None)
+    return out
+
+
+def _visible_unique_candidate_rows(
+    rows: List[Tuple[str, float, float]],
+    *,
+    assigned_name: Optional[str],
+    taken_elsewhere: set[str],
+) -> List[Tuple[str, float, float]]:
+    """Filter out names reserved by other crops while keeping this crop's assignment first."""
+    if not rows:
+        return []
+    assigned = str(assigned_name or "").strip()
+    visible = [
+        row
+        for row in rows
+        if str(row[0] or "").strip() and (str(row[0] or "").strip() == assigned or str(row[0] or "").strip() not in taken_elsewhere)
+    ]
+    if not assigned:
+        return visible
+    chosen = next((row for row in visible if str(row[0] or "").strip() == assigned), None)
+    if chosen is None:
+        return visible
+    return [chosen] + [row for row in visible if str(row[0] or "").strip() != assigned]
+
+
+def _collect_station_votes(
+    candidate_rows_by_crop: List[List[Tuple[str, float, float]]],
+    active_membership: Dict[str, List[str]],
+) -> tuple[Dict[str, float], int]:
+    station_votes: Dict[str, float] = {}
+    contributing_crops = 0
+    for rows in candidate_rows_by_crop:
+        if not rows:
+            continue
+        top_name = str(rows[0][0] or "").strip()
+        stations = list(active_membership.get(top_name) or [])
+        if not stations:
+            continue
+        top_score = float(rows[0][1])
+        second_score = float(rows[1][1]) if len(rows) > 1 else 0.0
+        margin = max(0.0, top_score - second_score)
+        if top_score < _IDENTIFY_STATION_PRIOR_SEED_CONF and margin < _IDENTIFY_STATION_PRIOR_SEED_GAP:
+            continue
+        weight = max(0.0, top_score - _IDENTIFY_STATION_PRIOR_SEED_CONF)
+        weight += margin * 1.5
+        if top_score >= _IDENTIFY_STATION_PRIOR_SEED_CONF and margin >= _IDENTIFY_STATION_PRIOR_SEED_GAP:
+            weight += 0.2
+        if weight <= 0.0:
+            continue
+        contributing_crops += 1
+        per_station = float(weight) / max(1, len(stations))
+        for station in stations:
+            station_votes[station] = float(station_votes.get(station, 0.0)) + per_station
+    return station_votes, contributing_crops
+
+
+def _apply_identify_station_prior(
+    candidate_rows_by_crop: List[List[Tuple[str, float, float]]],
+) -> List[List[Tuple[str, float, float]]]:
+    if not _IDENTIFY_STATION_PRIOR_ENABLED or len(candidate_rows_by_crop) < 2:
+        return candidate_rows_by_crop
+    active_membership = get_active_cat_station_membership()
+    if not active_membership:
+        return candidate_rows_by_crop
+    station_votes, contributing_crops = _collect_station_votes(candidate_rows_by_crop, active_membership)
+    if contributing_crops < 2 or not station_votes:
+        return candidate_rows_by_crop
+    best_vote = max(float(v) for v in station_votes.values())
+    total_vote = sum(float(v) for v in station_votes.values())
+    if best_vote <= 0.0 or total_vote <= 0.0:
+        return candidate_rows_by_crop
+    consensus = max(0.0, min(1.0, ((best_vote / total_vote) - 0.5) / 0.5))
+    if consensus <= 0.0:
+        return candidate_rows_by_crop
+    support_strength = min(1.0, max(0.0, float(contributing_crops - 1) / 4.0))
+    confidence_strength = min(1.0, best_vote / 1.2)
+    prior_strength = support_strength * confidence_strength * consensus
+    if prior_strength <= 0.0:
+        return candidate_rows_by_crop
+
+    adjusted_rows: List[List[Tuple[str, float, float]]] = []
+    for rows in candidate_rows_by_crop:
+        updated: List[Tuple[str, float, float]] = []
+        for name, score, base_score in rows:
+            stations = list(active_membership.get(str(name or "").strip()) or [])
+            if not stations:
+                updated.append((name, float(score), float(base_score)))
+                continue
+            candidate_support = max(float(station_votes.get(station, 0.0)) for station in stations)
+            normalized_support = min(1.0, candidate_support / best_vote) if best_vote > 0.0 else 0.0
+            delta = _IDENTIFY_STATION_PRIOR_MAX_DELTA * prior_strength * ((2.0 * normalized_support) - 1.0)
+            updated.append((name, float(score) + float(delta), float(base_score)))
+        adjusted_rows.append(_sort_candidate_rows(updated))
+    return adjusted_rows
 
 @dataclass
 class IdentifyResult:
@@ -649,61 +929,43 @@ def identify(image_bytes: bytes) -> IdentifyResult:
             with torch.inference_mode():
                 query_embs = _clf(batch)
                 similarities = query_embs @ _gallery_emb.T
-                
-                # Sort all matches descending (best matches first)
-                vals, idxs = torch.sort(similarities, dim=1, descending=True)
-                
-                for i in range(len(dets)):
-                    base_limit = max(5, int(_RERANK_TOP_N if _RERANK_ENABLED else 5))
-                    candidate_names: List[str] = []
-                    candidate_scores: List[float] = []
-                    seen_cats: set[str] = set()
-                    
-                    # Iterate until we find unique identities for base + rerank pool
-                    for j in range(len(_gallery_names)):
-                        if len(candidate_names) >= base_limit:
-                            break
-                            
-                        cat_idx = int(idxs[i, j])
-                        cat_conf = float(vals[i, j])
-                        cat_name = _gallery_names[cat_idx]
-                        
-                        if cat_name not in seen_cats:
-                            candidate_names.append(cat_name)
-                            candidate_scores.append(cat_conf)
-                            seen_cats.add(cat_name)
+            candidate_rows_by_crop = [
+                _rank_unique_candidates_for_similarity(
+                    similarities[i],
+                    crop=tile_crops[i] if i < len(tile_crops) else None,
+                    rerank=True,
+                )
+                for i in range(len(dets))
+            ]
+            candidate_rows_by_crop = _apply_identify_station_prior(candidate_rows_by_crop)
+            assigned_names = _assign_unique_cat_names(candidate_rows_by_crop)
 
-                    base_score_map = {n: float(s) for n, s in zip(candidate_names, candidate_scores)}
-                    if _RERANK_ENABLED and candidate_names and i < len(tile_crops):
-                        rerank_pool = candidate_names[: min(len(candidate_names), int(_RERANK_TOP_N))]
-                        reranked = _rerank_scores_for_crop(tile_crops[i], rerank_pool)
-                        if reranked:
-                            combined: List[Tuple[str, float, float]] = []
-                            for name in candidate_names:
-                                base_conf = base_score_map.get(name, 0.0)
-                                score = float(reranked.get(name, base_conf))
-                                combined.append((name, score, base_conf))
-                            combined.sort(key=lambda x: x[1], reverse=True)
-                            candidate_names = [n for (n, _, _) in combined]
-                            candidate_scores = [float(s) for (_, s, _) in combined]
-                            base_score_map = {n: float(b) for (n, _, b) in combined}
-
-                    candidate_names = candidate_names[:5]
-                    candidate_scores = candidate_scores[:5]
-                    top_candidates = [(n, float(s)) for n, s in zip(candidate_names, candidate_scores)]
-                    if not top_candidates:
-                        continue
-                    
-                    # Best match is just the first unique one
-                    best_name, best_conf = top_candidates[0]
-                    
-                    results.append({
-                        "index": i + 1,
-                        "name": best_name,
-                        "conf": best_conf,
-                        "box": boxes[i],
-                        "top5": top_candidates
-                    })
+            for i in range(len(dets)):
+                taken_elsewhere = {
+                    str(name).strip()
+                    for idx, name in enumerate(assigned_names)
+                    if idx != i and str(name or "").strip()
+                }
+                visible_rows = _visible_unique_candidate_rows(
+                    candidate_rows_by_crop[i],
+                    assigned_name=assigned_names[i] if i < len(assigned_names) else None,
+                    taken_elsewhere=taken_elsewhere,
+                )
+                top_candidates = [
+                    (name, float(score))
+                    for name, score, _ in visible_rows[:5]
+                    if str(name or "").strip()
+                ]
+                if not top_candidates:
+                    continue
+                best_name, best_conf = top_candidates[0]
+                results.append({
+                    "index": i + 1,
+                    "name": best_name,
+                    "conf": best_conf,
+                    "box": boxes[i],
+                    "top5": top_candidates,
+                })
 
     buf = io.BytesIO()
     annotated.save(buf, format="JPEG")
@@ -789,6 +1051,7 @@ def identify_boxes(
     thumb_size: int = 128,
     rerank: bool = True,
     include_ref_thumbs: bool = True,
+    enforce_unique_across_crops: bool = False,
 ) -> IdentifyResult:
     """Run DINOv3 identification on specific normalized boxes (cx, cy, w, h)."""
     img = _open_rgb_image(io.BytesIO(image_bytes))
@@ -828,45 +1091,40 @@ def identify_boxes(
         query_embs = _clf(batch)
         similarities = query_embs @ _gallery_emb.T
 
+    candidate_rows_by_crop = [
+        _rank_unique_candidates_for_similarity(
+            similarities[i],
+            crop=tile_crops[i] if i < len(tile_crops) else None,
+            rerank=bool(rerank),
+        )
+        for i in range(similarities.shape[0])
+    ]
+    assigned_names = (
+        _assign_unique_cat_names(candidate_rows_by_crop)
+        if bool(enforce_unique_across_crops)
+        else []
+    )
+
     results: List[dict] = []
     for i in range(similarities.shape[0]):
         sims = similarities[i]
-        vals, idxs = torch.sort(sims, descending=True)
-
-        use_rerank = bool(rerank) and bool(_RERANK_ENABLED)
-        base_limit = max(int(top_k), int(_RERANK_TOP_N if use_rerank else top_k))
-        candidate_names: List[str] = []
-        candidate_scores: List[float] = []
-        seen: set[str] = set()
-
-        for j in range(len(_gallery_names)):
-            cat_idx = int(idxs[j])
-            cat_name = _gallery_names[cat_idx]
-            if cat_name in seen:
-                continue
-            candidate_names.append(cat_name)
-            candidate_scores.append(float(vals[j]))
-            seen.add(cat_name)
-            if len(candidate_names) >= base_limit:
-                break
-
-        base_score_map = {n: float(s) for n, s in zip(candidate_names, candidate_scores)}
-        if use_rerank and candidate_names and i < len(tile_crops):
-            rerank_pool = candidate_names[: min(len(candidate_names), int(_RERANK_TOP_N))]
-            reranked = _rerank_scores_for_crop(tile_crops[i], rerank_pool)
-            if reranked:
-                combined: List[Tuple[str, float, float]] = []
-                for name in candidate_names:
-                    base_conf = base_score_map.get(name, 0.0)
-                    score = float(reranked.get(name, base_conf))
-                    combined.append((name, score, base_conf))
-                combined.sort(key=lambda x: x[1], reverse=True)
-                candidate_names = [n for (n, _, _) in combined]
-                candidate_scores = [float(s) for (_, s, _) in combined]
-                base_score_map = {n: float(b) for (n, _, b) in combined}
-
-        candidate_names = candidate_names[: int(top_k)]
-        candidate_scores = candidate_scores[: int(top_k)]
+        if bool(enforce_unique_across_crops):
+            taken_elsewhere = {
+                str(name).strip()
+                for idx, name in enumerate(assigned_names)
+                if idx != i and str(name or "").strip()
+            }
+            visible_rows = _visible_unique_candidate_rows(
+                candidate_rows_by_crop[i],
+                assigned_name=assigned_names[i] if i < len(assigned_names) else None,
+                taken_elsewhere=taken_elsewhere,
+            )
+            trimmed_rows = visible_rows[: int(top_k)]
+        else:
+            trimmed_rows = candidate_rows_by_crop[i][: int(top_k)]
+        candidate_names = [name for name, _, _ in trimmed_rows]
+        candidate_scores = [float(score) for _, score, _ in trimmed_rows]
+        base_score_map = {name: float(base_score) for name, _, base_score in trimmed_rows}
         refs_per_i = max(0, int(refs_per or 0))
         ref_lists: dict[str, List[dict]] = {n: [] for n in candidate_names}
         for name in candidate_names:

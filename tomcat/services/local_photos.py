@@ -5,15 +5,20 @@ from __future__ import annotations
 import asyncio
 import csv
 import datetime as dt
+import hashlib
+import io
+import math
 import mimetypes
 import re
 import threading
 import time
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
 import discord
+from PIL import Image, ImageOps
 
 from ..config import settings
 from ..logger import log_action
@@ -27,10 +32,16 @@ _INDEX_SERIALS: Set[int] = set()
 _INDEX_NEXT_REFRESH_MONO: float = 0.0
 _INDEX_REFRESH_SEC = 10.0
 _INDEX_ROOT_SIG: Tuple[str, int, int] = ("", 0, 0)
+_HASH_INDEX_LOCK = threading.Lock()
+_HASH_CACHE: Dict[str, tuple[int, int, str, Optional[int], int, int, int]] = {}
+_EXACT_HASH_SERIALS: Dict[str, Set[int]] = {}
+_DHASH_ENTRIES: Dict[int, Set[int]] = {}
 _SERIAL_LOCK = asyncio.Lock()
 _SERIAL_ALLOC_LOCK = threading.RLock()
 _NEXT_SERIAL: int | None = None
 _LAST_METADATA_SHEET_SYNC_SIG: tuple[int, int] | None = None
+_DEDUP_DHASH_MAX_DISTANCE = max(0, int(getattr(settings, "photo_dedupe_dhash_max_distance", 4) or 4))
+_DEDUP_ASPECT_RATIO_TOLERANCE = 0.02
 
 CSV_HEADERS = [
     "Discord URL",
@@ -69,6 +80,14 @@ class IngestResult:
     saved_rows: int
     skipped_rows: int
     saved_serials: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DuplicateImageMatch:
+    serial: int
+    kind: str
+    distance: int
+    path: str
 
 
 def photo_root() -> Path:
@@ -247,6 +266,180 @@ def local_serials(*, force_refresh: bool = False) -> Set[int]:
 def refresh_local_index() -> None:
     """Force a rescan after new local photos are written."""
     _ensure_index(force=True)
+    with _HASH_INDEX_LOCK:
+        _HASH_CACHE.clear()
+        _EXACT_HASH_SERIALS.clear()
+        _DHASH_ENTRIES.clear()
+
+
+def _sha256_hex(image_bytes: bytes) -> str:
+    return hashlib.sha256(image_bytes).hexdigest()
+
+
+def _dhash64(image_bytes: bytes) -> tuple[Optional[int], int, int]:
+    if not image_bytes:
+        return None, 0, 0
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            img = img.convert("L")
+            width, height = img.size
+            resized = img.resize((9, 8), Image.Resampling.LANCZOS)
+            pixels = list(resized.tobytes())
+    except Exception:
+        return None, 0, 0
+    value = 0
+    for row in range(8):
+        base = row * 9
+        for col in range(8):
+            left = pixels[base + col]
+            right = pixels[base + col + 1]
+            value = (value << 1) | (1 if left > right else 0)
+    return int(value), int(width), int(height)
+
+
+def _aspect_ratio_close(width_a: int, height_a: int, width_b: int, height_b: int) -> bool:
+    if width_a <= 0 or height_a <= 0 or width_b <= 0 or height_b <= 0:
+        return True
+    ratio_a = float(width_a) / float(height_a)
+    ratio_b = float(width_b) / float(height_b)
+    return abs(ratio_a - ratio_b) <= _DEDUP_ASPECT_RATIO_TOLERANCE
+
+
+def _normalized_storage_bytes(image_bytes: bytes, ext: str) -> bytes:
+    max_pixels = int(getattr(settings, "photo_max_pixels", 20_000_000) or 20_000_000)
+    if not image_bytes or max_pixels <= 0:
+        return image_bytes
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(image_bytes)) as img:
+                img = ImageOps.exif_transpose(img)
+                width, height = img.size
+                pixels = int(width) * int(height)
+                if pixels <= max_pixels:
+                    return image_bytes
+                scale = math.sqrt(float(max_pixels) / float(max(1, pixels)))
+                new_w = max(1, int(width * scale))
+                new_h = max(1, int(height * scale))
+                resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                out = io.BytesIO()
+                ext_norm = _normalize_ext(ext)
+                if ext_norm in {".jpg", ".jpeg"}:
+                    if resized.mode not in {"RGB", "L"}:
+                        resized = resized.convert("RGB")
+                    resized.save(out, format="JPEG", quality=95, optimize=True)
+                elif ext_norm == ".png":
+                    resized.save(out, format="PNG", optimize=True, compress_level=6)
+                elif ext_norm == ".webp":
+                    if resized.mode not in {"RGB", "RGBA"}:
+                        resized = resized.convert("RGB")
+                    resized.save(out, format="WEBP", quality=95, method=6)
+                else:
+                    if resized.mode not in {"RGB", "L"}:
+                        resized = resized.convert("RGB")
+                    resized.save(out, format="JPEG", quality=95, optimize=True)
+                return out.getvalue()
+    except Exception:
+        return image_bytes
+
+
+def _ensure_hash_index(force: bool = False) -> None:
+    _ensure_index(force=force)
+    with _HASH_INDEX_LOCK:
+        current_paths = dict(_INDEX_PATHS)
+        active_path_keys = {str(path.resolve()) for path in current_paths.values()}
+        stale_paths = [path_key for path_key in _HASH_CACHE if path_key not in active_path_keys]
+        for path_key in stale_paths:
+            _HASH_CACHE.pop(path_key, None)
+
+        exact_hashes: Dict[str, Set[int]] = {}
+        dhashes: Dict[int, Set[int]] = {}
+        for serial, path in current_paths.items():
+            try:
+                resolved = str(path.resolve())
+                stat = path.stat()
+            except Exception:
+                continue
+            cached = _HASH_CACHE.get(resolved)
+            if cached and cached[0] == int(stat.st_mtime_ns) and cached[1] == int(stat.st_size):
+                _, _, exact_hash, dhash_value, width, height, cached_serial = cached
+            else:
+                try:
+                    image_bytes = path.read_bytes()
+                except Exception:
+                    continue
+                exact_hash = _sha256_hex(image_bytes)
+                dhash_value, width, height = _dhash64(image_bytes)
+                cached_serial = int(serial)
+                _HASH_CACHE[resolved] = (
+                    int(stat.st_mtime_ns),
+                    int(stat.st_size),
+                    exact_hash,
+                    dhash_value,
+                    int(width),
+                    int(height),
+                    cached_serial,
+                )
+            exact_hashes.setdefault(exact_hash, set()).add(int(cached_serial))
+            if dhash_value is not None:
+                dhashes.setdefault(int(dhash_value), set()).add(int(cached_serial))
+
+        _EXACT_HASH_SERIALS.clear()
+        _EXACT_HASH_SERIALS.update(exact_hashes)
+        _DHASH_ENTRIES.clear()
+        _DHASH_ENTRIES.update(dhashes)
+
+
+def _path_for_serial(serial: int) -> str:
+    path = get_local_photo_path(int(serial), force_refresh=False)
+    return str(path) if path is not None else ""
+
+
+def _find_duplicate_photo(image_bytes: bytes) -> Optional[DuplicateImageMatch]:
+    if not image_bytes:
+        return None
+    exact_hash = _sha256_hex(image_bytes)
+    dhash_value, width, height = _dhash64(image_bytes)
+    _ensure_hash_index(force=False)
+    with _HASH_INDEX_LOCK:
+        exact_serials = sorted(_EXACT_HASH_SERIALS.get(exact_hash) or [])
+        if exact_serials:
+            serial = int(exact_serials[0])
+            return DuplicateImageMatch(
+                serial=serial,
+                kind="exact",
+                distance=0,
+                path=_path_for_serial(serial),
+            )
+        if dhash_value is None or _DEDUP_DHASH_MAX_DISTANCE <= 0:
+            return None
+        best_match: Optional[DuplicateImageMatch] = None
+        for existing_hash, serials in _DHASH_ENTRIES.items():
+            distance = int((int(existing_hash) ^ int(dhash_value)).bit_count())
+            if distance > _DEDUP_DHASH_MAX_DISTANCE:
+                continue
+            serial_candidates = sorted(int(s) for s in (serials or []) if int(s) > 0)
+            if not serial_candidates:
+                continue
+            serial = int(serial_candidates[0])
+            cached_path = get_local_photo_path(serial, force_refresh=False)
+            cached_key = str(cached_path.resolve()) if cached_path is not None else ""
+            cached = _HASH_CACHE.get(cached_key) if cached_key else None
+            existing_width = int(cached[4]) if cached else 0
+            existing_height = int(cached[5]) if cached else 0
+            if not _aspect_ratio_close(width, height, existing_width, existing_height):
+                continue
+            match = DuplicateImageMatch(
+                serial=serial,
+                kind="near",
+                distance=distance,
+                path=str(cached_path) if cached_path is not None else "",
+            )
+            if best_match is None or match.distance < best_match.distance or (
+                match.distance == best_match.distance and match.serial < best_match.serial
+            ):
+                best_match = match
+        return best_match
 
 
 def _format_serial(serial: int) -> str:
@@ -393,6 +586,277 @@ def read_metadata_table() -> list[list[str]]:
     return table
 
 
+def _parse_metadata_timestamp(value: str) -> Optional[dt.datetime]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = dt.datetime.fromisoformat(text)
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def _missing_photo_sync_limit() -> int:
+    try:
+        return max(0, int(getattr(settings, "photo_sync_missing_max_rows", 200) or 200))
+    except Exception:
+        return 200
+
+
+def _missing_photo_sync_recent_days() -> int:
+    try:
+        return max(0, int(getattr(settings, "photo_sync_missing_recent_days", 90) or 90))
+    except Exception:
+        return 90
+
+
+def missing_local_photo_rows(*, limit: int = 0, recent_days: int = 0) -> list[dict[str, str]]:
+    """Return metadata rows whose serial exists in CSV but not on local disk."""
+    existing = local_serials(force_refresh=True)
+    threshold: Optional[dt.datetime] = None
+    if int(recent_days or 0) > 0:
+        threshold = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=int(recent_days))
+
+    ranked: list[tuple[dt.datetime, int, dict[str, str]]] = []
+    for row in read_metadata_rows():
+        serial = _parse_serial_like((row or {}).get("Serial Number"))
+        if serial is None or serial <= 0 or int(serial) in existing:
+            continue
+        timestamp = _parse_metadata_timestamp((row or {}).get("Timestamp", ""))
+        if threshold is not None:
+            if timestamp is None or timestamp < threshold:
+                continue
+        ranked.append((
+            timestamp or dt.datetime.min.replace(tzinfo=dt.timezone.utc),
+            int(serial),
+            dict(row),
+        ))
+
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    rows = [row for _, _, row in ranked]
+    if int(limit or 0) > 0:
+        return rows[: int(limit)]
+    return rows
+
+
+def _discord_url_identity(url: str) -> str:
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    return text.split("?", 1)[0].rstrip("/").casefold()
+
+
+def _match_attachment_for_row(
+    attachments: list[discord.Attachment],
+    row: dict[str, str],
+) -> Optional[discord.Attachment]:
+    image_attachments = [a for a in (attachments or []) if _looks_like_image(a)]
+    if not image_attachments:
+        return None
+
+    row_url_key = _discord_url_identity((row or {}).get("Discord URL", ""))
+    if row_url_key:
+        for attachment in image_attachments:
+            candidates = [
+                str(getattr(attachment, "url", "") or ""),
+                str(getattr(attachment, "proxy_url", "") or ""),
+            ]
+            if any(_discord_url_identity(candidate) == row_url_key for candidate in candidates):
+                return attachment
+
+        row_name = Path(row_url_key).name.casefold()
+        if row_name:
+            for attachment in image_attachments:
+                filename = Path(str(getattr(attachment, "filename", "") or "")).name.casefold()
+                if filename and filename == row_name:
+                    return attachment
+
+    if len(image_attachments) == 1:
+        return image_attachments[0]
+    return None
+
+
+async def sync_missing_local_photos(
+    client: discord.Client,
+    *,
+    limit: Optional[int] = None,
+    recent_days: Optional[int] = None,
+    use_csv_url_fallback: Optional[bool] = None,
+) -> dict[str, Any]:
+    """Restore recent missing local photos using metadata rows plus Discord fetches."""
+    enabled = bool(getattr(settings, "photo_sync_missing_on_boot", True))
+    if not enabled:
+        return {"status": "disabled"}
+
+    limit_value = _missing_photo_sync_limit() if limit is None else max(0, int(limit))
+    recent_days_value = _missing_photo_sync_recent_days() if recent_days is None else max(0, int(recent_days))
+    use_csv_fallback = (
+        bool(getattr(settings, "photo_sync_missing_use_csv_url_fallback", True))
+        if use_csv_url_fallback is None
+        else bool(use_csv_url_fallback)
+    )
+
+    candidates = missing_local_photo_rows(limit=limit_value, recent_days=recent_days_value)
+    result: dict[str, Any] = {
+        "status": "ok",
+        "requested": int(len(candidates)),
+        "restored": 0,
+        "restored_from_message": 0,
+        "restored_from_csv_url": 0,
+        "already_present": 0,
+        "message_fetch_failures": 0,
+        "attachment_misses": 0,
+        "csv_url_failures": 0,
+        "errors": 0,
+        "recent_days": int(recent_days_value),
+        "limit": int(limit_value),
+        "sample_failures": [],
+    }
+    if not candidates:
+        result["status"] = "no_candidates"
+        return result
+
+    channel_cache: dict[int, Any] = {}
+    message_cache: dict[tuple[int, int], Optional[discord.Message]] = {}
+    session = None
+    if use_csv_fallback:
+        import aiohttp
+
+        session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
+
+    try:
+        for row in candidates:
+            serial = _parse_serial_like((row or {}).get("Serial Number"))
+            if serial is None or serial <= 0:
+                result["errors"] += 1
+                continue
+            if has_local_photo(int(serial), force_refresh=False):
+                result["already_present"] += 1
+                continue
+
+            image_bytes: bytes = b""
+            filename = ""
+            content_type = ""
+            source = ""
+
+            channel_id = _parse_serial_like((row or {}).get("Channel"))
+            message_id = _parse_serial_like((row or {}).get("Message ID"))
+            if channel_id is not None and message_id is not None:
+                cache_key = (int(channel_id), int(message_id))
+                message = message_cache.get(cache_key)
+                if cache_key not in message_cache:
+                    channel = channel_cache.get(int(channel_id))
+                    if channel is None:
+                        channel = client.get_channel(int(channel_id))
+                        if channel is None:
+                            try:
+                                channel = await client.fetch_channel(int(channel_id))
+                            except Exception:
+                                channel = None
+                        channel_cache[int(channel_id)] = channel
+
+                    if channel is not None and hasattr(channel, "fetch_message"):
+                        try:
+                            message = await channel.fetch_message(int(message_id))
+                        except Exception:
+                            message = None
+                    else:
+                        message = None
+                    message_cache[cache_key] = message
+
+                if message is None:
+                    result["message_fetch_failures"] += 1
+                else:
+                    attachment = _match_attachment_for_row(
+                        list(getattr(message, "attachments", None) or []),
+                        row,
+                    )
+                    if attachment is None:
+                        result["attachment_misses"] += 1
+                    else:
+                        try:
+                            image_bytes = await attachment.read()
+                            filename = str(getattr(attachment, "filename", "") or "")
+                            content_type = str(getattr(attachment, "content_type", "") or "")
+                            source = "message"
+                        except Exception:
+                            image_bytes = b""
+
+            if not image_bytes and session is not None:
+                url = str((row or {}).get("Discord URL", "") or "").strip()
+                if url:
+                    try:
+                        async with session.get(url) as resp:
+                            if resp.status == 200:
+                                image_bytes = await resp.read()
+                                content_type = str(resp.headers.get("Content-Type", "") or "")
+                                filename = Path(_discord_url_identity(url)).name
+                                source = "csv_url"
+                            else:
+                                result["csv_url_failures"] += 1
+                    except Exception:
+                        result["csv_url_failures"] += 1
+
+            if not image_bytes:
+                if len(result["sample_failures"]) < 8:
+                    result["sample_failures"].append(str((row or {}).get("Serial Number", "") or serial))
+                continue
+
+            try:
+                await asyncio.to_thread(
+                    upsert_photo_bytes,
+                    image_bytes,
+                    discord_url=str((row or {}).get("Discord URL", "") or ""),
+                    timestamp=str((row or {}).get("Timestamp", "") or ""),
+                    author_id=str((row or {}).get("Author ID", "") or ""),
+                    channel=str((row or {}).get("Channel", "") or ""),
+                    guild_id=str((row or {}).get("Guild ID", "") or ""),
+                    message_id=str((row or {}).get("Message ID", "") or ""),
+                    filename=filename,
+                    content_type=content_type,
+                )
+            except Exception:
+                result["errors"] += 1
+                if len(result["sample_failures"]) < 8:
+                    result["sample_failures"].append(str((row or {}).get("Serial Number", "") or serial))
+                continue
+
+            if has_local_photo(int(serial), force_refresh=True):
+                result["restored"] += 1
+                if source == "csv_url":
+                    result["restored_from_csv_url"] += 1
+                else:
+                    result["restored_from_message"] += 1
+            else:
+                result["errors"] += 1
+                if len(result["sample_failures"]) < 8:
+                    result["sample_failures"].append(str((row or {}).get("Serial Number", "") or serial))
+    finally:
+        if session is not None:
+            try:
+                await session.close()
+            except Exception:
+                pass
+
+    log_action(
+        "photo_sync_missing",
+        "startup",
+        (
+            f"requested={result['requested']}; restored={result['restored']}; "
+            f"message={result['restored_from_message']}; csv_url={result['restored_from_csv_url']}; "
+            f"message_fetch_failures={result['message_fetch_failures']}; "
+            f"attachment_misses={result['attachment_misses']}; "
+            f"csv_url_failures={result['csv_url_failures']}; errors={result['errors']}"
+        ),
+    )
+    return result
+
+
 def _refresh_photo_metadata_consumers() -> None:
     """Invalidate cached metadata views after local photo rows change."""
     try:
@@ -455,6 +919,7 @@ def upsert_photo_bytes(
         content_type=str(content_type or ""),
         discord_url=str(discord_url or ""),
     )
+    image_bytes = _normalized_storage_bytes(image_bytes, ext)
     clean_values = {
         "Discord URL": str(discord_url or "").strip(),
         "Timestamp": str(timestamp or "").strip(),
@@ -481,6 +946,28 @@ def upsert_photo_bytes(
             )
 
             if row is None:
+                duplicate = _find_duplicate_photo(image_bytes)
+                if duplicate is not None:
+                    log_action(
+                        "image_duplicate_skip",
+                        f"source={clean_values['Channel'] or 'unknown'}",
+                        (
+                            f"kind={duplicate.kind}; distance={duplicate.distance}; "
+                            f"serial={_format_serial(duplicate.serial)}; "
+                            f"message_id={clean_values['Message ID'] or 'n/a'}"
+                        ),
+                    )
+                    return {
+                        "serial": int(duplicate.serial),
+                        "serial_token": _format_serial(duplicate.serial),
+                        "created": False,
+                        "updated": False,
+                        "wrote_file": False,
+                        "path": duplicate.path,
+                        "duplicate": True,
+                        "duplicate_kind": duplicate.kind,
+                        "duplicate_distance": int(duplicate.distance),
+                    }
                 serial = _ensure_next_serial_locked(metadata_path)
                 serial_token = _format_serial(serial)
                 collision = next(root.glob(f"{serial_token}.*"), None)
@@ -543,6 +1030,9 @@ def upsert_photo_bytes(
         "updated": bool(metadata_changed),
         "wrote_file": bool(wrote_file),
         "path": str(photo_path) if photo_path is not None else "",
+        "duplicate": False,
+        "duplicate_kind": "",
+        "duplicate_distance": 0,
     }
 
 
@@ -689,6 +1179,27 @@ def _has_reviewed_label(box_cat_ids: Any) -> bool:
     return False
 
 
+def _duplicate_review_labels(box_cat_ids: Any) -> list[str]:
+    duplicates: list[str] = []
+    seen: set[str] = set()
+    display_by_key: dict[str, str] = {}
+    for raw in str(box_cat_ids or "").split("|"):
+        label = str(raw or "").strip()
+        if not label:
+            continue
+        key = label.lower()
+        if key in _SKIP_LABEL_TOKENS:
+            continue
+        display = display_by_key.get(key) or label
+        display_by_key[key] = display
+        if key in seen:
+            if display not in duplicates:
+                duplicates.append(display)
+            continue
+        seen.add(key)
+    return duplicates
+
+
 def update_metadata_annotations(updates: list[dict[str, Any]], actor_name: str) -> dict[str, Any]:
     """Apply labeler annotation updates to the metadata CSV."""
     _, metadata_path = ensure_storage_ready()
@@ -721,6 +1232,12 @@ def update_metadata_annotations(updates: list[dict[str, Any]], actor_name: str) 
                 row["Box Coordinates"] = str(upd.get("box_coords") or "")
                 touched = True
             if "box_cat_ids" in upd:
+                duplicates = _duplicate_review_labels(upd.get("box_cat_ids"))
+                if duplicates:
+                    raise ValueError(
+                        "Duplicate cat labels are not allowed in one image: "
+                        + ", ".join(duplicates)
+                    )
                 row["Box Cat IDs"] = str(upd.get("box_cat_ids") or "")
                 if _has_reviewed_label(upd.get("box_cat_ids")):
                     pending_unblacklist_ref_serials.append(int(serial))
@@ -848,6 +1365,21 @@ async def ingest_message_images(message: discord.Message) -> IngestResult:
                 f"empty_attachment filename={getattr(attachment, 'filename', '')}",
             )
             continue
+        blob = _normalized_storage_bytes(blob, ext)
+
+        duplicate = _find_duplicate_photo(blob)
+        if duplicate is not None:
+            skipped_rows += 1
+            log_action(
+                "image_intake_skip",
+                f"channel={channel_id or 'dm'}",
+                (
+                    f"duplicate kind={duplicate.kind}; distance={duplicate.distance}; "
+                    f"serial={_format_serial(duplicate.serial)}; "
+                    f"filename={getattr(attachment, 'filename', '')}"
+                ),
+            )
+            continue
 
         async with _SERIAL_LOCK:
             serial = _ensure_next_serial_locked(metadata_path)
@@ -878,6 +1410,7 @@ async def ingest_message_images(message: discord.Message) -> IngestResult:
                 saved_serials.append(serial_token)
                 global _NEXT_SERIAL
                 _NEXT_SERIAL = serial + 1
+                refresh_local_index()
             except Exception:
                 try:
                     if photo_path.exists():

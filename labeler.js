@@ -340,6 +340,7 @@
     let lastPan = { x: 0, y: 0 };
     let classifierWarmDisplayPct = 0;
     let classifierWarmItemKey = '';
+    let classifierWarmStartedAt = 0;
     let loadPredictionsBusy = false;
     let loadPredictionsQueuedForce = false;
     let predCache = new Map();
@@ -1615,21 +1616,27 @@
         const cov = _predictionLoadedRefCoverageForCrop(currentPredictions, currentCropIdx);
         const hasPredictions = Array.isArray(currentPredictions) && currentPredictions.length > 0;
         const refsPct = cov.targetCount > 0 ? Math.max(0, Math.min(1, cov.coverage)) : 0;
+        const itemKey = getPredCacheKey(currentItem) || String(currentSerial || '');
+        if (classifierWarmItemKey !== itemKey) {
+            classifierWarmItemKey = itemKey;
+            classifierWarmDisplayPct = 0;
+            classifierWarmStartedAt = Date.now();
+        }
+        if (!classifierWarmStartedAt) {
+            classifierWarmStartedAt = Date.now();
+        }
+
+        const elapsedMs = Math.max(0, Date.now() - classifierWarmStartedAt);
+        const cropCount = Math.max(1, Number(currentBoxes.length || 0));
         let targetPct = hasPredictions
             ? (0.12 + refsPct * 0.72)
-            : 0.08;
+            : _classifierHeuristicWarmPct(cropCount, elapsedMs);
         if (_predictionRefsSufficientForCrop(currentPredictions, currentCropIdx)) {
             targetPct = Math.max(targetPct, 0.95);
         } else {
             targetPct = Math.max(0.03, Math.min(0.92, targetPct));
         }
-
-        const itemKey = getPredCacheKey(currentItem) || String(currentSerial || '');
-        if (classifierWarmItemKey !== itemKey) {
-            classifierWarmItemKey = itemKey;
-            classifierWarmDisplayPct = 0;
-        }
-        classifierWarmDisplayPct = targetPct;
+        classifierWarmDisplayPct = Math.max(classifierWarmDisplayPct, targetPct);
 
         const refText = cov.targetCount > 0
             ? `${cov.candidatesWithRefs}/${cov.targetCount}`
@@ -1637,7 +1644,7 @@
         const covPctText = cov.targetCount > 0 ? ` (${Math.round(refsPct * 100)}% coverage)` : '';
         const subtitle = hasPredictions
             ? `loaded refs ${refText} cats${covPctText}`
-            : 'Running classifier...';
+            : `Running classifier for ${cropCount} crop${cropCount === 1 ? '' : 's'}... ${_formatClassifierElapsed(elapsedMs)}`;
         setWarmOverlay(true, title, subtitle, classifierWarmDisplayPct);
     }
 
@@ -2544,6 +2551,7 @@
         manualPrefetchRequested = false;
         classifierWarmDisplayPct = 0;
         classifierWarmItemKey = '';
+        classifierWarmStartedAt = 0;
         _cancelClassifyItemLoadOverlayWait();
         pendingUndoRestore = null;
         initialClassifyWarmDone = false;
@@ -3655,6 +3663,7 @@
         togglePrefetchTimer(false);
         classifierWarmDisplayPct = 0;
         classifierWarmItemKey = '';
+        classifierWarmStartedAt = 0;
         queueAdvanceStartedAt = 0;
         queueAdvanceFromSerial = null;
         resetAutoSkipStreak();
@@ -4407,6 +4416,11 @@
                 boxes: currentBoxes.map((b) => ({ ...b })),
             });
         } else {
+            const duplicateCats = _duplicateAssignedCats(currentLabels);
+            if (duplicateCats.length) {
+                setStatus(`Duplicate cat labels are not allowed in one image: ${duplicateCats.join(', ')}`);
+                return;
+            }
             //Classifier mode - save labels
             queuePendingUpdate({
                 serial: currentSerial,
@@ -5136,13 +5150,13 @@
             return;
         }
         clampPredictionCropIdx(currentPredictions);
-        const crop = currentPredictions[currentCropIdx];
-        if (!crop) {
-            listEl.innerHTML = '<div class="no-predictions">No predictions</div>';
+        const visibleCandidates = _visiblePredictionCandidatesForCrop(currentPredictions, currentCropIdx);
+        if (!visibleCandidates.length) {
+            listEl.innerHTML = '<div class="no-predictions">No available predictions</div>';
             return;
         }
 
-        listEl.innerHTML = (crop.candidates || []).slice(0, 9).map((c, i) => {
+        listEl.innerHTML = visibleCandidates.slice(0, 9).map((c, i) => {
             const safeName = escapeHtml(c.name);
             const safeDesc = escapeHtml((c.desc || '').trim());
             const confPct = Math.max(0, Math.min(100, (c.conf || 0) * 100));
@@ -5325,13 +5339,14 @@
             ? Number(manualSidebarRestoreScrollTop)
             : null;
         manualSidebarRestoreScrollTop = null;
-        if (!manualCandidates.length) {
+        const visibleCandidates = _visibleManualCandidatesForCrop(manualCandidates, currentCropIdx);
+        if (!visibleCandidates.length) {
             listEl.innerHTML = '<div class="no-predictions">No candidates available.</div>';
             if (restoreTop != null && sidebarEl) sidebarEl.scrollTop = restoreTop;
             return;
         }
 
-        listEl.innerHTML = manualCandidates.map((cand) => {
+        listEl.innerHTML = visibleCandidates.map((cand) => {
             const name = String(cand?.name || '').trim();
             const catId = cand && cand.cat_id != null ? String(cand.cat_id) : '';
             const rawDisplay = String(cand?.display_name || name || '').trim();
@@ -5667,6 +5682,88 @@
         if (labelerMode !== 'manual') return;
         setStatus(`Deferred sn${currentSerial}`);
         advanceQueue();
+    }
+
+    function _classifierHeuristicWarmPct(cropCount, elapsedMs) {
+        const crops = Math.max(1, Number(cropCount || 0));
+        const ms = Math.max(0, Number(elapsedMs || 0));
+        const estimateMs = 2200 + (crops * 1400);
+        const phase = estimateMs > 0 ? ms / estimateMs : 1;
+        const eased = 1 - Math.exp(-Math.max(0, phase) * 1.6);
+        return Math.max(0.08, Math.min(0.78, 0.08 + eased * 0.70));
+    }
+
+    function _formatClassifierElapsed(elapsedMs) {
+        const secs = Math.max(1, Math.round(Math.max(0, Number(elapsedMs || 0)) / 1000));
+        return `${secs}s elapsed`;
+    }
+
+    function _normalizeAssignedCatLabel(label) {
+        const raw = String(label || '').trim();
+        if (!raw) return '';
+        const key = raw.toLowerCase();
+        if (key === 'needsreview' || key === 'needs review' || key === 'rejected') {
+            return '';
+        }
+        return raw;
+    }
+
+    function _normalizeAssignedCatKey(label) {
+        const normalized = _normalizeAssignedCatLabel(label);
+        return normalized ? normalized.toLowerCase() : '';
+    }
+
+    function _assignedCatKeysExcludingCrop(cropIdx) {
+        const targetIdx = Math.max(0, Number(cropIdx || 0));
+        const used = new Set();
+        for (let i = 0; i < currentLabels.length; i++) {
+            if (i === targetIdx) continue;
+            const key = _normalizeAssignedCatKey(currentLabels[i]);
+            if (key) used.add(key);
+        }
+        return used;
+    }
+
+    function _filterCandidatesByAssignedCats(candidates, cropIdx) {
+        const rows = Array.isArray(candidates) ? candidates : [];
+        if (!rows.length) return [];
+        const blocked = _assignedCatKeysExcludingCrop(cropIdx);
+        if (!blocked.size) return rows.slice();
+        return rows.filter((cand) => {
+            const key = _normalizeAssignedCatKey(cand?.name || '');
+            return !key || !blocked.has(key);
+        });
+    }
+
+    function _visiblePredictionCandidatesForCrop(results, cropIdx) {
+        const rows = Array.isArray(results) ? results : [];
+        if (!rows.length) return [];
+        const idx = Math.max(0, Math.min(Number(cropIdx || 0), rows.length - 1));
+        const crop = rows[idx];
+        if (!crop || !Array.isArray(crop.candidates)) return [];
+        return _filterCandidatesByAssignedCats(crop.candidates, idx);
+    }
+
+    function _visibleManualCandidatesForCrop(candidates, cropIdx) {
+        const idx = Math.max(0, Number(cropIdx || 0));
+        return _filterCandidatesByAssignedCats(candidates, idx);
+    }
+
+    function _duplicateAssignedCats(labels = currentLabels) {
+        const rows = Array.isArray(labels) ? labels : [];
+        const seen = new Set();
+        const duplicates = [];
+        for (const label of rows) {
+            const normalized = _normalizeAssignedCatLabel(label);
+            if (!normalized) continue;
+            const key = normalized.toLowerCase();
+            if (seen.has(key)) {
+                if (!duplicates.includes(normalized)) duplicates.push(normalized);
+                continue;
+            }
+            seen.add(key);
+        }
+        return duplicates;
     }
 
     function prefetchPredictions() {

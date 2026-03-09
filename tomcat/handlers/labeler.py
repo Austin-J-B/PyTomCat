@@ -4353,6 +4353,8 @@ async def post_save(request: web.Request) -> web.Response:
             "saved": len(updates),
             "unblacklisted_ref_serials": sorted(list(dict.fromkeys(cleared_ref_blacklist_serials))),
         }), request)
+    except ValueError as e:
+        return _with_cors(web.Response(status=400, text=str(e)), request)
     except Exception as e:
         log_action("labeler_save_error", "error", str(e))
         return _internal_error_response(request)

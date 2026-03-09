@@ -239,10 +239,16 @@ class Settings:
     #Step 1 local labeler photo source
     labeler_local_photo_root: str = os.getenv("LABELER_LOCAL_PHOTO_ROOT", "./cache/PicsOfCats/Pictures")
     photo_metadata_csv: str = os.getenv("PHOTO_METADATA_CSV", "./TomCatBot Pics.csv")
+    photo_dedupe_dhash_max_distance: int = int(os.getenv("PHOTO_DEDUPE_DHASH_MAX_DISTANCE", "4") or "4")
+    photo_max_pixels: int = int(os.getenv("PHOTO_MAX_PIXELS", "20000000") or "20000000")
     photo_metadata_sheet_title: str = os.getenv("PHOTO_METADATA_SHEET_TITLE", "TomCatBot Pics")
     photo_metadata_sheet_sync_enabled: bool = _get_env_bool("PHOTO_METADATA_SHEET_SYNC_ENABLED", True)
     photo_metadata_sheet_sync_interval_sec: int = int(os.getenv("PHOTO_METADATA_SHEET_SYNC_INTERVAL_SEC", "300") or "300")
     photo_metadata_sheet_sync_chunk_rows: int = int(os.getenv("PHOTO_METADATA_SHEET_SYNC_CHUNK_ROWS", "500") or "500")
+    photo_sync_missing_on_boot: bool = _get_env_bool("PHOTO_SYNC_MISSING_ON_BOOT", True)
+    photo_sync_missing_max_rows: int = int(os.getenv("PHOTO_SYNC_MISSING_MAX_ROWS", "200") or "200")
+    photo_sync_missing_recent_days: int = int(os.getenv("PHOTO_SYNC_MISSING_RECENT_DAYS", "90") or "90")
+    photo_sync_missing_use_csv_url_fallback: bool = _get_env_bool("PHOTO_SYNC_MISSING_USE_CSV_URL_FALLBACK", True)
     labeler_local_only: bool = _get_env_bool("LABELER_LOCAL_ONLY", True)
     labeler_local_allowed_exts: list[str] = field(
         default_factory=lambda: _parse_allowed_image_exts("LABELER_LOCAL_ALLOWED_EXTS")

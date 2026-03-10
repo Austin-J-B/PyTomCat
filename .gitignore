@@ -69,6 +69,7 @@ logs/machine/
 logs/dues/
 
 cache
+cloudflared.exe.old
 
 CCC megasheet.xlsxcsv
 CCC megasheet.xlsx

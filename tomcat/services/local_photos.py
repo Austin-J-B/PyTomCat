@@ -9,6 +9,7 @@ import hashlib
 import io
 import math
 import mimetypes
+import os
 import re
 import threading
 import time
@@ -32,10 +33,12 @@ _INDEX_SERIALS: Set[int] = set()
 _INDEX_NEXT_REFRESH_MONO: float = 0.0
 _INDEX_REFRESH_SEC = 10.0
 _INDEX_ROOT_SIG: Tuple[str, int, int] = ("", 0, 0)
+_INDEX_VERSION: int = 0
 _HASH_INDEX_LOCK = threading.Lock()
 _HASH_CACHE: Dict[str, tuple[int, int, str, Optional[int], int, int, int]] = {}
 _EXACT_HASH_SERIALS: Dict[str, Set[int]] = {}
 _DHASH_ENTRIES: Dict[int, Set[int]] = {}
+_HASH_INDEX_BUILT_FOR_VERSION: int = -1
 _SERIAL_LOCK = asyncio.Lock()
 _SERIAL_ALLOC_LOCK = threading.RLock()
 _NEXT_SERIAL: int | None = None
@@ -152,10 +155,18 @@ def is_local_only() -> bool:
     return bool(getattr(settings, "labeler_local_only", True))
 
 
+def _stable_path_key(path: Path) -> str:
+    """Return a stable absolute path without the extra cost of realpath resolution."""
+    try:
+        return os.path.normcase(os.path.abspath(str(path)))
+    except Exception:
+        return str(path)
+
+
 def _root_signature(root: Path) -> Tuple[str, int, int]:
     try:
         st = root.stat()
-        return (str(root.resolve()), int(st.st_mtime_ns), int(st.st_size))
+        return (_stable_path_key(root), int(st.st_mtime_ns), int(st.st_size))
     except Exception:
         return (str(root), 0, 0)
 
@@ -194,7 +205,7 @@ def _scan_index(root: Path, exts: Tuple[str, ...]) -> tuple[Dict[int, Path], Set
 
 
 def _ensure_index(force: bool = False) -> None:
-    global _INDEX_PATHS, _INDEX_SERIALS, _INDEX_NEXT_REFRESH_MONO, _INDEX_ROOT_SIG
+    global _INDEX_PATHS, _INDEX_SERIALS, _INDEX_NEXT_REFRESH_MONO, _INDEX_ROOT_SIG, _INDEX_VERSION
     now = time.monotonic()
     root = photo_root()
     sig = _root_signature(root)
@@ -207,6 +218,8 @@ def _ensure_index(force: bool = False) -> None:
         if not force and now < float(_INDEX_NEXT_REFRESH_MONO) and sig == _INDEX_ROOT_SIG:
             return
         paths, serials = _scan_index(root, allowed_exts())
+        if force or sig != _INDEX_ROOT_SIG or paths != _INDEX_PATHS or serials != _INDEX_SERIALS:
+            _INDEX_VERSION += 1
         _INDEX_PATHS = paths
         _INDEX_SERIALS = serials
         _INDEX_ROOT_SIG = sig
@@ -265,11 +278,13 @@ def local_serials(*, force_refresh: bool = False) -> Set[int]:
 
 def refresh_local_index() -> None:
     """Force a rescan after new local photos are written."""
+    global _HASH_INDEX_BUILT_FOR_VERSION
     _ensure_index(force=True)
     with _HASH_INDEX_LOCK:
         _HASH_CACHE.clear()
         _EXACT_HASH_SERIALS.clear()
         _DHASH_ENTRIES.clear()
+        _HASH_INDEX_BUILT_FOR_VERSION = -1
 
 
 def _sha256_hex(image_bytes: bytes) -> str:
@@ -344,10 +359,13 @@ def _normalized_storage_bytes(image_bytes: bytes, ext: str) -> bytes:
 
 
 def _ensure_hash_index(force: bool = False) -> None:
+    global _HASH_INDEX_BUILT_FOR_VERSION
     _ensure_index(force=force)
     with _HASH_INDEX_LOCK:
+        if not force and _HASH_INDEX_BUILT_FOR_VERSION == _INDEX_VERSION:
+            return
         current_paths = dict(_INDEX_PATHS)
-        active_path_keys = {str(path.resolve()) for path in current_paths.values()}
+        active_path_keys = {_stable_path_key(path) for path in current_paths.values()}
         stale_paths = [path_key for path_key in _HASH_CACHE if path_key not in active_path_keys]
         for path_key in stale_paths:
             _HASH_CACHE.pop(path_key, None)
@@ -356,7 +374,7 @@ def _ensure_hash_index(force: bool = False) -> None:
         dhashes: Dict[int, Set[int]] = {}
         for serial, path in current_paths.items():
             try:
-                resolved = str(path.resolve())
+                resolved = _stable_path_key(path)
                 stat = path.stat()
             except Exception:
                 continue
@@ -388,6 +406,7 @@ def _ensure_hash_index(force: bool = False) -> None:
         _EXACT_HASH_SERIALS.update(exact_hashes)
         _DHASH_ENTRIES.clear()
         _DHASH_ENTRIES.update(dhashes)
+        _HASH_INDEX_BUILT_FOR_VERSION = _INDEX_VERSION
 
 
 def _path_for_serial(serial: int) -> str:
@@ -423,7 +442,7 @@ def _find_duplicate_photo(image_bytes: bytes) -> Optional[DuplicateImageMatch]:
                 continue
             serial = int(serial_candidates[0])
             cached_path = get_local_photo_path(serial, force_refresh=False)
-            cached_key = str(cached_path.resolve()) if cached_path is not None else ""
+            cached_key = _stable_path_key(cached_path) if cached_path is not None else ""
             cached = _HASH_CACHE.get(cached_key) if cached_key else None
             existing_width = int(cached[4]) if cached else 0
             existing_height = int(cached[5]) if cached else 0
@@ -1365,9 +1384,9 @@ async def ingest_message_images(message: discord.Message) -> IngestResult:
                 f"empty_attachment filename={getattr(attachment, 'filename', '')}",
             )
             continue
-        blob = _normalized_storage_bytes(blob, ext)
+        blob = await asyncio.to_thread(_normalized_storage_bytes, blob, ext)
 
-        duplicate = _find_duplicate_photo(blob)
+        duplicate = await asyncio.to_thread(_find_duplicate_photo, blob)
         if duplicate is not None:
             skipped_rows += 1
             log_action(
@@ -1404,13 +1423,13 @@ async def ingest_message_images(message: discord.Message) -> IngestResult:
             }
 
             try:
-                photo_path.write_bytes(blob)
+                await asyncio.to_thread(photo_path.write_bytes, blob)
                 _append_metadata_row(metadata_path, row)
                 saved_rows += 1
                 saved_serials.append(serial_token)
                 global _NEXT_SERIAL
                 _NEXT_SERIAL = serial + 1
-                refresh_local_index()
+                await asyncio.to_thread(refresh_local_index)
             except Exception:
                 try:
                     if photo_path.exists():
@@ -1420,7 +1439,7 @@ async def ingest_message_images(message: discord.Message) -> IngestResult:
                 raise
 
     if saved_rows:
-        refresh_local_index()
+        await asyncio.to_thread(refresh_local_index)
         _refresh_photo_metadata_consumers()
     return IngestResult(saved_rows=saved_rows, skipped_rows=skipped_rows, saved_serials=tuple(saved_serials))
 

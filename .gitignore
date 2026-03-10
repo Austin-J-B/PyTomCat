@@ -58,6 +58,7 @@ ENV/
 tests/
 
 cloudflared.exe
+cloudflared.exe.old
 config.yml
 cloudflared
 

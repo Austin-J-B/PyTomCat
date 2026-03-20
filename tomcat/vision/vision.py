@@ -67,7 +67,7 @@ _LABELER_SAM_MIN_DETECTOR_COVERAGE = min(
     1.0,
     max(
         0.0,
-        float(os.getenv("LABELER_SAM_MIN_DETECTOR_COVERAGE", "0.45") or "0.45"),
+        float(os.getenv("LABELER_SAM_MIN_DETECTOR_COVERAGE", "0.30") or "0.30"),
     ),
 )
 _LABELER_SAM_MAX_REFINED_AREA_RATIO = max(
@@ -2147,12 +2147,22 @@ def _choose_guarded_sam_box(
             "selected_source": "fallback",
             "fallback_reason": "no_accepted_masks" if candidates else "no_masks",
             "clipped": False,
-            "polygon": list(preview_diag.get("polygon") or []),
-            "mask_tile": dict(preview_diag.get("mask_tile") or {}),
+            # Do not surface a rejected preview mask as the accepted overlay.
+            "polygon": [],
+            "mask_tile": {},
+            "preview_box": tuple(float(v) for v in (preview_diag.get("box") or detector_box))
+            if preview_diag.get("box") is not None else None,
+            "preview_polygon": list(preview_diag.get("polygon") or []),
+            "preview_mask_tile": dict(preview_diag.get("mask_tile") or {}),
+            "preview_iou": _round_metric(best_preview_iou if best_preview_iou >= 0.0 else 0.0),
             "outside_guard_ratio": 0.0,
             "detector_mask_ratio": 0.0,
             "detector_coverage": 0.0,
             "area_ratio": 1.0,
+            "preview_outside_guard_ratio": _round_metric(preview_diag.get("outside_guard_ratio", 0.0)),
+            "preview_detector_mask_ratio": _round_metric(preview_diag.get("detector_mask_ratio", 0.0)),
+            "preview_detector_coverage": _round_metric(preview_diag.get("detector_coverage", 0.0)),
+            "preview_area_ratio": _round_metric(preview_diag.get("area_ratio", 1.0)),
         }
 
     return chosen_box, {
@@ -2255,6 +2265,11 @@ def _summarize_sam_refine_diags(diags: List[Dict[str, Any]], *, passes: int) -> 
                 "detector_coverage": _round_metric(d.get("detector_coverage", 0.0)),
                 "area_ratio": _round_metric(d.get("area_ratio", 1.0)),
             }
+            if str(d.get("selected_source") or "") == "fallback":
+                sample["preview_iou"] = _round_metric(d.get("preview_iou", 0.0))
+                sample["preview_detector_mask_ratio"] = _round_metric(d.get("preview_detector_mask_ratio", 0.0))
+                sample["preview_detector_coverage"] = _round_metric(d.get("preview_detector_coverage", 0.0))
+                sample["preview_area_ratio"] = _round_metric(d.get("preview_area_ratio", 1.0))
             samples.append(sample)
 
     return {
@@ -2401,10 +2416,10 @@ def _mask_crop_to_overlay_tile(
             return {}
 
         rgba = np.zeros((crop.shape[0], crop.shape[1], 4), dtype=np.uint8)
-        rgba[..., 0] = 255
-        rgba[..., 1] = 48
-        rgba[..., 2] = 48
-        rgba[..., 3] = np.where(crop > 0, 76, 0).astype(np.uint8)
+        rgba[..., 0] = 74
+        rgba[..., 1] = 158
+        rgba[..., 2] = 255
+        rgba[..., 3] = np.where(crop > 0, 50, 0).astype(np.uint8)
         img = Image.fromarray(rgba, mode="RGBA")
         buf = io.BytesIO()
         img.save(buf, format="PNG", optimize=True)

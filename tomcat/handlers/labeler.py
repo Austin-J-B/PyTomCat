@@ -2209,6 +2209,28 @@ def _compact_refine_summary(summary: Optional[Dict[str, Any]]) -> str:
     if not isinstance(summary, dict):
         return "sam=none"
     selected = summary.get("selected") if isinstance(summary.get("selected"), dict) else {}
+    sample_bits: List[str] = []
+    for sample in list(summary.get("samples") or [])[:2]:
+        if not isinstance(sample, dict):
+            continue
+        bit = (
+            f"b{int(sample.get('box_index') or 0)}:"
+            f"{str(sample.get('selected') or 'fallback')}/"
+            f"{str(sample.get('reason') or 'ok')}"
+            f"[cand={int(sample.get('candidate_masks') or 0)}"
+            f",acc={int(sample.get('accepted_masks') or 0)}"
+            f",rej={int(sample.get('guard_rejections') or 0)}"
+        )
+        if str(sample.get("selected") or "") == "fallback":
+            bit += (
+                f",prev_iou={float(sample.get('preview_iou') or 0.0):.3f}"
+                f",prev_cover={float(sample.get('preview_detector_coverage') or 0.0):.3f}"
+                f",prev_mask={float(sample.get('preview_detector_mask_ratio') or 0.0):.3f}"
+                f",prev_area={float(sample.get('preview_area_ratio') or 1.0):.3f}"
+            )
+        bit += "]"
+        sample_bits.append(bit)
+    sample_txt = f"; samples={'|'.join(sample_bits)}" if sample_bits else ""
     return (
         f"boxes={int(summary.get('boxes') or 0)}; "
         f"accepted={int(summary.get('accepted_boxes') or 0)}; "
@@ -2222,6 +2244,7 @@ def _compact_refine_summary(summary: Optional[Dict[str, Any]]) -> str:
         f"max_outside={float(summary.get('max_outside_guard_ratio') or 0.0):.3f}; "
         f"max_cover={float(summary.get('max_detector_coverage') or 0.0):.3f}; "
         f"max_area_ratio={float(summary.get('max_area_ratio') or 1.0):.3f}"
+        f"{sample_txt}"
     )
 
 

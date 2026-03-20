@@ -1220,7 +1220,6 @@ class IntentRouter:
     #---------- dispatch ----------
     async def _dispatch(self, event: IntentEvent, message: discord.Message, ctx: Dict[str, Any]) -> None:
         #Confidence gates and clarification
-
         #Commands
         if event.type == "show_photo" and event.cat_name:
             #reuse the cats handler
@@ -1250,10 +1249,10 @@ class IntentRouter:
             return
 
         if event.type == "cv_identify":
-            #If event.attachment_ids came from context pairing, weâ€™ll â€œreplayâ€ the other message by forging message.attachments.
-            #Easiest path: just call the existing handler; it already checks current or referenced message.
             #If this came via a reply, suppress the handler's "attach an image" prompt when empty
             via_reply = bool(getattr(message, "reference", None))
+            #If event.attachment_ids came from context pairing, we'll "replay" the other message by forging message.attachments.
+            #Easiest path: just call the existing handler; it already checks current or referenced message.
             await handle_cv_identify(_intent("cv_identify", {}), {**ctx, "message": message, "silent_on_no_image": via_reply})
             return
 

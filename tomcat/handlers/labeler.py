@@ -21,6 +21,9 @@ import random
 import hashlib
 import base64
 import asyncio
+import sys
+import threading
+import traceback
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Set
 
@@ -53,18 +56,24 @@ _IDENTIFY_CONCURRENCY = max(1, int(os.getenv("LABELER_IDENTIFY_CONCURRENCY", "2"
 _IDENTIFY_TIMEOUT_SEC = float(os.getenv("LABELER_IDENTIFY_TIMEOUT_SEC", "45") or "45")
 _IDENTIFY_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_IDENTIFY_PREFETCH_TIMEOUT_SEC", "20") or "20")
 _IDENTIFY_PREFETCH_MAX_BOXES = max(1, int(os.getenv("LABELER_IDENTIFY_PREFETCH_MAX_BOXES", "12") or "12"))
+_IDENTIFY_PREFETCH_REFS_PER_CANDIDATE = max(
+    1,
+    int(os.getenv("LABELER_IDENTIFY_PREFETCH_REFS_PER_CANDIDATE", "2") or "2"),
+)
 _MANUAL_CONCURRENCY = max(1, int(os.getenv("LABELER_MANUAL_CONCURRENCY", "1") or "1"))
 _MANUAL_TIMEOUT_SEC = float(os.getenv("LABELER_MANUAL_TIMEOUT_SEC", "60") or "60")
 _DETECT_CONCURRENCY = max(1, int(os.getenv("LABELER_DETECT_CONCURRENCY", "2") or "2"))
 _REFINE_CONCURRENCY = max(1, int(os.getenv("LABELER_REFINE_CONCURRENCY", "2") or "2"))
 _DETECT_TIMEOUT_SEC = float(os.getenv("LABELER_DETECT_TIMEOUT_SEC", "25") or "25")
-_DETECT_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_DETECT_PREFETCH_TIMEOUT_SEC", "15") or "15")
-_REFINE_TIMEOUT_SEC = float(os.getenv("LABELER_REFINE_TIMEOUT_SEC", "25") or "25")
-_REFINE_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_REFINE_PREFETCH_TIMEOUT_SEC", "15") or "15")
+_DETECT_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_DETECT_PREFETCH_TIMEOUT_SEC", "45") or "45")
+_REFINE_TIMEOUT_SEC = float(os.getenv("LABELER_REFINE_TIMEOUT_SEC", "20") or "20")
+_REFINE_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_REFINE_PREFETCH_TIMEOUT_SEC", "20") or "20")
 _DETECT_INLINE_SAM_TIMEOUT_SEC = float(
-    os.getenv("LABELER_DETECT_INLINE_SAM_TIMEOUT_SEC", "8") or "8"
+    os.getenv("LABELER_DETECT_INLINE_SAM_TIMEOUT_SEC", "20") or "20"
 )
-_DETECT_INLINE_SAM_PASSES = max(2, int(os.getenv("LABELER_DETECT_INLINE_SAM_PASSES", "2") or "2"))
+_DETECT_INLINE_SAM_PASSES = max(1, int(os.getenv("LABELER_DETECT_INLINE_SAM_PASSES", "1") or "1"))
+_DETECT_PIPELINE_VERSION = "guarded_sam_v4_strict_queue"
+_REFINE_PIPELINE_VERSION = "guarded_sam_v4_strict_queue"
 _identify_sem = asyncio.Semaphore(_IDENTIFY_CONCURRENCY)
 _manual_sem = asyncio.Semaphore(_MANUAL_CONCURRENCY)
 _detect_sem = asyncio.Semaphore(_DETECT_CONCURRENCY)
@@ -94,6 +103,90 @@ _LOOP_LAG_LOG_MIN_DELTA_MS = max(
 )
 _loop_lag_last_log_mono: float = 0.0
 _loop_lag_last_logged_ms: float = 0.0
+_loop_heartbeat_mono: float = time.monotonic()
+_loop_watchdog_started = False
+_LOOP_HEARTBEAT_INTERVAL_SEC = max(
+    0.05,
+    float(os.getenv("LABELER_LOOP_HEARTBEAT_INTERVAL_SEC", "0.25") or "0.25"),
+)
+_LOOP_STALL_STACK_THRESHOLD_MS = max(
+    1500.0,
+    float(os.getenv("LABELER_LOOP_STALL_STACK_THRESHOLD_MS", "2500") or "2500"),
+)
+_LOOP_STALL_STACK_POLL_SEC = max(
+    0.1,
+    float(os.getenv("LABELER_LOOP_STALL_STACK_POLL_SEC", "0.5") or "0.5"),
+)
+_LOOP_STALL_STACK_MAX_FRAMES = max(
+    4,
+    min(20, int(os.getenv("LABELER_LOOP_STALL_STACK_MAX_FRAMES", "12") or "12")),
+)
+_loop_stall_last_logged_heartbeat_mono: float = 0.0
+_main_thread_ident = threading.main_thread().ident
+
+
+async def _event_loop_heartbeat() -> None:
+    """Publish a frequent heartbeat so a watchdog thread can detect live stalls."""
+    global _loop_heartbeat_mono
+    while True:
+        _loop_heartbeat_mono = time.monotonic()
+        await asyncio.sleep(_LOOP_HEARTBEAT_INTERVAL_SEC)
+
+
+def _snapshot_main_thread_stack(limit: int = 12) -> Dict[str, Any]:
+    """Capture the current Python stack for the main thread."""
+    try:
+        ident = _main_thread_ident
+        frame = sys._current_frames().get(ident) if ident is not None else None
+        if frame is None:
+            return {"available": False}
+        stack = traceback.extract_stack(frame)
+        tail = stack[-max(1, int(limit)):]
+        return {
+            "available": True,
+            "thread": threading.main_thread().name,
+            "frames": [
+                {
+                    "file": str(entry.filename or ""),
+                    "line": int(entry.lineno or 0),
+                    "func": str(entry.name or ""),
+                    "code": str((entry.line or "").strip()),
+                }
+                for entry in tail
+            ],
+        }
+    except Exception as e:
+        return {"available": False, "error": f"{type(e).__name__}: {e!r}"}
+
+
+def _event_loop_stall_watchdog() -> None:
+    """Log the main-thread stack once per stall while the loop is still wedged."""
+    global _loop_stall_last_logged_heartbeat_mono
+    while True:
+        try:
+            time.sleep(_LOOP_STALL_STACK_POLL_SEC)
+            heartbeat_mono = float(_loop_heartbeat_mono)
+            age_ms = max(0.0, (time.monotonic() - heartbeat_mono) * 1000.0)
+            if age_ms < float(_LOOP_STALL_STACK_THRESHOLD_MS):
+                continue
+            if heartbeat_mono <= float(_loop_stall_last_logged_heartbeat_mono):
+                continue
+            payload = {
+                "heartbeat_age_ms": int(round(age_ms)),
+                "threshold_ms": int(round(float(_LOOP_STALL_STACK_THRESHOLD_MS))),
+                "last_known_loop_lag_ms": int(round(float(_loop_lag_ms))),
+                "last_known_loop_lag_max_ms": int(round(float(_loop_lag_max_ms))),
+                "main_thread_stack": _snapshot_main_thread_stack(_LOOP_STALL_STACK_MAX_FRAMES),
+            }
+            log_action(
+                "labeler_loop_stall_stack",
+                f"age_ms={int(round(age_ms))}; threshold_ms={int(round(float(_LOOP_STALL_STACK_THRESHOLD_MS)))}",
+                json.dumps(payload, separators=(",", ":")),
+            )
+            _loop_stall_last_logged_heartbeat_mono = heartbeat_mono
+        except Exception as e:
+            log_action("labeler_loop_stall_watchdog_error", "error", f"{type(e).__name__}: {e!r}")
+            time.sleep(1.0)
 
 
 async def _event_loop_lag_monitor() -> None:
@@ -117,11 +210,11 @@ async def _event_loop_lag_monitor() -> None:
             cooldown_ok = (now_mono - float(_loop_lag_last_log_mono)) >= float(_LOOP_LAG_LOG_COOLDOWN_SEC)
             delta_ok = abs(float(lag) - float(_loop_lag_last_logged_ms)) >= float(_LOOP_LAG_LOG_MIN_DELTA_MS)
             if cooldown_ok or delta_ok:
-                task_census = _get_task_census()
+                runtime_snapshot = _labeler_runtime_snapshot()
                 log_action(
                     "labeler_event_loop_lag",
                     f"lag_ms={int(lag)}; max_ms={int(_loop_lag_max_ms)}",
-                    f"tasks={task_census}",
+                    json.dumps(runtime_snapshot, separators=(",", ":")),
                 )
                 _loop_lag_last_log_mono = now_mono
                 _loop_lag_last_logged_ms = float(lag)
@@ -130,33 +223,142 @@ async def _event_loop_lag_monitor() -> None:
 def _ensure_loop_lag_monitor() -> None:
     """Start the event loop lag monitor if not already running."""
     global _loop_lag_monitor_started
+    global _loop_watchdog_started
     if _loop_lag_monitor_started:
         return
     _loop_lag_monitor_started = True
     try:
+        asyncio.create_task(_event_loop_heartbeat())
         asyncio.create_task(_event_loop_lag_monitor())
+        if not _loop_watchdog_started:
+            watchdog = threading.Thread(
+                target=_event_loop_stall_watchdog,
+                name="labeler_loop_watchdog",
+                daemon=True,
+            )
+            watchdog.start()
+            _loop_watchdog_started = True
     except Exception:
         _loop_lag_monitor_started = False
+        _loop_watchdog_started = False
 
 
 def _get_task_census() -> str:
     """Return a summary of active asyncio tasks by coroutine name."""
     try:
-        all_tasks = asyncio.all_tasks()
-        counts: Dict[str, int] = {}
-        for t in all_tasks:
-            coro = t.get_coro()
-            name = getattr(coro, "__qualname__", None) or getattr(coro, "__name__", None) or "unknown"
-            #Trim to just the function name for brevity
-            if "." in name:
-                name = name.rsplit(".", 1)[-1]
-            counts[name] = counts.get(name, 0) + 1
-        total = len(all_tasks)
-        top = sorted(counts.items(), key=lambda x: -x[1])[:8]
-        parts = [f"{n}={c}" for n, c in top]
-        return f"total={total}; " + "; ".join(parts)
+        snap = _get_task_census_snapshot()
+        top = list(snap.get("top") or [])
+        parts = [f"{str(row.get('name') or 'unknown')}={int(row.get('count') or 0)}" for row in top]
+        return f"total={int(snap.get('total') or 0)}; " + "; ".join(parts)
     except Exception:
         return "error"
+
+
+def _get_task_census_snapshot(limit: int = 8) -> Dict[str, Any]:
+    all_tasks = asyncio.all_tasks()
+    counts: Dict[str, int] = {}
+    for t in all_tasks:
+        coro = t.get_coro()
+        name = getattr(coro, "__qualname__", None) or getattr(coro, "__name__", None) or "unknown"
+        if "." in name:
+            name = name.rsplit(".", 1)[-1]
+        counts[name] = counts.get(name, 0) + 1
+    top = sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:max(1, int(limit))]
+    return {
+        "total": int(len(all_tasks)),
+        "top": [{"name": str(name), "count": int(count)} for name, count in top],
+    }
+
+
+def _thread_group_name(name: str) -> str:
+    raw = str(name or "unknown").strip() or "unknown"
+    raw = re.sub(r"[_-]?\d+$", "", raw)
+    return raw or "unknown"
+
+
+def _get_thread_census_snapshot(limit: int = 8) -> Dict[str, Any]:
+    try:
+        counts: Dict[str, int] = {}
+        threads = list(threading.enumerate())
+        for th in threads:
+            name = _thread_group_name(getattr(th, "name", "unknown"))
+            counts[name] = counts.get(name, 0) + 1
+        top = sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:max(1, int(limit))]
+        return {
+            "total": int(len(threads)),
+            "top": [{"name": str(name), "count": int(count)} for name, count in top],
+        }
+    except Exception:
+        return {"total": 0, "top": [], "error": True}
+
+
+def _safe_sem_waiter_count(sem: asyncio.Semaphore) -> int:
+    try:
+        waiters = getattr(sem, "_waiters", None)
+        if waiters is None:
+            return 0
+        return int(len(waiters))
+    except Exception:
+        return 0
+
+
+def _sem_snapshot(sem: asyncio.Semaphore, limit: int) -> Dict[str, int]:
+    available = 0
+    try:
+        available = int(getattr(sem, "_value", 0) or 0)
+    except Exception:
+        available = 0
+    limit_i = max(0, int(limit))
+    return {
+        "limit": limit_i,
+        "available": max(0, available),
+        "in_use": max(0, limit_i - available),
+        "waiters": max(0, _safe_sem_waiter_count(sem)),
+    }
+
+
+def _claim_snapshot() -> Dict[str, Any]:
+    per_mode: Dict[str, int] = {}
+    for (mode, _serial), _payload in list(_active_claims.items()):
+        key = str(mode or "unknown")
+        per_mode[key] = per_mode.get(key, 0) + 1
+    return {
+        "active": int(len(_active_claims)),
+        "by_mode": per_mode,
+    }
+
+
+def _labeler_runtime_snapshot() -> Dict[str, Any]:
+    return {
+        "tasks": _get_task_census_snapshot(),
+        "threads": _get_thread_census_snapshot(),
+        "semaphores": {
+            "detect": _sem_snapshot(_detect_sem, _DETECT_CONCURRENCY),
+            "refine": _sem_snapshot(_refine_sem, _REFINE_CONCURRENCY),
+            "identify": _sem_snapshot(_identify_sem, _IDENTIFY_CONCURRENCY),
+            "manual": _sem_snapshot(_manual_sem, _MANUAL_CONCURRENCY),
+            "heavy": _sem_snapshot(_heavy_sem, _HEAVY_CONCURRENCY),
+        },
+        "caches": {
+            "detect": int(len(_detect_result_cache)),
+            "refine": int(len(_refine_result_cache)),
+            "identify": int(len(_identify_result_cache)),
+            "manual": int(len(_manual_result_cache)),
+            "quality": int(len(_classify_quality_cache)),
+            "quality_soft_fail": int(len(_classify_quality_soft_fail_cache)),
+        },
+        "claims": _claim_snapshot(),
+        "inflight": {
+            "identify_singleflight": int(len(_identify_inflight)),
+            "quality_eval": int(len(_classify_quality_inflight)),
+            "auto_reject_quality": int(len(_auto_reject_quality_inflight)),
+            "quality_scan": int(len(_classify_quality_scan_inflight)),
+            "detector_warm_task": int(bool(_detector_warm_task and not _detector_warm_task.done())),
+        },
+        "downloads": str(labeler_cache.get_download_stats() or ""),
+        "loop_lag_ms": int(round(float(_loop_lag_ms))),
+        "loop_lag_max_ms": int(round(float(_loop_lag_max_ms))),
+    }
 _CV_RESULT_TTL_SEC = max(5.0, float(os.getenv("LABELER_CV_RESULT_TTL_SEC", "180") or "180"))
 _DETECT_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_DETECT_RESULT_CACHE_MAX", "1000") or "1000"))
 _REFINE_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_REFINE_RESULT_CACHE_MAX", "1200") or "1200"))
@@ -954,13 +1156,18 @@ def _kickoff_boot_cache_warm_once() -> None:
         _boot_cache_warm_task = None
 
 
-def _log_local_mode_once() -> None:
+async def _local_serials_async(*, force_refresh: bool = False) -> Set[int]:
+    """Read the local serial snapshot without blocking the event loop."""
+    return await asyncio.to_thread(local_photos.local_serials, force_refresh=force_refresh)
+
+
+async def _log_local_mode_once() -> None:
     global _local_mode_logged
     if _local_mode_logged:
         return
     _local_mode_logged = True
     try:
-        count = len(local_photos.local_serials(force_refresh=False))
+        count = len(await _local_serials_async(force_refresh=False))
     except Exception:
         count = -1
     log_action(
@@ -1489,7 +1696,7 @@ def _map_identify_candidate_refs_to_metadata(
     cached_first: List[Tuple[int, int, str]] = []
     uncached: List[Tuple[int, int, str]] = []
     for serial, crop, box in valid:
-        is_cached = int(serial) in labeler_cache._cached_serials
+        is_cached = local_photos.has_local_photo(int(serial), force_refresh=False)
         if is_cached:
             cached_first.append((serial, crop, box))
         else:
@@ -1568,7 +1775,7 @@ def _fallback_refs_for_cat(
             sn = ent.get("serial")
             if sn is None:
                 return False
-            return int(sn) in labeler_cache._cached_serials
+            return local_photos.has_local_photo(int(sn), force_refresh=False)
 
         for ent in cropped:
             if _is_cached_entry(ent):
@@ -1898,6 +2105,135 @@ def _boxes_to_yolo_strings(boxes: List[Tuple[float, float, float, float]]) -> Li
     return out
 
 
+def _normalize_abs_polygons(
+    polygons: List[List[Tuple[float, float]]],
+    img_w: int,
+    img_h: int,
+) -> List[List[List[float]]]:
+    out: List[List[List[float]]] = []
+    w = max(1, int(img_w or 0))
+    h = max(1, int(img_h or 0))
+    for poly in list(polygons or []):
+        pts: List[List[float]] = []
+        for pt in list(poly or []):
+            try:
+                x, y = [float(v) for v in pt]
+            except Exception:
+                continue
+            pts.append([
+                round(max(0.0, min(1.0, x / float(w))), 5),
+                round(max(0.0, min(1.0, y / float(h))), 5),
+            ])
+        out.append(pts)
+    return out
+
+
+def _normalize_abs_mask_tiles(
+    tiles: List[Dict[str, Any]],
+    img_w: int,
+    img_h: int,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    w = max(1, int(img_w or 0))
+    h = max(1, int(img_h or 0))
+    for tile in list(tiles or []):
+        row = dict(tile or {})
+        png_b64 = str(row.get("png_b64") or "").strip()
+        if not png_b64:
+            out.append({})
+            continue
+        try:
+            x1 = float(row.get("x1"))
+            y1 = float(row.get("y1"))
+            x2 = float(row.get("x2"))
+            y2 = float(row.get("y2"))
+        except Exception:
+            out.append({})
+            continue
+        out.append({
+            "x1": round(max(0.0, min(1.0, x1 / float(w))), 5),
+            "y1": round(max(0.0, min(1.0, y1 / float(h))), 5),
+            "x2": round(max(0.0, min(1.0, x2 / float(w))), 5),
+            "y2": round(max(0.0, min(1.0, y2 / float(h))), 5),
+            "png_b64": png_b64,
+        })
+    return out
+
+
+def _box_area_xyxy(box: Tuple[float, float, float, float]) -> float:
+    x1, y1, x2, y2 = [float(v) for v in box]
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+def _box_delta_summary(
+    before: List[Tuple[float, float, float, float]],
+    after: List[Tuple[float, float, float, float]],
+) -> Dict[str, Any]:
+    pair_count = min(len(before), len(after))
+    shifted = 0
+    max_center_shift_px = 0.0
+    max_edge_shift_px = 0.0
+    max_area_ratio = 1.0
+    for idx in range(pair_count):
+        bx1, by1, bx2, by2 = [float(v) for v in before[idx]]
+        ax1, ay1, ax2, ay2 = [float(v) for v in after[idx]]
+        bcx = (bx1 + bx2) / 2.0
+        bcy = (by1 + by2) / 2.0
+        acx = (ax1 + ax2) / 2.0
+        acy = (ay1 + ay2) / 2.0
+        center_shift = ((acx - bcx) ** 2 + (acy - bcy) ** 2) ** 0.5
+        edge_shift = max(
+            abs(ax1 - bx1),
+            abs(ay1 - by1),
+            abs(ax2 - bx2),
+            abs(ay2 - by2),
+        )
+        before_area = _box_area_xyxy(before[idx])
+        after_area = _box_area_xyxy(after[idx])
+        area_ratio = (after_area / before_area) if before_area > 0 else 1.0
+        if center_shift >= 1.0 or edge_shift >= 1.0 or abs(area_ratio - 1.0) >= 0.02:
+            shifted += 1
+        max_center_shift_px = max(max_center_shift_px, center_shift)
+        max_edge_shift_px = max(max_edge_shift_px, edge_shift)
+        max_area_ratio = max(max_area_ratio, area_ratio)
+    return {
+        "pairs": int(pair_count),
+        "shifted": int(shifted),
+        "max_center_shift_px": round(float(max_center_shift_px), 2),
+        "max_edge_shift_px": round(float(max_edge_shift_px), 2),
+        "max_area_ratio": round(float(max_area_ratio), 3),
+    }
+
+
+def _compact_refine_summary(summary: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(summary, dict):
+        return "sam=none"
+    selected = summary.get("selected") if isinstance(summary.get("selected"), dict) else {}
+    return (
+        f"boxes={int(summary.get('boxes') or 0)}; "
+        f"accepted={int(summary.get('accepted_boxes') or 0)}; "
+        f"fallback={int(summary.get('fallback_boxes') or 0)}; "
+        f"clipped={int(summary.get('clipped_boxes') or 0)}; "
+        f"guard_reject_boxes={int(summary.get('guard_reject_boxes') or 0)}; "
+        f"candidate_masks={int(summary.get('candidate_masks') or 0)}; "
+        f"accepted_masks={int(summary.get('accepted_masks') or 0)}; "
+        f"selected_tight={int(selected.get('tight') or 0)}; "
+        f"selected_iou={int(selected.get('iou') or 0)}; "
+        f"max_outside={float(summary.get('max_outside_guard_ratio') or 0.0):.3f}; "
+        f"max_cover={float(summary.get('max_detector_coverage') or 0.0):.3f}; "
+        f"max_area_ratio={float(summary.get('max_area_ratio') or 1.0):.3f}"
+    )
+
+
+def _compact_exception_diag(exc: BaseException, *, max_len: int = 160) -> Tuple[str, str]:
+    kind = str(type(exc).__name__ or "Exception")
+    text = str(exc or "").strip() or repr(exc)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > max_len:
+        text = text[: max_len - 3].rstrip() + "..."
+    return kind, text
+
+
 def _hash_cache_key(*parts: Any) -> str:
     h = hashlib.sha1()
     for part in parts:
@@ -2149,7 +2485,7 @@ async def _fetch_image_bytes_for_labeler(
 
     if serial_i is not None:
         try:
-            data = local_photos.read_local_photo_bytes(int(serial_i))
+            data = await asyncio.to_thread(local_photos.read_local_photo_bytes, int(serial_i))
         except Exception:
             data = None
     if data:
@@ -2709,9 +3045,13 @@ def _log_local_filter_throttled(mode: str, excluded: int, sample: List[int]) -> 
     )
 
 
-def _filter_queue_to_local(mode: str, items: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int, List[int]]:
+def _filter_queue_to_local(
+    mode: str,
+    items: List[Dict[str, Any]],
+    *,
+    local_serials_snapshot: Set[int],
+) -> Tuple[List[Dict[str, Any]], int, List[int]]:
     """Filter queue entries down to serials with locally available bytes."""
-    local_serials = local_photos.local_serials(force_refresh=False)
     out: List[Dict[str, Any]] = []
     excluded = 0
     sample: List[int] = []
@@ -2720,7 +3060,7 @@ def _filter_queue_to_local(mode: str, items: List[Dict[str, Any]]) -> Tuple[List
             sn = int(item.get("serial") or 0)
         except Exception:
             sn = 0
-        if sn > 0 and sn in local_serials:
+        if sn > 0 and sn in local_serials_snapshot:
             out.append(item)
             continue
         excluded += 1
@@ -2730,9 +3070,13 @@ def _filter_queue_to_local(mode: str, items: List[Dict[str, Any]]) -> Tuple[List
     return out, excluded, sample
 
 
-def _collect_local_missing_summary(rows: List[List[str]], *, sample_cap: int = _LOCAL_MISSING_SAMPLE_MAX) -> Dict[str, Any]:
+def _collect_local_missing_summary(
+    rows: List[List[str]],
+    *,
+    local_serials_snapshot: Set[int],
+    sample_cap: int = _LOCAL_MISSING_SAMPLE_MAX,
+) -> Dict[str, Any]:
     """Compare metadata serials against local index and return missing summary."""
-    local_serials = local_photos.local_serials(force_refresh=False)
     metadata_serials: Set[int] = set()
     missing: List[int] = []
     for row in rows[1:]:
@@ -2745,9 +3089,9 @@ def _collect_local_missing_summary(rows: List[List[str]], *, sample_cap: int = _
         if serial in metadata_serials:
             continue
         metadata_serials.add(serial)
-        if serial not in local_serials and len(missing) < int(max(1, sample_cap)):
+        if serial not in local_serials_snapshot and len(missing) < int(max(1, sample_cap)):
             missing.append(serial)
-    total_missing = max(0, len(metadata_serials) - len(local_serials.intersection(metadata_serials)))
+    total_missing = max(0, len(metadata_serials) - len(local_serials_snapshot.intersection(metadata_serials)))
     missing.sort()
     return {
         "total_missing": int(total_missing),
@@ -2775,11 +3119,12 @@ async def _get_photo_metadata_rows_async(*, force: bool = False, ttl_sec: Option
 async def get_queue_detect(request: web.Request) -> web.Response:
     """Return list of serials needing detector labels (empty BoxCoordinates)."""
     try:
-        _log_local_mode_once()
+        await _log_local_mode_once()
         _kickoff_boot_cache_warm_once()
         _kick_detector_warm_task()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
         rows = await _get_photo_metadata_rows_async(force=force)
+        local_serials_snapshot = await _local_serials_async(force_refresh=force)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
         def _parse_queue_detect_candidates(
@@ -2803,7 +3148,11 @@ async def get_queue_detect(request: web.Request) -> web.Response:
             return out_queue
 
         queue = _parse_queue_detect_candidates(rows, claims, user_id)
-        queue, local_excluded, local_sample = _filter_queue_to_local("detect", queue)
+        queue, local_excluded, local_sample = _filter_queue_to_local(
+            "detect",
+            queue,
+            local_serials_snapshot=local_serials_snapshot,
+        )
         total = len(queue)
         #Trigger background cache fill for first images in queue (throttled)
         _maybe_schedule_queue_cache_warm("detect", queue)
@@ -2819,10 +3168,11 @@ async def get_queue_classify(request: web.Request) -> web.Response:
     """Return serials with boxes but incomplete cat IDs."""
     try:
         global _queue_classify_slow_last_log_mono
-        _log_local_mode_once()
+        await _log_local_mode_once()
         _kickoff_boot_cache_warm_once()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
         rows = await _get_photo_metadata_rows_async(force=force)
+        local_serials_snapshot = await _local_serials_async(force_refresh=force)
         t0 = time.perf_counter()
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
@@ -2966,7 +3316,11 @@ async def get_queue_classify(request: web.Request) -> web.Response:
                     f"total_ms={elapsed_ms}; candidates={len(candidates)}; queue={len(queue)}; local_only={1 if local_photos.is_local_only() else 0}",
                 )
 
-        queue, local_excluded, local_sample = _filter_queue_to_local("classify", queue)
+        queue, local_excluded, local_sample = _filter_queue_to_local(
+            "classify",
+            queue,
+            local_serials_snapshot=local_serials_snapshot,
+        )
         queue.sort(key=lambda item: int(item.get("serial") or 0))
         total = len(queue)
         #Trigger background cache fill for first images in queue (throttled)
@@ -2990,10 +3344,11 @@ async def get_queue_classify(request: web.Request) -> web.Response:
 async def get_queue_manual(request: web.Request) -> web.Response:
     """Return serials with one or more crops marked NeedsReview."""
     try:
-        _log_local_mode_once()
+        await _log_local_mode_once()
         _kickoff_boot_cache_warm_once()
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
         rows = await _get_photo_metadata_rows_async(force=force)
+        local_serials_snapshot = await _local_serials_async(force_refresh=force)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
         def _parse_queue_manual_candidates(
@@ -3037,7 +3392,11 @@ async def get_queue_manual(request: web.Request) -> web.Response:
             return out_queue
 
         queue = _parse_queue_manual_candidates(rows, claims, user_id)
-        queue, local_excluded, local_sample = _filter_queue_to_local("manual", queue)
+        queue, local_excluded, local_sample = _filter_queue_to_local(
+            "manual",
+            queue,
+            local_serials_snapshot=local_serials_snapshot,
+        )
         total = len(queue)
         _maybe_schedule_queue_cache_warm("manual", queue)
         payload = {"queue": queue[:500], "total": total}
@@ -3053,7 +3412,12 @@ async def get_local_missing(request: web.Request) -> web.Response:
     try:
         force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
         rows = await _get_photo_metadata_rows_async(force=force, ttl_sec=60)
-        payload = _collect_local_missing_summary(rows, sample_cap=_LOCAL_MISSING_SAMPLE_MAX)
+        local_serials_snapshot = await _local_serials_async(force_refresh=force)
+        payload = _collect_local_missing_summary(
+            rows,
+            local_serials_snapshot=local_serials_snapshot,
+            sample_cap=_LOCAL_MISSING_SAMPLE_MAX,
+        )
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
         log_action("labeler_local_missing_error", "error", f"{type(e).__name__}: {e!r}")
@@ -3097,7 +3461,7 @@ async def get_image(request: web.Request) -> web.Response:
 async def get_cached_image(request: web.Request) -> web.Response:
     """Get image bytes for a serial from local storage or local cache."""
     try:
-        _log_local_mode_once()
+        await _log_local_mode_once()
         sn_str = request.match_info.get("sn", "")
         sn = _parse_serial(sn_str)
         if sn is None:
@@ -3268,8 +3632,17 @@ async def post_ui_diag(request: web.Request) -> web.Response:
             mode = str(data.get("mode") or "").strip().lower()[:24]
             serial = _parse_serial(str(data.get("serial") or ""))
             detail = str(data.get("detail") or data.get("details") or "").strip()
-            if len(detail) > 2000:
-                detail = detail[:2000]
+            if event == "transition_slow":
+                detail_obj: Dict[str, Any]
+                try:
+                    parsed = json.loads(detail) if detail else {}
+                    detail_obj = parsed if isinstance(parsed, dict) else {"detail": detail}
+                except Exception:
+                    detail_obj = {"detail": detail}
+                detail_obj["server"] = _labeler_runtime_snapshot()
+                detail = json.dumps(detail_obj, separators=(",", ":"))
+            if len(detail) > 8000:
+                detail = detail[:8000]
             user_id, actor = _actor_from_request(request)
             log_action(
                 f"labeler_ui_{event}",
@@ -3399,17 +3772,36 @@ async def post_detect(request: web.Request) -> web.Response:
         sem_wait_ms = 0.0
         image_source = "none"
         inline_sam_passes_requested = int(_DETECT_INLINE_SAM_PASSES)
-        
-        cache_key = _hash_cache_key("detect", serial_i or "", str(url or "").strip(), int(bool(fast)))
+
+        cache_key = _hash_cache_key(
+            "detect",
+            _DETECT_PIPELINE_VERSION,
+            serial_i or "",
+            str(url or "").strip(),
+            int(bool(fast)),
+        )
         cached_payload = _cache_get(_detect_result_cache, cache_key)
         if cached_payload is not None:
             cached_boxes = [
                 b for b in str(cached_payload.get("boxes_yolo") or "").split("|") if str(b).strip()
             ]
+            cached_raw_boxes = [
+                b for b in str(cached_payload.get("raw_boxes_yolo") or cached_payload.get("boxes_yolo") or "").split("|")
+                if str(b).strip()
+            ]
+            cached_diag = cached_payload.get("detect_diag") if isinstance(cached_payload.get("detect_diag"), dict) else {}
+            cached_payload["detect_diag"] = {
+                **dict(cached_diag or {}),
+                "served_rid": req_id,
+                "cache_hit": True,
+            }
             log_action(
                 "labeler_detect_cache_hit",
                 f"rid={req_id}; serial={serial_i}; prefetch={prefetch}; fast={fast}",
-                f"boxes={len(cached_boxes)}",
+                (
+                    f"boxes={len(cached_boxes)}; raw_boxes={len(cached_raw_boxes)}; "
+                    f"cached_compute_rid={str(cached_diag.get('compute_rid') or '')}"
+                ),
             )
             return _with_cors(web.json_response(cached_payload), request)
 
@@ -3455,37 +3847,28 @@ async def post_detect(request: web.Request) -> web.Response:
         acquired = False
         raw_boxes_abs: List[Tuple[float, float, float, float]] = []
         refined_boxes_abs: List[Tuple[float, float, float, float]] = []
+        refined_polygons_abs: List[List[Tuple[float, float]]] = []
+        refined_mask_tiles_abs: List[Dict[str, Any]] = []
         boxed_jpeg: bytes = b""
         sam_refined: bool = False
+        sam_summary: Dict[str, Any] = {}
+        working_image_size: Tuple[int, int] = (0, 0)
         try:
             t_sem = time.perf_counter()
-            if prefetch:
-                try:
-                    await asyncio.wait_for(_detect_sem.acquire(), timeout=0.05)
-                    acquired = True
-                    sem_wait_ms = (time.perf_counter() - t_sem) * 1000.0
-                except asyncio.TimeoutError:
-                    sem_wait_ms = (time.perf_counter() - t_sem) * 1000.0
-                    log_action(
-                        "labeler_detect_prefetch_skipped",
-                        f"rid={req_id}; serial={serial_i}; prefetch={prefetch}; fast={fast}",
-                        f"reason=busy; sem_wait_ms={int(round(sem_wait_ms))}",
-                    )
-                    return _with_cors(web.Response(status=429, text="Busy"), request)
-            else:
-                await _detect_sem.acquire()
-                acquired = True
-                sem_wait_ms = (time.perf_counter() - t_sem) * 1000.0
+            await _detect_sem.acquire()
+            acquired = True
+            sem_wait_ms = (time.perf_counter() - t_sem) * 1000.0
 
-            # Run YOLO once, then reuse that result even if SAM times out.
+            # Run YOLO once, then finish the same request with SAM before returning boxes.
             detect_timeout = _DETECT_PREFETCH_TIMEOUT_SEC if prefetch else _DETECT_TIMEOUT_SEC
             t_detect = time.perf_counter()
             detect_result = await asyncio.wait_for(
-                asyncio.to_thread(V.detect, image_bytes),
+                asyncio.to_thread(V.detect, image_bytes, include_boxed_image=False),
                 timeout=detect_timeout,
             )
             detect_ms = (time.perf_counter() - t_detect) * 1000.0
             boxed_jpeg = detect_result.boxed_jpeg or b""
+            working_image_size = tuple(getattr(detect_result, "image_size", ()) or ())
             raw_boxes_abs = []
             for r in getattr(detect_result, "results", []) or []:
                 box = (r or {}).get("box")
@@ -3497,10 +3880,12 @@ async def post_detect(request: web.Request) -> web.Response:
                     continue
                 raw_boxes_abs.append((x1, y1, x2, y2))
 
-            # Foreground full-feature detect: try bounded inline SAM refine on the YOLO boxes.
+            # Always finish detect items with SAM before surfacing boxes.
             refined_boxes_abs = list(raw_boxes_abs)
-            if (not fast) and (not prefetch) and raw_boxes_abs:
-                iw, ih = _vision_working_image_size(image_bytes)
+            if len(working_image_size) != 2 or int(working_image_size[0]) <= 0 or int(working_image_size[1]) <= 0:
+                working_image_size = await asyncio.to_thread(_vision_working_image_size, image_bytes)
+            if (not fast) and raw_boxes_abs:
+                iw, ih = [int(v) for v in working_image_size]
                 yolo_boxes: List[Tuple[float, float, float, float]] = []
                 for (x1, y1, x2, y2) in raw_boxes_abs:
                     cx = (x1 + x2) / 2 / iw
@@ -3510,22 +3895,51 @@ async def post_detect(request: web.Request) -> web.Response:
                     yolo_boxes.append((cx, cy, w, h))
                 try:
                     sam_timeout = max(1.0, float(_DETECT_INLINE_SAM_TIMEOUT_SEC))
-                    refined_boxes_abs = await asyncio.wait_for(
+                    refine_result = await asyncio.wait_for(
                         asyncio.to_thread(
-                            V.refine_boxes,
+                            V.refine_boxes_with_diagnostics,
                             image_bytes,
                             yolo_boxes,
                             passes=int(inline_sam_passes_requested),
                         ),
                         timeout=sam_timeout,
                     )
+                    refined_boxes_abs = list(refine_result.boxes or raw_boxes_abs)
+                    refined_polygons_abs = list(refine_result.polygons or [])
+                    refined_mask_tiles_abs = list(refine_result.mask_tiles or [])
+                    sam_summary = dict(refine_result.summary or {})
                     sam_refined = True
-                except Exception:
-                    # Keep YOLO boxes if inline SAM refine fails or times out.
-                    refined_boxes_abs = list(raw_boxes_abs)
-            elif (not fast) and (not prefetch):
+                except Exception as e:
+                    error_kind, error_text = _compact_exception_diag(e)
+                    log_action(
+                        "labeler_detect_inline_sam_error",
+                        f"rid={req_id}; serial={serial_i}; prefetch={prefetch}; fast={fast}",
+                        (
+                            f"reason={error_kind}; msg={error_text}; boxes={len(raw_boxes_abs)}; "
+                            f"passes={int(inline_sam_passes_requested)}; timeout_sec={sam_timeout:.1f}"
+                        ),
+                    )
+                    if isinstance(e, asyncio.TimeoutError):
+                        raise web.HTTPGatewayTimeout(text="Detect SAM refine timed out")
+                    raise web.HTTPServiceUnavailable(text="Detect SAM refine failed")
+            elif not fast:
                 # No boxes to refine still counts as full detect path.
                 sam_refined = True
+                sam_summary = {
+                    "passes": int(inline_sam_passes_requested),
+                    "boxes": 0,
+                    "accepted_boxes": 0,
+                    "fallback_boxes": 0,
+                    "clipped_boxes": 0,
+                    "guard_reject_boxes": 0,
+                    "candidate_masks": 0,
+                    "accepted_masks": 0,
+                    "selected": {"tight": 0, "iou": 0, "fallback": 0},
+                    "max_outside_guard_ratio": 0.0,
+                    "max_detector_coverage": 0.0,
+                    "max_area_ratio": 1.0,
+                    "samples": [],
+                }
         finally:
             if acquired:
                 _detect_sem.release()
@@ -3535,8 +3949,18 @@ async def post_detect(request: web.Request) -> web.Response:
         boxed_b64 = base64.b64encode(boxed_jpeg).decode("ascii") if boxed_jpeg else ""
         
         #Convert boxes to YOLO normalized format (cx, cy, w, h)
-        iw, ih = _vision_working_image_size(image_bytes)
-        
+        if len(working_image_size) != 2 or int(working_image_size[0]) <= 0 or int(working_image_size[1]) <= 0:
+            working_image_size = await asyncio.to_thread(_vision_working_image_size, image_bytes)
+        iw, ih = [int(v) for v in working_image_size]
+
+        raw_yolo_boxes = []
+        for (x1, y1, x2, y2) in raw_boxes_abs:
+            cx = (x1 + x2) / 2 / iw
+            cy = (y1 + y2) / 2 / ih
+            w = (x2 - x1) / iw
+            h = (y2 - y1) / ih
+            raw_yolo_boxes.append(f"{cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+
         yolo_boxes = []
         boxes_out = refined_boxes_abs if refined_boxes_abs else raw_boxes_abs
         for (x1, y1, x2, y2) in boxes_out:
@@ -3545,13 +3969,36 @@ async def post_detect(request: web.Request) -> web.Response:
             w = (x2 - x1) / iw
             h = (y2 - y1) / ih
             yolo_boxes.append(f"{cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
-        
+        if len(refined_polygons_abs) < len(yolo_boxes):
+            refined_polygons_abs.extend([[] for _ in range(len(yolo_boxes) - len(refined_polygons_abs))])
+        sam_polygons = _normalize_abs_polygons(refined_polygons_abs[:len(yolo_boxes)], iw, ih)
+        if len(refined_mask_tiles_abs) < len(yolo_boxes):
+            refined_mask_tiles_abs.extend([{} for _ in range(len(yolo_boxes) - len(refined_mask_tiles_abs))])
+        sam_mask_tiles = _normalize_abs_mask_tiles(refined_mask_tiles_abs[:len(yolo_boxes)], iw, ih)
+
+        box_delta = _box_delta_summary(raw_boxes_abs, boxes_out)
+        detect_diag = {
+            "compute_rid": req_id,
+            "served_rid": req_id,
+            "cache_hit": False,
+            "image_source": image_source,
+            "raw_box_count": int(len(raw_boxes_abs)),
+            "out_box_count": int(len(yolo_boxes)),
+            "sam_refined": bool(sam_refined),
+            "sam_summary": dict(sam_summary or {}),
+            "box_delta": box_delta,
+        }
         payload = {
             "boxed_image": boxed_b64,
             "boxes": yolo_boxes,
             "boxes_yolo": "|".join(yolo_boxes),
+            "raw_boxes": raw_yolo_boxes,
+            "raw_boxes_yolo": "|".join(raw_yolo_boxes),
+            "sam_polygons": sam_polygons,
+            "sam_mask_tiles": sam_mask_tiles,
             "sam_refined": bool(sam_refined),
             "sam_inline_passes_requested": int(inline_sam_passes_requested),
+            "detect_diag": detect_diag,
         }
         _cache_set(
             _detect_result_cache,
@@ -3567,10 +4014,16 @@ async def post_detect(request: web.Request) -> web.Response:
                 f"ms total={int(round(total_ms))} img={int(round(image_ms))} sem={int(round(sem_wait_ms))} "
                 f"detect={int(round(detect_ms))}; src={image_source}; raw_boxes={len(raw_boxes_abs)}; "
                 f"out_boxes={len(yolo_boxes)}; sam_refined={int(bool(sam_refined))}; "
-                f"sam_passes={int(inline_sam_passes_requested)}"
+                f"sam_passes={int(inline_sam_passes_requested)}; "
+                f"delta_shifted={int(box_delta.get('shifted') or 0)}; "
+                f"delta_max_center_px={float(box_delta.get('max_center_shift_px') or 0.0):.2f}; "
+                f"delta_max_edge_px={float(box_delta.get('max_edge_shift_px') or 0.0):.2f}; "
+                f"sam=[{_compact_refine_summary(sam_summary)}]"
             ),
         )
         return _with_cors(web.json_response(payload), request)
+    except web.HTTPException as e:
+        return _with_cors(web.Response(status=e.status, text=str(e.text or e.reason or "Request failed")), request)
     except Exception as e:
         log_action("labeler_detect_error", "error", f"{type(e).__name__}: {e!r}")
         return _internal_error_response(request)
@@ -3586,10 +4039,21 @@ async def post_refine(request: web.Request) -> web.Response:
         passes = int(data.get("passes") or 1)
         prefetch = bool(data.get("prefetch"))
         serial_i = _parse_serial(str(serial or ""))
+        req_id = _hash_cache_key(
+            "refine_req",
+            time.time_ns(),
+            serial_i or "",
+            str(url or "").strip(),
+            int(passes),
+            int(bool(prefetch)),
+            "|".join(str(b).strip() for b in list(boxes_raw or [])),
+        )[:10]
+        t_req = time.perf_counter()
 
         boxes_sig = "|".join(str(b).strip() for b in boxes_raw)
         cache_key = _hash_cache_key(
             "refine",
+            _REFINE_PIPELINE_VERSION,
             serial_i or "",
             str(url or "").strip(),
             int(passes),
@@ -3597,6 +4061,20 @@ async def post_refine(request: web.Request) -> web.Response:
         )
         cached_payload = _cache_get(_refine_result_cache, cache_key)
         if cached_payload is not None:
+            cached_diag = cached_payload.get("refine_diag") if isinstance(cached_payload.get("refine_diag"), dict) else {}
+            cached_payload["refine_diag"] = {
+                **dict(cached_diag or {}),
+                "served_rid": req_id,
+                "cache_hit": True,
+            }
+            log_action(
+                "labeler_refine_cache_hit",
+                f"rid={req_id}; serial={serial_i}; prefetch={prefetch}; passes={passes}",
+                (
+                    f"boxes={len([b for b in str(cached_payload.get('boxes_yolo') or '').split('|') if str(b).strip()])}; "
+                    f"cached_compute_rid={str(cached_diag.get('compute_rid') or '')}"
+                ),
+            )
             return _with_cors(web.json_response(cached_payload), request)
 
         boxes: List[Tuple[float, float, float, float]] = []
@@ -3632,7 +4110,39 @@ async def post_refine(request: web.Request) -> web.Response:
                 payload = {
                     "boxes": yolo_boxes,
                     "boxes_yolo": "|".join(yolo_boxes),
+                    "sam_polygons": [[] for _ in range(len(yolo_boxes))],
+                    "sam_mask_tiles": [{} for _ in range(len(yolo_boxes))],
                     "fallback": "passthrough_no_image",
+                    "refine_diag": {
+                        "compute_rid": req_id,
+                        "served_rid": req_id,
+                        "cache_hit": False,
+                        "input_box_count": int(len(boxes)),
+                        "out_box_count": int(len(yolo_boxes)),
+                        "box_delta": {
+                            "pairs": int(len(boxes)),
+                            "shifted": 0,
+                            "max_center_shift_px": 0.0,
+                            "max_edge_shift_px": 0.0,
+                            "max_area_ratio": 1.0,
+                        },
+                        "sam_summary": {
+                            "passes": int(max(1, passes)),
+                            "boxes": int(len(boxes)),
+                            "accepted_boxes": 0,
+                            "fallback_boxes": int(len(boxes)),
+                            "clipped_boxes": 0,
+                            "guard_reject_boxes": 0,
+                            "candidate_masks": 0,
+                            "accepted_masks": 0,
+                            "selected": {"tight": 0, "iou": 0, "fallback": int(len(boxes))},
+                            "max_outside_guard_ratio": 0.0,
+                            "max_detector_coverage": 0.0,
+                            "max_area_ratio": 1.0,
+                            "samples": [{"box_index": 0, "selected": "fallback", "reason": "passthrough_no_image"}]
+                            if boxes else [],
+                        },
+                    },
                 }
                 _cache_set(
                     _refine_result_cache,
@@ -3644,32 +4154,36 @@ async def post_refine(request: web.Request) -> web.Response:
             return _with_cors(web.Response(status=400, text="No image available"), request)
 
         acquired = False
+        sam_summary: Dict[str, Any] = {}
+        refined: List[Tuple[float, float, float, float]] = []
+        refined_polygons_abs: List[List[Tuple[float, float]]] = []
+        refined_mask_tiles_abs: List[Dict[str, Any]] = []
         try:
-            if prefetch:
-                try:
-                    await asyncio.wait_for(_refine_sem.acquire(), timeout=0.05)
-                    acquired = True
-                except asyncio.TimeoutError:
-                    return _with_cors(web.Response(status=429, text="Busy"), request)
-            else:
-                await _refine_sem.acquire()
-                acquired = True
+            await _refine_sem.acquire()
+            acquired = True
 
             try:
-                refined = await asyncio.wait_for(
-                    asyncio.to_thread(V.refine_boxes, image_bytes, boxes, passes=passes),
+                refine_result = await asyncio.wait_for(
+                    asyncio.to_thread(V.refine_boxes_with_diagnostics, image_bytes, boxes, passes=passes),
                     timeout=(_REFINE_PREFETCH_TIMEOUT_SEC if prefetch else _REFINE_TIMEOUT_SEC),
                 )
-            except Exception:
-                #Fallback to original boxes if SAM refine fails or times out
-                iw, ih = _vision_working_image_size(image_bytes)
-                refined = []
-                for (cx, cy, w, h) in boxes:
-                    x1 = (cx - w / 2) * iw
-                    y1 = (cy - h / 2) * ih
-                    x2 = (cx + w / 2) * iw
-                    y2 = (cy + h / 2) * ih
-                    refined.append((x1, y1, x2, y2))
+                refined = list(refine_result.boxes or [])
+                refined_polygons_abs = list(refine_result.polygons or [])
+                refined_mask_tiles_abs = list(refine_result.mask_tiles or [])
+                sam_summary = dict(refine_result.summary or {})
+            except Exception as e:
+                error_kind, error_text = _compact_exception_diag(e)
+                log_action(
+                    "labeler_refine_error_stage",
+                    f"rid={req_id}; serial={serial_i}; prefetch={prefetch}; passes={passes}",
+                    (
+                        f"reason={error_kind}; msg={error_text}; boxes={len(boxes)}; "
+                        f"timeout_sec={(_REFINE_PREFETCH_TIMEOUT_SEC if prefetch else _REFINE_TIMEOUT_SEC):.1f}"
+                    ),
+                )
+                if isinstance(e, asyncio.TimeoutError):
+                    raise web.HTTPGatewayTimeout(text="SAM refine timed out")
+                raise web.HTTPServiceUnavailable(text="SAM refine failed")
         finally:
             if acquired:
                 _refine_sem.release()
@@ -3682,10 +4196,35 @@ async def post_refine(request: web.Request) -> web.Response:
             w = (x2 - x1) / iw
             h = (y2 - y1) / ih
             yolo_boxes.append(f"{cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+        if len(refined_polygons_abs) < len(yolo_boxes):
+            refined_polygons_abs.extend([[] for _ in range(len(yolo_boxes) - len(refined_polygons_abs))])
+        sam_polygons = _normalize_abs_polygons(refined_polygons_abs[:len(yolo_boxes)], iw, ih)
+        if len(refined_mask_tiles_abs) < len(yolo_boxes):
+            refined_mask_tiles_abs.extend([{} for _ in range(len(yolo_boxes) - len(refined_mask_tiles_abs))])
+        sam_mask_tiles = _normalize_abs_mask_tiles(refined_mask_tiles_abs[:len(yolo_boxes)], iw, ih)
 
+        input_boxes_abs: List[Tuple[float, float, float, float]] = []
+        for (cx, cy, w, h) in boxes:
+            x1 = (cx - w / 2) * iw
+            y1 = (cy - h / 2) * ih
+            x2 = (cx + w / 2) * iw
+            y2 = (cy + h / 2) * ih
+            input_boxes_abs.append((x1, y1, x2, y2))
+        box_delta = _box_delta_summary(input_boxes_abs, refined)
         payload = {
             "boxes": yolo_boxes,
             "boxes_yolo": "|".join(yolo_boxes),
+            "sam_polygons": sam_polygons,
+            "sam_mask_tiles": sam_mask_tiles,
+            "refine_diag": {
+                "compute_rid": req_id,
+                "served_rid": req_id,
+                "cache_hit": False,
+                "input_box_count": int(len(boxes)),
+                "out_box_count": int(len(yolo_boxes)),
+                "box_delta": box_delta,
+                "sam_summary": dict(sam_summary or {}),
+            },
         }
         _cache_set(
             _refine_result_cache,
@@ -3693,7 +4232,21 @@ async def post_refine(request: web.Request) -> web.Response:
             payload,
             max_items=_REFINE_RESULT_CACHE_MAX,
         )
+        total_ms = (time.perf_counter() - t_req) * 1000.0
+        log_action(
+            "labeler_refine_done",
+            f"rid={req_id}; serial={serial_i}; prefetch={prefetch}; passes={passes}",
+            (
+                f"ms={int(round(total_ms))}; in_boxes={len(boxes)}; out_boxes={len(yolo_boxes)}; "
+                f"delta_shifted={int(box_delta.get('shifted') or 0)}; "
+                f"delta_max_center_px={float(box_delta.get('max_center_shift_px') or 0.0):.2f}; "
+                f"delta_max_edge_px={float(box_delta.get('max_edge_shift_px') or 0.0):.2f}; "
+                f"sam=[{_compact_refine_summary(sam_summary)}]"
+            ),
+        )
         return _with_cors(web.json_response(payload), request)
+    except web.HTTPException as e:
+        return _with_cors(web.Response(status=e.status, text=str(e.text or e.reason or "Request failed")), request)
     except Exception as e:
         log_action("labeler_refine_error", "error", f"{type(e).__name__}: {e!r}")
         return _internal_error_response(request)
@@ -3719,23 +4272,23 @@ async def post_identify(request: web.Request) -> web.Response:
         except Exception:
             focus_crop_idx = None
         serial_i = _parse_serial(str(serial or ""))
+        try:
+            await V.warm_labeler_refs(force=False)
+        except Exception:
+            pass
         refs_per_full = max(1, int(getattr(settings, "labeler_ref_per_candidate", 5) or 5))
-        refs_per_prefetch_default = refs_per_full
-        refs_per = max(
-            1,
-            int(getattr(settings, "labeler_ref_per_candidate_prefetch", refs_per_prefetch_default) or refs_per_prefetch_default),
-        ) if prefetch else refs_per_full
+        refs_per = refs_per_full
         refs_per_target = int(refs_per)
         # Ask for a slightly deeper pool so filtered or broken refs do not leave
         # visible gaps in the UI.
         refs_per_keep = max(refs_per_target, refs_per_target + 4)
-        # Prefetch uses the same deeper pool because hidden refs can consume
-        # visible slots until the next foreground refresh.
-        refs_per_query = max(
-            refs_per_keep,
-            refs_per_target * (3 if (not prefetch) else 2),
+        refs_per_query = (
+            max(1, int(_IDENTIFY_PREFETCH_REFS_PER_CANDIDATE))
+            if prefetch
+            else max(refs_per_keep, refs_per_target * 3)
         )
         top_k = max(1, int(getattr(settings, "labeler_top_k", 9) or 9))
+        include_ref_thumbs = not prefetch
 
         boxes_sig = "|".join(str(b).strip() for b in boxes_raw)
         req_id = _hash_cache_key(
@@ -3744,7 +4297,9 @@ async def post_identify(request: web.Request) -> web.Response:
             serial_i or "",
             str(url or "").strip(),
             int(bool(prefetch)),
-            focus_crop_idx if (not prefetch and focus_crop_idx is not None) else "",
+            int(refs_per_query),
+            int(bool(include_ref_thumbs)),
+            focus_crop_idx if (focus_crop_idx is not None) else "",
             boxes_sig,
         )[:10]
         trace_identify = _identify_should_trace(prefetch)
@@ -3780,8 +4335,9 @@ async def post_identify(request: web.Request) -> web.Response:
             str(url or "").strip(),
             int(bool(rerank)),
             int(top_k),
-            int(refs_per_target),
-            focus_crop_idx if (not prefetch and focus_crop_idx is not None) else "",
+            int(refs_per_query),
+            int(bool(include_ref_thumbs)),
+            focus_crop_idx if (focus_crop_idx is not None) else "",
             boxes_sig,
         )
         cached_payload = _cache_get(_identify_result_cache, cache_key)
@@ -3792,7 +4348,7 @@ async def post_identify(request: web.Request) -> web.Response:
                     "labeler_identify_cache_hit",
                     f"rid={req_id}; serial={serial_i}; prefetch={prefetch}",
                     (
-                        f"boxes={len(boxes_raw)}; top_k={top_k}; refs_per={refs_per_target}; "
+                        f"boxes={len(boxes_raw)}; top_k={top_k}; refs_per={refs_per_query}; thumbs={int(bool(include_ref_thumbs))}; "
                         f"crops={stats['crops']}; cands={stats['cands']}; "
                         f"with_refs={stats['with_refs']}; zero_refs={stats['zero_refs']}; "
                         f"avg_refs={stats['avg_refs']}; inline_refs={stats['inline_refs']}; "
@@ -3804,7 +4360,7 @@ async def post_identify(request: web.Request) -> web.Response:
 
         singleflight_future, singleflight_owner = await _identify_singleflight_enter(cache_key)
         if not singleflight_owner:
-            wait_timeout = min(3.0, _IDENTIFY_PREFETCH_TIMEOUT_SEC) if prefetch else max(75.0, _IDENTIFY_TIMEOUT_SEC + 30.0)
+            wait_timeout = min(10.0, _IDENTIFY_PREFETCH_TIMEOUT_SEC) if prefetch else max(75.0, _IDENTIFY_TIMEOUT_SEC + 30.0)
             t_wait = time.perf_counter()
             try:
                 shared = await asyncio.wait_for(asyncio.shield(singleflight_future), timeout=wait_timeout)
@@ -3905,7 +4461,8 @@ async def post_identify(request: web.Request) -> web.Response:
                     f"rid={req_id}; serial={serial_i}; prefetch={prefetch}",
                     (
                         f"raw_boxes={len(boxes_raw)}; parsed_boxes={len(boxes)}; "
-                        f"top_k={top_k}; refs_per={refs_per_target}; rerank={int(bool(rerank))}; "
+                        f"top_k={top_k}; refs_per={refs_per_query}; thumbs={int(bool(include_ref_thumbs))}; "
+                        f"rerank={int(bool(rerank))}; "
                         f"focus={focus_crop_idx if focus_crop_idx is not None else -1}; "
                         f"img_src={image_source}; img_ms={int(round(image_fetch_ms))}; "
                         f"sf_wait_ms={int(round(singleflight_wait_ms))}"
@@ -3913,30 +4470,14 @@ async def post_identify(request: web.Request) -> web.Response:
                 )
 
             # Run identify on provided boxes (normalized cx,cy,w,h).
-            # Prefetch requests should never monopolize worker capacity.
             acquired = False
             try:
                 t_sem_wait = time.perf_counter()
-                if prefetch:
-                    try:
-                        await asyncio.wait_for(_identify_sem.acquire(), timeout=0.05)
-                        acquired = True
-                        sem_wait_ms = (time.perf_counter() - t_sem_wait) * 1000.0
-                    except asyncio.TimeoutError:
-                        sem_wait_ms = (time.perf_counter() - t_sem_wait) * 1000.0
-                        if trace_identify:
-                            log_action(
-                                "labeler_identify_prefetch_skipped",
-                                f"rid={req_id}; serial={serial_i}; prefetch={prefetch}",
-                                f"reason=busy; sem_wait_ms={int(round(sem_wait_ms))}",
-                            )
-                        return _with_cors(web.Response(status=429, text="Busy"), request)
-                else:
-                    await _identify_sem.acquire()
-                    acquired = True
-                    sem_wait_ms = (time.perf_counter() - t_sem_wait) * 1000.0
+                await _identify_sem.acquire()
+                acquired = True
+                sem_wait_ms = (time.perf_counter() - t_sem_wait) * 1000.0
 
-                timeout_sec = (min(8.0, _IDENTIFY_PREFETCH_TIMEOUT_SEC) if prefetch else _IDENTIFY_TIMEOUT_SEC)
+                timeout_sec = (_IDENTIFY_PREFETCH_TIMEOUT_SEC if prefetch else _IDENTIFY_TIMEOUT_SEC)
                 t_identify = time.perf_counter()
                 result = await asyncio.wait_for(
                     asyncio.to_thread(
@@ -3946,10 +4487,8 @@ async def post_identify(request: web.Request) -> web.Response:
                         rerank=rerank,
                         top_k=top_k,
                         refs_per=refs_per_query,
-                        # Prefetch should also include inline thumbs so the next-up
-                        # classify item can render refs without a foreground ref-crop
-                        # catch-up burst.
-                        include_ref_thumbs=True,
+                        include_ref_thumbs=include_ref_thumbs,
+                        focus_crop_idx=focus_crop_idx,
                     ),
                     timeout=timeout_sec,
                 )
@@ -4101,7 +4640,8 @@ async def post_identify(request: web.Request) -> web.Response:
                         f"ms total={int(round(total_ms))} img={int(round(image_fetch_ms))} "
                         f"sem={int(round(sem_wait_ms))} id={int(round(identify_ms))} "
                         f"enrich={int(round(enrich_ms))} metadata_refs={int(round(metadata_ref_ms))}; "
-                        f"src={image_source}; crops={stats['crops']}; cands={stats['cands']}; "
+                        f"src={image_source}; refs_per={refs_per_query}; thumbs={int(bool(include_ref_thumbs))}; "
+                        f"crops={stats['crops']}; cands={stats['cands']}; "
                         f"with_refs={stats['with_refs']}; zero_refs={stats['zero_refs']}; "
                         f"avg_refs={stats['avg_refs']}; max_refs={stats['max_refs']}; "
                         f"inline_refs={stats['inline_refs']}; url_refs={stats['url_refs']}; "
@@ -4625,7 +5165,7 @@ async def options_handler(request: web.Request) -> web.Response:
 
 async def kickoff_boot_cache_warm_startup() -> None:
     """Startup hook: fire-and-forget boot cache warming if enabled."""
-    _log_local_mode_once()
+    await _log_local_mode_once()
     _kickoff_boot_cache_warm_once()
 
 

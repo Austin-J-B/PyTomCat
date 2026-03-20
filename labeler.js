@@ -34,19 +34,20 @@
     const ZOOM_MAX = 6.0;
     const ZOOM_STEP = 0.12;
     const PREFETCH_AHEAD = 6;
-    const PREFETCH_CONCURRENCY = 2;
+    const PREFETCH_CONCURRENCY = 1;
     const IMAGE_PREFETCH_AHEAD = 3;
     const IMAGE_PREFETCH_AHEAD_CLASSIFY = 5;
     const IMAGE_PREFETCH_PARALLEL = 3;
     const IMAGE_PREFETCH_RESTART_MS = 60000;
     const IMAGE_PREFETCH_AHEAD_DETECT = 4;
-    const DETECT_PREFETCH_CONCURRENCY = 3;
-    const DETECT_PREFETCH_COOLDOWN_MS = 8000;
-    const DETECT_REFINE_PREFETCH_AHEAD = 12;
+    const DETECT_PREFETCH_CONCURRENCY = 1;
+    const DETECT_PREFETCH_COOLDOWN_MS = 1000;
+    const DETECT_REFINE_PREFETCH_AHEAD = 0;
     const DETECT_REFINE_COOLDOWN_MS = 12000;
     const ACTION_COOLDOWN_MS = 250;
-    const API_POST_TIMEOUT_MS = 45000;
+    const API_POST_TIMEOUT_MS = 90000;
     const API_PREFETCH_TIMEOUT_MS = 15000;
+    const DETECT_PREFETCH_TIMEOUT_MS = 90000;
     const CLAIM_HEARTBEAT_MS = 15000;
     const CLAIM_ACQUIRE_TIMEOUT_MS = 10000;
     const CLAIM_PRECLAIM_TIMEOUT_MS = 8000;
@@ -55,7 +56,9 @@
     const SESSION_WARM_TARGET = 15;
     const SESSION_WARM_TICK_MS = 333;
     const SESSION_REFRESH_QUEUES_MS = 30000;
-    const DETECTOR_PREFETCH_REFINE_PASSES = 2;
+    const DETECTOR_AUTO_REFINE_PASSES = 1;
+    const DETECTOR_PREFETCH_REFINE_PASSES = 1;
+    const DETECTOR_MANUAL_REFINE_PASSES = 2;
     const INITIAL_DETECT_WARM_WINDOW = 25;
 
     // Detect has smaller crops, classify has complex bounding boxes requiring caching
@@ -67,8 +70,10 @@
     const INITIAL_CLASSIFY_WARM_MIN = 3;
     const INITIAL_CLASSIFY_WARM_TIMEOUT_MS = 20000;
     const ITEM_READY_WAIT_TIMEOUT_MS = 90000;
-    const DETECT_READY_WAIT_TIMEOUT_MS = 30000;
-    const CLASSIFY_READY_WAIT_TIMEOUT_MS = 2500;
+    const DETECT_READY_WAIT_TIMEOUT_MS = 60000;
+    const CLASSIFY_READY_WAIT_TIMEOUT_MS = 6000;
+    const CLASSIFY_WARM_JOIN_TIMEOUT_MS = 12000;
+    const CLASSIFY_PREFETCH_TIMEOUT_MS = 30000;
     const READY_WAIT_DIAG_INTERVAL_MS = 2000;
     const API_RETRY_MAX_ATTEMPTS = 3;
     const API_RETRY_BASE_MS = 280;
@@ -81,10 +86,11 @@
     const CLASSIFY_REF_RETRY_ATTEMPTS = 2;
     const CLASSIFY_REF_REFRESH_COOLDOWN_MS = 2800;
     const CLASSIFY_WARM_PREFETCH_MAX_CROPS = 1;
-    const CLASSIFY_WARM_PREFETCH_MAX_CANDIDATES = 6;
-    const CLASSIFY_WARM_PREFETCH_MAX_REFS = 3;
-    const CLASSIFY_PREFETCH_FAIL_BASE_MS = 5000;
-    const CLASSIFY_PREFETCH_FAIL_MAX_MS = 120000;
+    const CLASSIFY_WARM_PREFETCH_MAX_CANDIDATES = 3;
+    const CLASSIFY_WARM_PREFETCH_MAX_REFS = 2;
+    const CLASSIFY_REF_CACHE_VERSION = 'classify_refs_v2';
+    const CLASSIFY_PREFETCH_FAIL_BASE_MS = 1500;
+    const CLASSIFY_PREFETCH_FAIL_MAX_MS = 30000;
     const CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS = 30000;
     const MANUAL_REF_CACHE_VERSION = 'manual_refs_v1';
     const FLAGGED_REF_SERIALS_STORAGE_KEY = 'labelerFlaggedRefSerials_v1';
@@ -310,6 +316,7 @@
     let currentImageUrl = null;
     let currentItem = null;
     let currentBoxes = []; //Array of {x, y, w, h} in normalized coords
+    let currentSamMaskTiles = [];
     let selectedBoxIdx = 0;
     let currentLabels = []; //Array of cat names per box
     let currentCropIdx = 0;
@@ -366,6 +373,7 @@
     let refImageRetryTimers = new Map();
     let refRenderRefreshTimer = null;
     let detectPrefetch = new Map();
+    let samMaskImageCache = new Map();
     let detectWarmFailures = new Map();
     let detectPrefetchInFlight = new Set();
     let detectPrefetchRunning = false;
@@ -413,6 +421,7 @@
     let classifyRefRefreshTs = new Map();
     let classifyRefRefreshInFlight = new Map();
     let classifyPrefetchFailures = new Map();
+    let classifyRefWarmStarted = false;
     let manualCandidates = [];
     let manualReviewIndices = [];
     let manualReviewCursor = 0;
@@ -718,6 +727,7 @@
         startRetrainStatusPoll();
         togglePrefetchTimer(true);
         startWarmLoop();
+        warmClassifierRefCache();
 
         //Load initial queue
         loadQueue({ forceRefresh: true });
@@ -784,11 +794,34 @@
         togglePrefetchTimer(true);
         startWarmLoop();
         if (mode === 'classify') {
-            // Do not trigger heavy global ref warm here; classify must stay foreground-first.
+            warmClassifierRefCache();
         } else if (mode === 'manual') {
             warmManualRefCache();
         }
         loadQueue({ forceRefresh: false });
+    }
+
+    async function warmClassifierRefCache() {
+        if (classifyRefWarmStarted) return;
+        classifyRefWarmStarted = true;
+        try {
+            const needsForce = (() => {
+                try {
+                    return localStorage.getItem('labelerClassifyRefCacheVersion') !== CLASSIFY_REF_CACHE_VERSION;
+                } catch (e) {
+                    return true;
+                }
+            })();
+            await apiPost('/api/labeler/refs/warm', { force: needsForce });
+            try {
+                localStorage.setItem('labelerClassifyRefCacheVersion', CLASSIFY_REF_CACHE_VERSION);
+            } catch (e) {
+                // Ignore storage errors.
+            }
+        } catch (e) {
+            classifyRefWarmStarted = false;
+            console.warn('[Labeler] Classify ref cache warm failed:', e);
+        }
     }
 
     async function warmManualRefCache() {
@@ -982,7 +1015,8 @@
         const prefetch = !!opts.prefetch;
         const focusCropIdxNum = Number(opts.focusCropIdx);
         const hasFocusCropIdx = Number.isInteger(focusCropIdxNum) && focusCropIdxNum >= 0;
-        const key = prefetch ? '' : getPredCacheKey(item);
+        const keyBase = getPredCacheKey(item);
+        const key = keyBase ? `${keyBase}|focus=${hasFocusCropIdx ? focusCropIdxNum : 'all'}` : '';
         if (key && classifyForegroundInFlight.has(key)) {
             return classifyForegroundInFlight.get(key);
         }
@@ -993,7 +1027,7 @@
             prefetch,
             rerank: false,
         };
-        if (!prefetch && hasFocusCropIdx) {
+        if (hasFocusCropIdx) {
             payload.focus_crop_idx = focusCropIdxNum;
         }
         const reqPromise = apiPost('/api/labeler/identify', payload, opts);
@@ -1550,51 +1584,69 @@
         const requestSerial = currentSerial;
         const requestKey = getPredCacheKey(currentItem);
         const startedAt = Date.now();
+        const expire = startedAt + CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS;
 
-        const tick = async () => {
-            while (labelerActive && labelerMode === 'classify') {
-                if (token !== classifyItemLoadOverlayToken) return;
-                if (requestSerial !== currentSerial) return;
-                if (requestKey !== getPredCacheKey(currentItem)) return;
-                if (_isCurrentClassifyItemDisplayReady()) {
-                    if (token === classifyItemLoadOverlayToken) {
-                        classifyItemLoadOverlayActive = false;
-                        setWarmOverlay(false);
-                        if (!initialClassifyWarmDone) {
-                            void ensureInitialClassifyWarmGate();
-                        }
-                    }
-                    return;
-                }
-                const elapsed = Date.now() - startedAt;
-                if (elapsed >= CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS) {
-                    if (token === classifyItemLoadOverlayToken) {
-                        classifyItemLoadOverlayActive = false;
-                        setWarmOverlay(false);
-                        if (!initialClassifyWarmDone) {
-                            void ensureInitialClassifyWarmGate();
-                        }
-                    }
-                    return;
-                }
-
-                const hasImage = !!(imageReadyForCurrentItem && imageElement && imageElement.complete);
-                const hasPreds = _predictionHasOptionsForCrop(currentPredictions, currentCropIdx);
-                if (!hasImage && !hasPreds) {
-                    const pct = Math.max(0.03, Math.min(0.55, elapsed / CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS));
-                    setWarmOverlay(true, 'Loading classifier item...', 'Loading image and classifier results', pct);
-                } else if (!hasImage) {
-                    const pct = Math.max(0.2, Math.min(0.7, elapsed / CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS));
-                    setWarmOverlay(true, 'Loading classifier item...', 'Waiting for image to render', pct);
-                } else if (!hasPreds) {
-                    showClassifierWarmOverlay('Loading classifier options...');
-                } else {
-                    showClassifierWarmOverlay('Loading reference photos...');
-                }
-                await waitMs(80);
+        const id = setInterval(() => {
+            if (token !== classifyItemLoadOverlayToken) {
+                clearInterval(id);
+                return;
             }
-        };
-        void tick();
+            if (requestSerial !== currentSerial || requestKey !== getPredCacheKey(currentItem)) {
+                clearInterval(id);
+                return;
+            }
+            if (_isCurrentClassifyItemDisplayReady()) {
+                if (token === classifyItemLoadOverlayToken) {
+                    classifyItemLoadOverlayActive = false;
+                    setWarmOverlay(false);
+                    if (!initialClassifyWarmDone) {
+                        void ensureInitialClassifyWarmGate();
+                    }
+                }
+                clearInterval(id);
+                return;
+            }
+            if (Date.now() > expire) {
+                clearInterval(id);
+                setWarmOverlay(false);
+                if (!initialClassifyWarmDone) {
+                    void ensureInitialClassifyWarmGate();
+                }
+                return;
+            }
+            const elapsed = Math.max(0, Date.now() - startedAt);
+            const hasImage = isClassifyImageReady(currentItem);
+            const hasPreds = _predictionHasOptionsForCrop(currentPredictions, currentCropIdx);
+            const cov = _predictionLoadedRefCoverageForCrop(currentPredictions, currentCropIdx);
+
+            let title = 'Loading classifier item...';
+            let subtitle = '';
+            let pct = 0;
+
+            if (!hasImage && !hasPreds) {
+                subtitle = 'Fetching image and passing to DINOv3 API...';
+                pct = 0.2;
+            } else if (!hasImage) {
+                subtitle = 'Waiting for image to render...';
+                pct = Math.max(0.2, Math.min(0.7, elapsed / CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS));
+            } else if (!hasPreds) {
+                subtitle = 'Running DINOv3 API analysis...';
+                pct = 0.5;
+            } else {
+                const refsPct = cov.targetCount > 0 ? Math.max(0, Math.min(1, cov.coverage)) : 0;
+                const refText = cov.targetCount > 0 ? `${cov.candidatesWithRefs}/${cov.targetCount}` : 'loading';
+                const covPctText = cov.targetCount > 0 ? ` (${Math.round(refsPct * 100)}% coverage)` : '';
+                pct = 0.7 + (refsPct * 0.3);
+
+                if (cov.coverage >= 1.0) {
+                    subtitle = `All reference photos loaded`;
+                } else {
+                    subtitle = `Loading reference photos: ${refText} cats${covPctText}`;
+                }
+            }
+
+            setWarmOverlay(true, title, subtitle, pct);
+        }, 50);
     }
 
     function isDetectEntryReady(entry) {
@@ -1606,59 +1658,162 @@
 
     function isDetectEntryUsable(entry) {
         if (!entry || typeof entry !== 'object') return false;
-        if (isDetectEntryReady(entry)) return true;
-        // Empty raw string is a valid "0 boxes detected" result and should
-        // still count as usable to avoid infinite warm retries.
-        return Object.prototype.hasOwnProperty.call(entry, 'raw');
+        return isDetectEntryReady(entry);
     }
 
-    function showClassifierWarmOverlay(title = 'Preparing classifier cache...') {
-        const cov = _predictionLoadedRefCoverageForCrop(currentPredictions, currentCropIdx);
-        const hasPredictions = Array.isArray(currentPredictions) && currentPredictions.length > 0;
-        const refsPct = cov.targetCount > 0 ? Math.max(0, Math.min(1, cov.coverage)) : 0;
-        const itemKey = getPredCacheKey(currentItem) || String(currentSerial || '');
-        if (classifierWarmItemKey !== itemKey) {
-            classifierWarmItemKey = itemKey;
-            classifierWarmDisplayPct = 0;
-            classifierWarmStartedAt = Date.now();
-        }
-        if (!classifierWarmStartedAt) {
-            classifierWarmStartedAt = Date.now();
-        }
-
-        const elapsedMs = Math.max(0, Date.now() - classifierWarmStartedAt);
-        const cropCount = Math.max(1, Number(currentBoxes.length || 0));
-        let targetPct = hasPredictions
-            ? (0.12 + refsPct * 0.72)
-            : _classifierHeuristicWarmPct(cropCount, elapsedMs);
-        if (_predictionRefsSufficientForCrop(currentPredictions, currentCropIdx)) {
-            targetPct = Math.max(targetPct, 0.95);
-        } else {
-            targetPct = Math.max(0.03, Math.min(0.92, targetPct));
-        }
-        classifierWarmDisplayPct = Math.max(classifierWarmDisplayPct, targetPct);
-
-        const refText = cov.targetCount > 0
-            ? `${cov.candidatesWithRefs}/${cov.targetCount}`
-            : 'loading';
-        const covPctText = cov.targetCount > 0 ? ` (${Math.round(refsPct * 100)}% coverage)` : '';
-        const subtitle = hasPredictions
-            ? `loaded refs ${refText} cats${covPctText}`
-            : `Running classifier for ${cropCount} crop${cropCount === 1 ? '' : 's'}... ${_formatClassifierElapsed(elapsedMs)}`;
-        setWarmOverlay(true, title, subtitle, classifierWarmDisplayPct);
+    function compactBoxDeltaDiag(delta) {
+        if (!delta || typeof delta !== 'object') return null;
+        return {
+            pairs: Number(delta.pairs || 0),
+            shifted: Number(delta.shifted || 0),
+            max_center_shift_px: Number(Number(delta.max_center_shift_px || 0).toFixed(2)),
+            max_edge_shift_px: Number(Number(delta.max_edge_shift_px || 0).toFixed(2)),
+            max_area_ratio: Number(Number(delta.max_area_ratio || 1).toFixed(3)),
+        };
     }
 
-    function startClassifierLoadProgressTicker(title = 'Loading classifier options...') {
-        showClassifierWarmOverlay(title);
-        const id = setInterval(() => {
-            if (!labelerActive || labelerMode !== 'classify') {
-                clearInterval(id);
-                return;
-            }
-            showClassifierWarmOverlay(title);
-        }, CLASSIFY_LOAD_TICK_MS);
-        return () => clearInterval(id);
+    function compactSamSummary(summary) {
+        if (!summary || typeof summary !== 'object') return null;
+        const selected = (summary.selected && typeof summary.selected === 'object') ? summary.selected : {};
+        const samples = Array.isArray(summary.samples) ? summary.samples.slice(0, 2) : [];
+        return {
+            passes: Number(summary.passes || 0),
+            boxes: Number(summary.boxes || 0),
+            accepted_boxes: Number(summary.accepted_boxes || 0),
+            fallback_boxes: Number(summary.fallback_boxes || 0),
+            clipped_boxes: Number(summary.clipped_boxes || 0),
+            guard_reject_boxes: Number(summary.guard_reject_boxes || 0),
+            candidate_masks: Number(summary.candidate_masks || 0),
+            accepted_masks: Number(summary.accepted_masks || 0),
+            selected_tight: Number(selected.tight || 0),
+            selected_iou: Number(selected.iou || 0),
+            selected_fallback: Number(selected.fallback || 0),
+            max_outside_guard_ratio: Number(Number(summary.max_outside_guard_ratio || 0).toFixed(3)),
+            max_detector_coverage: Number(Number(summary.max_detector_coverage || 0).toFixed(3)),
+            max_area_ratio: Number(Number(summary.max_area_ratio || 1).toFixed(3)),
+            samples,
+        };
     }
+
+    function samSummaryAcceptedBoxes(summary) {
+        if (!summary || typeof summary !== 'object') return 0;
+        return Number(summary.accepted_boxes || 0);
+    }
+
+    function detectRefineSucceeded(refineDiag, boxCount = 0) {
+        if (!refineDiag || typeof refineDiag !== 'object') {
+            return Number(boxCount || 0) === 0;
+        }
+        const samSummary = (refineDiag.sam_summary && typeof refineDiag.sam_summary === 'object')
+            ? refineDiag.sam_summary
+            : null;
+        if (Number(boxCount || 0) === 0) return true;
+        return samSummaryAcceptedBoxes(samSummary) > 0;
+    }
+
+    function buildDetectEntryDiag(serial) {
+        const key = String(serial || '');
+        if (!key) return null;
+        const entry = detectPrefetch.get(key);
+        const meta = (entry && entry.meta && typeof entry.meta === 'object') ? entry.meta : {};
+        const detectDiag = (meta.detect && typeof meta.detect === 'object') ? meta.detect : null;
+        const refineDiag = (meta.refine && typeof meta.refine === 'object') ? meta.refine : null;
+        const rawBoxes = parseYoloBoxes(String(entry?.raw || ''));
+        const refinedBoxes = parseYoloBoxes(String(entry?.refined || entry?.raw || ''));
+        return {
+            present: !!entry,
+            ready: !!isDetectEntryReady(entry),
+            usable: !!isDetectEntryUsable(entry),
+            extra_refined: detectExtraRefinedSerials.has(key),
+            sam_overlay_polygons: Array.isArray(entry?.samOverlay) ? entry.samOverlay.filter((poly) => Array.isArray(poly) && poly.length >= 3).length : 0,
+            sam_mask_tiles: Array.isArray(entry?.samMaskTiles) ? entry.samMaskTiles.filter((tile) => tile && typeof tile === 'object' && String(tile.png_b64 || '').trim()).length : 0,
+            warm_blocked: isDetectWarmBlocked(key),
+            raw_box_count: rawBoxes.length,
+            refined_box_count: refinedBoxes.length,
+            inflight: {
+                warm: detectWarmInFlight.has(key),
+                prefetch: detectPrefetchInFlight.has(key),
+                refine_prefetch: detectRefineInFlight.has(key),
+                auto_refine: detectAutoRefineInFlight.has(key),
+                prime: detectPrimeInFlight.has(key),
+            },
+            detect: detectDiag ? {
+                compute_rid: String(detectDiag.compute_rid || ''),
+                served_rid: String(detectDiag.served_rid || ''),
+                cache_hit: !!detectDiag.cache_hit,
+                image_source: String(detectDiag.image_source || ''),
+                sam_refined: !!detectDiag.sam_refined,
+                raw_box_count: Number(detectDiag.raw_box_count || 0),
+                out_box_count: Number(detectDiag.out_box_count || 0),
+                box_delta: compactBoxDeltaDiag(detectDiag.box_delta),
+                sam_summary: compactSamSummary(detectDiag.sam_summary),
+            } : null,
+            refine: refineDiag ? {
+                compute_rid: String(refineDiag.compute_rid || ''),
+                served_rid: String(refineDiag.served_rid || ''),
+                cache_hit: !!refineDiag.cache_hit,
+                input_box_count: Number(refineDiag.input_box_count || 0),
+                out_box_count: Number(refineDiag.out_box_count || 0),
+                box_delta: compactBoxDeltaDiag(refineDiag.box_delta),
+                sam_summary: compactSamSummary(refineDiag.sam_summary),
+            } : null,
+        };
+    }
+
+    function buildDetectPipelineDiag(serial) {
+        return {
+            target: buildDetectEntryDiag(serial),
+            cache_entries: detectPrefetch.size,
+            extra_refined_entries: detectExtraRefinedSerials.size,
+            warm_failures: detectWarmFailures.size,
+            inflight: {
+                warm: detectWarmInFlight.size,
+                prefetch: detectPrefetchInFlight.size,
+                refine_prefetch: detectRefineInFlight.size,
+                auto_refine: detectAutoRefineInFlight.size,
+                prime: detectPrimeInFlight.size,
+            },
+        };
+    }
+
+    function buildClassifyPipelineDiag(item) {
+        const key = getPredCacheKey(item);
+        const rows = key ? predCache.get(key) : null;
+        const idx = item ? _targetCropIdxForItem(item) : 0;
+        const coverage = _predictionLoadedRefCoverageForCrop(rows, idx);
+        return {
+            target: {
+                key: String(key || ''),
+                pred_cache_hit: !!(key && predCache.has(key)),
+                warm_ready: !!(item && _classifyItemWarmReady(item)),
+                focus_crop_idx: Number(idx || 0),
+                pred_rows: Array.isArray(rows) ? rows.length : 0,
+                ref_coverage: {
+                    candidates_with_refs: Number(coverage.candidatesWithRefs || 0),
+                    target_count: Number(coverage.targetCount || 0),
+                    coverage: Number(Number(coverage.coverage || 0).toFixed(3)),
+                },
+            },
+            inflight: {
+                warm: key ? classifyWarmInFlight.has(key) : false,
+                prime: key ? classifyPrimeInFlight.has(key) : false,
+                foreground: key ? classifyForegroundInFlight.has(key) : false,
+                prefetch: key ? prefetchInFlight.has(key) : false,
+                ref_refresh: key ? classifyRefRefreshInFlight.has(key) : false,
+                ref_images_loading: Number(refImagesLoadingCount || 0),
+                ref_queue: Number(refImageFetchQueue.length || 0),
+                ref_queued: Number(refImageFetchQueued.size || 0),
+            },
+        };
+    }
+
+    // This function is no longer needed. The interval inside ensureClassifyItemReady handles it now.
+    function showClassifierWarmOverlay(title, subtitle, pct) {
+        setWarmOverlay(true, title, subtitle, pct);
+    }
+
+    // Hallucinated progress ticker removed.
+    // The overlay is now updated synchronously by ensureClassifyItemReady as state changes.
 
     function isTransientApiError(err) {
         const msg = String(err && err.message || '');
@@ -1716,15 +1871,30 @@
         return (now - ts) < cooldown;
     }
 
-    function setDetectEntry(key, raw = '', refined = '', ready = false) {
+    function setDetectEntry(key, raw = '', refined = '', ready = false, meta = null, samOverlay = null, samMaskTiles = null) {
         const k = String(key || '');
         const nextRaw = String(raw || '');
         const nextRefined = String(refined || '');
         const prev = detectPrefetch.get(k);
+        const prevMeta = (prev && prev.meta && typeof prev.meta === 'object') ? prev.meta : null;
+        const prevOverlay = Array.isArray(prev?.samOverlay) ? prev.samOverlay : [];
+        const prevMaskTiles = Array.isArray(prev?.samMaskTiles) ? prev.samMaskTiles : [];
+        const nextMeta = (meta && typeof meta === 'object')
+            ? { ...(prevMeta || {}), ...meta }
+            : prevMeta;
+        const nextOverlay = (samOverlay === null)
+            ? prevOverlay
+            : normalizeSamPolygons(samOverlay);
+        const nextMaskTiles = (samMaskTiles === null)
+            ? prevMaskTiles
+            : normalizeSamMaskTiles(samMaskTiles);
         detectPrefetch.set(k, {
             raw: nextRaw,
             refined: nextRefined,
             ready: !!ready,
+            meta: nextMeta,
+            samOverlay: nextOverlay,
+            samMaskTiles: nextMaskTiles,
         });
         if (
             !prev
@@ -1755,12 +1925,18 @@
     function countWarmReadyDetect(windowItems) {
         let ready = 0;
         for (const item of windowItems) {
-            const key = String(item?.serial || '');
-            if (!key) continue;
-            const cached = detectPrefetch.get(key);
-            if (isDetectEntryUsable(cached)) ready++;
+            if (isDetectItemWarmReady(item)) ready++;
         }
         return ready;
+    }
+
+    function isDetectItemWarmReady(item) {
+        const key = String(item?.serial || '');
+        if (!key) return false;
+        const entry = detectPrefetch.get(key);
+        if (!isDetectEntryReady(entry)) return false;
+        const boxes = parseYoloBoxes(String(entry?.refined || entry?.raw || ''));
+        return boxes.length === 0 || detectExtraRefinedSerials.has(key);
     }
 
     function _classifyItemWarmReady(item) {
@@ -1769,13 +1945,7 @@
         const rows = predCache.get(key);
         if (!Array.isArray(rows) || !rows.length) return false;
         const idx = _targetCropIdxForItem(item);
-        // Count ready only when ref thumbnails are actually decoded/ready,
-        // not merely present as URLs in prediction payloads.
-        const depth = _predictionLoadedRefDepthForCrop(rows, idx, CLASSIFY_WARM_READY_MIN_REFS_PER_CAT);
-        if (depth.targetCount <= 0) return false;
-        if (depth.candidatesAtDepth >= depth.targetCount) return true;
-        if (FLAG_CLASSIFY_READY_RELAX && _predictionRefsSufficientForCrop(rows, idx)) return true;
-        return false;
+        return _predictionHasOptionsForCrop(rows, idx);
     }
 
     function prefetchWarmRefsForItem(item, results, priority = 'normal') {
@@ -1798,132 +1968,47 @@
     }
 
     async function ensureInitialDetectWarmGate() {
-        if (labelerMode !== 'detect' || initialDetectWarmDone) return;
-        const start = Math.max(0, Number(modePositions.detect || 0) + 1);
-        const scanWindow = INITIAL_DETECT_WARM_WINDOW;
-        const windowItems = detectQueue.slice(start, start + scanWindow);
+        if (initialDetectWarmDone || labelerMode !== 'detect') return;
+
+        let windowItems = detectQueue.slice(0, Math.min(detectQueue.length, Math.max(2, SESSION_WARM_TARGET)));
         if (!windowItems.length) {
             initialDetectWarmDone = true;
             setWarmOverlay(false);
             return;
         }
-        const targetReady = Math.min(INITIAL_DETECT_WARM_MIN, windowItems.length);
-        const deadline = Date.now() + INITIAL_DETECT_WARM_TIMEOUT_MS;
-        let lastDiagTs = 0;
-        let lastReady = -1;
-        let stagnantLoops = 0;
-        while (labelerActive && labelerMode === 'detect') {
-            const ready = countWarmReadyDetect(windowItems);
-            if (ready === lastReady) {
-                stagnantLoops += 1;
-            } else {
-                stagnantLoops = 0;
-                lastReady = ready;
-            }
-            const blocked = windowItems.filter((item) => isDetectWarmBlocked(String(item?.serial || ''))).length;
-            const inflight = windowItems.filter((item) => detectWarmInFlight.has(String(item?.serial || ''))).length;
-            const usable = windowItems.filter((item) => isDetectEntryUsable(detectPrefetch.get(String(item?.serial || '')))).length;
-            const pending = Math.max(0, windowItems.length - usable - blocked - inflight);
-            const now = Date.now();
-            if ((now - lastDiagTs) >= UI_DIAG_MIN_INTERVAL_MS || stagnantLoops >= 12) {
-                void postUiDiag('detect_warm_gate', {
-                    ready,
-                    target: targetReady,
-                    window: windowItems.length,
-                    usable,
-                    blocked,
-                    inflight,
-                    pending,
-                    stagnant_loops: stagnantLoops,
-                });
-                lastDiagTs = now;
-            }
-            const pct = targetReady > 0 ? (ready / targetReady) : 1;
-            setWarmOverlay(
-                true,
-                'Preparing detector queue...',
-                `${ready}/${targetReady} ready - usable ${usable}/${windowItems.length} - in-flight ${inflight} - backoff ${blocked}`,
-                pct,
-            );
-            if (ready >= targetReady) {
-                initialDetectWarmDone = true;
-                void postUiDiag('detect_warm_gate_done', {
-                    ready,
-                    target: targetReady,
-                    window: windowItems.length,
-                });
-                setWarmOverlay(false);
-                return;
-            }
-            if (Date.now() >= deadline) {
-                void postUiDiag('detect_warm_gate_timeout', {
-                    ready,
-                    target: targetReady,
-                    window: windowItems.length,
-                    blocked,
-                    inflight,
-                    pending,
-                });
-                setStatus('Proceeding while detector cache continues warming...');
-                setWarmOverlay(false);
-                return;
-            }
-            const next = windowItems.find((item) => {
-                const key = String(item.serial || '');
-                return !isDetectEntryUsable(detectPrefetch.get(key)) && !isDetectWarmBlocked(key);
-            });
-            if (next) {
-                await ensureDetectItemReady(next, true, true);
-            } else {
-                await runWarmTick();
-            }
-            await new Promise((resolve) => setTimeout(resolve, 250));
+
+        // Force the first item to load synchronously so the UI is ready
+        const first = windowItems[0];
+        if (!isDetectItemWarmReady(first)) {
+            setWarmOverlay(true, 'Preparing first image...', 'Running detector', 0);
+            await ensureDetectItemReady(first, true, true);
         }
+
+        initialDetectWarmDone = true;
+        setWarmOverlay(false);
+        // Let the background primeHotNextDetectItem handle the rest of the queue
     }
 
     async function ensureInitialClassifyWarmGate() {
-        if (labelerMode !== 'classify' || initialClassifyWarmDone) return;
-        const start = Math.max(0, Number(modePositions.classify || 0) + 1);
-        const scanWindow = INITIAL_CLASSIFY_WARM_WINDOW;
-        const windowItems = classifyQueue.slice(start, start + scanWindow);
+        if (initialClassifyWarmDone || labelerMode !== 'classify') return;
+
+        let windowItems = classifyQueue.slice(0, Math.min(classifyQueue.length, Math.max(2, SESSION_WARM_TARGET)));
         if (!windowItems.length) {
             initialClassifyWarmDone = true;
             setWarmOverlay(false);
             return;
         }
-        const targetReady = Math.min(INITIAL_CLASSIFY_WARM_MIN, windowItems.length);
-        const deadline = Date.now() + INITIAL_CLASSIFY_WARM_TIMEOUT_MS;
-        while (labelerActive && labelerMode === 'classify') {
-            const ready = countWarmReadyClassify(windowItems);
-            const inflight = windowItems.filter((item) => classifyWarmInFlight.has(getPredCacheKey(item))).length;
-            const blocked = windowItems.filter((item) => isClassifyPrefetchBlocked(getPredCacheKey(item))).length;
-            const predReady = windowItems.filter((item) => predCache.has(getPredCacheKey(item))).length;
-            const pct = targetReady > 0 ? (ready / targetReady) : 1;
-            setWarmOverlay(
-                true,
-                'Preparing classifier queue...',
-                `${ready}/${targetReady} ready - preds ${predReady}/${windowItems.length} - in-flight ${inflight} - backoff ${blocked}`,
-                pct,
-            );
-            if (ready >= targetReady) {
-                initialClassifyWarmDone = true;
-                setWarmOverlay(false);
-                return;
-            }
-            if (Date.now() >= deadline) {
-                initialClassifyWarmDone = true;
-                setStatus('Proceeding while classifier cache continues warming...');
-                setWarmOverlay(false);
-                return;
-            }
-            const next = windowItems.find((item) => !_classifyItemWarmReady(item));
-            if (next) {
-                await ensureClassifyItemReady(next, true, true);
-            } else {
-                await runWarmTick();
-            }
-            await new Promise((resolve) => setTimeout(resolve, 200));
+
+        // Force the first item to load synchronously so the UI is ready
+        const first = windowItems[0];
+        if (!_classifyItemWarmReady(first)) {
+            setWarmOverlay(true, 'Preparing first image...', 'Fetching image and running DINOv3 API', 0);
+            await ensureClassifyItemReady(first, true, true);
         }
+
+        initialClassifyWarmDone = true;
+        setWarmOverlay(false);
+        // Let the background primeHotNextClassifyItem handle the rest of the queue
     }
 
     async function waitForCurrentItemReady(item) {
@@ -1935,43 +2020,85 @@
             const startedAt = Date.now();
             const deadline = startedAt + waitBudgetMs;
             let lastDiagAt = 0;
+            let ensureKicked = false;
+
+            //Check if already fully refined in cache
+            if (isDetectItemWarmReady(item)) {
+                setWarmOverlay(false);
+                void postUiDiag('detect_item_ready_done', {
+                    serial: Number(item?.serial || 0) || null,
+                    wait_ms: 0,
+                    ready: true,
+                    extra_refined: true,
+                    source: 'cache_hit',
+                });
+                return true;
+            }
+
+            //Kick off full detect+refine pipeline in background
+            if (!detectPrimeInFlight.has(key) && !detectAutoRefineInFlight.has(key)) {
+                void ensureDetectItemDisplayReady(item, false);
+                ensureKicked = true;
+            }
+
+            //Poll until fully refined or timeout
             while (Date.now() < deadline && labelerActive && labelerMode === 'detect') {
-                const elapsed = Math.max(0, Date.now() - startedAt);
-                const pct = Math.min(0.95, Math.max(0.05, elapsed / waitBudgetMs));
-                setWarmOverlay(true, 'Preparing next detector image...', 'Running detector before display', pct);
-                const ok = await ensureDetectItemDisplayReady(item, true);
-                const cached = detectPrefetch.get(key);
-                const ready = !!isDetectEntryReady(cached);
-                if (ok || ready) {
+                const current = detectPrefetch.get(key);
+                if (isDetectItemWarmReady(item)) {
                     setWarmOverlay(false);
                     void postUiDiag('detect_item_ready_done', {
                         serial: Number(item?.serial || 0) || null,
                         wait_ms: Math.max(0, Date.now() - startedAt),
-                        ready: !!isDetectEntryReady(detectPrefetch.get(key)),
-                        extra_refined: detectExtraRefinedSerials.has(key),
+                        ready: true,
+                        extra_refined: true,
+                        source: 'wait_loop',
                     });
                     return true;
                 }
+
+                const elapsed = Math.max(0, Date.now() - startedAt);
+                const isUsable = isDetectEntryUsable(current);
+                const isReady = isDetectEntryReady(current);
+                const pct = Math.min(0.95, Math.max(0.05, elapsed / waitBudgetMs));
+
+                let subtitle = 'Running detector and refining boxes...';
+                if (!current && !isUsable) {
+                    subtitle = 'Running YOLO detection...';
+                } else if (isReady && !detectExtraRefinedSerials.has(key)) {
+                    subtitle = 'Finalizing refined boxes...';
+                }
+                setWarmOverlay(true, 'Preparing next image...', subtitle, pct);
+
+                //Re-kick if the pipeline stalled
+                if (!ensureKicked && !detectAutoRefineInFlight.has(key) && !detectPrimeInFlight.has(key)) {
+                    void ensureDetectItemDisplayReady(item, false);
+                    ensureKicked = true;
+                }
+
                 const now = Date.now();
                 if ((now - lastDiagAt) >= READY_WAIT_DIAG_INTERVAL_MS) {
                     lastDiagAt = now;
                     void postUiDiag('detect_item_ready_wait', {
                         serial: Number(item?.serial || 0) || null,
-                        ready: !!isDetectEntryReady(cached),
+                        ready: !!isReady,
+                        usable: !!isUsable,
                         extra_refined: detectExtraRefinedSerials.has(key),
                         detect_inflight: detectWarmInFlight.has(key),
                         refine_inflight: detectAutoRefineInFlight.has(key),
+                        prefetch_inflight: detectPrefetchInFlight.has(key),
+                        prime_inflight: detectPrimeInFlight.has(key),
+                        ensure_kicked: ensureKicked,
                     });
                 }
-                await runWarmTick();
-                await waitMs(220);
+                await waitMs(150);
             }
             setWarmOverlay(false);
             void postUiDiag('detect_item_ready_timeout', {
                 serial: Number(item?.serial || 0) || null,
                 wait_ms: waitBudgetMs,
-                ready: !!isDetectEntryReady(detectPrefetch.get(String(item?.serial || ''))),
-                extra_refined: detectExtraRefinedSerials.has(String(item?.serial || '')),
+                ready: !!isDetectEntryReady(detectPrefetch.get(key)),
+                usable: !!isDetectEntryUsable(detectPrefetch.get(key)),
+                extra_refined: detectExtraRefinedSerials.has(key),
             });
             return false;
         }
@@ -1989,19 +2116,22 @@
                 } else if (!classifyWarmInFlight.has(key) && !classifyForegroundInFlight.has(key)) {
                     void ensureClassifyItemReady(item, false, false);
                 }
-                const refsReady = _classifyItemWarmReady(item);
+                const predsReady = _classifyItemWarmReady(item);
                 const imageReady = isPrefetchedImageReady(item.serial);
                 const idx = _targetCropIdxForItem(item);
                 const depth = _predictionLoadedRefDepthForCrop(rows, idx, CLASSIFY_WARM_READY_MIN_REFS_PER_CAT);
                 const cov = _predictionLoadedRefCoverageForCrop(rows, idx);
                 const refsSufficient = _predictionRefsSufficientForCrop(rows, idx);
-                const refsReadyForDisplay = refsReady || (FLAG_CLASSIFY_READY_RELAX && refsSufficient);
+                const refsReadyForDisplay = predsReady || (FLAG_CLASSIFY_READY_RELAX && refsSufficient);
                 const predsCached = predCache.has(key);
                 const prefetchTerminalError = isPrefetchedImageTerminalError(item.serial);
                 const prefetchStalled = isPrefetchedImageStalled(item.serial);
                 const elapsed = Math.max(0, waitBudgetMs - Math.max(0, deadline - Date.now()));
+                const hasPreds = Array.isArray(rows) && rows.length > 0;
                 let readyReason = '';
-                if (predsCached && imageReady) readyReason = 'preds_cached+image_ready';
+                if (!hasPreds && predsCached && imageReady) readyReason = 'preds_cached_empty+image_ready';
+                else if (predsReady && imageReady) readyReason = 'preds_ready+image_ready';
+                else if (predsCached && imageReady) readyReason = 'preds_cached+image_ready';
                 else if (refsReadyForDisplay && imageReady) readyReason = 'refs_ready+image_ready';
                 else if (predsCached && prefetchTerminalError && elapsed >= Math.floor(waitBudgetMs * 0.75)) {
                     readyReason = 'preds_cached+prefetch_terminal_error';
@@ -2015,6 +2145,7 @@
                         wait_ms: elapsed,
                         wait_budget_ms: waitBudgetMs,
                         refs_ready: refsReadyForDisplay,
+                        preds_ready: predsReady,
                         image_prefetch_ready: imageReady,
                         image_prefetch_terminal_error: prefetchTerminalError,
                         image_prefetch_stalled: prefetchStalled,
@@ -2031,7 +2162,10 @@
                     return true;
                 }
                 const pct = Math.min(0.95, Math.max(0.05, elapsed / waitBudgetMs));
-                setWarmOverlay(true, 'Loading classifier item...', 'Waiting for image and reference photos', pct);
+                const subtitle = hasPreds
+                    ? 'Loading reference photos...'
+                    : 'Waiting for image and classifier results...';
+                setWarmOverlay(true, 'Loading classifier item...', subtitle, pct);
                 const now = Date.now();
                 if ((now - lastDiagAt) >= READY_WAIT_DIAG_INTERVAL_MS) {
                     lastDiagAt = now;
@@ -2039,6 +2173,7 @@
                         serial: Number(item?.serial || 0) || null,
                         wait_budget_ms: waitBudgetMs,
                         refs_ready: refsReadyForDisplay,
+                        preds_ready: predsReady,
                         refs_sufficient: refsSufficient,
                         image_prefetch_ready: imageReady,
                         image_prefetch_terminal_error: prefetchTerminalError,
@@ -2064,15 +2199,16 @@
             const finalIdx = _targetCropIdxForItem(item);
             const finalCov = _predictionLoadedRefCoverageForCrop(finalRows, finalIdx);
             const finalDepth = _predictionLoadedRefDepthForCrop(finalRows, finalIdx, CLASSIFY_WARM_READY_MIN_REFS_PER_CAT);
-            const finalRefsReady = _classifyItemWarmReady(item);
+            const finalPredsReady = _classifyItemWarmReady(item);
             const finalRefsSufficient = _predictionRefsSufficientForCrop(finalRows, finalIdx);
-            const finalRefsReadyForDisplay = finalRefsReady || (FLAG_CLASSIFY_READY_RELAX && finalRefsSufficient);
+            const finalRefsReadyForDisplay = finalPredsReady || (FLAG_CLASSIFY_READY_RELAX && finalRefsSufficient);
             const finalPredsCached = predCache.has(key);
             const finalImageReady = isPrefetchedImageReady(item.serial);
             const finalPrefetchTerminalError = isPrefetchedImageTerminalError(item.serial);
             const finalPrefetchStalled = isPrefetchedImageStalled(item.serial);
             let finalReadyReason = '';
-            if (finalPredsCached && finalImageReady) finalReadyReason = 'deadline_preds_cached+image_ready';
+            if (finalPredsReady && finalImageReady) finalReadyReason = 'deadline_preds_ready+image_ready';
+            else if (finalPredsCached && finalImageReady) finalReadyReason = 'deadline_preds_cached+image_ready';
             else if (finalPredsCached && finalPrefetchTerminalError) finalReadyReason = 'deadline_preds_cached+prefetch_terminal_error';
             else if (finalPredsCached && finalPrefetchStalled) finalReadyReason = 'deadline_preds_cached+prefetch_stalled';
             else if (finalRefsReadyForDisplay && finalImageReady) finalReadyReason = 'deadline_refs_ready+image_ready';
@@ -2082,6 +2218,7 @@
                     wait_ms: waitBudgetMs,
                     wait_budget_ms: waitBudgetMs,
                     refs_ready: finalRefsReadyForDisplay,
+                    preds_ready: finalPredsReady,
                     refs_sufficient: finalRefsSufficient,
                     image_prefetch_ready: finalImageReady,
                     image_prefetch_terminal_error: finalPrefetchTerminalError,
@@ -2106,6 +2243,7 @@
                 image_prefetch_ready: finalImageReady,
                 image_prefetch_terminal_error: finalPrefetchTerminalError,
                 image_prefetch_stalled: finalPrefetchStalled,
+                preds_ready: finalPredsReady,
                 classify_ready_relax_flag: !!FLAG_CLASSIFY_READY_RELAX,
                 cached_image_path: compactCachedImagePathDiag(item.serial),
                 image_prefetch_state: getPrefetchedImageState(item.serial),
@@ -2291,14 +2429,22 @@
                 //Parse existing boxes if any (for classifier mode)
                 if (item.boxes) {
                     currentBoxes = parseYoloBoxes(item.boxes);
+                    currentSamMaskTiles = new Array(currentBoxes.length).fill(null);
                 } else {
                     currentBoxes = [];
+                    currentSamMaskTiles = [];
                     if (labelerMode === 'detect') {
                         const cachedDet = detectPrefetch.get(String(currentSerial));
-                        if (isDetectEntryReady(cachedDet)) {
+                        if (isDetectItemWarmReady({ serial: currentSerial })) {
                             currentBoxes = parseYoloBoxes(cachedDet?.refined || cachedDet?.raw || '');
+                            currentSamMaskTiles = cloneSamMaskTiles(cachedDet?.samMaskTiles || []);
                         }
                     }
+                }
+                if (currentSamMaskTiles.length < currentBoxes.length) {
+                    currentSamMaskTiles = currentSamMaskTiles.concat(new Array(currentBoxes.length - currentSamMaskTiles.length).fill(null));
+                } else if (currentSamMaskTiles.length > currentBoxes.length) {
+                    currentSamMaskTiles = currentSamMaskTiles.slice(0, currentBoxes.length);
                 }
 
                 //Parse existing labels
@@ -2345,6 +2491,10 @@
                 ) {
                     if (Array.isArray(pendingUndoRestore.boxes) && labelerMode === 'detect') {
                         currentBoxes = pendingUndoRestore.boxes.map((b) => ({ ...b }));
+                        currentSamMaskTiles = cloneSamMaskTiles(pendingUndoRestore.samMaskTiles || []);
+                        if (currentSamMaskTiles.length < currentBoxes.length) {
+                            currentSamMaskTiles = currentSamMaskTiles.concat(new Array(currentBoxes.length - currentSamMaskTiles.length).fill(null));
+                        }
                         selectedBoxIdx = 0;
                     }
                     if (Array.isArray(pendingUndoRestore.labels) && (labelerMode === 'classify' || labelerMode === 'manual')) {
@@ -2409,11 +2559,17 @@
             prefetchTimer = setInterval(() => {
                 prefetchPredictions();
                 prefetchImages();
-                prefetchDetection();
-                prefetchDetectionRefine();
-                primeHotNextDetectItem();
-                primeHotNextClassifyItem();
-                prefetchManualCandidates();
+                if (labelerMode === 'detect') {
+                    prefetchDetection();
+                    prefetchDetectionRefine();
+                    primeHotNextDetectItem();
+                }
+                if (labelerMode === 'classify') {
+                    primeHotNextClassifyItem();
+                }
+                if (labelerMode === 'manual') {
+                    prefetchManualCandidates();
+                }
             }, 3000);
         }
     }
@@ -2728,6 +2884,86 @@
             && b.w > 0
             && b.h > 0
         ));
+    }
+
+    function normalizeSamPolygons(value) {
+        const rows = Array.isArray(value) ? value : [];
+        return rows.map((poly) => {
+            const pts = Array.isArray(poly) ? poly : [];
+            return pts.map((pt) => {
+                const pair = Array.isArray(pt) ? pt : [];
+                const x = Number(pair[0]);
+                const y = Number(pair[1]);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                return {
+                    x: Math.max(0, Math.min(1, x)),
+                    y: Math.max(0, Math.min(1, y)),
+                };
+            }).filter((pt) => !!pt);
+        }).map((poly) => (poly.length >= 3 ? poly : []));
+    }
+
+    function normalizeSamMaskTiles(value) {
+        const rows = Array.isArray(value) ? value : [];
+        return rows.map((tile) => {
+            const row = (tile && typeof tile === 'object') ? tile : {};
+            const png = String(row.png_b64 || '').trim();
+            if (!png) return null;
+            const x1 = Number(row.x1);
+            const y1 = Number(row.y1);
+            const x2 = Number(row.x2);
+            const y2 = Number(row.y2);
+            if (![x1, y1, x2, y2].every((v) => Number.isFinite(v))) return null;
+            return {
+                x1: Math.max(0, Math.min(1, x1)),
+                y1: Math.max(0, Math.min(1, y1)),
+                x2: Math.max(0, Math.min(1, x2)),
+                y2: Math.max(0, Math.min(1, y2)),
+                png_b64: png,
+            };
+        });
+    }
+
+    function cloneSamMaskTiles(value) {
+        const rows = Array.isArray(value) ? value : [];
+        return rows.map((tile) => {
+            if (!tile || typeof tile !== 'object') return null;
+            return {
+                x1: Number(tile.x1 || 0),
+                y1: Number(tile.y1 || 0),
+                x2: Number(tile.x2 || 0),
+                y2: Number(tile.y2 || 0),
+                png_b64: String(tile.png_b64 || ''),
+            };
+        });
+    }
+
+    function getSamMaskImage(tile) {
+        if (!tile || typeof tile !== 'object') return null;
+        const png = String(tile.png_b64 || '').trim();
+        if (!png) return null;
+        const key = png;
+        const cached = samMaskImageCache.get(key);
+        if (cached) return cached;
+        const img = new Image();
+        img.decoding = 'async';
+        img.onload = () => {
+            if (labelerActive && labelerMode === 'detect') {
+                drawCanvas();
+            }
+        };
+        img.src = `data:image/png;base64,${png}`;
+        samMaskImageCache.set(key, img);
+        if (samMaskImageCache.size > 1200) {
+            const overflow = samMaskImageCache.size - 1200;
+            const keys = samMaskImageCache.keys();
+            for (let i = 0; i < overflow; i++) {
+                const oldKey = keys.next().value;
+                if (!oldKey) break;
+                samMaskImageCache.delete(oldKey);
+            }
+        }
+        return img;
     }
 
     function formatYoloBoxes(boxes) {
@@ -3120,7 +3356,7 @@
     const refImageFetchQueue = [];
     const refImageFetchQueued = new Set();
     let refImagesLoadingCount = 0;
-    const REF_IMAGE_CONCURRENCY = 12;
+    const REF_IMAGE_CONCURRENCY = 2;
 
     function processRefImageQueue() {
         if (!labelerActive) return;
@@ -3333,17 +3569,16 @@
     async function ensureDetectItemReady(item, waitForInFlight = false, usePrefetch = true) {
         if (!item || !item.serial) return false;
         const key = String(item.serial);
-        const cached = detectPrefetch.get(key);
-        const cachedReady = isDetectEntryReady(cached);
-        if (cachedReady) return true;
-        if (usePrefetch && isDetectEntryUsable(cached)) return true;
+        if (isDetectItemWarmReady(item)) return true;
         if (usePrefetch && isDetectWarmBlocked(key)) return false;
 
         if (detectWarmInFlight.has(key)) {
             return waitForInFlight
                 ? _waitFor(() => {
                     const hit = detectPrefetch.get(key);
-                    return usePrefetch ? isDetectEntryUsable(hit) : isDetectEntryReady(hit);
+                    if (!isDetectEntryReady(hit)) return false;
+                    const boxes = parseYoloBoxes(String(hit?.refined || hit?.raw || ''));
+                    return boxes.length === 0 || detectExtraRefinedSerials.has(key);
                 })
                 : false;
         }
@@ -3351,32 +3586,33 @@
         detectWarmInFlight.add(key);
         try {
             prefetchImageSerial(item.serial);
-            const fastDetect = !!usePrefetch;
-            const hasRaw = !!(cached && Object.prototype.hasOwnProperty.call(cached, 'raw'));
-            let raw = (cached && typeof cached.raw === 'string') ? cached.raw : '';
-            let samRefined = false;
-            if (!hasRaw || (!raw && !cachedReady) || (!fastDetect && !cachedReady)) {
-                const det = await apiPost('/api/labeler/detect', {
-                    serial: item.serial,
-                    url: item.url || null,
-                    // Foreground path keeps full YOLO+SAM; prefetch stays lightweight.
-                    fast: fastDetect,
-                    prefetch: !!usePrefetch,
-                }, { timeoutMs: usePrefetch ? API_PREFETCH_TIMEOUT_MS : API_POST_TIMEOUT_MS });
-                raw = det.boxes_yolo || '';
-                samRefined = !!det.sam_refined;
-            }
-
-            const ready = fastDetect ? false : true;
-            setDetectEntry(key, raw, raw, ready);
-            if (!fastDetect && samRefined) {
-                // Full detect already ran inline SAM refinement; avoid redundant refine passes.
+            const det = await apiPost('/api/labeler/detect', {
+                serial: item.serial,
+                url: item.url || null,
+                fast: false,
+                prefetch: !!usePrefetch,
+            }, { timeoutMs: usePrefetch ? DETECT_PREFETCH_TIMEOUT_MS : API_POST_TIMEOUT_MS });
+            const raw = String(det?.raw_boxes_yolo || det?.boxes_yolo || '').trim();
+            const refined = String(det?.boxes_yolo || '').trim();
+            const finalBoxes = refined || raw;
+            const boxCount = parseYoloBoxes(finalBoxes).length;
+            const ready = !!det?.sam_refined || boxCount === 0;
+            setDetectEntry(
+                key,
+                raw,
+                ready ? finalBoxes : '',
+                ready,
+                { detect: det?.detect_diag || null },
+                det?.sam_polygons || [],
+                det?.sam_mask_tiles || [],
+            );
+            if (ready) {
                 detectExtraRefinedSerials.add(key);
+                return true;
             }
-            if (!fastDetect && !samRefined && raw) {
-                prefetchDetectionRefine();
-            }
-            return true;
+            detectExtraRefinedSerials.delete(key);
+            markDetectWarmFailure(key);
+            return false;
         } catch (e) {
             markDetectWarmFailure(key);
             void postUiDiag('detect_warm_item_error', {
@@ -3397,7 +3633,9 @@
         if (predCache.has(key)) {
             const rows = predCache.get(key) || [];
             if (Array.isArray(rows) && rows.length) {
-                prefetchWarmRefsForItem(item, rows, usePrefetch ? 'normal' : 'high');
+                if (!usePrefetch) {
+                    prefetchWarmRefsForItem(item, rows, 'high');
+                }
                 return true;
             }
             if (!usePrefetch) {
@@ -3421,7 +3659,8 @@
                     parsed.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
                     {
                         prefetch: !!usePrefetch,
-                        timeoutMs: usePrefetch ? API_PREFETCH_TIMEOUT_MS : API_POST_TIMEOUT_MS,
+                        timeoutMs: usePrefetch ? CLASSIFY_PREFETCH_TIMEOUT_MS : API_POST_TIMEOUT_MS,
+                        focusCropIdx: _targetCropIdxForItem(item),
                     },
                 );
             } catch (e) {
@@ -3438,6 +3677,7 @@
                                 prefetch: false,
                                 timeoutMs: API_POST_TIMEOUT_MS,
                                 maxAttempts: 2,
+                                focusCropIdx: _targetCropIdxForItem(item),
                             },
                         );
                         recovered = true;
@@ -3449,8 +3689,10 @@
                 if (!recovered || !data) return false;
             }
             const nextResults = data?.results || [];
-            prefetchWarmRefsForItem(item, nextResults, usePrefetch ? 'normal' : 'high');
             predCache.set(key, nextResults);
+            if (!usePrefetch) {
+                prefetchWarmRefsForItem(item, nextResults, 'high');
+            }
             clearClassifyPrefetchFailure(key);
             return true;
         } catch (e) {
@@ -3472,75 +3714,36 @@
 
     async function ensureDetectItemDisplayReady(item, waitForInFlight = true) {
         if (!item || !item.serial) return false;
-        const key = String(item.serial);
+        if (labelerMode !== 'detect') return false;
         prefetchImageSerial(item.serial);
-        await ensureDetectItemReady(item, !!waitForInFlight, false);
-        const entry = detectPrefetch.get(key);
-        if (!isDetectEntryReady(entry)) {
-            return false;
-        }
-        if (detectExtraRefinedSerials.has(key)) {
-            return true;
-        }
-        // Background prefetch refine may already be running for this serial.
-        // Wait for it first to avoid launching a duplicate refine request.
-        if (detectRefineInFlight.has(key)) {
-            if (!waitForInFlight) return false;
-            const done = await _waitFor(() => !detectRefineInFlight.has(key), 16000, 90);
-            if (!done) return false;
-            const hit = detectPrefetch.get(key);
-            const hitBoxes = parseYoloBoxes(String(hit?.refined || hit?.raw || ''));
-            if (isDetectEntryReady(hit) && (detectExtraRefinedSerials.has(key) || hitBoxes.length === 0)) {
-                return true;
-            }
-        }
-        const seed = String(entry?.refined || entry?.raw || '').trim();
-        const boxes = parseYoloBoxes(seed);
-        if (!boxes.length) {
-            detectExtraRefinedSerials.add(key);
-            return true;
-        }
-        if (detectAutoRefineInFlight.has(key)) {
-            if (!waitForInFlight) return false;
-            const done = await _waitFor(() => !detectAutoRefineInFlight.has(key), 14000, 90);
-            if (!done) return false;
-            return detectExtraRefinedSerials.has(key);
-        }
-        detectAutoRefineInFlight.add(key);
-        try {
-            const data = await apiPost('/api/labeler/refine', {
-                serial: item.serial,
-                url: item.url || null,
-                boxes: boxes.map((b) => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
-                passes: 2,
-            }, { timeoutMs: API_POST_TIMEOUT_MS, maxAttempts: 2 });
-            const refined = String(data?.boxes_yolo || seed).trim();
-            setDetectEntry(key, String(entry?.raw || seed), refined || seed, true);
-            detectExtraRefinedSerials.add(key);
-            return true;
-        } catch (e) {
-            void postUiDiag('detect_ready_refine_error', {
-                serial: Number(item?.serial || 0) || null,
-                message: String(e && e.message || e || ''),
-            });
-            return false;
-        } finally {
-            detectAutoRefineInFlight.delete(key);
-        }
+        await ensureDetectItemReady(item, !!waitForInFlight, true);
+        if (labelerMode !== 'detect') return false;
+        return isDetectItemWarmReady(item);
     }
 
     function primeHotNextDetectItem() {
         if (labelerMode !== 'detect') return;
-        const nextItem = queue[queueIndex + 1];
-        if (!nextItem || !nextItem.serial) return;
-        const key = String(nextItem.serial);
+        for (let offset = 1; offset <= Math.max(1, DETECT_REFINE_PREFETCH_AHEAD); offset++) {
+            _primeDetectItemAtOffset(offset);
+        }
+    }
+
+    function _primeDetectItemAtOffset(offset) {
+        if (labelerMode !== 'detect') return;
+        const item = queue[queueIndex + offset];
+        if (!item || !item.serial) return;
+        const key = String(item.serial);
+        const cached = detectPrefetch.get(key);
+        if (isDetectItemWarmReady(item)) return;
         if (detectPrimeInFlight.has(key)) return;
         detectPrimeInFlight.add(key);
         void (async () => {
             const t0 = Date.now();
             let ok = false;
             try {
-                ok = await ensureDetectItemDisplayReady(nextItem, true);
+                //Abort if user switched away from detect mode
+                if (labelerMode !== 'detect') return;
+                ok = await ensureDetectItemDisplayReady(item, offset === 1);
             } catch (e) {
                 ok = false;
             } finally {
@@ -3549,11 +3752,13 @@
             const dt = Math.max(0, Date.now() - t0);
             if (dt >= 500 || !ok) {
                 void postUiDiag('detect_next_prime', {
-                    serial: Number(nextItem?.serial || 0) || null,
+                    serial: Number(item?.serial || 0) || null,
                     ok: !!ok,
                     ms: dt,
+                    offset: offset,
                     ready: !!isDetectEntryReady(detectPrefetch.get(key)),
                     extra_refined: detectExtraRefinedSerials.has(key),
+                    mode_at_finish: labelerMode,
                 });
             }
         })();
@@ -3580,10 +3785,9 @@
 
             const detectTodo = detectTargets.filter((item) => {
                 const key = String(item.serial || '');
-                const cached = detectPrefetch.get(key);
                 return (
                     !!item.serial &&
-                    !isDetectEntryUsable(cached) &&
+                    !isDetectItemWarmReady(item) &&
                     !detectWarmInFlight.has(key) &&
                     !isDetectWarmBlocked(key)
                 );
@@ -3603,37 +3807,14 @@
             //Skip detect inference during classify mode to free GPU for identify
             if (labelerMode !== 'classify') {
                 detectTodo.forEach((item) => tasks.push(ensureDetectItemReady(item, false)));
-
-                // Proactively refine detect items that have raw results but no refined boxes
-                const refineTargets = detectTargets.filter((item) => {
-                    const key = String(item.serial || '');
-                    const entry = detectPrefetch.get(key);
-                    return (
-                        isDetectEntryUsable(entry)
-                        && !isDetectEntryReady(entry)
-                        && !detectExtraRefinedSerials.has(key)
-                        && !detectAutoRefineInFlight.has(key)
-                        && !detectRefineInFlight.has(key)
-                    );
-                }).slice(0, 2);
-                refineTargets.forEach((item) => tasks.push(ensureDetectItemDisplayReady(item, false)));
             }
             classifyTodo.forEach((item) => tasks.push(ensureClassifyItemReady(item, false, true)));
             if (tasks.length) {
                 await Promise.all(tasks);
             }
 
-            //Use remaining idle time to push ref image downloads for upcoming items
-            //whose predictions are already cached but ref thumbnails haven't finished downloading.
-            if (labelerMode === 'classify') {
-                for (const item of classifyTargets) {
-                    const key = getPredCacheKey(item);
-                    if (!key) continue;
-                    const rows = predCache.get(key);
-                    if (!Array.isArray(rows) || !rows.length) continue;
-                    prefetchWarmRefsForItem(item, rows);
-                }
-            }
+            // Keep background classify warm focused on prediction readiness.
+            // Ref thumbnails are fetched when an item becomes foregrounded.
         } catch (e) {
             //Warm loop failures should not interrupt labeling.
         } finally {
@@ -3768,13 +3949,20 @@
                 const imageLoadMs = meta && meta.load_image_at && meta.image_loaded_at
                     ? Math.max(0, Number(meta.image_loaded_at) - Number(meta.load_image_at))
                     : 0;
+                const readyWaitMs = Math.max(0, Number(meta?.item_ready_wait_ms || 0));
+                const preImageOtherMs = Math.max(0, preImageMs - readyWaitMs);
                 void postUiDiag('transition_slow', {
                     from_serial: fromSerial,
                     to_serial: Number(currentSerial || 0) || null,
                     ms: transitionMs,
                     mode: labelerMode,
+                    queue_index: Number(queueIndex || 0),
+                    queue_total: Number(queueTotal || 0),
                     claim_wait_ms: claimWaitMs,
                     pre_image_ms: preImageMs,
+                    ready_wait_ms: readyWaitMs,
+                    ready_wait_ready: !!meta?.item_ready_wait_ready,
+                    pre_image_other_ms: preImageOtherMs,
                     image_load_ms: imageLoadMs,
                     claim_retry_loops: Number(meta?.claim_retry_loops || 0),
                     claim_error_kind: String(meta?.claim_error_kind || ''),
@@ -3786,7 +3974,10 @@
                     image_source: String(meta?.image_source || ''),
                     image_intent: String(meta?.image_intent || ''),
                     image_prefetch_ready: !!meta?.image_prefetch_ready,
+                    image_prefetch_state: getPrefetchedImageState(currentSerial),
                     cached_image_path: compactCachedImagePathDiag(currentSerial),
+                    detect_pipeline: labelerMode === 'detect' ? buildDetectPipelineDiag(currentSerial) : null,
+                    classify_pipeline: labelerMode === 'classify' ? buildClassifyPipelineDiag(currentItem) : null,
                 });
             }
         }
@@ -3799,21 +3990,11 @@
             //Draw image first so there's no blank delay, then run detection
             drawCanvas();
             const cached = detectPrefetch.get(String(currentSerial));
-            if (isDetectEntryReady(cached)) {
+            if (isDetectItemWarmReady({ serial: currentSerial })) {
                 currentBoxes = parseYoloBoxes(cached?.refined || cached?.raw || '');
                 drawCanvas();
                 setStatus(`Found ${currentBoxes.length} box(es)`);
                 updateInfo();
-                const key = String(currentSerial || '');
-                if (currentBoxes.length && !detectExtraRefinedSerials.has(key)) {
-                    void autoRefineCurrent(true);
-                }
-            } else if (cached && cached.raw) {
-                currentBoxes = parseYoloBoxes(cached.raw);
-                drawCanvas();
-                setStatus(`Found ${currentBoxes.length} box(es)`);
-                updateInfo();
-                void autoRefineCurrent(true);
             } else {
                 runDetection();
             }
@@ -3824,7 +4005,7 @@
             if (labelerMode === 'detect' && currentBoxes.length) {
                 const key = String(currentSerial || '');
                 if (!detectExtraRefinedSerials.has(key)) {
-                    void autoRefineCurrent(true);
+                    void autoRefineCurrent();
                 }
             } else if (labelerMode === 'classify') {
                 loadPredictions();
@@ -3938,21 +4119,24 @@
                 if (lastErr) throw lastErr;
             }
             currentBoxes = parseYoloBoxes(data.boxes_yolo || '');
-            selectedBoxIdx = 0;
-            const raw = data.boxes_yolo || '';
-            setDetectEntry(String(currentSerial), raw, raw, true);
-            const key = String(currentSerial || '');
-            const samRefined = !!data?.sam_refined;
-            if (samRefined) {
-                detectExtraRefinedSerials.add(key);
+            currentSamMaskTiles = normalizeSamMaskTiles(data?.sam_mask_tiles || []);
+            if (currentSamMaskTiles.length < currentBoxes.length) {
+                currentSamMaskTiles = currentSamMaskTiles.concat(new Array(currentBoxes.length - currentSamMaskTiles.length).fill(null));
             }
+            selectedBoxIdx = 0;
+            const raw = data.raw_boxes_yolo || data.boxes_yolo || '';
+            const refined = data.boxes_yolo || raw;
+            const samRefined = !!data?.sam_refined;
+            const ready = samRefined || currentBoxes.length === 0;
+            if (!ready) {
+                throw new Error('Detector completed without finalized SAM boxes');
+            }
+            setDetectEntry(String(currentSerial), raw, refined, true, { detect: data.detect_diag || null }, data?.sam_polygons || [], data?.sam_mask_tiles || []);
+            const key = String(currentSerial || '');
+            detectExtraRefinedSerials.add(key);
             drawCanvas();
             setStatus(`Found ${currentBoxes.length} box(es)`);
             updateInfo();
-            if (currentBoxes.length && !detectExtraRefinedSerials.has(key)) {
-                // Keep detector behavior aligned with the manual "E refine" workflow.
-                void autoRefineCurrent(true);
-            }
         } catch (e) {
             if (isNoImageApiError(e)) {
                 setStatus('Detector image unavailable - skipping...');
@@ -3982,14 +4166,28 @@
                 serial: currentSerial,
                 url: currentItem?.url || null,
                 boxes: currentBoxes.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
-                passes: 2,
+                passes: DETECTOR_MANUAL_REFINE_PASSES,
             });
             currentBoxes = parseYoloBoxes(data.boxes_yolo || '');
+            currentSamMaskTiles = normalizeSamMaskTiles(data?.sam_mask_tiles || []);
+            if (currentSamMaskTiles.length < currentBoxes.length) {
+                currentSamMaskTiles = currentSamMaskTiles.concat(new Array(currentBoxes.length - currentSamMaskTiles.length).fill(null));
+            }
             selectedBoxIdx = Math.min(selectedBoxIdx, Math.max(0, currentBoxes.length - 1));
-            setDetectEntry(String(currentSerial), data.boxes_yolo || '', data.boxes_yolo || '', true);
-            if (key) detectExtraRefinedSerials.add(key);
+            const prevRaw = String(detectPrefetch.get(String(currentSerial))?.raw || data.boxes_yolo || '');
+            const refineOk = detectRefineSucceeded(data?.refine_diag || null, currentBoxes.length);
+            setDetectEntry(
+                String(currentSerial),
+                prevRaw,
+                data.boxes_yolo || prevRaw,
+                true,
+                { refine: data?.refine_diag || null },
+                data?.sam_polygons || [],
+                data?.sam_mask_tiles || [],
+            );
+            if (key && refineOk) detectExtraRefinedSerials.add(key);
             drawCanvas();
-            setStatus(`Refined ${currentBoxes.length} box(es)`);
+            setStatus(refineOk ? `Refined ${currentBoxes.length} box(es)` : 'SAM kept detector box');
             updateInfo();
         } catch (e) {
             setStatus(`Refine failed: ${e.message}`);
@@ -4014,8 +4212,22 @@
             const refined = data.boxes_yolo || '';
             if (refined) {
                 currentBoxes = parseYoloBoxes(refined);
-                setDetectEntry(String(serial), refined, refined, true);
-                if (key) detectExtraRefinedSerials.add(key);
+                currentSamMaskTiles = normalizeSamMaskTiles(data?.sam_mask_tiles || []);
+                if (currentSamMaskTiles.length < currentBoxes.length) {
+                    currentSamMaskTiles = currentSamMaskTiles.concat(new Array(currentBoxes.length - currentSamMaskTiles.length).fill(null));
+                }
+                const prevRaw = String(detectPrefetch.get(String(serial))?.raw || refined || '');
+                const refineOk = detectRefineSucceeded(data?.refine_diag || null, currentBoxes.length);
+                setDetectEntry(
+                    String(serial),
+                    prevRaw,
+                    refined,
+                    true,
+                    { refine: data?.refine_diag || null },
+                    data?.sam_polygons || [],
+                    data?.sam_mask_tiles || [],
+                );
+                if (key && refineOk) detectExtraRefinedSerials.add(key);
                 drawCanvas();
                 setStatus(`Found ${currentBoxes.length} box(es)`);
                 updateInfo();
@@ -4088,6 +4300,19 @@
             0, 0, imgW, imgH,
             left, top, imgW * scale, imgH * scale
         );
+        currentSamMaskTiles.forEach((tile) => {
+            if (!tile || typeof tile !== 'object') return;
+            const img = getSamMaskImage(tile);
+            if (!img || !img.complete || !img.naturalWidth) return;
+            const x1 = left + (Number(tile.x1 || 0) * imgW * scale);
+            const y1 = top + (Number(tile.y1 || 0) * imgH * scale);
+            const x2 = left + (Number(tile.x2 || 0) * imgW * scale);
+            const y2 = top + (Number(tile.y2 || 0) * imgH * scale);
+            const w = Math.max(0, x2 - x1);
+            const h = Math.max(0, y2 - y1);
+            if (w <= 0 || h <= 0) return;
+            ctxCanvas.drawImage(img, x1, y1, w, h);
+        });
 
         currentBoxes.forEach((box, idx) => {
             const bx = box.cx * imgW;
@@ -4328,6 +4553,7 @@
     function addBox() {
         //Add a small box in center
         currentBoxes.push({ cx: 0.5, cy: 0.5, w: 0.2, h: 0.2 });
+        currentSamMaskTiles.push(null);
         selectedBoxIdx = currentBoxes.length - 1;
         boxesTouched = true;
         drawCanvas();
@@ -4337,6 +4563,7 @@
     function deleteSelectedBox() {
         if (currentBoxes.length === 0) return;
         currentBoxes.splice(selectedBoxIdx, 1);
+        currentSamMaskTiles.splice(selectedBoxIdx, 1);
         currentLabels.splice(selectedBoxIdx, 1);
         selectedBoxIdx = Math.min(selectedBoxIdx, currentBoxes.length - 1);
         if (selectedBoxIdx < 0) selectedBoxIdx = 0;
@@ -4414,6 +4641,7 @@
                 serial: currentSerial,
                 queueIndex: Number(queueIndex),
                 boxes: currentBoxes.map((b) => ({ ...b })),
+                samMaskTiles: cloneSamMaskTiles(currentSamMaskTiles),
             });
         } else {
             const duplicateCats = _duplicateAssignedCats(currentLabels);
@@ -4586,6 +4814,7 @@
                     serial: Number(last.serial || 0),
                     queueIndex: Number(last.queueIndex || 0),
                     boxes: last.boxes.map((b) => ({ ...b })),
+                    samMaskTiles: cloneSamMaskTiles(last.samMaskTiles || []),
                 };
             } else {
                 pendingUndoRestore = null;
@@ -4987,7 +5216,6 @@
         let rerunQueued = false;
         try {
             const activeKey = getPredCacheKey(currentItem);
-            let stopTicker = null;
             if (!force) {
                 if (currentPredictions.length) {
                     if (_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) {
@@ -5025,7 +5253,7 @@
                 const joined = await _waitFor(() => {
                     if (activeKey !== getPredCacheKey(currentItem)) return true;
                     return predCache.has(activeKey);
-                }, 3200, 70);
+                }, CLASSIFY_WARM_JOIN_TIMEOUT_MS, 70);
                 if (joined && activeKey === getPredCacheKey(currentItem)) {
                     const warmed = predCache.get(activeKey);
                     if (Array.isArray(warmed) && warmed.length) {
@@ -5047,7 +5275,6 @@
             }
 
             setStatus('Running classifier...');
-            stopTicker = startClassifierLoadProgressTicker('Loading classifier options...');
             try {
                 const requestSerial = currentSerial;
                 const requestKey = getPredCacheKey(currentItem);
@@ -5117,9 +5344,6 @@
             } catch (e) {
                 setStatus(`Classify failed: ${e.message}`);
             } finally {
-                if (stopTicker) {
-                    stopTicker();
-                }
                 if (!(_isClassifyItemLoadOverlayWaitActive() && !_isCurrentClassifyItemDisplayReady())) {
                     setWarmOverlay(false);
                 }
@@ -5684,19 +5908,7 @@
         advanceQueue();
     }
 
-    function _classifierHeuristicWarmPct(cropCount, elapsedMs) {
-        const crops = Math.max(1, Number(cropCount || 0));
-        const ms = Math.max(0, Number(elapsedMs || 0));
-        const estimateMs = 2200 + (crops * 1400);
-        const phase = estimateMs > 0 ? ms / estimateMs : 1;
-        const eased = 1 - Math.exp(-Math.max(0, phase) * 1.6);
-        return Math.max(0.08, Math.min(0.78, 0.08 + eased * 0.70));
-    }
-
-    function _formatClassifierElapsed(elapsedMs) {
-        const secs = Math.max(1, Math.round(Math.max(0, Number(elapsedMs || 0)) / 1000));
-        return `${secs}s elapsed`;
-    }
+    // Hallucinated progress functions removed
 
     function _normalizeAssignedCatLabel(label) {
         const raw = String(label || '').trim();
@@ -5773,8 +5985,7 @@
 
     function primeHotNextClassifyItem() {
         if (labelerMode !== 'classify') return;
-        //Prime next 2 items ahead for smoother transitions
-        const primeAheadMax = 2;
+        const primeAheadMax = 1;
         for (let offset = 1; offset <= primeAheadMax; offset++) {
             _primeClassifyItemAtOffset(offset);
         }
@@ -5785,10 +5996,6 @@
         if (!item || !item.boxes) return;
         const key = getPredCacheKey(item);
         if (key && predCache.has(key)) {
-            const rows = predCache.get(key);
-            if (Array.isArray(rows) && rows.length) {
-                prefetchWarmRefsForItem(item, rows, offset === 1 ? 'high' : 'normal');
-            }
             if (_classifyItemWarmReady(item)) {
                 return;
             }
@@ -5805,10 +6012,6 @@
             let ok = false;
             try {
                 ok = await ensureClassifyItemReady(item, true, true);
-                const rows = predCache.get(key);
-                if (Array.isArray(rows) && rows.length) {
-                    prefetchWarmRefsForItem(item, rows, offset === 1 ? 'high' : 'normal');
-                }
             } catch (e) {
                 ok = false;
             } finally {
@@ -5857,7 +6060,7 @@
             if (!item || !item.serial) continue;
             const key = String(item.serial);
             if (
-                detectPrefetch.has(key) ||
+                isDetectItemWarmReady(item) ||
                 detectPrefetchInFlight.has(key) ||
                 detectWarmInFlight.has(key) ||
                 isDetectWarmBlocked(key)
@@ -5867,93 +6070,29 @@
         if (!targets.length) return;
 
         detectPrefetchRunning = true;
-        let idx = 0;
-        let active = 0;
-
-        const runNext = async () => {
-            if (idx >= targets.length) {
-                if (active === 0) {
-                    detectPrefetchRunning = false;
-                    if (detectPrefetchRequested) {
-                        detectPrefetchRequested = false;
-                        prefetchDetection();
-                    }
-                }
-                return;
-            }
-            const target = targets[idx++];
-            active++;
-            detectPrefetchInFlight.add(target.key);
-            detectWarmInFlight.add(target.key);
+        void (async () => {
             try {
-                const data = await apiPost('/api/labeler/detect', {
-                    serial: target.item.serial,
-                    url: target.item.url || null,
-                    fast: true,
-                    prefetch: true,
-                }, { timeoutMs: API_PREFETCH_TIMEOUT_MS });
-                if (epoch === detectPrefetchEpoch && data) {
-                    const raw = data.boxes_yolo || '';
-                    setDetectEntry(target.key, raw, raw, false);
-                }
-            } catch (e) {
-                //Ignore prefetch failures
-            } finally {
-                detectPrefetchInFlight.delete(target.key);
-                detectWarmInFlight.delete(target.key);
-                active--;
-                runNext();
-                if (idx >= targets.length && active === 0) {
-                    detectPrefetchRunning = false;
-                    if (detectPrefetchRequested) {
-                        detectPrefetchRequested = false;
-                        prefetchDetection();
+                for (const target of targets.slice(0, DETECT_PREFETCH_CONCURRENCY || 1)) {
+                    if (epoch !== detectPrefetchEpoch) break;
+                    detectPrefetchInFlight.add(target.key);
+                    try {
+                        await ensureDetectItemReady(target.item, true, true);
+                    } finally {
+                        detectPrefetchInFlight.delete(target.key);
                     }
                 }
+            } finally {
+                detectPrefetchRunning = false;
+                if (detectPrefetchRequested) {
+                    detectPrefetchRequested = false;
+                    prefetchDetection();
+                }
             }
-        };
-
-        const slots = Math.min(DETECT_PREFETCH_CONCURRENCY, targets.length);
-        for (let i = 0; i < slots; i++) {
-            runNext();
-        }
+        })();
     }
 
     function prefetchDetectionRefine() {
-        if (labelerMode !== 'detect') return;
-        if (DETECT_REFINE_PREFETCH_AHEAD <= 0) return;
-        const now = Date.now();
-        if (now - lastDetectRefinePrefetch < DETECT_REFINE_COOLDOWN_MS) return;
-        lastDetectRefinePrefetch = now;
-        const start = queueIndex + 1;
-        const end = Math.min(queue.length, start + DETECT_REFINE_PREFETCH_AHEAD);
-        for (let i = start; i < end; i++) {
-            const item = queue[i];
-            if (!item || !item.serial) continue;
-            const key = String(item.serial);
-            const entry = detectPrefetch.get(key);
-            if (!entry || !entry.raw || isDetectEntryReady(entry) || detectRefineInFlight.has(key)) continue;
-            detectRefineInFlight.add(key);
-            apiPost('/api/labeler/refine', {
-                serial: item.serial,
-                url: item.url || null,
-                boxes: parseYoloBoxes(entry.raw).map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
-                passes: DETECTOR_PREFETCH_REFINE_PASSES,
-                prefetch: true,
-            }, { timeoutMs: API_PREFETCH_TIMEOUT_MS }).then((data) => {
-                if (data && data.boxes_yolo) {
-                    setDetectEntry(key, entry.raw, data.boxes_yolo, true);
-                    detectExtraRefinedSerials.add(key);
-                }
-            }).catch(() => {
-                // Fail soft: keep raw detector boxes usable, but do NOT mark ready.
-                // When this serial becomes current, onImageLoad will auto-refine instead
-                // of treating the raw YOLO boxes as fully SAM-tightened.
-                setDetectEntry(key, entry.raw, entry.raw, false);
-            }).finally(() => {
-                detectRefineInFlight.delete(key);
-            });
-        }
+        return;
     }
 
     //---------- Events ----------

@@ -29,7 +29,6 @@ GOOGLE_SERVICE_ACCOUNT_JSON=./credentials/service_account.json
 
 # ===== Sheets =====
 SHEET_CATABASE_ID=                    # Catabase (cat bios + latest image URL)
-SHEET_VISION_ID=                      # Vision/aux (RecentPics, FeedingStationChecklist, etc.)
 SHEET_MEGASHEET_ID=                   # Members/finance megasheet (used for dues/membership)
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
@@ -93,6 +92,11 @@ GMAIL_ENABLED=true                    # Toggle Gmail integration; disable to ski
 GMAIL_CREDENTIALS_PATH=credentials/gmail_oauth_client.json  # OAuth client secrets downloaded from Google Cloud
 GMAIL_TOKEN_PATH=credentials/gmail_token.json              # Stored refresh/access token generated after auth
 GMAIL_LOCAL_PORT=8765                 # Local redirect port the OAuth helper spins up
+GOOGLE_API_HEALTHCHECK_ENABLED=true
+GOOGLE_API_HEALTHCHECK_ON_BOOT=true
+GOOGLE_API_HEALTHCHECK_HOUR=12
+GOOGLE_API_HEALTHCHECK_MINUTE=0
+TOMCAT_SHUTDOWN_TIMEOUT_SEC=3
 
 # ===== Dues Processing =====
 DUES_ENABLED=true                     # Master switch for dues automation

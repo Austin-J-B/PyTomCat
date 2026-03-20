@@ -31,7 +31,10 @@ _METADATA_SHEET_SYNC_LOCK = threading.Lock()
 _INDEX_PATHS: Dict[int, Path] = {}
 _INDEX_SERIALS: Set[int] = set()
 _INDEX_NEXT_REFRESH_MONO: float = 0.0
-_INDEX_REFRESH_SEC = 10.0
+_INDEX_REFRESH_SEC = max(
+    1.0,
+    float(getattr(settings, "labeler_local_index_refresh_sec", 60.0) or 60.0),
+)
 _INDEX_ROOT_SIG: Tuple[str, int, int] = ("", 0, 0)
 _INDEX_VERSION: int = 0
 _HASH_INDEX_LOCK = threading.Lock()
@@ -39,7 +42,6 @@ _HASH_CACHE: Dict[str, tuple[int, int, str, Optional[int], int, int, int]] = {}
 _EXACT_HASH_SERIALS: Dict[str, Set[int]] = {}
 _DHASH_ENTRIES: Dict[int, Set[int]] = {}
 _HASH_INDEX_BUILT_FOR_VERSION: int = -1
-_SERIAL_LOCK = asyncio.Lock()
 _SERIAL_ALLOC_LOCK = threading.RLock()
 _NEXT_SERIAL: int | None = None
 _LAST_METADATA_SHEET_SYNC_SIG: tuple[int, int] | None = None
@@ -99,15 +101,21 @@ def photo_root() -> Path:
     return Path(raw or "./cache/PicsOfCats/Pictures")
 
 
-def is_intake_message(message: discord.Message) -> bool:
-    """True when a message should be added to the local photo intake."""
+def intake_target_for_message(message: discord.Message) -> str:
+    """Return the configured intake target for a message, if any."""
     attachments = getattr(message, "attachments", None) or []
     if not attachments:
-        return False
+        return ""
     if getattr(message, "guild", None) is None:
-        return True
+        return "photo_metadata"
     channel_id = int(getattr(getattr(message, "channel", None), "id", 0) or 0)
-    return bool(settings.image_intake_channel_map and channel_id in settings.image_intake_channel_map)
+    target = settings.image_intake_channel_map.get(channel_id) if settings.image_intake_channel_map else None
+    return str(target or "").strip()
+
+
+def is_intake_message(message: discord.Message) -> bool:
+    """True when a message should be added to the local photo intake."""
+    return bool(intake_target_for_message(message))
 
 
 def metadata_csv_path() -> Path:
@@ -575,25 +583,106 @@ def _timestamp_for_message(message: discord.Message) -> str:
 
 def _append_metadata_row(path: Path, row: dict[str, str]) -> None:
     with _METADATA_FILE_LOCK:
-        needs_header = (not path.exists()) or path.stat().st_size == 0
-        with path.open("a", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=CSV_HEADERS)
-            if needs_header:
-                writer.writeheader()
-            writer.writerow(row)
+        _append_metadata_row_locked(path, row)
+
+
+def _append_metadata_row_locked(path: Path, row: dict[str, str]) -> None:
+    """Append one metadata row while the caller already holds _METADATA_FILE_LOCK."""
+    needs_header = (not path.exists()) or path.stat().st_size == 0
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=CSV_HEADERS)
+        if needs_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def _read_metadata_rows_locked(metadata_path: Path) -> list[dict[str, str]]:
+    """Read metadata rows while the caller already holds _METADATA_FILE_LOCK."""
+    rows: list[dict[str, str]] = []
+    with metadata_path.open("r", newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        for raw in reader:
+            row = {header: str((raw or {}).get(header, "") or "") for header in CSV_HEADERS}
+            rows.append(row)
+    return rows
+
+
+def _build_metadata_row(
+    *,
+    discord_url: str,
+    timestamp: str,
+    author_id: str,
+    channel: str,
+    guild_id: str,
+    message_id: str,
+    serial_token: str,
+) -> dict[str, str]:
+    return {
+        "Discord URL": str(discord_url or "").strip(),
+        "Timestamp": str(timestamp or "").strip(),
+        "Author ID": str(author_id or "").strip(),
+        "Channel": str(channel or "").strip(),
+        "Guild ID": str(guild_id or "").strip(),
+        "Message ID": str(message_id or "").strip(),
+        "Serial Number": str(serial_token or "").strip(),
+        "Box Coordinates": "",
+        "Box Cat IDs": "",
+        "Label Author": "",
+        "Comments": "",
+    }
+
+
+def _store_ingested_attachment(
+    *,
+    root: Path,
+    metadata_path: Path,
+    ext: str,
+    blob: bytes,
+    discord_url: str,
+    timestamp: str,
+    author_id: str,
+    channel: str,
+    guild_id: str,
+    message_id: str,
+) -> str:
+    """Persist one newly ingested attachment using the shared serial allocator lock."""
+    global _NEXT_SERIAL
+    with _SERIAL_ALLOC_LOCK:
+        with _METADATA_FILE_LOCK:
+            serial = _ensure_next_serial_locked(metadata_path)
+            serial_token = _format_serial(serial)
+            collision = next(root.glob(f"{serial_token}.*"), None)
+            if collision is not None:
+                raise RuntimeError(f"serial collision for {serial_token}: {collision}")
+            photo_path = root / f"{serial_token}{ext}"
+            row = _build_metadata_row(
+                discord_url=discord_url,
+                timestamp=timestamp,
+                author_id=author_id,
+                channel=channel,
+                guild_id=guild_id,
+                message_id=message_id,
+                serial_token=serial_token,
+            )
+            try:
+                photo_path.write_bytes(blob)
+                _append_metadata_row_locked(metadata_path, row)
+                _NEXT_SERIAL = serial + 1
+                return serial_token
+            except Exception:
+                try:
+                    if photo_path.exists():
+                        photo_path.unlink()
+                except Exception:
+                    pass
+                raise
 
 
 def read_metadata_rows() -> list[dict[str, str]]:
     """Return metadata rows as dicts using the canonical CSV header order."""
     _, metadata_path = ensure_storage_ready()
     with _METADATA_FILE_LOCK:
-        rows: list[dict[str, str]] = []
-        with metadata_path.open("r", newline="", encoding="utf-8-sig") as handle:
-            reader = csv.DictReader(handle)
-            for raw in reader:
-                row = {header: str((raw or {}).get(header, "") or "") for header in CSV_HEADERS}
-                rows.append(row)
-        return rows
+        return _read_metadata_rows_locked(metadata_path)
 
 
 def read_metadata_table() -> list[list[str]]:
@@ -720,7 +809,11 @@ async def sync_missing_local_photos(
         else bool(use_csv_url_fallback)
     )
 
-    candidates = missing_local_photo_rows(limit=limit_value, recent_days=recent_days_value)
+    candidates = await asyncio.to_thread(
+        missing_local_photo_rows,
+        limit=limit_value,
+        recent_days=recent_days_value,
+    )
     result: dict[str, Any] = {
         "status": "ok",
         "requested": int(len(candidates)),
@@ -754,7 +847,7 @@ async def sync_missing_local_photos(
             if serial is None or serial <= 0:
                 result["errors"] += 1
                 continue
-            if has_local_photo(int(serial), force_refresh=False):
+            if await asyncio.to_thread(has_local_photo, int(serial), force_refresh=False):
                 result["already_present"] += 1
                 continue
 
@@ -845,7 +938,7 @@ async def sync_missing_local_photos(
                     result["sample_failures"].append(str((row or {}).get("Serial Number", "") or serial))
                 continue
 
-            if has_local_photo(int(serial), force_refresh=True):
+            if await asyncio.to_thread(has_local_photo, int(serial), force_refresh=True):
                 result["restored"] += 1
                 if source == "csv_url":
                     result["restored_from_csv_url"] += 1
@@ -882,12 +975,6 @@ def _refresh_photo_metadata_consumers() -> None:
         from .catsheets import force_refresh_photo_rows_cache
 
         force_refresh_photo_rows_cache()
-    except Exception:
-        pass
-    try:
-        from . import show_cache
-
-        show_cache.reset_photo_metadata_cache()
     except Exception:
         pass
 
@@ -957,7 +1044,7 @@ def upsert_photo_bytes(
 
     with _SERIAL_ALLOC_LOCK:
         with _METADATA_FILE_LOCK:
-            rows = read_metadata_rows()
+            rows = _read_metadata_rows_locked(metadata_path)
             row, serial = _find_existing_metadata_row(
                 rows,
                 message_id=clean_values["Message ID"],
@@ -996,20 +1083,16 @@ def upsert_photo_bytes(
                 photo_path.write_bytes(image_bytes)
                 wrote_file = True
                 created = True
-                row = {
-                    "Discord URL": clean_values["Discord URL"],
-                    "Timestamp": clean_values["Timestamp"],
-                    "Author ID": clean_values["Author ID"],
-                    "Channel": clean_values["Channel"],
-                    "Guild ID": clean_values["Guild ID"],
-                    "Message ID": clean_values["Message ID"],
-                    "Serial Number": serial_token,
-                    "Box Coordinates": "",
-                    "Box Cat IDs": "",
-                    "Label Author": "",
-                    "Comments": "",
-                }
-                _append_metadata_row(metadata_path, row)
+                row = _build_metadata_row(
+                    discord_url=clean_values["Discord URL"],
+                    timestamp=clean_values["Timestamp"],
+                    author_id=clean_values["Author ID"],
+                    channel=clean_values["Channel"],
+                    guild_id=clean_values["Guild ID"],
+                    message_id=clean_values["Message ID"],
+                    serial_token=serial_token,
+                )
+                _append_metadata_row_locked(metadata_path, row)
                 rows.append(row)
                 metadata_changed = True
                 _NEXT_SERIAL = int(serial) + 1
@@ -1220,55 +1303,74 @@ def _duplicate_review_labels(box_cat_ids: Any) -> list[str]:
 
 
 def update_metadata_annotations(updates: list[dict[str, Any]], actor_name: str) -> dict[str, Any]:
-    """Apply labeler annotation updates to the metadata CSV."""
+    """Apply labeler annotation updates to the metadata CSV via fast streaming rewrite."""
     _, metadata_path = ensure_storage_ready()
+    
+    update_map: dict[int, dict[str, Any]] = {}
+    for upd in updates or []:
+        serial = _parse_serial_like(upd.get("serial"))
+        if serial is not None:
+            update_map[int(serial)] = upd
+
+    if not update_map:
+        return {"saved": 0, "pending_unblacklist_ref_serials": []}
+
+    pending_unblacklist_ref_serials: list[int] = []
+    saved = 0
+
     with _METADATA_FILE_LOCK:
-        rows = read_metadata_rows()
-        by_serial: dict[int, dict[str, str]] = {}
-        for row in rows:
-            raw = str(row.get("Serial Number", "") or "").strip()
-            match = _SN_RE.match(Path(raw).stem if "." in raw else raw)
-            if not match:
-                match = _SN_RE.match(raw)
-            if not match:
-                continue
-            try:
-                by_serial[int(match.group(1))] = row
-            except Exception:
-                continue
+        tmp_path = metadata_path.with_name(f"{metadata_path.name}.tmp")
+        with metadata_path.open("r", newline="", encoding="utf-8-sig") as f_in, \
+             tmp_path.open("w", newline="", encoding="utf-8") as f_out:
+            
+            reader = csv.DictReader(f_in)
+            # Ensure headers match exact CSV_HEADERS, with default fallbacks if missing
+            out_headers = list(CSV_HEADERS)
+            writer = csv.DictWriter(f_out, fieldnames=out_headers)
+            writer.writeheader()
 
-        pending_unblacklist_ref_serials: list[int] = []
-        saved = 0
-        for upd in updates or []:
-            serial = _parse_serial_like(upd.get("serial"))
-            if serial is None:
-                continue
-            row = by_serial.get(int(serial))
-            if row is None:
-                continue
-            touched = False
-            if "box_coords" in upd:
-                row["Box Coordinates"] = str(upd.get("box_coords") or "")
-                touched = True
-            if "box_cat_ids" in upd:
-                duplicates = _duplicate_review_labels(upd.get("box_cat_ids"))
-                if duplicates:
-                    raise ValueError(
-                        "Duplicate cat labels are not allowed in one image: "
-                        + ", ".join(duplicates)
-                    )
-                row["Box Cat IDs"] = str(upd.get("box_cat_ids") or "")
-                if _has_reviewed_label(upd.get("box_cat_ids")):
-                    pending_unblacklist_ref_serials.append(int(serial))
-                touched = True
-            if "comments" in upd:
-                row["Comments"] = str(upd.get("comments") or "")
-                touched = True
-            if touched:
-                row["Label Author"] = _merge_label_author(row.get("Label Author", ""), actor_name)
-                saved += 1
+            for raw_row in reader:
+                row = {h: str((raw_row).get(h, "") or "") for h in out_headers}
+                
+                raw_sn = str(row.get("Serial Number", "") or "").strip()
+                match = _SN_RE.match(Path(raw_sn).stem if "." in raw_sn else raw_sn)
+                if not match:
+                    match = _SN_RE.match(raw_sn)
+                
+                if match:
+                    try:
+                        sn = int(match.group(1))
+                        upd = update_map.get(sn)
+                        if upd is not None:
+                            touched = False
+                            if "box_coords" in upd:
+                                row["Box Coordinates"] = str(upd.get("box_coords") or "")
+                                touched = True
+                            if "box_cat_ids" in upd:
+                                duplicates = _duplicate_review_labels(upd.get("box_cat_ids"))
+                                if duplicates:
+                                    tmp_path.unlink(missing_ok=True)
+                                    raise ValueError(
+                                        "Duplicate cat labels are not allowed in one image: "
+                                        + ", ".join(duplicates)
+                                    )
+                                row["Box Cat IDs"] = str(upd.get("box_cat_ids") or "")
+                                if _has_reviewed_label(upd.get("box_cat_ids")):
+                                    pending_unblacklist_ref_serials.append(sn)
+                                touched = True
+                            if "comments" in upd:
+                                row["Comments"] = str(upd.get("comments") or "")
+                                touched = True
+                            if touched:
+                                row["Label Author"] = _merge_label_author(row.get("Label Author", ""), actor_name)
+                                saved += 1
+                    except Exception:
+                        pass
+                
+                writer.writerow(row)
+                
+        tmp_path.replace(metadata_path)
 
-        _write_metadata_rows_locked(metadata_path, rows)
     if saved > 0:
         _refresh_photo_metadata_consumers()
     return {
@@ -1276,49 +1378,75 @@ def update_metadata_annotations(updates: list[dict[str, Any]], actor_name: str) 
         "pending_unblacklist_ref_serials": pending_unblacklist_ref_serials,
     }
 
-
 def clear_metadata_annotations(serials: list[int], actor_name: str) -> dict[str, Any]:
-    """Clear label columns for the given serials in the metadata CSV."""
+    """Clear label columns for the given serials in the metadata CSV via fast streaming rewrite."""
     _, metadata_path = ensure_storage_ready()
+    
+    target_sns = set()
+    for s in serials or []:
+        sn = _parse_serial_like(s)
+        if sn is not None:
+            target_sns.add(int(sn))
+            
+    if not target_sns:
+        return {"results": {}, "updated_metadata": False}
+
+    results: dict[int, dict[str, Any]] = {}
+    for sn in target_sns:
+        results[sn] = {
+            "ok": False,
+            "not_found": True,
+            "changed": False,
+            "already_unlabeled": False,
+            "error": "Serial not found",
+        }
+
+    changed_any = False
+
     with _METADATA_FILE_LOCK:
-        rows = read_metadata_rows()
-        by_serial: dict[int, dict[str, str]] = {}
-        for row in rows:
-            serial = _parse_serial_like(row.get("Serial Number"))
-            if serial is not None:
-                by_serial[int(serial)] = row
+        tmp_path = metadata_path.with_name(f"{metadata_path.name}.tmp")
+        with metadata_path.open("r", newline="", encoding="utf-8-sig") as f_in, \
+             tmp_path.open("w", newline="", encoding="utf-8") as f_out:
+            
+            reader = csv.DictReader(f_in)
+            out_headers = list(CSV_HEADERS)
+            writer = csv.DictWriter(f_out, fieldnames=out_headers)
+            writer.writeheader()
 
-        results: dict[int, dict[str, Any]] = {}
-        changed_any = False
-        for serial in serials or []:
-            sn = _parse_serial_like(serial)
-            if sn is None:
-                continue
-            row = by_serial.get(int(sn))
-            if row is None:
-                results[int(sn)] = {
-                    "ok": False,
-                    "not_found": True,
-                    "changed": False,
-                    "already_unlabeled": False,
-                    "error": "Serial not found",
-                }
-                continue
-            prev_box_coords = str(row.get("Box Coordinates", "") or "")
-            prev_box_cat_ids = str(row.get("Box Cat IDs", "") or "")
-            changed = bool(prev_box_coords.strip() or prev_box_cat_ids.strip())
-            row["Box Coordinates"] = ""
-            row["Box Cat IDs"] = ""
-            row["Label Author"] = _merge_label_author(row.get("Label Author", ""), actor_name)
-            changed_any = changed_any or changed
-            results[int(sn)] = {
-                "ok": True,
-                "not_found": False,
-                "changed": bool(changed),
-                "already_unlabeled": not bool(changed),
-            }
+            for raw_row in reader:
+                row = {h: str((raw_row).get(h, "") or "") for h in out_headers}
+                
+                raw_sn = str(row.get("Serial Number", "") or "").strip()
+                match = _SN_RE.match(Path(raw_sn).stem if "." in raw_sn else raw_sn)
+                if not match:
+                    match = _SN_RE.match(raw_sn)
+                
+                if match:
+                    try:
+                        sn = int(match.group(1))
+                        if sn in target_sns:
+                            prev_box_coords = str(row.get("Box Coordinates", "") or "")
+                            prev_box_cat_ids = str(row.get("Box Cat IDs", "") or "")
+                            changed = bool(prev_box_coords.strip() or prev_box_cat_ids.strip())
+                            
+                            row["Box Coordinates"] = ""
+                            row["Box Cat IDs"] = ""
+                            row["Label Author"] = _merge_label_author(row.get("Label Author", ""), actor_name)
+                            changed_any = changed_any or changed
+                            
+                            results[sn] = {
+                                "ok": True,
+                                "not_found": False,
+                                "changed": bool(changed),
+                                "already_unlabeled": not bool(changed),
+                            }
+                    except Exception:
+                        pass
+                
+                writer.writerow(row)
+                
+        tmp_path.replace(metadata_path)
 
-        _write_metadata_rows_locked(metadata_path, rows)
     if changed_any:
         _refresh_photo_metadata_consumers()
     return {"results": results, "updated_metadata": bool(changed_any)}
@@ -1400,47 +1528,25 @@ async def ingest_message_images(message: discord.Message) -> IngestResult:
             )
             continue
 
-        async with _SERIAL_LOCK:
-            serial = _ensure_next_serial_locked(metadata_path)
-            serial_token = _format_serial(serial)
-            collision = next(root.glob(f"{serial_token}.*"), None)
-            if collision is not None:
-                raise RuntimeError(f"serial collision for {serial_token}: {collision}")
-
-            photo_path = root / f"{serial_token}{ext}"
-            row = {
-                "Discord URL": str(getattr(attachment, "url", "") or ""),
-                "Timestamp": timestamp,
-                "Author ID": author_id,
-                "Channel": channel_id,
-                "Guild ID": guild_id,
-                "Message ID": message_id,
-                "Serial Number": serial_token,
-                "Box Coordinates": "",
-                "Box Cat IDs": "",
-                "Label Author": "",
-                "Comments": "",
-            }
-
-            try:
-                await asyncio.to_thread(photo_path.write_bytes, blob)
-                _append_metadata_row(metadata_path, row)
-                saved_rows += 1
-                saved_serials.append(serial_token)
-                global _NEXT_SERIAL
-                _NEXT_SERIAL = serial + 1
-                await asyncio.to_thread(refresh_local_index)
-            except Exception:
-                try:
-                    if photo_path.exists():
-                        photo_path.unlink()
-                except Exception:
-                    pass
-                raise
+        serial_token = await asyncio.to_thread(
+            _store_ingested_attachment,
+            root=root,
+            metadata_path=metadata_path,
+            ext=ext,
+            blob=blob,
+            discord_url=str(getattr(attachment, "url", "") or ""),
+            timestamp=timestamp,
+            author_id=author_id,
+            channel=channel_id,
+            guild_id=guild_id,
+            message_id=message_id,
+        )
+        saved_rows += 1
+        saved_serials.append(serial_token)
+        await asyncio.to_thread(refresh_local_index)
 
     if saved_rows:
-        await asyncio.to_thread(refresh_local_index)
-        _refresh_photo_metadata_consumers()
+        await asyncio.to_thread(_refresh_photo_metadata_consumers)
     return IngestResult(saved_rows=saved_rows, skipped_rows=skipped_rows, saved_serials=tuple(saved_serials))
 
 

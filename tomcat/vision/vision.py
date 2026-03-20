@@ -1,6 +1,7 @@
-﻿"""Utilities for running YOLO detection and DINOv3 ReID similarity for TomCat."""
+"""Utilities for running YOLO detection and DINOv3 ReID similarity for TomCat."""
 
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
 import os
 import math
@@ -12,7 +13,7 @@ import asyncio
 import random
 import re
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Any, Callable, cast
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -33,13 +34,53 @@ except Exception:
     YOLO = None
     SAM = None
 
-from ..config import settings
+from ..config import settings, _find_latest_local_gallery
 from ..logger import log_action
 from ..services.station_residents import get_active_cat_station_membership
 
 #---------- Constants ----------
 _PURPLE = "#4C007F"
 _DEFAULT_CONF = 0.552
+_LABELER_SAM_PROMPT_PAD_PCT = max(
+    0.0,
+    float(os.getenv("LABELER_SAM_PROMPT_PAD_PCT", "0.03") or "0.03"),
+)
+_LABELER_SAM_GUARD_PAD_PCT = max(
+    _LABELER_SAM_PROMPT_PAD_PCT,
+    float(os.getenv("LABELER_SAM_GUARD_PAD_PCT", "0.08") or "0.08"),
+)
+_LABELER_SAM_MAX_OUTSIDE_GUARD_RATIO = min(
+    1.0,
+    max(
+        0.0,
+        float(os.getenv("LABELER_SAM_MAX_OUTSIDE_GUARD_RATIO", "0.08") or "0.08"),
+    ),
+)
+_LABELER_SAM_MIN_DETECTOR_MASK_RATIO = min(
+    1.0,
+    max(
+        0.0,
+        float(os.getenv("LABELER_SAM_MIN_DETECTOR_MASK_RATIO", "0.30") or "0.30"),
+    ),
+)
+_LABELER_SAM_MIN_DETECTOR_COVERAGE = min(
+    1.0,
+    max(
+        0.0,
+        float(os.getenv("LABELER_SAM_MIN_DETECTOR_COVERAGE", "0.45") or "0.45"),
+    ),
+)
+_LABELER_SAM_MAX_REFINED_AREA_RATIO = max(
+    1.0,
+    float(os.getenv("LABELER_SAM_MAX_REFINED_AREA_RATIO", "1.20") or "1.20"),
+)
+_LABELER_SAM_TIGHT_OVERLAP_RATIO = min(
+    1.0,
+    max(
+        0.0,
+        float(os.getenv("LABELER_SAM_TIGHT_OVERLAP_RATIO", "0.62") or "0.62"),
+    ),
+)
 
 #---------- Internal State ----------
 _yolo: Optional[Any] = None
@@ -50,6 +91,7 @@ _clf: Optional[torch.nn.Module] = None
 _gallery_emb: Optional[Tensor] = None
 _gallery_names: List[str] = []
 _gallery_paths: List[str] = []
+_gallery_records: List[dict[str, Any]] = []
 _gallery_cat_indices: dict[str, Tensor] = {}
 _gallery_root_hints: Optional[List[Path]] = None
 _device: Optional[torch.device] = None
@@ -87,6 +129,11 @@ _RERANK_ENABLED = str(os.getenv("LABELER_RERANK_ENABLED", "1")).strip().lower() 
 _RERANK_TOP_N = max(1, int(os.getenv("LABELER_RERANK_TOP_N", "15") or "15"))
 _RERANK_HFLIP = str(os.getenv("LABELER_RERANK_HFLIP", "1")).strip().lower() in {"1", "true", "yes", "on"}
 _LABELER_REF_SEARCH_POOL = max(5, int(os.getenv("LABELER_REF_SEARCH_POOL", "250") or "250"))
+_DEFAULT_LABELER_REF_BUILD_WORKERS = max(4, min(32, int(os.cpu_count() or 8)))
+_LABELER_REF_BUILD_WORKERS = max(
+    1,
+    int(os.getenv("LABELER_REF_BUILD_WORKERS", str(_DEFAULT_LABELER_REF_BUILD_WORKERS)) or str(_DEFAULT_LABELER_REF_BUILD_WORKERS)),
+)
 _IDENTIFY_STATION_PRIOR_ENABLED = str(os.getenv("IDENTIFY_STATION_PRIOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
 _IDENTIFY_STATION_PRIOR_SEED_CONF = float(os.getenv("IDENTIFY_STATION_PRIOR_SEED_CONF", "0.72") or "0.72")
 _IDENTIFY_STATION_PRIOR_SEED_GAP = float(os.getenv("IDENTIFY_STATION_PRIOR_SEED_GAP", "0.04") or "0.04")
@@ -204,6 +251,17 @@ def _rebuild_gallery_cat_indices() -> None:
 def _sort_candidate_rows(rows: List[Tuple[str, float, float]]) -> List[Tuple[str, float, float]]:
     rows.sort(key=lambda item: (-float(item[1]), -float(item[2]), str(item[0] or "").lower()))
     return rows
+
+
+def _clamp_confidence_score(score: Any) -> float:
+    """Keep displayed/stored confidence-like scores within percentage bounds."""
+    try:
+        value = float(score)
+    except Exception:
+        return 0.0
+    if not math.isfinite(value):
+        return 0.0
+    return max(0.0, min(1.0, value))
 
 
 def _rank_unique_candidates_for_similarity(
@@ -479,6 +537,8 @@ def _apply_identify_station_prior(
 class IdentifyResult:
     boxed_jpeg: bytes
     results: List[dict]
+    crops: List[bytes] = field(default_factory=list)
+    image_size: Tuple[int, int] = (0, 0)
 
 @dataclass
 class Det:
@@ -546,6 +606,15 @@ def _ensure_sam() -> None:
             if SAM is None:
                 raise RuntimeError("ultralytics SAM not available")
             _sam = SAM(settings.cv_sam_weights)
+            # Ultralytics 8.3.249 calls predictor.model.warmup() unconditionally,
+            # but SAM2Model does not implement it. Patch in a no-op so prompted
+            # segmentation does not fail on first use.
+            try:
+                sam_model = getattr(_sam, "model", None)
+                if sam_model is not None and not hasattr(sam_model, "warmup"):
+                    setattr(sam_model, "warmup", lambda *args, **kwargs: None)
+            except Exception:
+                pass
             log_action("viz_sam_load", "sam_ready", settings.cv_sam_weights)
         except Exception as e:
             _sam_failed = True
@@ -554,7 +623,7 @@ def _ensure_sam() -> None:
 
 def _ensure_classifier() -> None:
     """Load the DINOv3 encoder and the .pt gallery."""
-    global _clf, _gallery_emb, _gallery_names, _gallery_paths
+    global _clf, _gallery_emb, _gallery_names, _gallery_paths, _gallery_records
     _ensure_device_only()
     if _clf is not None and _gallery_emb is not None: return
 
@@ -571,10 +640,17 @@ def _ensure_classifier() -> None:
         _clf = encoder
 
         #2. Load Gallery (.pt memories)
+        gallery_target = str(settings.cv_gallery_path or "").strip()
+        gallery_path = Path(gallery_target)
+        if gallery_target and not gallery_path.exists():
+            fallback = _find_latest_local_gallery()
+            if fallback:
+                gallery_target = fallback
+                settings.cv_gallery_path = str(fallback)
         try:
-            gal_data = torch.load(settings.cv_gallery_path, map_location=_device, weights_only=False)
+            gal_data = torch.load(gallery_target, map_location=_device, weights_only=False)
         except Exception:
-            gal_data = torch.load(settings.cv_gallery_path, map_location=_device)
+            gal_data = torch.load(gallery_target, map_location=_device)
 
         _gallery_emb = gal_data['emb'].to(_device)
         _gallery_emb = torch.nn.functional.normalize(_gallery_emb, p=2, dim=1)
@@ -582,12 +658,14 @@ def _ensure_classifier() -> None:
         idx_to_class = {v: k for k, v in gal_data['class_to_idx'].items()}
         _gallery_names = [idx_to_class[int(i)] for i in gal_data['label']]
         raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
-        if isinstance(raw_paths, (list, tuple)) and len(raw_paths) == _gallery_emb.shape[0]:
-            _gallery_paths = [str(p) for p in raw_paths]
-        else:
-            _gallery_paths = []
+        raw_records = gal_data.get("records") or gal_data.get("gallery_records") or []
+        _gallery_records, _gallery_paths = _build_gallery_runtime_metadata(
+            _gallery_names,
+            raw_paths,
+            raw_records,
+        )
         _rebuild_gallery_cat_indices()
-        log_action("viz_clf_load_info", "reid_ready", f"cats={len(set(_gallery_names))}")
+        log_action("viz_clf_load_info", "reid_ready", f"cats={len(set(_gallery_names))}; gallery={gallery_target}")
     except Exception as e:
         log_action("viz_clf_load_error", f"type={type(e).__name__}", str(e))
         _clf = None
@@ -714,6 +792,122 @@ def _parse_gallery_crop_uri(path: str) -> Tuple[str, str]:
     else:
         crop_id, cat_name = body, ""
     return str(crop_id).strip(), str(cat_name).strip()
+
+
+def _coerce_gallery_int(value: Any) -> Optional[int]:
+    try:
+        parsed = int(value)
+    except Exception:
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _gallery_record_from_legacy_path(cat_name: str, path: str) -> dict[str, Any]:
+    raw_path = str(path or "").strip()
+    crop_id, cat_from_uri = _parse_gallery_crop_uri(raw_path)
+    serial, crop_num = _parse_serial_crop_from_path(raw_path)
+    name = str(cat_name or cat_from_uri or "").strip()
+    if not raw_path and crop_id and name:
+        raw_path = f"crop://{crop_id}:{name}"
+    return {
+        "cat_name": name,
+        "serial": serial,
+        "crop": crop_num,
+        "crop_id": str(crop_id or "").strip(),
+        "path": raw_path,
+        "source": "legacy_path",
+    }
+
+
+def _normalize_gallery_record(
+    raw_record: Any,
+    *,
+    fallback_name: str = "",
+    fallback_path: str = "",
+) -> dict[str, Any]:
+    record = _gallery_record_from_legacy_path(str(fallback_name or ""), str(fallback_path or ""))
+    if not isinstance(raw_record, dict):
+        return record
+
+    cat_name = str(
+        raw_record.get("cat_name")
+        or raw_record.get("name")
+        or record.get("cat_name")
+        or ""
+    ).strip()
+    crop_id = str(
+        raw_record.get("crop_id")
+        or raw_record.get("id")
+        or record.get("crop_id")
+        or ""
+    ).strip()
+    path = str(
+        raw_record.get("path")
+        or raw_record.get("gallery_path")
+        or raw_record.get("crop_uri")
+        or record.get("path")
+        or ""
+    ).strip()
+    if not path and crop_id and cat_name:
+        path = f"crop://{crop_id}:{cat_name}"
+
+    serial = _coerce_gallery_int(raw_record.get("serial"))
+    crop_num = _coerce_gallery_int(raw_record.get("crop"))
+    if serial is None or crop_num is None:
+        legacy = _gallery_record_from_legacy_path(cat_name, path)
+        if serial is None:
+            serial = _coerce_gallery_int(legacy.get("serial"))
+        if crop_num is None:
+            crop_num = _coerce_gallery_int(legacy.get("crop"))
+        if not crop_id:
+            crop_id = str(legacy.get("crop_id") or "").strip()
+
+    source = str(raw_record.get("source") or record.get("source") or "").strip()
+    return {
+        "cat_name": cat_name,
+        "serial": serial,
+        "crop": crop_num,
+        "crop_id": crop_id,
+        "path": path,
+        "source": source,
+    }
+
+
+def _build_gallery_runtime_metadata(
+    names: List[str],
+    raw_paths: Any,
+    raw_records: Any,
+) -> Tuple[List[dict[str, Any]], List[str]]:
+    paths_in: List[str] = []
+    if isinstance(raw_paths, (list, tuple)):
+        paths_in = [str(p or "") for p in raw_paths]
+
+    records_in: List[Any] = list(raw_records) if isinstance(raw_records, (list, tuple)) else []
+    use_records = len(records_in) == len(names)
+
+    records: List[dict[str, Any]] = []
+    paths: List[str] = []
+    for idx, name in enumerate(names):
+        fallback_path = paths_in[idx] if idx < len(paths_in) else ""
+        raw_record = records_in[idx] if use_records else None
+        record = _normalize_gallery_record(
+            raw_record,
+            fallback_name=str(name or ""),
+            fallback_path=fallback_path,
+        )
+        records.append(record)
+        paths.append(str(record.get("path") or fallback_path or ""))
+    return records, paths
+
+
+def _gallery_record_for_index(abs_idx: int) -> dict[str, Any]:
+    if 0 <= int(abs_idx) < len(_gallery_records):
+        rec = _gallery_records[int(abs_idx)]
+        if isinstance(rec, dict):
+            return rec
+    fallback_path = _gallery_paths[int(abs_idx)] if 0 <= int(abs_idx) < len(_gallery_paths) else ""
+    fallback_name = _gallery_names[int(abs_idx)] if 0 <= int(abs_idx) < len(_gallery_names) else ""
+    return _normalize_gallery_record(None, fallback_name=fallback_name, fallback_path=fallback_path)
 
 def _get_gallery_crop_roots() -> List[Path]:
     """Return candidate local crop roots for resolving gallery crop URIs."""
@@ -867,39 +1061,47 @@ def _run_yolo(img: Image.Image) -> List[Det]:
             dets.append(Det((float(b[0]), float(b[1]), float(b[2]), float(b[3])), float(c)))
     return dets
 
-def detect(image_bytes: bytes) -> IdentifyResult:
+def detect(image_bytes: bytes, *, include_boxed_image: bool = True) -> IdentifyResult:
     """Run detection only and return the boxed image."""
     img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
+    image_size = (int(img.size[0]), int(img.size[1]))
     dets = _run_yolo(img)
-    annotated = _draw_boxes(img.copy(), dets)
-    
-    buf = io.BytesIO()
-    annotated.save(buf, format="JPEG")
+    boxed_jpeg = b""
+    if include_boxed_image:
+        annotated = _draw_boxes(img.copy(), dets)
+        buf = io.BytesIO()
+        annotated.save(buf, format="JPEG")
+        boxed_jpeg = buf.getvalue()
     results = [{"box": d.xyxy, "conf": d.conf} for d in dets]
-    return IdentifyResult(boxed_jpeg=buf.getvalue(), results=results)
+    return IdentifyResult(boxed_jpeg=boxed_jpeg, results=results, image_size=image_size)
 
 def crop(image_bytes: bytes) -> IdentifyResult:
-    """Run detection and return a collage of the cropped cats."""
+    """Run detection and return individual cropped cats plus a collage summary."""
     img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
     dets = _run_yolo(img)
     
     crops = []
     results = []
+    crop_jpegs: List[bytes] = []
     if dets:
         for d in dets:
             x1, y1, x2, y2 = d.xyxy
             cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, *img.size)
-            crops.append(img.crop((cx1, cy1, cx2, cy2)))
+            crop_img = img.crop((cx1, cy1, cx2, cy2))
+            crops.append(crop_img)
             results.append({"box": d.xyxy})
+            buf = io.BytesIO()
+            crop_img.save(buf, format="JPEG")
+            crop_jpegs.append(buf.getvalue())
         final_img = _make_collage(crops)
     else:
         final_img = img
 
     buf = io.BytesIO()
     final_img.save(buf, format="JPEG")
-    return IdentifyResult(boxed_jpeg=buf.getvalue(), results=results)
+    return IdentifyResult(boxed_jpeg=buf.getvalue(), results=results, crops=crop_jpegs)
 
 def identify(image_bytes: bytes) -> IdentifyResult:
     """Run detection then 512D similarity search for identification."""
@@ -952,7 +1154,7 @@ def identify(image_bytes: bytes) -> IdentifyResult:
                     taken_elsewhere=taken_elsewhere,
                 )
                 top_candidates = [
-                    (name, float(score))
+                    (name, _clamp_confidence_score(score))
                     for name, score, _ in visible_rows[:5]
                     if str(name or "").strip()
                 ]
@@ -1008,13 +1210,15 @@ def _gallery_refs_for_candidate(
             abs_idx = int(idxs[rel].item())
         except Exception:
             continue
-        if abs_idx < 0 or abs_idx >= len(_gallery_paths):
+        if abs_idx < 0:
             continue
-        gpath = _gallery_paths[abs_idx]
-        serial, crop_num = _parse_serial_crop_from_path(gpath)
+        rec = _gallery_record_for_index(abs_idx)
+        gpath = str(rec.get("path") or "")
+        serial = _coerce_gallery_int(rec.get("serial"))
+        crop_num = _coerce_gallery_int(rec.get("crop"))
         thumb = ""
         if include_thumb:
-            thumb = _thumb_b64(gpath, size=thumb_size) or ""
+            thumb = (_thumb_b64(gpath, size=thumb_size) or "") if gpath else ""
             # If local thumb extraction fails but serial/crop metadata is known,
             # still keep this ref so downstream can serve it via ref_crop URL.
             if not thumb and (serial is None or crop_num is None):
@@ -1042,6 +1246,71 @@ def _gallery_refs_for_candidate(
     return out
 
 
+def _merge_query_specific_refs(
+    gallery_refs: List[dict],
+    local_thumb_refs: List[dict],
+    refs_per: int,
+) -> List[dict]:
+    """Keep DINO-ranked refs, but hydrate them with warmed local thumbs when possible."""
+    target = max(0, int(refs_per or 0))
+    if target <= 0:
+        return []
+
+    thumb_by_sc: dict[Tuple[int, int], dict] = {}
+    for ref in local_thumb_refs or []:
+        if not isinstance(ref, dict):
+            continue
+        try:
+            serial = int(ref.get("serial"))
+            crop_num = int(ref.get("crop"))
+        except Exception:
+            continue
+        if serial <= 0 or crop_num <= 0:
+            continue
+        thumb_by_sc[(serial, crop_num)] = ref
+
+    merged: List[dict] = []
+    seen_sc: set[Tuple[int, int]] = set()
+    seen_thumb: set[str] = set()
+
+    def _append_ref(raw_ref: Any) -> None:
+        if len(merged) >= target or not isinstance(raw_ref, dict):
+            return
+        row = dict(raw_ref)
+        sc_key: Optional[Tuple[int, int]] = None
+        try:
+            serial = int(row.get("serial"))
+            crop_num = int(row.get("crop"))
+            if serial > 0 and crop_num > 0:
+                sc_key = (serial, crop_num)
+        except Exception:
+            sc_key = None
+        if sc_key is not None and sc_key in seen_sc:
+            return
+        thumb = str(row.get("img") or "").strip()
+        if not thumb and sc_key is not None:
+            thumb = str((thumb_by_sc.get(sc_key) or {}).get("img") or "").strip()
+            if thumb:
+                row["img"] = thumb
+        if thumb and thumb in seen_thumb:
+            return
+        if sc_key is not None:
+            seen_sc.add(sc_key)
+        if thumb:
+            seen_thumb.add(thumb)
+        merged.append(row)
+
+    for ref in gallery_refs or []:
+        _append_ref(ref)
+        if len(merged) >= target:
+            return merged
+    for ref in local_thumb_refs or []:
+        _append_ref(ref)
+        if len(merged) >= target:
+            return merged
+    return merged
+
+
 def identify_boxes(
     image_bytes: bytes,
     boxes: List[Tuple[float, float, float, float]],
@@ -1052,6 +1321,7 @@ def identify_boxes(
     rerank: bool = True,
     include_ref_thumbs: bool = True,
     enforce_unique_across_crops: bool = False,
+    focus_crop_idx: Optional[int] = None,
 ) -> IdentifyResult:
     """Run DINOv3 identification on specific normalized boxes (cx, cy, w, h)."""
     img = _open_rgb_image(io.BytesIO(image_bytes))
@@ -1106,6 +1376,14 @@ def identify_boxes(
     )
 
     results: List[dict] = []
+    focus_idx: Optional[int] = None
+    try:
+        if focus_crop_idx is not None:
+            parsed_focus = int(focus_crop_idx)
+            if 0 <= parsed_focus < int(similarities.shape[0]):
+                focus_idx = parsed_focus
+    except Exception:
+        focus_idx = None
     for i in range(similarities.shape[0]):
         sims = similarities[i]
         if bool(enforce_unique_across_crops):
@@ -1126,6 +1404,8 @@ def identify_boxes(
         candidate_scores = [float(score) for _, score, _ in trimmed_rows]
         base_score_map = {name: float(base_score) for name, _, base_score in trimmed_rows}
         refs_per_i = max(0, int(refs_per or 0))
+        if focus_idx is not None and i != focus_idx:
+            refs_per_i = 0
         ref_lists: dict[str, List[dict]] = {n: [] for n in candidate_names}
         for name in candidate_names:
             refs: List[dict] = []
@@ -1138,45 +1418,18 @@ def identify_boxes(
                     include_thumb=bool(include_ref_thumbs),
                     search_pool=_LABELER_REF_SEARCH_POOL,
                 )
-                # Legacy fallback is only useful in thumb mode.
-                if (
-                    include_ref_thumbs
-                    and _labeler_ref_ready
-                    and len(refs) < refs_per_i
-                ):
+                if _labeler_ref_ready:
                     extra = _get_labeler_refs_for_cat(name, query_embs[i], refs_per_i)
                     if extra:
-                        seen_sc: set[Tuple[Optional[int], Optional[int]]] = set()
-                        seen_thumb: set[str] = set()
-                        merged: List[dict] = []
-                        for r in refs + list(extra):
-                            if not isinstance(r, dict):
-                                continue
-                            serial = r.get("serial")
-                            crop_num = r.get("crop")
-                            thumb = str(r.get("img") or "").strip()
-                            if not thumb:
-                                continue
-                            if serial is not None and crop_num is not None:
-                                sc_key = (serial, crop_num)
-                                if sc_key in seen_sc:
-                                    continue
-                                seen_sc.add(sc_key)
-                            if thumb in seen_thumb:
-                                continue
-                            seen_thumb.add(thumb)
-                            merged.append(r)
-                            if len(merged) >= refs_per_i:
-                                break
-                        refs = merged
+                        refs = _merge_query_specific_refs(refs, list(extra), refs_per_i)
             ref_lists[name] = refs
 
         candidates = []
         for name, conf in zip(candidate_names, candidate_scores):
             candidates.append({
                 "name": name,
-                "conf": conf,
-                "conf_base": float(base_score_map.get(name, conf)),
+                "conf": _clamp_confidence_score(conf),
+                "conf_base": _clamp_confidence_score(base_score_map.get(name, conf)),
                 "refs": ref_lists.get(name, []),
             })
 
@@ -1247,6 +1500,92 @@ def _embed_crops(crops: List[Image.Image]) -> Tensor:
                 out.append(emb1.detach().cpu())
     return torch.cat(out, dim=0) if out else torch.empty((0, 512))
 
+
+def _prepare_labeler_ref_entry(
+    sn: int,
+    coord_str: str,
+    crop_idx: int,
+    thumb_size: int,
+) -> Optional[Tuple[Image.Image, dict[str, Any]]]:
+    from ..services import local_photos
+
+    coord = _parse_yolo_box_str(coord_str)
+    if coord is None:
+        return None
+    data = local_photos.read_local_photo_bytes(int(sn))
+    if not data:
+        return None
+
+    img: Optional[Image.Image] = None
+    try:
+        img = _open_rgb_image(io.BytesIO(data))
+        img_w, img_h = img.size
+        cx, cy, w, h = coord
+        x1 = (cx - w / 2) * img_w
+        y1 = (cy - h / 2) * img_h
+        x2 = (cx + w / 2) * img_w
+        y2 = (cy + h / 2) * img_h
+        cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
+        crop = img.crop((cx1, cy1, cx2, cy2)).copy()
+        thumb_b64 = _thumb_b64_from_pil(crop, size=thumb_size)
+        if not thumb_b64:
+            crop.close()
+            return None
+        return crop, {"img": thumb_b64, "serial": sn, "crop": crop_idx}
+    except Exception:
+        return None
+    finally:
+        if img is not None:
+            try:
+                img.close()
+            except Exception:
+                pass
+
+
+def _collect_labeler_ref_entries(
+    entries: List[Tuple[int, str, int]],
+    *,
+    thumb_size: int,
+) -> Tuple[List[Image.Image], List[dict[str, Any]]]:
+    from ..services import local_photos
+
+    if not entries:
+        return [], []
+    try:
+        local_photos.local_serials(force_refresh=False)
+    except Exception:
+        pass
+
+    crops: List[Image.Image] = []
+    refs: List[dict[str, Any]] = []
+    worker_count = min(max(1, int(_LABELER_REF_BUILD_WORKERS or 1)), len(entries))
+    if worker_count <= 1:
+        for sn, coord_str, crop_idx in entries:
+            result = _prepare_labeler_ref_entry(sn, coord_str, crop_idx, thumb_size)
+            if result is None:
+                continue
+            crop, ref = result
+            crops.append(crop)
+            refs.append(ref)
+        return crops, refs
+
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="labeler_ref_build") as pool:
+        futures = [
+            pool.submit(_prepare_labeler_ref_entry, sn, coord_str, crop_idx, thumb_size)
+            for sn, coord_str, crop_idx in entries
+        ]
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+            except Exception:
+                continue
+            if result is None:
+                continue
+            crop, ref = result
+            crops.append(crop)
+            refs.append(ref)
+    return crops, refs
+
 async def _build_ref_cache(
     *,
     max_per_cat: int,
@@ -1259,9 +1598,8 @@ async def _build_ref_cache(
     cat_map = {c.lower(): c for c in cat_list}
 
     from ..services.catsheets import get_photo_metadata_rows
-    from ..services import local_photos
 
-    rows = get_photo_metadata_rows(ttl_sec=60)
+    rows = await asyncio.to_thread(get_photo_metadata_rows, ttl_sec=60)
     samples: dict[str, List[Tuple[int, str, str, int]]] = {c: [] for c in cat_list}
     counts: dict[str, int] = {c: 0 for c in cat_list}
 
@@ -1310,36 +1648,22 @@ async def _build_ref_cache(
                     pass
             continue
 
-        crops: List[Image.Image] = []
-        refs: List[dict] = []
-        for sn, coord_str, crop_idx in entries:
-            coord = _parse_yolo_box_str(coord_str)
-            if coord is None:
-                continue
-            data = local_photos.read_local_photo_bytes(int(sn))
-            if not data:
-                continue
-            try:
-                img = _open_rgb_image(io.BytesIO(data))
-            except Exception:
-                continue
-            img_w, img_h = img.size
-            cx, cy, w, h = coord
-            x1 = (cx - w / 2) * img_w
-            y1 = (cy - h / 2) * img_h
-            x2 = (cx + w / 2) * img_w
-            y2 = (cy + h / 2) * img_h
-            cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
-            crop = img.crop((cx1, cy1, cx2, cy2))
-            thumb_b64 = _thumb_b64_from_pil(crop, size=thumb_size)
-            if not thumb_b64:
-                continue
-            crops.append(crop)
-            refs.append({"img": thumb_b64, "serial": sn, "crop": crop_idx})
+        crops, refs = await asyncio.to_thread(
+            _collect_labeler_ref_entries,
+            entries,
+            thumb_size=thumb_size,
+        )
         if crops:
-            emb = await asyncio.to_thread(_embed_crops, crops)
-            if emb.numel() > 0:
-                new_cache[cat] = {"emb": emb, "refs": refs}
+            try:
+                emb = await asyncio.to_thread(_embed_crops, crops)
+                if emb.numel() > 0:
+                    new_cache[cat] = {"emb": emb, "refs": refs}
+            finally:
+                for crop in crops:
+                    try:
+                        crop.close()
+                    except Exception:
+                        pass
         built += 1
         if progress_hook:
             try:
@@ -1610,13 +1934,15 @@ def manual_review_candidates(
                 abs_idx = int(idxs[rel].item())
                 if abs_idx < 0:
                     continue
-                thumb = None
-                if abs_idx < len(_gallery_paths):
-                    gpath = _gallery_paths[abs_idx]
-                    thumb = _thumb_b64(gpath, size=thumb_px)
+                rec = _gallery_record_for_index(abs_idx)
+                gpath = str(rec.get("path") or "")
+                thumb = _thumb_b64(gpath, size=thumb_px) if gpath else None
                 if thumb:
-                    serial, crop_num = _parse_serial_crop_from_path(gpath)
-                    refs.append({"img": thumb, "serial": serial, "crop": crop_num})
+                    refs.append({
+                        "img": thumb,
+                        "serial": _coerce_gallery_int(rec.get("serial")),
+                        "crop": _coerce_gallery_int(rec.get("crop")),
+                    })
             out.append({
                 "name": cat,
                 "conf": vals[0] if vals else None,
@@ -1665,94 +1991,750 @@ class DetectWithSamResult:
     boxed_jpeg: bytes
     boxes: List[Tuple[float, float, float, float]]  #YOLO-refined boxes (x1,y1,x2,y2)
 
-def _sam_refine_box(img_array: Any, prompt_box: List[float]) -> Tuple[float, float, float, float]:
-    """Use SAM to refine a bounding box based on mask fit.
+@dataclass
+class RefineBoxesResult:
+    """Detector-guided SAM refinement output for the labeler."""
+    boxes: List[Tuple[float, float, float, float]]
+    summary: Dict[str, Any]
+    polygons: List[List[Tuple[float, float]]] = field(default_factory=list)
+    mask_tiles: List[Dict[str, Any]] = field(default_factory=list)
 
-    SAM2 returns multiple candidate masks. We select the one whose bounding
-    box has the best IoU with the original prompt, giving the tightest fit.
-    """
-    import numpy as np
-    _ensure_sam()
-    if _sam is None:
-        return tuple(prompt_box)
+
+def _box_area(box: Tuple[float, float, float, float] | List[float]) -> float:
+    x1, y1, x2, y2 = [float(v) for v in box]
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+def _clip_box_xyxy(
+    box: Tuple[float, float, float, float] | List[float],
+    img_w: int,
+    img_h: int,
+) -> Tuple[float, float, float, float]:
+    x1, y1, x2, y2 = [float(v) for v in box]
+    x1 = max(0.0, min(float(img_w), x1))
+    y1 = max(0.0, min(float(img_h), y1))
+    x2 = max(0.0, min(float(img_w), x2))
+    y2 = max(0.0, min(float(img_h), y2))
+    if x2 < x1:
+        x1, x2 = x2, x1
+    if y2 < y1:
+        y1, y2 = y2, y1
+    return (x1, y1, x2, y2)
+
+
+def _int_box_bounds(
+    box: Tuple[float, float, float, float] | List[float],
+    img_w: int,
+    img_h: int,
+) -> Tuple[int, int, int, int]:
+    x1, y1, x2, y2 = _clip_box_xyxy(box, img_w, img_h)
+    ix1 = max(0, min(int(img_w), int(math.floor(x1))))
+    iy1 = max(0, min(int(img_h), int(math.floor(y1))))
+    ix2 = max(ix1, min(int(img_w), int(math.ceil(x2))))
+    iy2 = max(iy1, min(int(img_h), int(math.ceil(y2))))
+    return (ix1, iy1, ix2, iy2)
+
+
+def _round_metric(value: Any, digits: int = 3) -> float:
     try:
-        results = _sam(img_array, bboxes=[prompt_box], verbose=False)
+        return round(float(value), digits)
     except Exception:
-        return tuple(prompt_box)
-    if not results or not results[0].masks:
-        return tuple(prompt_box)
+        return 0.0
 
-    masks_data = results[0].masks.data.cpu().numpy()
-    px1, py1, px2, py2 = prompt_box
 
-    # OVERLAP_THRESHOLD ensures we don't pick a tiny speck that happens to be inside the prompt
-    OVERLAP_THRESHOLD = 0.7
-    best_tight = None
-    best_tight_area = float('inf')
-    best_iou_box = None
+def _fallback_sam_box_diag(
+    count: int,
+    reason: str,
+    *,
+    passes: int = 1,
+) -> Dict[str, Any]:
+    return {
+        "passes": int(max(1, passes)),
+        "boxes": int(max(0, count)),
+        "accepted_boxes": 0,
+        "fallback_boxes": int(max(0, count)),
+        "clipped_boxes": 0,
+        "guard_reject_boxes": 0,
+        "candidate_masks": 0,
+        "accepted_masks": 0,
+        "selected": {"tight": 0, "iou": 0, "fallback": int(max(0, count))},
+        "max_outside_guard_ratio": 0.0,
+        "max_detector_mask_ratio": 0.0,
+        "max_detector_coverage": 0.0,
+        "max_area_ratio": 1.0,
+        "samples": [
+            {
+                "box_index": 0,
+                "selected": "fallback",
+                "reason": str(reason or "fallback"),
+            }
+        ] if count > 0 else [],
+    }
+
+
+def _choose_guarded_sam_box(
+    detector_box: Tuple[float, float, float, float],
+    guard_box: Tuple[float, float, float, float],
+    candidates: List[Dict[str, Any]],
+    *,
+    overlap_threshold: float = _LABELER_SAM_TIGHT_OVERLAP_RATIO,
+) -> Tuple[Optional[Tuple[float, float, float, float]], Dict[str, Any]]:
+    detector_area = _box_area(detector_box)
+    best_tight: Optional[Tuple[float, float, float, float]] = None
+    best_tight_area = float("inf")
+    best_tight_diag: Optional[Dict[str, Any]] = None
     best_iou = -1.0
+    best_iou_box: Optional[Tuple[float, float, float, float]] = None
+    best_iou_diag: Optional[Dict[str, Any]] = None
+    best_preview_iou = -1.0
+    best_preview_diag: Optional[Dict[str, Any]] = None
+    accepted_masks = 0
+    guard_rejections = 0
 
-    for idx in range(masks_data.shape[0]):
-        mask = masks_data[idx].astype(bool)
+    for cand in candidates:
+        cand_box = tuple(float(v) for v in (cand.get("box") or detector_box))
+        cand_area = _box_area(cand_box)
+        outside_guard_ratio = float(cand.get("outside_guard_ratio", 0.0) or 0.0)
+        detector_mask_ratio = float(cand.get("detector_mask_ratio", 0.0) or 0.0)
+        detector_coverage = float(cand.get("detector_coverage", 0.0) or 0.0)
+        area_ratio = (
+            float(cand.get("area_ratio", 0.0) or 0.0)
+            if detector_area > 0
+            else 0.0
+        )
+        ix1 = max(float(cand_box[0]), float(detector_box[0]))
+        iy1 = max(float(cand_box[1]), float(detector_box[1]))
+        ix2 = min(float(cand_box[2]), float(detector_box[2]))
+        iy2 = min(float(cand_box[3]), float(detector_box[3]))
+        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+        overlap_ratio = inter / detector_area if detector_area > 0 else 0.0
+        union = cand_area + detector_area - inter
+        iou = inter / union if union > 0 else 0.0
+        if iou > best_preview_iou:
+            best_preview_iou = iou
+            best_preview_diag = cand
+
+        allowed = (
+            outside_guard_ratio <= float(_LABELER_SAM_MAX_OUTSIDE_GUARD_RATIO)
+            and detector_mask_ratio >= float(_LABELER_SAM_MIN_DETECTOR_MASK_RATIO)
+            and detector_coverage >= float(_LABELER_SAM_MIN_DETECTOR_COVERAGE)
+            and area_ratio <= float(_LABELER_SAM_MAX_REFINED_AREA_RATIO)
+        )
+        if not allowed:
+            guard_rejections += 1
+            continue
+
+        accepted_masks += 1
+
+        if overlap_ratio >= overlap_threshold and cand_area < best_tight_area:
+            best_tight = cand_box
+            best_tight_area = cand_area
+            best_tight_diag = cand
+
+        if iou > best_iou:
+            best_iou = iou
+            best_iou_box = cand_box
+            best_iou_diag = cand
+
+    chosen_box = best_tight if best_tight is not None else best_iou_box
+    chosen_diag = best_tight_diag if best_tight_diag is not None else best_iou_diag
+    if chosen_box is None or chosen_diag is None:
+        preview_diag = best_preview_diag if best_preview_diag is not None else {}
+        return None, {
+            "candidate_masks": int(len(candidates)),
+            "accepted_masks": int(accepted_masks),
+            "guard_rejections": int(guard_rejections),
+            "selected_source": "fallback",
+            "fallback_reason": "no_accepted_masks" if candidates else "no_masks",
+            "clipped": False,
+            "polygon": list(preview_diag.get("polygon") or []),
+            "mask_tile": dict(preview_diag.get("mask_tile") or {}),
+            "outside_guard_ratio": 0.0,
+            "detector_mask_ratio": 0.0,
+            "detector_coverage": 0.0,
+            "area_ratio": 1.0,
+        }
+
+    return chosen_box, {
+        "candidate_masks": int(len(candidates)),
+        "accepted_masks": int(accepted_masks),
+        "guard_rejections": int(guard_rejections),
+        "selected_source": "tight" if best_tight is not None else "iou",
+        "fallback_reason": "",
+        "clipped": bool(chosen_diag.get("clipped")),
+        "polygon": list(chosen_diag.get("polygon") or []),
+        "mask_tile": dict(chosen_diag.get("mask_tile") or {}),
+        "outside_guard_ratio": _round_metric(chosen_diag.get("outside_guard_ratio", 0.0)),
+        "detector_mask_ratio": _round_metric(chosen_diag.get("detector_mask_ratio", 0.0)),
+        "detector_coverage": _round_metric(chosen_diag.get("detector_coverage", 0.0)),
+        "area_ratio": _round_metric(chosen_diag.get("area_ratio", 1.0)),
+    }
+
+
+def _split_sam_masks_by_prompt(results: List[Any], num_prompts: int) -> List[Any]:
+    import numpy as np
+    prompt_masks: List[Any] = []
+    valid_results = [r for r in list(results or []) if getattr(r, "masks", None) is not None]
+    if not valid_results:
+        return [np.empty((0, 0, 0), dtype=bool) for _ in range(max(0, num_prompts))]
+
+    if len(valid_results) == num_prompts:
+        for r in valid_results:
+            masks = getattr(getattr(r, "masks", None), "data", None)
+            if masks is None:
+                prompt_masks.append(np.empty((0, 0, 0), dtype=bool))
+                continue
+            prompt_masks.append(masks.detach().cpu().numpy())
+        return prompt_masks
+
+    all_mask_batches = []
+    for r in valid_results:
+        masks = getattr(getattr(r, "masks", None), "data", None)
+        if masks is None:
+            continue
+        all_mask_batches.append(masks.detach().cpu().numpy())
+    if not all_mask_batches:
+        return [np.empty((0, 0, 0), dtype=bool) for _ in range(max(0, num_prompts))]
+
+    all_masks = (
+        all_mask_batches[0]
+        if len(all_mask_batches) == 1
+        else np.concatenate(all_mask_batches, axis=0)
+    )
+    total_masks = int(all_masks.shape[0]) if getattr(all_masks, "ndim", 0) >= 1 else 0
+    if total_masks <= 0:
+        return [np.empty((0, 0, 0), dtype=bool) for _ in range(max(0, num_prompts))]
+
+    masks_per_prompt = max(1, total_masks // max(1, num_prompts))
+    for i in range(max(0, num_prompts)):
+        start_idx = i * masks_per_prompt
+        if start_idx >= total_masks:
+            prompt_masks.append(np.empty((0, *all_masks.shape[-2:]), dtype=bool))
+            continue
+        if i == (num_prompts - 1):
+            end_idx = total_masks
+        else:
+            end_idx = min(total_masks, (i + 1) * masks_per_prompt)
+        prompt_masks.append(all_masks[start_idx:end_idx])
+    return prompt_masks
+
+
+def _summarize_sam_refine_diags(diags: List[Dict[str, Any]], *, passes: int) -> Dict[str, Any]:
+    total = len(diags)
+    selected_tight = sum(1 for d in diags if str(d.get("selected_source") or "") == "tight")
+    selected_iou = sum(1 for d in diags if str(d.get("selected_source") or "") == "iou")
+    fallback = sum(1 for d in diags if str(d.get("selected_source") or "") == "fallback")
+    clipped = sum(1 for d in diags if bool(d.get("clipped")))
+    guard_reject_boxes = sum(1 for d in diags if int(d.get("guard_rejections") or 0) > 0)
+    candidate_masks = sum(int(d.get("candidate_masks") or 0) for d in diags)
+    accepted_masks = sum(int(d.get("accepted_masks") or 0) for d in diags)
+    max_outside = max((_round_metric(d.get("outside_guard_ratio", 0.0)) for d in diags), default=0.0)
+    max_detector_mask = max((_round_metric(d.get("detector_mask_ratio", 0.0)) for d in diags), default=0.0)
+    max_detector_coverage = max((_round_metric(d.get("detector_coverage", 0.0)) for d in diags), default=0.0)
+    max_area_ratio = max((_round_metric(d.get("area_ratio", 1.0)) for d in diags), default=1.0)
+
+    samples: List[Dict[str, Any]] = []
+    for d in diags:
+        if len(samples) >= 3:
+            break
+        if (
+            str(d.get("selected_source") or "") == "fallback"
+            or bool(d.get("clipped"))
+            or int(d.get("guard_rejections") or 0) > 0
+        ):
+            sample = {
+                "box_index": int(d.get("box_index") or 0),
+                "selected": str(d.get("selected_source") or "fallback"),
+                "reason": str(d.get("fallback_reason") or ""),
+                "candidate_masks": int(d.get("candidate_masks") or 0),
+                "accepted_masks": int(d.get("accepted_masks") or 0),
+                "guard_rejections": int(d.get("guard_rejections") or 0),
+                "clipped": bool(d.get("clipped")),
+                "outside_guard_ratio": _round_metric(d.get("outside_guard_ratio", 0.0)),
+                "detector_mask_ratio": _round_metric(d.get("detector_mask_ratio", 0.0)),
+                "detector_coverage": _round_metric(d.get("detector_coverage", 0.0)),
+                "area_ratio": _round_metric(d.get("area_ratio", 1.0)),
+            }
+            samples.append(sample)
+
+    return {
+        "passes": int(max(1, passes)),
+        "boxes": int(total),
+        "accepted_boxes": int(total - fallback),
+        "fallback_boxes": int(fallback),
+        "clipped_boxes": int(clipped),
+        "guard_reject_boxes": int(guard_reject_boxes),
+        "candidate_masks": int(candidate_masks),
+        "accepted_masks": int(accepted_masks),
+        "selected": {
+            "tight": int(selected_tight),
+            "iou": int(selected_iou),
+            "fallback": int(fallback),
+        },
+        "max_outside_guard_ratio": _round_metric(max_outside),
+        "max_detector_mask_ratio": _round_metric(max_detector_mask),
+        "max_detector_coverage": _round_metric(max_detector_coverage),
+        "max_area_ratio": _round_metric(max_area_ratio),
+        "samples": samples,
+    }
+
+
+def _expand_box_with_guard(
+    box: Tuple[float, float, float, float] | List[float],
+    pad_pct: float,
+    guard_box: Tuple[float, float, float, float] | List[float],
+    img_w: int,
+    img_h: int,
+) -> Tuple[float, float, float, float]:
+    x1, y1, x2, y2 = _expand_box(
+        float(box[0]),
+        float(box[1]),
+        float(box[2]),
+        float(box[3]),
+        float(pad_pct),
+        int(img_w),
+        int(img_h),
+    )
+    gx1, gy1, gx2, gy2 = _clip_box_xyxy(guard_box, img_w, img_h)
+    out = (
+        max(float(gx1), float(x1)),
+        max(float(gy1), float(y1)),
+        min(float(gx2), float(x2)),
+        min(float(gy2), float(y2)),
+    )
+    if out[2] <= out[0] or out[3] <= out[1]:
+        return _clip_box_xyxy(guard_box, img_w, img_h)
+    return out
+
+
+def _extract_sam_masks(results: Any) -> Any:
+    import numpy as np
+    valid_results = [r for r in list(results or []) if getattr(r, "masks", None) is not None]
+    if not valid_results:
+        return np.empty((0, 0, 0), dtype=bool)
+    first = valid_results[0]
+    masks = getattr(getattr(first, "masks", None), "data", None)
+    if masks is None:
+        return np.empty((0, 0, 0), dtype=bool)
+    return masks.detach().cpu().numpy()
+
+
+def _mask_to_abs_polygon(
+    mask: Any,
+    *,
+    offset_x: float = 0.0,
+    offset_y: float = 0.0,
+    max_points: int = 96,
+) -> List[Tuple[float, float]]:
+    import numpy as np
+
+    if getattr(mask, "size", 0) == 0:
+        return []
+
+    points_raw: List[Tuple[float, float]] = []
+    try:
+        import cv2  # type: ignore
+
+        mask_u8 = np.asarray(mask, dtype=np.uint8)
+        if mask_u8.ndim != 2:
+            return []
+        if int(mask_u8.max() or 0) <= 1:
+            mask_u8 = mask_u8 * 255
+        contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            contour = max(contours, key=cv2.contourArea)
+            approx = contour
+            peri = float(cv2.arcLength(contour, True) or 0.0)
+            if peri > 0.0:
+                maybe = cv2.approxPolyDP(contour, max(1.0, peri * 0.003), True)
+                if maybe is not None and len(maybe) >= 3:
+                    approx = maybe
+            pts = approx.reshape(-1, 2).tolist()
+            points_raw = [(float(x), float(y)) for x, y in pts]
+    except Exception:
+        points_raw = []
+
+    if len(points_raw) < 3:
+        coords = np.argwhere(np.asarray(mask, dtype=bool))
+        if coords.size <= 0:
+            return []
+        min_y, min_x = coords.min(axis=0)
+        max_y, max_x = coords.max(axis=0)
+        points_raw = [
+            (float(min_x), float(min_y)),
+            (float(max_x + 1), float(min_y)),
+            (float(max_x + 1), float(max_y + 1)),
+            (float(min_x), float(max_y + 1)),
+        ]
+
+    if len(points_raw) > int(max_points):
+        step = max(1, int(math.ceil(len(points_raw) / float(max_points))))
+        points_raw = points_raw[::step]
+    return [
+        (float(offset_x) + float(x), float(offset_y) + float(y))
+        for x, y in points_raw
+    ]
+
+
+def _mask_crop_to_overlay_tile(
+    mask: Any,
+    *,
+    local_box: Tuple[float, float, float, float],
+    offset_x: float = 0.0,
+    offset_y: float = 0.0,
+) -> Dict[str, Any]:
+    import numpy as np
+
+    if getattr(mask, "size", 0) == 0:
+        return {}
+    try:
+        from PIL import Image
+
+        x1, y1, x2, y2 = [int(round(float(v))) for v in local_box]
+        mask_u8 = np.asarray(mask, dtype=np.uint8)
+        if mask_u8.ndim != 2:
+            return {}
+        if int(mask_u8.max() or 0) <= 1:
+            mask_u8 = mask_u8 * 255
+        crop = mask_u8[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
+        if getattr(crop, "size", 0) <= 0:
+            return {}
+
+        rgba = np.zeros((crop.shape[0], crop.shape[1], 4), dtype=np.uint8)
+        rgba[..., 0] = 255
+        rgba[..., 1] = 48
+        rgba[..., 2] = 48
+        rgba[..., 3] = np.where(crop > 0, 76, 0).astype(np.uint8)
+        img = Image.fromarray(rgba, mode="RGBA")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        return {
+            "x1": float(offset_x) + float(x1),
+            "y1": float(offset_y) + float(y1),
+            "x2": float(offset_x) + float(x2),
+            "y2": float(offset_y) + float(y2),
+            "png_b64": base64.b64encode(buf.getvalue()).decode("ascii"),
+        }
+    except Exception:
+        return {}
+
+
+def _sam_refine_one_box(
+    img_array: Any,
+    prompt_box: Tuple[float, float, float, float],
+    *,
+    detector_box: Tuple[float, float, float, float],
+    guard_box: Tuple[float, float, float, float],
+) -> Tuple[Tuple[float, float, float, float], Dict[str, Any]]:
+    import numpy as np
+    img_h = int(getattr(img_array, "shape", [0, 0])[0] or 0)
+    img_w = int(getattr(img_array, "shape", [0, 0])[1] or 0)
+    gx1, gy1, gx2, gy2 = _int_box_bounds(guard_box, img_w, img_h)
+    if gx2 <= gx1 or gy2 <= gy1:
+        return detector_box, {
+            "candidate_masks": 0,
+            "accepted_masks": 0,
+            "guard_rejections": 0,
+            "selected_source": "fallback",
+            "fallback_reason": "invalid_guard_crop",
+            "clipped": False,
+            "outside_guard_ratio": 0.0,
+            "detector_mask_ratio": 0.0,
+            "detector_coverage": 0.0,
+            "area_ratio": 1.0,
+        }
+
+    crop = img_array[gy1:gy2, gx1:gx2]
+    if getattr(crop, "size", 0) == 0:
+        return detector_box, {
+            "candidate_masks": 0,
+            "accepted_masks": 0,
+            "guard_rejections": 0,
+            "selected_source": "fallback",
+            "fallback_reason": "empty_guard_crop",
+            "clipped": False,
+            "outside_guard_ratio": 0.0,
+            "detector_mask_ratio": 0.0,
+            "detector_coverage": 0.0,
+            "area_ratio": 1.0,
+        }
+
+    rel_prompt = (
+        float(prompt_box[0]) - float(gx1),
+        float(prompt_box[1]) - float(gy1),
+        float(prompt_box[2]) - float(gx1),
+        float(prompt_box[3]) - float(gy1),
+    )
+    rel_detector = (
+        float(detector_box[0]) - float(gx1),
+        float(detector_box[1]) - float(gy1),
+        float(detector_box[2]) - float(gx1),
+        float(detector_box[3]) - float(gy1),
+    )
+    crop_h = int(getattr(crop, "shape", [0, 0])[0] or 0)
+    crop_w = int(getattr(crop, "shape", [0, 0])[1] or 0)
+    rel_prompt = _clip_box_xyxy(rel_prompt, crop_w, crop_h)
+    rel_detector = _clip_box_xyxy(rel_detector, crop_w, crop_h)
+
+    try:
+        with torch.inference_mode():
+            results = _sam(crop, bboxes=[list(rel_prompt)], verbose=False)
+    except Exception as e:
+        log_action("viz_sam_box_error", "error", str(e))
+        return detector_box, {
+            "candidate_masks": 0,
+            "accepted_masks": 0,
+            "guard_rejections": 0,
+            "selected_source": "fallback",
+            "fallback_reason": "sam_error",
+            "clipped": False,
+            "outside_guard_ratio": 0.0,
+            "detector_mask_ratio": 0.0,
+            "detector_coverage": 0.0,
+            "area_ratio": 1.0,
+        }
+
+    masks_data = _extract_sam_masks(results)
+    if getattr(masks_data, "size", 0) == 0:
+        return detector_box, {
+            "candidate_masks": 0,
+            "accepted_masks": 0,
+            "guard_rejections": 0,
+            "selected_source": "fallback",
+            "fallback_reason": "no_masks",
+            "clipped": False,
+            "outside_guard_ratio": 0.0,
+            "detector_mask_ratio": 0.0,
+            "detector_coverage": 0.0,
+            "area_ratio": 1.0,
+        }
+
+    dx1, dy1, dx2, dy2 = _int_box_bounds(rel_detector, crop_w, crop_h)
+    detector_area = max(1.0, _box_area(rel_detector))
+    candidates: List[Dict[str, Any]] = []
+    for mask_idx in range(int(masks_data.shape[0])):
+        mask = masks_data[mask_idx].astype(bool)
         rows = np.any(mask, axis=1)
         cols = np.any(mask, axis=0)
         if not (np.any(rows) and np.any(cols)):
             continue
+
+        detector_pixels = int(np.count_nonzero(mask[dy1:dy2, dx1:dx2]))
+        mask_area = int(np.count_nonzero(mask))
+        if mask_area <= 0:
+            continue
+
         rmin, rmax = np.where(rows)[0][[0, -1]]
         cmin, cmax = np.where(cols)[0][[0, -1]]
-        mx1, my1, mx2, my2 = float(cmin), float(rmin), float(cmax + 1), float(rmax + 1)
-
-        #IoU between mask bbox and prompt bbox
-        ix1 = max(mx1, px1)
-        iy1 = max(my1, py1)
-        ix2 = min(mx2, px2)
-        iy2 = min(my2, py2)
-        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-        area_m = (mx2 - mx1) * (my2 - my1)
-        area_p = (px2 - px1) * (py2 - py1)
-        
-        # Select the tightest mask (smallest area) that still covers at least 70% of the prompt subject
-        overlap_ratio = inter / area_p if area_p > 0 else 0.0
-        if overlap_ratio >= OVERLAP_THRESHOLD and area_m < best_tight_area:
-            best_tight_area = area_m
-            best_tight = (mx1, my1, mx2, my2)
-            
-        union = area_m + area_p - inter
-        iou = inter / union if union > 0 else 0.0
-
-        if iou > best_iou:
-            best_iou = iou
-            best_iou_box = (mx1, my1, mx2, my2)
-
-    best_box = best_tight if best_tight is not None else best_iou_box
-
-    if best_box is not None:
-        h, w = masks_data.shape[-2:]
-        return (
-            max(0.0, best_box[0]),
-            max(0.0, best_box[1]),
-            min(float(w), best_box[2]),
-            min(float(h), best_box[3]),
+        local_box = (
+            float(cmin),
+            float(rmin),
+            float(cmax + 1),
+            float(rmax + 1),
         )
-    return tuple(prompt_box)
+        abs_box = (
+            float(gx1) + local_box[0],
+            float(gy1) + local_box[1],
+            float(gx1) + local_box[2],
+            float(gy1) + local_box[3],
+        )
+        area_ratio = _box_area(local_box) / detector_area if detector_area > 0 else 0.0
+        detector_mask_ratio = float(detector_pixels) / float(mask_area)
+        detector_coverage = float(detector_pixels) / float(detector_area)
+        candidates.append({
+            "box": abs_box,
+            "polygon": _mask_to_abs_polygon(mask, offset_x=float(gx1), offset_y=float(gy1)),
+            "mask_tile": _mask_crop_to_overlay_tile(
+                mask,
+                local_box=local_box,
+                offset_x=float(gx1),
+                offset_y=float(gy1),
+            ),
+            "outside_guard_ratio": 0.0,
+            "detector_mask_ratio": detector_mask_ratio,
+            "detector_coverage": detector_coverage,
+            "area_ratio": area_ratio,
+            "clipped": False,
+        })
+
+    chosen_box, chosen_diag = _choose_guarded_sam_box(
+        detector_box,
+        guard_box,
+        candidates,
+        overlap_threshold=float(_LABELER_SAM_TIGHT_OVERLAP_RATIO),
+    )
+    if chosen_box is None:
+        return detector_box, chosen_diag
+    return _clip_box_xyxy(chosen_box, img_w, img_h), chosen_diag
+
+
+def _sam_refine_boxes_batch(
+    img_array: Any,
+    prompt_boxes: List[List[float]],
+    *,
+    detector_boxes: Optional[List[List[float]]] = None,
+    guard_boxes: Optional[List[List[float]]] = None,
+) -> Tuple[
+    List[Tuple[float, float, float, float]],
+    List[Dict[str, Any]],
+    List[List[Tuple[float, float]]],
+    List[Dict[str, Any]],
+]:
+    """Use SAM to refine detector boxes while keeping outputs inside guard rails."""
+    _ensure_sam()
+    det_boxes = [
+        [float(v) for v in (detector_boxes[i] if detector_boxes and i < len(detector_boxes) else prompt_boxes[i])]
+        for i in range(len(prompt_boxes))
+    ]
+    grd_boxes = [
+        [float(v) for v in (guard_boxes[i] if guard_boxes and i < len(guard_boxes) else det_boxes[i])]
+        for i in range(len(prompt_boxes))
+    ]
+    if _sam is None:
+        diags = [
+            {
+                "box_index": int(i),
+                "candidate_masks": 0,
+                "accepted_masks": 0,
+                "guard_rejections": 0,
+                "selected_source": "fallback",
+                "fallback_reason": "sam_unavailable",
+                "clipped": False,
+                "polygon": [],
+                "outside_guard_ratio": 0.0,
+                "detector_mask_ratio": 0.0,
+                "detector_coverage": 0.0,
+                "area_ratio": 1.0,
+            }
+            for i in range(len(det_boxes))
+        ]
+        return [tuple(pb) for pb in det_boxes], diags, [[] for _ in range(len(det_boxes))], [{} for _ in range(len(det_boxes))]
+    refined_boxes: List[Tuple[float, float, float, float]] = []
+    polygons: List[List[Tuple[float, float]]] = []
+    mask_tiles: List[Dict[str, Any]] = []
+    diags: List[Dict[str, Any]] = []
+    img_h = int(getattr(img_array, "shape", [0, 0])[0] or 0)
+    img_w = int(getattr(img_array, "shape", [0, 0])[1] or 0)
+
+    for i, prompt_box in enumerate(prompt_boxes):
+        detector_box = _clip_box_xyxy(det_boxes[i], img_w, img_h)
+        guard_box = _clip_box_xyxy(grd_boxes[i], img_w, img_h)
+        chosen_box, chosen_diag = _sam_refine_one_box(
+            img_array,
+            tuple(float(v) for v in prompt_box),
+            detector_box=detector_box,
+            guard_box=guard_box,
+        )
+        refined_boxes.append(chosen_box)
+        polygons.append([
+            (float(x), float(y))
+            for x, y in list(chosen_diag.get("polygon") or [])
+        ])
+        mask_tiles.append(dict(chosen_diag.get("mask_tile") or {}))
+        chosen_diag["box_index"] = int(i)
+        diags.append(chosen_diag)
+
+    if _device is not None and _device.type == "cuda":
+        torch.cuda.empty_cache()
+
+    return refined_boxes, diags, polygons, mask_tiles
+
+
+def _refine_absolute_boxes_with_diagnostics(
+    img: Image.Image,
+    img_array: Any,
+    boxes: List[Tuple[float, float, float, float]],
+    *,
+    passes: int = 1,
+) -> RefineBoxesResult:
+    img_w, img_h = img.size
+    detector_boxes = [
+        _clip_box_xyxy(box, img_w, img_h)
+        for box in list(boxes or [])
+        if _box_area(box) > 0
+    ]
+    if not detector_boxes:
+        return RefineBoxesResult(boxes=[], summary=_fallback_sam_box_diag(0, "no_boxes", passes=passes))
+
+    guard_boxes = [
+        _expand_box(
+            box[0],
+            box[1],
+            box[2],
+            box[3],
+            float(_LABELER_SAM_GUARD_PAD_PCT),
+            img_w,
+            img_h,
+        )
+        for box in detector_boxes
+    ]
+    current_prompt_boxes = [
+        _expand_box_with_guard(
+            box,
+            float(_LABELER_SAM_PROMPT_PAD_PCT),
+            guard_boxes[i],
+            img_w,
+            img_h,
+        )
+        for i, box in enumerate(detector_boxes)
+    ]
+
+    last_diags: List[Dict[str, Any]] = []
+    last_polygons: List[List[Tuple[float, float]]] = [[] for _ in range(len(detector_boxes))]
+    last_mask_tiles: List[Dict[str, Any]] = [{} for _ in range(len(detector_boxes))]
+    current_boxes = list(detector_boxes)
+    pass_count = max(1, int(passes or 1))
+    for pass_idx in range(pass_count):
+        current_boxes, diags, polygons, mask_tiles = _sam_refine_boxes_batch(
+            img_array,
+            [list(b) for b in current_prompt_boxes],
+            detector_boxes=[list(b) for b in detector_boxes],
+            guard_boxes=[list(b) for b in guard_boxes],
+        )
+        for diag in diags:
+            diag["pass"] = int(pass_idx + 1)
+        last_diags = diags
+        last_polygons = polygons
+        last_mask_tiles = mask_tiles
+        current_prompt_boxes = [
+            _expand_box_with_guard(
+                current_boxes[i],
+                float(_LABELER_SAM_PROMPT_PAD_PCT),
+                guard_boxes[i],
+                img_w,
+                img_h,
+            )
+            for i in range(len(current_boxes))
+        ]
+
+    return RefineBoxesResult(
+        boxes=[_clip_box_xyxy(box, img_w, img_h) for box in current_boxes],
+        summary=_summarize_sam_refine_diags(last_diags, passes=pass_count),
+        polygons=list(last_polygons or []),
+        mask_tiles=list(last_mask_tiles or []),
+    )
 
 def detect_with_sam(image_bytes: bytes) -> DetectWithSamResult:
-    """Run YOLO detection then refine each box with SAM segmentation."""
+    """Run YOLO detection then refine all boxes in a batched SAM call."""
     import numpy as np
     img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
     img_array = np.array(img)
     
     dets = _run_yolo(img)
-    refined_boxes = []
-    
-    for d in dets:
-        prompt_box = list(d.xyxy)
-        refined = _sam_refine_box(img_array, prompt_box)
-        refined_boxes.append(refined)
-    
+    if not dets:
+        return DetectWithSamResult(boxed_jpeg=image_bytes, boxes=[])
+
+    refine_result = _refine_absolute_boxes_with_diagnostics(
+        img,
+        img_array,
+        [d.xyxy for d in dets],
+        passes=1,
+    )
+    refined_boxes = refine_result.boxes
+
     #Draw refined boxes
-    refined_dets = [Det(xyxy=b, conf=1.0) for b in refined_boxes]
+    refined_dets = [Det(xyxy=b, conf=d.conf) for b, d in zip(refined_boxes, dets)]
     annotated = _draw_boxes(img.copy(), refined_dets)
     
     buf = io.BytesIO()
@@ -1765,13 +2747,27 @@ def refine_boxes(
     *,
     passes: int = 1,
 ) -> List[Tuple[float, float, float, float]]:
-    """Refine provided YOLO-normalized boxes with SAM; returns absolute xyxy boxes."""
+    """Refine provided YOLO-normalized boxes with SAM in batches; returns absolute xyxy boxes."""
+    return refine_boxes_with_diagnostics(image_bytes, boxes, passes=passes).boxes
+
+
+def refine_boxes_with_diagnostics(
+    image_bytes: bytes,
+    boxes: List[Tuple[float, float, float, float]],
+    *,
+    passes: int = 1,
+) -> RefineBoxesResult:
+    """Refine YOLO-normalized boxes with detector-guided SAM and return diagnostics."""
+    if not boxes:
+        return RefineBoxesResult(boxes=[], summary=_fallback_sam_box_diag(0, "no_boxes", passes=passes))
+
     import numpy as np
     img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
     img_array = np.array(img)
     img_w, img_h = img.size
-    refined: List[Tuple[float, float, float, float]] = []
+
+    absolute_boxes: List[Tuple[float, float, float, float]] = []
     for box in boxes:
         try:
             cx, cy, w, h = [float(x) for x in box]
@@ -1783,22 +2779,17 @@ def refine_boxes(
         y1 = (cy - h / 2) * img_h
         x2 = (cx + w / 2) * img_w
         y2 = (cy + h / 2) * img_h
-        rx1, ry1, rx2, ry2 = x1, y1, x2, y2
-        for _ in range(max(1, passes)):
-            prompt = [rx1, ry1, rx2, ry2]
-            nrx1, nry1, nrx2, nry2 = _sam_refine_box(img_array, prompt)
-            rx1, ry1, rx2, ry2 = nrx1, nry1, nrx2, nry2
-        #Clamp and normalize ordering
-        rx1 = max(0.0, min(float(img_w), float(rx1)))
-        ry1 = max(0.0, min(float(img_h), float(ry1)))
-        rx2 = max(0.0, min(float(img_w), float(rx2)))
-        ry2 = max(0.0, min(float(img_h), float(ry2)))
-        if rx2 < rx1:
-            rx1, rx2 = rx2, rx1
-        if ry2 < ry1:
-            ry1, ry2 = ry2, ry1
-        refined.append((rx1, ry1, rx2, ry2))
-    return refined
+        absolute_boxes.append((x1, y1, x2, y2))
+
+    if not absolute_boxes:
+        return RefineBoxesResult(boxes=[], summary=_fallback_sam_box_diag(0, "invalid_boxes", passes=passes))
+
+    return _refine_absolute_boxes_with_diagnostics(
+        img,
+        img_array,
+        absolute_boxes,
+        passes=passes,
+    )
 
 
 def warm_labeler_detector() -> dict:
@@ -1831,7 +2822,7 @@ def get_all_cats() -> List[str]:
 
 def refresh_gallery(path: Optional[str] = None) -> dict:
     """Reload gallery tensors from disk without waiting for process restart."""
-    global _gallery_emb, _gallery_names, _gallery_paths, _labeler_ref_cache, _labeler_ref_ready, _labeler_ref_task
+    global _gallery_emb, _gallery_names, _gallery_paths, _gallery_records, _labeler_ref_cache, _labeler_ref_ready, _labeler_ref_task
     global _labeler_ref_progress_total, _labeler_ref_progress_built
     global _manual_ref_cache, _manual_ref_ready, _manual_ref_task, _manual_ref_progress_total, _manual_ref_progress_built, _manual_ref_per_cat
     global _thumb_cache, _resolved_gallery_path_cache, _gallery_crop_roots
@@ -1839,7 +2830,13 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
     try:
         if path:
             settings.cv_gallery_path = str(path)
-        target = settings.cv_gallery_path
+        target = str(settings.cv_gallery_path or "").strip()
+        target_path = Path(target)
+        if target and not target_path.exists():
+            fallback = _find_latest_local_gallery()
+            if fallback:
+                target = fallback
+                settings.cv_gallery_path = str(fallback)
         try:
             gal_data = torch.load(target, map_location=_device, weights_only=False)
         except Exception:
@@ -1851,15 +2848,13 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
         labels = gal_data["label"]
         names = [idx_to_class[int(i)] for i in labels]
         raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
-        paths: List[str]
-        if isinstance(raw_paths, (list, tuple)) and len(raw_paths) == emb.shape[0]:
-            paths = [str(p) for p in raw_paths]
-        else:
-            paths = []
+        raw_records = gal_data.get("records") or gal_data.get("gallery_records") or []
+        records, paths = _build_gallery_runtime_metadata(names, raw_paths, raw_records)
 
         _gallery_emb = emb
         _gallery_names = names
         _gallery_paths = paths
+        _gallery_records = records
         _rebuild_gallery_cat_indices()
         # Force ref cache rebuild against newest gallery.
         _labeler_ref_cache = {}
@@ -1882,6 +2877,7 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
             "path": str(target),
             "embeddings": int(emb.shape[0]),
             "cats": int(len(set(names))),
+            "records": int(len(records)),
         }
     except Exception as e:
         log_action("viz_gallery_refresh_error", "error", str(e))

@@ -5,9 +5,11 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import signal
 import time
 import secrets
 import socket
+import threading
 from typing import Any, Callable, Dict, Optional, Union
 from collections import deque
 from datetime import datetime, timedelta
@@ -88,8 +90,11 @@ _background_tasks: dict[str, asyncio.Task] = {}
 _singleton_guard_socket: Optional[socket.socket] = None
 _SHUTDOWN_TIMEOUT_SEC = max(
     1.0,
-    min(5.0, float(os.getenv("TOMCAT_SHUTDOWN_TIMEOUT_SEC", "5") or "5")),
+    min(3.0, float(os.getenv("TOMCAT_SHUTDOWN_TIMEOUT_SEC", "3") or "3")),
 )
+_FORCED_EXIT_CODE = 130
+_FORCED_EXIT_LOCK = threading.Lock()
+_FORCED_EXIT_ARMED = False
 
 
 def _start_background_task(name: str, coro_factory: Callable[[], Any]) -> None:
@@ -100,31 +105,54 @@ def _start_background_task(name: str, coro_factory: Callable[[], Any]) -> None:
     _background_tasks[name] = asyncio.create_task(coro_factory())
 
 
-async def _cancel_background_tasks(timeout_sec: float) -> None:
+def _arm_forced_exit(delay_sec: Optional[float] = None, *, exit_code: int = _FORCED_EXIT_CODE) -> None:
+    """Guarantee process exit even if graceful shutdown gets stuck."""
+    global _FORCED_EXIT_ARMED
+    with _FORCED_EXIT_LOCK:
+        if _FORCED_EXIT_ARMED:
+            return
+        _FORCED_EXIT_ARMED = True
+    timeout_sec = max(0.0, float(_SHUTDOWN_TIMEOUT_SEC if delay_sec is None else delay_sec))
+
+    def _worker() -> None:
+        if timeout_sec > 0.0:
+            time.sleep(timeout_sec)
+        try:
+            _shutdown_runtime_helpers()
+        except Exception:
+            pass
+        os._exit(int(exit_code))
+
+    threading.Thread(
+        target=_worker,
+        name="tomcat_forced_exit",
+        daemon=True,
+    ).start()
+
+
+def _cancel_background_tasks_now() -> None:
     current = asyncio.current_task()
-    pending: list[asyncio.Task] = []
     for name, task in list(_background_tasks.items()):
         if task is None or task.done() or task is current:
             continue
         task.cancel()
-        pending.append(task)
-    if not pending:
-        return
+    _background_tasks.clear()
+
+
+async def _cancel_background_tasks(timeout_sec: float) -> None:
+    del timeout_sec
+    _cancel_background_tasks_now()
+
+
+def _cancel_pending_asyncio_tasks_now() -> None:
     try:
-        done, still_pending = await asyncio.wait(
-            pending,
-            timeout=max(0.1, float(timeout_sec)),
-        )
-    except Exception:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
         return
-    for task in done:
-        try:
-            task.result()
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            log_action("shutdown_task_error", "background_task", f"{type(e).__name__}: {e!r}")
-    for task in still_pending:
+    current = asyncio.current_task(loop=loop)
+    for task in list(asyncio.all_tasks(loop)):
+        if task is None or task.done() or task is current:
+            continue
         task.cancel()
 
 
@@ -147,6 +175,45 @@ def _shutdown_runtime_helpers() -> None:
             sock.close()
         except Exception:
             pass
+
+
+def _install_shutdown_signal_handlers() -> dict[int, Any]:
+    """Arm a hard exit deadline as soon as the terminal sends an interrupt."""
+    previous: dict[int, Any] = {}
+    signal_numbers = [signal.SIGINT]
+    if hasattr(signal, "SIGTERM"):
+        signal_numbers.append(signal.SIGTERM)
+    if hasattr(signal, "SIGBREAK"):
+        signal_numbers.append(signal.SIGBREAK)
+
+    def _handler(signum: int, frame: Any) -> None:
+        del frame
+        _arm_forced_exit(float(_SHUTDOWN_TIMEOUT_SEC))
+        prev = previous.get(signum, signal.default_int_handler)
+        if prev in (None, signal.SIG_IGN):
+            raise KeyboardInterrupt
+        if prev in (signal.SIG_DFL, signal.default_int_handler):
+            raise KeyboardInterrupt
+        if callable(prev):
+            prev(signum, None)
+            return
+        raise KeyboardInterrupt
+
+    for signum in signal_numbers:
+        try:
+            previous[signum] = signal.getsignal(signum)
+            signal.signal(signum, _handler)
+        except Exception:
+            continue
+    return previous
+
+
+def _restore_shutdown_signal_handlers(previous: dict[int, Any]) -> None:
+    for signum, handler in (previous or {}).items():
+        try:
+            signal.signal(signum, handler)
+        except Exception:
+            continue
 
 # Role IDs used by the web UI permission checks.
 ROLES = {
@@ -633,14 +700,14 @@ from datetime import datetime, timezone
 from .config import settings
 from .logger import log_event, log_action  #noqa: F401  #imported for shared use
 from .intent_router import IntentRouter, Intent
-from .handlers.misc import start_profile_scheduler
+from .handlers.misc import start_profile_scheduler, start_google_api_health_scheduler
 from .services.local_photos import (
     ingest_message_images as _ingest_message_images,
+    intake_target_for_message as _intake_target_for_message,
     is_intake_message as _is_intake_message,
     sync_missing_local_photos as _sync_missing_local_photos,
     start_photo_metadata_sheet_sync_scheduler,
 )
-from .services.show_cache import warm_cache_on_boot
 from .services.profile_cache import start_profile_cache_scheduler
 from .handlers import feeding as _feed
 from .stations import station_names, station_definitions, save_stations_version, station_versions
@@ -672,20 +739,22 @@ intents.reactions = True
 class TomCatBot(commands.Bot):
     async def close(self) -> None:
         if getattr(self, "_tomcat_shutdown_started", False):
+            _arm_forced_exit(float(_SHUTDOWN_TIMEOUT_SEC))
             await super().close()
             return
         self._tomcat_shutdown_started = True
-        shutdown_started = time.perf_counter()
+        _arm_forced_exit(float(_SHUTDOWN_TIMEOUT_SEC))
         log_action("shutdown_start", "bot", f"timeout_sec={_SHUTDOWN_TIMEOUT_SEC:.1f}")
         try:
-            await _cancel_background_tasks(timeout_sec=min(2.0, float(_SHUTDOWN_TIMEOUT_SEC)))
+            _cancel_background_tasks_now()
         except Exception as e:
             log_action("shutdown_cancel_error", "background_tasks", f"{type(e).__name__}: {e!r}")
-        remaining = max(0.5, float(_SHUTDOWN_TIMEOUT_SEC) - (time.perf_counter() - shutdown_started))
         try:
-            await asyncio.wait_for(super().close(), timeout=remaining)
-        except asyncio.TimeoutError:
-            log_action("shutdown_timeout", "bot.close", f"timeout_sec={_SHUTDOWN_TIMEOUT_SEC:.1f}")
+            _cancel_pending_asyncio_tasks_now()
+        except Exception as e:
+            log_action("shutdown_cancel_error", "asyncio_tasks", f"{type(e).__name__}: {e!r}")
+        try:
+            await super().close()
         finally:
             _shutdown_runtime_helpers()
 
@@ -966,6 +1035,27 @@ async def start_web_server(bot):
     """Simple web server to serve the UI and API."""
     app = web.Application(middlewares=[rate_limit_middleware])
 
+    async def _cleanup_cv_temp_dir_startup(_app: web.Application) -> None:
+        """Delete stale temp vision files from the configured temp directory on startup."""
+        try:
+            temp_dir = Path(str(getattr(settings, "cv_temp_dir", "") or "")).expanduser()
+            if not str(temp_dir).strip():
+                return
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            removed = 0
+            for entry in temp_dir.iterdir():
+                if not entry.is_file():
+                    continue
+                try:
+                    entry.unlink(missing_ok=True)
+                    removed += 1
+                except Exception:
+                    continue
+            if removed > 0:
+                log_action("cv_temp_startup_cleanup", str(temp_dir), f"removed={removed}")
+        except Exception:
+            pass
+
     async def _cleanup_labeler_cache_http(_app: web.Application) -> None:
         """Close pooled labeler HTTP clients on web server shutdown."""
         try:
@@ -981,6 +1071,7 @@ async def start_web_server(bot):
         except Exception:
             pass
 
+    app.on_startup.append(_cleanup_cv_temp_dir_startup)
     app.on_startup.append(_startup_labeler_cache_warm)
     app.on_cleanup.append(_cleanup_labeler_cache_http)
 
@@ -1761,11 +1852,7 @@ async def on_ready():
         pass
     _start_background_task("web_server", lambda: start_web_server(bot))
     _start_background_task("profile_scheduler", lambda: start_profile_scheduler(bot))
-    #Warm the show-photo cache in background
-    try:
-        _start_background_task("show_cache_warm", lambda: warm_cache_on_boot())
-    except Exception:
-        pass
+    _start_background_task("google_api_health_scheduler", lambda: start_google_api_health_scheduler(bot))
     # Start schedulers only after the Discord client is fully ready.
     _start_background_task("feeding_scheduler", lambda: start_feeding_scheduler(bot))
     _start_background_task("morning_scheduler", lambda: start_morning_scheduler(bot))
@@ -1826,14 +1913,13 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-
     #Human + machine log of the incoming message
     log_event({
         "event": "message",
         "author": _user_label(message.author),
         "channel": _channel_label(message.channel),
         "content": message.clean_content if isinstance(message.content, str) else "",
-        "attachments": len(message.attachments) if hasattr(message, "attachments") else 0,
+        "attachments": len(getattr(message, "attachments", []) or []),
     })
 
     # Run spam checks before routing normal commands.
@@ -1903,17 +1989,30 @@ async def on_message(message: discord.Message):
             pass
         return
     #Channel/DM → Sheet image intake
-    try:
-        if _is_intake_message(message):
-            result = await _ingest_message_images(message)
-            if result.saved_rows or result.skipped_rows:
-                log_action(
-                    "image_intake_local",
-                    f"channel={getattr(message.channel, 'id', 'dm')}",
-                    f"saved={result.saved_rows}; skipped={result.skipped_rows}",
-                )
-    except Exception as e:
-        log_action("image_intake_error", f"channel={getattr(message.channel,'id','?')}", str(e))
+    if _is_intake_message(message):
+        async def _run_image_intake(msg: discord.Message) -> None:
+            try:
+                intake_target = _intake_target_for_message(msg)
+                if intake_target == "photo_metadata":
+                    result = await _ingest_message_images(msg)
+                    if result.saved_rows or result.skipped_rows:
+                        log_action(
+                            "image_intake_local",
+                            f"channel={getattr(msg.channel, 'id', 'dm')}",
+                            f"saved={result.saved_rows}; skipped={result.skipped_rows}",
+                        )
+                else:
+                    log_action(
+                        "image_intake_unsupported_target",
+                        f"channel={getattr(msg.channel, 'id', 'dm')}; target={intake_target}",
+                        "no handler for this intake target",
+                    )
+            except Exception as e:
+                log_action("image_intake_error", f"channel={getattr(msg.channel,'id','?')}", str(e))
+
+        # Intake can be expensive on cold start because duplicate indexing scans the local photo corpus.
+        # Keep it off the command-response path so CV requests still route immediately.
+        asyncio.create_task(_run_image_intake(message))
 
     #Lightweight fun triggers (e.g., "meow") anywhere; safe_send respects silent mode
     try:
@@ -2257,9 +2356,11 @@ def run():
         "%Y-%m-%d %H:%M:%S",
         style="{",
     )
+    previous_signal_handlers = _install_shutdown_signal_handlers()
     try:
         bot.run(settings.discord_token, log_formatter=log_formatter)
     finally:
+        _restore_shutdown_signal_handlers(previous_signal_handlers)
         _shutdown_runtime_helpers()
 
 if __name__ == "__main__":

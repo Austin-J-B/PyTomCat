@@ -224,14 +224,19 @@ async def _log_emails_batch(svc, messages: List[Dict[str, Any]], delay_sec: floa
             mid = str(m.get("id"))
             full = await asyncio.to_thread(lambda: svc.users().messages().get(userId="me", id=mid, format="full").execute())
             payload = full.get("payload", {})
-            headers = {h.get("name"): h.get("value") for h in payload.get("headers", [])}
+            headers = {
+                str(h.get("name") or "").lower(): h.get("value")
+                for h in payload.get("headers", [])
+            }
             ts_ms = int(full.get("internalDate", 0) or 0)
             ts_rec = datetime.fromtimestamp(ts_ms/1000, timezone.utc).isoformat().replace("+00:00", "Z") if ts_ms else None
             
             row = {
                 "event": "email_received", "id": mid,
-                "subject": _sanitize_for_ndjson(headers.get("Subject", "")),
-                "from": _sanitize_for_ndjson(headers.get("From", "")),
+                "subject": _sanitize_for_ndjson(headers.get("subject", "")),
+                "from": _sanitize_for_ndjson(headers.get("from", "")),
+                "message_id": _sanitize_for_ndjson(headers.get("message-id", "")),
+                "thread_id": _sanitize_for_ndjson(full.get("threadId", "")),
                 "ts_received": ts_rec, "ts_logged": _now_iso(),
                 "content": _sanitize_for_ndjson(_extract_text_content(full))
             }

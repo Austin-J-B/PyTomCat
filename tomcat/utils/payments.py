@@ -62,9 +62,12 @@ def detect_provider(from_addr: str, subject: str = "", body: str = "") -> Option
     cashapp_markers = (
         "paid you",
         "sent you",
+        "you were sent",
         "you paid",
         "you sent",
         "you spent",
+        "payment received",
+        "payment sent",
         "payment to",
         "receipt",
     )

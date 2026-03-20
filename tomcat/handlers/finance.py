@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -105,6 +106,8 @@ _TXN_PATTERNS = [
         r"Payment ID[:\s#]*([A-Z0-9\-]{10,})",
         r"Authorization ID[:\s#]*([A-Z0-9\-]{10,})",
         r"\bID[:\s#]*([A-Z0-9]{10,})",
+        r"cash\.app/(?:launch/activity/)?receipt/([A-Z0-9=_\-]{12,})",
+        r"cash\.app/(?:receipt/)?payments/([A-Z0-9\-]{8,})/receipt",
     )
 ]
 
@@ -182,6 +185,39 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _fingerprint_hash_from_value(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _fingerprint_hash_for_event(ev: "FinanceEvent") -> str:
+    return _fingerprint_hash_from_value(_fingerprint(ev))
+
+
+def _compact_index_record(record: dict) -> Optional[dict]:
+    email_id = str(record.get("email_id") or "").strip()
+    status = str(record.get("status") or "").strip().lower()
+    fingerprint_hash = str(record.get("fingerprint_hash") or "").strip()
+    if not fingerprint_hash:
+        fingerprint_hash = _fingerprint_hash_from_value(record.get("fingerprint") or "")
+    if not email_id or status not in {"income", "expense"} or not fingerprint_hash:
+        return None
+
+    compact = {
+        "email_id": email_id,
+        "status": status,
+        "fingerprint_hash": fingerprint_hash,
+        "ts": record.get("ts") or _now_iso(),
+    }
+    for key in ("provider", "message_id", "txn_id", "provider_ts"):
+        value = record.get(key)
+        if value not in (None, ""):
+            compact[key] = value
+    return compact
+
+
 def _load_index() -> Dict[str, dict]:
     out: Dict[str, dict] = {}
     if not os.path.exists(FINANCE_INDEX):
@@ -196,11 +232,12 @@ def _load_index() -> Dict[str, dict]:
                     continue
                 try:
                     obj = json.loads(line)
-                    eid = obj.get("email_id")
-                    status = (obj.get("status") or "").lower()
-                    if eid and obj.get("fingerprint") and status in {"income", "expense"}:
-                        out[eid] = obj
-                        keep.append(obj)
+                    compact = _compact_index_record(obj)
+                    if compact:
+                        out[compact["email_id"]] = compact
+                        keep.append(compact)
+                        if compact != obj:
+                            changed = True
                     else:
                         changed = True
                 except Exception:
@@ -219,15 +256,15 @@ def _load_index() -> Dict[str, dict]:
 
 
 def _append_index(record: dict) -> None:
-    if not record.get("fingerprint"):
+    compact = _compact_index_record(record)
+    if not compact:
         return
-    record.setdefault("ts", _now_iso())
     with open(FINANCE_INDEX, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        f.write(json.dumps(compact, ensure_ascii=False) + "\n")
 
 
 def _load_fingerprints() -> Set[str]:
-    """Return set of previously logged transaction fingerprints."""
+    """Return set of hashed fingerprints for previously logged transactions."""
     fps: Set[str] = set()
     if not os.path.exists(FINANCE_INDEX):
         return fps
@@ -238,7 +275,9 @@ def _load_fingerprints() -> Set[str]:
                     obj = json.loads(line)
                 except Exception:
                     continue
-                fp = obj.get("fingerprint")
+                fp = obj.get("fingerprint_hash")
+                if not fp:
+                    fp = _fingerprint_hash_from_value(obj.get("fingerprint") or "")
                 if isinstance(fp, str) and fp:
                     fps.add(fp)
     except Exception:
@@ -628,7 +667,14 @@ def _extract_cashapp_note(subject: str, body: str, existing: Optional[str] = Non
     
     for cand in candidates:
         cleaned = _extract_note(cand)
-        if cleaned and not cleaned.lower().startswith("for any") and not "view your receipt" in cleaned.lower():
+        if cleaned:
+            cleaned = re.split(
+                r"(?:,\s*approved by .*|\.\s*to view your receipt.*|\s+to view your receipt.*|\s+to report a problem.*)",
+                cleaned,
+                maxsplit=1,
+                flags=re.I,
+            )[0].strip(" .")
+        if cleaned and not cleaned.lower().startswith("for any") and "view your receipt" not in cleaned.lower():
             return cleaned
     return ""
 
@@ -760,11 +806,14 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     message_id = email.get("message_id")
     txn_id = _extract_txn_id(subject, content)
 
-    m = re.match(r"^(?P<name>.+?)\s+sent\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
+    m = re.match(r"^(?P<name>.+?)\s+(?:paid|sent)\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
+    if not m:
+        m = re.search(r"You\s+were\s+sent\s+\$?(?P<amount>[0-9.,]+)\s+by\s+(?P<name>.+?)(?:[.]\s*|\s+for\s+(?P<note>.+))", body, re.I)
     if m:
-        name = _clean_counterparty(m.group("name"))
-        amount = _coerce_amount(m.group("amount"), subject, body)
-        note = _extract_cashapp_note(subject, body, m.group("note"))
+        groups = m.groupdict()
+        name = _clean_counterparty(groups.get("name") or "")
+        amount = _coerce_amount(groups.get("amount") or "", subject, body)
+        note = _extract_cashapp_note(subject, body, groups.get("note"))
         note = _extract_note(note)
         blank = not bool(note.strip())
         if _is_dues_email(amount, f"{subject} {note}", message_id):
@@ -788,10 +837,17 @@ def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
 
     # Match Cash App transfers sent from the account holder.
     m = re.match(r"^You sent \$?(?P<amount>[0-9.,]+)\s+to\s+(?P<name>.+?)(?:\s+for\s+(?P<note>.+))?$", text, re.I)
+    if not m:
+        m = re.search(
+            r"You\s+(?:paid\s+(?P<name_paid>.+?)\s+\$?(?P<amount_paid>[0-9.,]+)|sent\s+\$?(?P<amount_sent>[0-9.,]+)\s+to\s+(?P<name_sent>.+?))(?:\s+for\s+(?P<note>.+))?(?:[.,]|$)",
+            body,
+            re.I,
+        )
     if m:
-        name = _clean_counterparty(m.group("name"))
-        amount = _coerce_amount(m.group("amount"), subject, body)
-        note = _extract_cashapp_note(subject, body, m.group("note"))
+        groups = m.groupdict()
+        name = _clean_counterparty(groups.get("name") or groups.get("name_paid") or groups.get("name_sent") or "")
+        amount = _coerce_amount(groups.get("amount") or groups.get("amount_paid") or groups.get("amount_sent") or "", subject, body)
+        note = _extract_cashapp_note(subject, body, groups.get("note"))
         note = _extract_note(note)
         return (FinanceEvent(
             email_id=email.get("id", ""),
@@ -1075,7 +1131,7 @@ def _recent_sheet_row_counts(ws, label: str, max_rows: int = _RECENT_ROWS_LIMIT)
 
 
 async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List[Tuple[bool, str]]:
-    """Append rows safely without retrying blindly after ambiguous Sheets failures."""
+    """Append rows safely, only trusting success once the live sheet confirms it."""
     if not rows:
         return []
 
@@ -1087,17 +1143,19 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
         delay = 1.0
         success = False
         last_error = "ok"
-        for attempt in range(5):
-            try:
-                await _throttle_sheet_call()
-                ws.append_row(row, value_input_option='USER_ENTERED')
-                success = True
-                last_error = "ok"
-                if observed_counts is not None:
-                    observed_counts[row_key] = observed_counts.get(row_key, 0) + 1
-                break
-            except Exception as e:
-                last_error = str(e)
+        try:
+            await _throttle_sheet_call()
+            ws.append_row(row, value_input_option='USER_ENTERED')
+            success = True
+            last_error = "ok"
+            if observed_counts is not None:
+                observed_counts[row_key] = observed_counts.get(row_key, 0) + 1
+        except Exception as e:
+            last_error = str(e)
+            for verify_attempt in range(5):
+                if verify_attempt:
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2.0, 8.0)
                 verified_counts = _recent_sheet_row_counts(ws, label)
                 if verified_counts is not None:
                     current_count = verified_counts.get(row_key, 0)
@@ -1110,16 +1168,8 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
                         break
                     observed_counts = verified_counts
                     baseline_count = current_count
-                else:
-                    last_error = f'unverified_append_failure: {last_error}'
-                    break
-
-                msg_lower = str(e).lower()
-                if any(code in msg_lower for code in ('quota', '429', '500', '502', '503')):
-                    await asyncio.sleep(delay)
-                    delay = min(delay * 2.0, 8.0)
-                    continue
-                break
+            if not success:
+                last_error = f'append_unverified: {last_error}'
         if not success:
             log_action('finance_sheet_error', f'{label}_append_row', last_error)
         results.append((success, last_error))
@@ -1128,17 +1178,13 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
 
 def _fetch_recent_records(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> Optional[List[dict]]:
     """Fetch recent rows from a worksheet. Returns None if fetch fails (connection error)."""
-    try:
-        vals = ws.get_all_values()
-    except Exception as e:
-        log_action('finance_sheet_error', f'{kind}_fetch', str(e))
-        # Return None so callers can distinguish sheet errors from empty results.
+    snapshot = _fetch_recent_sheet_snapshot(ws, kind, max_rows=max_rows)
+    if snapshot is None:
         return None
-        
-    if not vals:
-        return []
-    limit = max_rows if max_rows > 0 else _RECENT_ROWS_LIMIT
-    rows = vals[-limit:] if len(vals) > limit else vals
+    return snapshot[0]
+
+
+def _parse_sheet_records(rows: List[List[str]], kind: str) -> List[dict]:
     recs: List[dict] = []
     for r in rows:
         try:
@@ -1155,7 +1201,7 @@ def _fetch_recent_records(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> 
                 name_field = (r[3] if len(r) > 3 else '').strip()
                 amount_s = (r[5] if len(r) > 5 else '').strip().replace('$', '')
                 provider = ''
-            
+
             #Parse date mm/dd/yyyy
             dt = None
             if date_s:
@@ -1182,6 +1228,33 @@ def _fetch_recent_records(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> 
         except Exception:
             continue
     return recs
+
+
+def _fetch_recent_sheet_snapshot(ws, kind: str, max_rows: int = _RECENT_ROWS_LIMIT) -> Optional[Tuple[List[dict], Counter]]:
+    """Fetch recent rows once so duplicate checks use a live Sheets snapshot."""
+    try:
+        vals = ws.get_all_values()
+    except Exception as e:
+        log_action('finance_sheet_error', f'{kind}_fetch', str(e))
+        return None
+
+    if not vals:
+        return [], Counter()
+    limit = max_rows if max_rows > 0 else _RECENT_ROWS_LIMIT
+    rows = vals[-limit:] if len(vals) > limit else vals
+    return _parse_sheet_records(rows, kind), Counter(_sheet_row_key(row) for row in rows if row)
+
+
+def _event_as_sheet_record(ev: "FinanceEvent") -> dict:
+    return {
+        'date': (ev.provider_ts or ev.ts).astimezone(timezone.utc).date(),
+        'amount': float(ev.amount),
+        'text': "",
+        'provider': ev.payment_type if ev.direction == 'income' else '',
+        'counterparty': ev.counterparty or '',
+        'note': ev.note or '',
+        'recorded_by_bot': True,
+    }
 
 
 def _similar_enough(a: str, b: str) -> bool:
@@ -1292,10 +1365,11 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
         log_action('finance_sheet_error', 'income_open', str(e))
         return {event.email_id: (False, str(e)) for event in events}
 
-    existing = _fetch_recent_records(ws, 'income')
+    snapshot = _fetch_recent_sheet_snapshot(ws, 'income')
     #If fetch failed (None), we MUST abort to prevent duplicate logging
-    if existing is None:
+    if snapshot is None:
         return {event.email_id: (False, 'sheet_read_failed') for event in events}
+    existing, existing_row_counts = snapshot
 
     seen_fp = _load_fingerprints()
     seen_txn = _load_txn_ids()
@@ -1330,8 +1404,10 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
             results[ev.email_id] = (False, 'dup_skipped')
             continue
 
-        fp = _fingerprint(ev)
-        if fp in seen_fp or _looks_duplicate(ev, existing):
+        fp_hash = _fingerprint_hash_for_event(ev)
+        row = _build_income_row(ev)
+        row_key = _sheet_row_key(row)
+        if fp_hash in seen_fp or existing_row_counts.get(row_key, 0) > 0 or _looks_duplicate(ev, existing):
             try:
                 log_action('finance_skip_duplicate', 'kind=income', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
             except Exception:
@@ -1339,28 +1415,26 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
             results[ev.email_id] = (False, 'dup_skipped')
             continue
 
-        rows.append(_build_income_row(ev))
+        rows.append(row)
         idx_events.append(ev)
+        seen_fp.add(fp_hash)
+        if ev.txn_id:
+            seen_txn.add(ev.txn_id)
+        if ev.message_id:
+            seen_msg.add(ev.message_id)
+        existing_row_counts[row_key] = existing_row_counts.get(row_key, 0) + 1
+        existing.append(_event_as_sheet_record(ev))
 
     if rows:
         append_results = await _append_rows_with_retry(ws, rows, 'income')
         for ev, (ok, msg) in zip(idx_events, append_results):
             results[ev.email_id] = (ok, msg)
             if ok:
-                seen_fp.add(_fingerprint(ev))
-                if ev.txn_id:
-                    seen_txn.add(ev.txn_id)
-                if ev.message_id:
-                    seen_msg.add(ev.message_id)
                 _append_index({
                     "email_id": ev.email_id,
                     "status": ev.direction,
-                    "category": ev.category,
-                    "amount": ev.amount,
-                    "counterparty": ev.counterparty,
-                    "note": ev.note,
                     "provider": ev.provider,
-                    "fingerprint": _fingerprint(ev),
+                    "fingerprint_hash": _fingerprint_hash_for_event(ev),
                     "message_id": ev.message_id,
                     "txn_id": ev.txn_id,
                     "provider_ts": (ev.provider_ts or ev.ts).isoformat(),
@@ -1387,10 +1461,11 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
         log_action('finance_sheet_error', 'expense_open', str(e))
         return {event.email_id: (False, str(e)) for event in events}
 
-    existing = _fetch_recent_records(ws, 'expense')
+    snapshot = _fetch_recent_sheet_snapshot(ws, 'expense')
     #If fetch failed (None), we MUST abort to prevent duplicate logging
-    if existing is None:
+    if snapshot is None:
         return {event.email_id: (False, 'sheet_read_failed') for event in events}
+    existing, existing_row_counts = snapshot
 
     seen_fp = _load_fingerprints()
     seen_txn = _load_txn_ids()
@@ -1416,8 +1491,10 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
             results[ev.email_id] = (False, 'dup_skipped')
             continue
 
-        fp = _fingerprint(ev)
-        if fp in seen_fp or _looks_duplicate(ev, existing):
+        fp_hash = _fingerprint_hash_for_event(ev)
+        row = _build_expense_row(ev)
+        row_key = _sheet_row_key(row)
+        if fp_hash in seen_fp or existing_row_counts.get(row_key, 0) > 0 or _looks_duplicate(ev, existing):
             try:
                 log_action('finance_skip_duplicate', f'kind=expense', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
             except Exception:
@@ -1425,12 +1502,16 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
             results[ev.email_id] = (False, 'dup_skipped')
             continue
 
-        rows.append(_build_expense_row(ev))
+        rows.append(row)
         idx_events.append(ev)
         #Optimistically add to seen sets so subsequent items in this batch are checked against this one
-        seen_fp.add(fp)
-        if ev.txn_id: seen_txn.add(ev.txn_id)
-        if ev.message_id: seen_msg.add(ev.message_id)
+        seen_fp.add(fp_hash)
+        if ev.txn_id:
+            seen_txn.add(ev.txn_id)
+        if ev.message_id:
+            seen_msg.add(ev.message_id)
+        existing_row_counts[row_key] = existing_row_counts.get(row_key, 0) + 1
+        existing.append(_event_as_sheet_record(ev))
 
     if rows:
         append_results = await _append_rows_with_retry(ws, rows, 'expense')
@@ -1441,12 +1522,8 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
                 _append_index({
                     "email_id": ev.email_id,
                     "status": ev.direction,
-                    "category": ev.category,
-                    "amount": ev.amount,
-                    "counterparty": ev.counterparty,
-                    "note": ev.note,
                     "provider": ev.provider,
-                    "fingerprint": _fingerprint(ev),
+                    "fingerprint_hash": _fingerprint_hash_for_event(ev),
                     "message_id": ev.message_id,
                     "txn_id": ev.txn_id,
                     "provider_ts": (ev.provider_ts or ev.ts).isoformat(),
@@ -1510,7 +1587,7 @@ async def _process_finance_events(
 
         if notify and should_notify:
             blank = event.note.strip() == ""
-            await _notify_sandbox(bot, event, event.direction, sheet_res, inferred, blank)
+            await _notify_logging_channel(bot, event, event.direction, sheet_res, inferred, blank)
         results.append((event, sheet_res, inferred))
 
     for event, inferred in expense_events:
@@ -1522,7 +1599,7 @@ async def _process_finance_events(
         
         if notify and should_notify:
             blank = event.note.strip() == ""
-            await _notify_sandbox(bot, event, event.direction, sheet_res, inferred, blank)
+            await _notify_logging_channel(bot, event, event.direction, sheet_res, inferred, blank)
         results.append((event, sheet_res, inferred))
 
     results.extend(buffer_results)
@@ -1566,7 +1643,7 @@ def _collect_recent_finance_events(limit: int) -> Tuple[List[FinanceEvent], int,
     return events, scanned, skipped_dues
 
 
-async def _notify_sandbox(
+async def _notify_logging_channel(
     bot,
     event: FinanceEvent,
     status: str,
@@ -1574,7 +1651,7 @@ async def _notify_sandbox(
     fallback: bool,
     blank_note: bool,
 ) -> None:
-    ch_id = getattr(settings, 'ch_sandbox', None)
+    ch_id = getattr(settings, 'ch_logging', None) or getattr(settings, 'ch_sandbox', None)
     if not ch_id:
         return
     channel = None
@@ -1582,6 +1659,11 @@ async def _notify_sandbox(
         channel = bot.get_channel(int(ch_id)) if bot else None
     except Exception:
         channel = None
+    if not channel and bot:
+        try:
+            channel = await bot.fetch_channel(int(ch_id))
+        except Exception:
+            channel = None
     if not channel:
         return
     direction = 'Income' if event.direction == 'income' else 'Expense'

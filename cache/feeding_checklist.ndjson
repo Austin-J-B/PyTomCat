@@ -90,4 +90,7 @@
 {"date":"2026-03-14","status":{"Lot 50":true,"HOP":true,"Microwave":true,"West Hall":true,"Maintenance":true,"Snickers":true,"Business":true,"The Greens":true}}
 {"date":"2026-03-15","status":{"West Hall":true,"Maintenance":true,"The Greens":true,"Lot 50":true,"Business":true,"Snickers":true,"Microwave":true,"HOP":true}}
 {"date":"2026-03-16","status":{"Maintenance":true,"Microwave":true,"HOP":true,"Snickers":true,"The Greens":true,"West Hall":true,"Business":true}}
-{"meta":{"updated_at":"2026-03-16T20:02:18.336628-05:00"}}
+{"date":"2026-03-17","status":{"Microwave":true,"Business":true,"Fine Arts":false,"HOP":true,"Lot 50":true,"Maintenance":true,"Snickers":false,"The Greens":true,"West Hall":true}}
+{"date":"2026-03-18","status":{"Microwave":true,"Snickers":true,"Lot 50":true,"HOP":true,"Business":true}}
+{"date":"2026-03-19","status":{"Lot 50":true,"Microwave":true,"The Greens":true,"Maintenance":true,"HOP":true,"West Hall":true,"Business":true}}
+{"meta":{"updated_at":"2026-03-19T20:12:24.552935-05:00"}}

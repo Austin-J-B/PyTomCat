@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 import re
+from pathlib import Path
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 from typing import Dict
@@ -147,6 +148,70 @@ def _build_image_intake_channel_map() -> dict[int, str]:
     return out
 
 
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _gallery_version_key(path: Path) -> tuple[int, ...] | None:
+    name = path.name
+    match = re.match(r"^R(\d+(?:\.\d+)*)_cat_DINOv3_gallery\.pt$", name, re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return tuple(int(part) for part in match.group(1).split("."))
+    except Exception:
+        return None
+
+
+def _format_repo_relative(path: Path) -> str:
+    root = _project_root()
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except Exception:
+        return str(path)
+
+
+def _find_latest_local_gallery(pattern: str = "R*_cat_DINOv3_gallery.pt") -> str:
+    weights_dir = _project_root() / "weights"
+    candidates: list[tuple[tuple[int, ...], Path]] = []
+    if weights_dir.is_dir():
+        for path in weights_dir.glob(pattern):
+            if not path.is_file():
+                continue
+            key = _gallery_version_key(path)
+            if key is None:
+                continue
+            candidates.append((key, path))
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda item: (item[0], item[1].name.lower()))
+    return _format_repo_relative(candidates[-1][1])
+
+
+def _resolve_cv_gallery_path() -> str:
+    raw = str(os.getenv("CV_GALLERY_PATH", "") or "").strip()
+    fallback = os.path.join("weights", "R4.5_cat_DINOv3_gallery_tta.pt")
+
+    if not raw or raw.lower() in {"auto", "latest", "latest_local"}:
+        latest = _find_latest_local_gallery()
+        return latest or fallback
+
+    if any(ch in raw for ch in "*?[]"):
+        pattern_path = Path(raw)
+        pattern_name = pattern_path.name or "R*_cat_DINOv3_gallery.pt"
+        latest = _find_latest_local_gallery(pattern_name)
+        return latest or raw
+
+    raw_path = Path(raw)
+    if not raw_path.is_absolute():
+        raw_path = _project_root() / raw_path
+    if not raw_path.exists():
+        latest = _find_latest_local_gallery()
+        return latest or raw
+
+    return raw
+
+
 @dataclass
 class Settings:
     #Discord
@@ -194,12 +259,10 @@ class Settings:
 
     # Sheet IDs are accepted under both the SHEET_* and *_SPREADSHEET_ID env names.
     sheet_catabase_id: str | None = os.getenv("SHEET_CATABASE_ID") or os.getenv("CAT_SPREADSHEET_ID")
-    sheet_vision_id: str | None = os.getenv("SHEET_VISION_ID") or os.getenv("AUX_SPREADSHEET_ID")
     sheet_megasheet_id: str | None = os.getenv("SHEET_MEGASHEET_ID")
 
     # Mirror the same values under the alternate attribute names read elsewhere.
     cat_spreadsheet_id: str | None = os.getenv("CAT_SPREADSHEET_ID") or os.getenv("SHEET_CATABASE_ID")
-    aux_spreadsheet_id: str | None = os.getenv("AUX_SPREADSHEET_ID") or os.getenv("SHEET_VISION_ID")
 
     finance_sheet_throttle_sec: float = float(os.getenv("FINANCE_SHEET_THROTTLE_SEC", "0.5") or "0.5")
 
@@ -221,10 +284,7 @@ class Settings:
         os.path.join("weights", "R4.5_cat_DINOv3.pth"),
     )
     # Gallery embedding checkpoint path.
-    cv_gallery_path: str = os.getenv(
-        "CV_GALLERY_PATH",
-        os.path.join("weights", "R4.5_cat_DINOv3_gallery_tta.pt"),
-    )
+    cv_gallery_path: str = field(default_factory=_resolve_cv_gallery_path)
     #SAM2 weights for box refinement in labeling tool
     cv_sam_weights: str = os.getenv(
         "CV_SAM_WEIGHTS",
@@ -238,6 +298,7 @@ class Settings:
     labeler_manual_ref_per_cat: int = int(os.getenv("LABELER_MANUAL_REF_PER_CAT", "50") or "50")
     #Step 1 local labeler photo source
     labeler_local_photo_root: str = os.getenv("LABELER_LOCAL_PHOTO_ROOT", "./cache/PicsOfCats/Pictures")
+    labeler_local_index_refresh_sec: float = float(os.getenv("LABELER_LOCAL_INDEX_REFRESH_SEC", "60") or "60")
     photo_metadata_csv: str = os.getenv("PHOTO_METADATA_CSV", "./TomCatBot Pics.csv")
     photo_dedupe_dhash_max_distance: int = int(os.getenv("PHOTO_DEDUPE_DHASH_MAX_DISTANCE", "4") or "4")
     photo_max_pixels: int = int(os.getenv("PHOTO_MAX_PIXELS", "20000000") or "20000000")
@@ -261,7 +322,7 @@ class Settings:
     cv_pad_pct: float = float(os.getenv("CV_PAD_PCT", "0.03"))
 
     #Safety/limits
-    cv_max_image_dim: int = int(os.getenv("CV_MAX_IMAGE_DIM", "10000"))
+    cv_max_image_dim: int = int(os.getenv("CV_MAX_IMAGE_DIM", "5000"))
     cv_max_download_mb: int = int(os.getenv("CV_MAX_DOWNLOAD_MB", "16"))
     #Device/precision
     cv_half: bool = os.getenv("CV_FP16", "1").strip().lower() in {"1","true","yes","on"}
@@ -334,6 +395,10 @@ class Settings:
     gmail_enabled: bool = _get_env_bool("GMAIL_ENABLED", False)
     gmail_log_manual_delay_sec: float = float(os.getenv("GMAIL_LOG_MANUAL_DELAY_SEC", "0.25"))
     gmail_log_scheduler_delay_sec: float = float(os.getenv("GMAIL_LOG_SCHEDULER_DELAY_SEC", "10.0"))
+    google_api_healthcheck_enabled: bool = _get_env_bool("GOOGLE_API_HEALTHCHECK_ENABLED", True)
+    google_api_healthcheck_on_boot: bool = _get_env_bool("GOOGLE_API_HEALTHCHECK_ON_BOOT", True)
+    google_api_healthcheck_hour: int = int(os.getenv("GOOGLE_API_HEALTHCHECK_HOUR", "12") or "12")
+    google_api_healthcheck_minute: int = int(os.getenv("GOOGLE_API_HEALTHCHECK_MINUTE", "0") or "0")
 
     #======== Dues matching / portal ========
     dues_enabled: bool = _get_env_bool("DUES_ENABLED", True)
@@ -394,8 +459,6 @@ if not settings.tomcat_wake:
 #Ensure both sheet_* and *_spreadsheet_id are aligned
 if not settings.sheet_catabase_id and settings.cat_spreadsheet_id:
     settings.sheet_catabase_id = settings.cat_spreadsheet_id
-if not settings.sheet_vision_id and settings.aux_spreadsheet_id:
-    settings.sheet_vision_id = settings.aux_spreadsheet_id
 #UI defaults: fall back to target guild if a UI-specific guild ID is not provided
 if not settings.ui_guild_id and settings.target_guild_id:
     settings.ui_guild_id = settings.target_guild_id

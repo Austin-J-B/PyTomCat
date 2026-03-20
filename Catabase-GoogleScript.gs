@@ -1,3 +1,36 @@
+function isDiscordHostedUrl(rawUrl) {
+  if (!rawUrl) return false;
+  try {
+    var host = String(new URL(String(rawUrl)).hostname || "").toLowerCase();
+    return host === "discordapp.com"
+      || host.endsWith(".discordapp.com")
+      || host === "discord.com"
+      || host.endsWith(".discord.com")
+      || host === "discordapp.net"
+      || host.endsWith(".discordapp.net");
+  } catch (e) {
+    return false;
+  }
+}
+
+function fileExtensionForBlob(blob, sourceUrl, fallbackExt) {
+  var contentType = String((blob && blob.getContentType && blob.getContentType()) || "").toLowerCase();
+  var fromType = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "application/pdf": ".pdf",
+    "text/plain": ".txt"
+  }[contentType];
+  if (fromType) return fromType;
+  try {
+    var match = String(sourceUrl || "").match(/(\.[a-z0-9]{2,5})(?:[?#].*)?$/i);
+    if (match) return match[1].toLowerCase();
+  } catch (e) {}
+  return fallbackExt || ".bin";
+}
+
 //Downloads the images at a discord media link to our google drive.
 function downloadImageDiscords() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -16,7 +49,7 @@ function downloadImageDiscords() {
     var existingUrl = done[i][0];  // already pulled into memory
 
     if (existingUrl) continue;                                // skip completed
-    if (!discordUrl || !discordUrl.includes("discordapp.com")) continue;
+    if (!isDiscordHostedUrl(discordUrl)) continue;
 
     var rowIndex = i + 2;
     try {
@@ -137,19 +170,21 @@ function downloadVetDiscords() {
     var rowIndex = i + 2;
     var existingUrl = sheet.getRange(rowIndex, 4).getValue();
     if (existingUrl) { continue; }
-    if (!discordUrl || !discordUrl.includes("discordapp.com")) { continue; }
+    if (!isDiscordHostedUrl(discordUrl)) { continue; }
     
     try {
       var response = UrlFetchApp.fetch(discordUrl, { muteHttpExceptions: true });
       if (response.getResponseCode() !== 200) { continue; }
       var fileBlob = response.getBlob();
+      var contentType = String(fileBlob.getContentType() || "").toLowerCase();
+      var isImage = contentType.indexOf("image/") === 0;
       var serialNumber = String(counter + 1).padStart(4, '0');
-      var newFileName = "Vsn" + serialNumber + ".jpg";
+      var newFileName = "Vsn" + serialNumber + fileExtensionForBlob(fileBlob, discordUrl, ".jpg");
       Logger.log("Processing row " + rowIndex + ": Renaming to " + newFileName);
       
-      var compressedBlob = optimizeImage(fileBlob);
+      var storedBlob = isImage ? optimizeImage(fileBlob) : fileBlob;
       
-      var newFile = folder.createFile(compressedBlob);
+      var newFile = folder.createFile(storedBlob);
       newFile.setName(newFileName);
       var newFileUrl = newFile.getUrl();
       

@@ -1,14 +1,17 @@
 """Administrative Discord commands for TomCat (role cleanup, cache resets, etc.)."""
 
 from __future__ import annotations
-import asyncio, os, shutil
+
+import asyncio
+import os
+from typing import Any, Dict
+
 import discord
-from typing import Dict, Any
+
+from .. import aliases as ALIAS
 from ..config import settings
 from ..logger import log_action
-from ..services.show_cache import ensure_cat_cache
 from ..services import profile_cache as PC
-from .. import aliases as ALIAS
 from ..utils.permissions import is_officer
 
 
@@ -18,33 +21,25 @@ async def handle_silent_mode(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
         log_action("silent_mode_denied", f"user={author.id}", "unauthorized")
         return
 
-    #Expect args like {"on": True} or {"on": False}
     on = bool(args.get("on", False))
     settings.silent_mode = on
-    log_action("silent_mode_set", f"user={getattr(author,'name',author.id)}", "on" if on else "off")
+    log_action("silent_mode_set", f"user={getattr(author, 'name', author.id)}", "on" if on else "off")
     try:
         await ctx["message"].add_reaction("👍")
     except Exception:
         pass
 
 
-#Guild-scoped admin actions target the primary CCC server (configurable via TARGET_GUILD_ID).
-
 async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
-    """Officer-only: remove a specific role from all guild members.
-    Only removes the single role; does not modify any other roles.
-    args = {"role_id": int}
-    """
+    """Officer-only: remove a specific role from all guild members."""
     message: discord.Message = ctx["message"]
     author = ctx["author"]
     role_id = int(args.get("role_id") or 0)
 
-    #Admin guard
     if not is_officer(author, settings):
         log_action("role_remove_all_denied", f"user={author.id}", "unauthorized")
         return
 
-    #Always operate on the target main guild, regardless of where the command is invoked
     bot = ctx.get("bot")
     target_gid = getattr(settings, "target_guild_id", None)
     guild = None
@@ -67,35 +62,35 @@ async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any])
             pass
         return
 
-    #Confirm and run
     try:
-        await message.channel.send(f"Starting role removal: removing <@&{role_id}> from all members who have it…")
+        await message.channel.send(f"Starting role removal: removing <@&{role_id}> from all members who have it...")
     except Exception:
         pass
     removed = 0
-    checked = 0
 
-    members = list(getattr(guild, 'members', []) or [])
+    members = list(getattr(guild, "members", []) or [])
     if not members:
         try:
-            async for m in guild.fetch_members(limit=None):
-                members.append(m)
+            async for member in guild.fetch_members(limit=None):
+                members.append(member)
         except Exception:
-            members = list(getattr(guild, 'members', []) or [])
+            members = list(getattr(guild, "members", []) or [])
 
-    for m in members:
-        checked += 1
+    for member in members:
         try:
-            if role in getattr(m, 'roles', []) or getattr(m, 'get_role', None) and m.get_role(role_id):
-                try:
-                    await m.remove_roles(role, reason=f"TomCat: remove role {role_id} from everyone")
-                    removed += 1
-                except Exception as e:
-                    log_action("role_remove_error", f"uid={getattr(m,'id',0)}", str(e))
-                await asyncio.sleep(0.3)
+            has_role = role in getattr(member, "roles", [])
+            if not has_role and getattr(member, "get_role", None):
+                has_role = bool(member.get_role(role_id))
+            if not has_role:
+                continue
+            try:
+                await member.remove_roles(role, reason=f"TomCat: remove role {role_id} from everyone")
+                removed += 1
+            except Exception as e:
+                log_action("role_remove_error", f"uid={getattr(member, 'id', 0)}", str(e))
+            await asyncio.sleep(0.3)
         except Exception:
             continue
-        #Reduce chatter: rely on logs; no periodic progress messages
 
     try:
         await message.channel.send(f"Done. Removed <@&{role_id}> from {removed} member(s).")
@@ -105,9 +100,8 @@ async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any])
 
 
 async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
-    """Officer-only: Clear and rebuild SHOW_CACHE_PER_CAT local images per cat.
-    Uses CatDatabase/profile cache names, wipes existing cached files per cat, and refills.
-    """
+    """Officer-only: clear the deprecated show-photo cache directories."""
+    del args
     message: discord.Message = ctx["message"]
     author = ctx["author"]
     if not is_officer(author, settings):
@@ -115,155 +109,63 @@ async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -
         return
 
     try:
-        await message.channel.send("Starting recache of show-photo images…")
+        await message.channel.send("Clearing deprecated show-photo cache...")
     except Exception:
         pass
 
-    names: list[str] = []
-    name_arg = str(args.get("name") or "").strip()
-    try:
-        if name_arg:
-            if name_arg.lower() in {"all", "*", "photos", "cache", "profiles"}:
-                names = []
-            else:
-                from ..services.catsheets import get_cat_profile
-                prof = await get_cat_profile(name_arg)
-                if isinstance(prof, dict) and prof.get("actual_name"):
-                    names = [prof["actual_name"]]
-                else:
-                    names = [name_arg]
-        else:
-            if PC.cached_count() == 0:
-                await PC.refresh_async()
-            names = PC.all_actual_names()
-    except Exception as e:
-        log_action("recache_error", "profiles", str(e))
-        try:
-            await message.channel.send(f"Profile cache error: {e}")
-        except Exception:
-            pass
-        return
-
-    # Fallback to the profile cache if we still do not have a usable list.
-    if not names:
-        try:
-            if PC.cached_count() == 0:
-                await PC.refresh_async()
-            names = PC.all_actual_names()
-        except Exception as e:
-            log_action("recache_error", "fallback_profiles", str(e))
-            names = names or []
-
-    #Wipe and refill per cat with gentle concurrency
+    removed_files = 0
+    removed_dirs = 0
     base = settings.show_cache_dir
-    os.makedirs(base, exist_ok=True)
-    sem = asyncio.Semaphore(max(1, settings.show_cache_warm_concurrency))
-    total = 0
-
-    #Limit to rows that look like real cats (numeric prefix, non-zero)
-    import re as _re
-    filtered_names = []
-    for nm in names:
-        key = (nm or "").strip()
-        if not key:
-            continue
-        m = _re.match(r"\s*(\d+)[\.|\s]", key)
-        if not m or m.group(1) == "0":
-            continue
-        filtered_names.append(key)
-    names = filtered_names or ([name_arg.strip()] if name_arg else [])
-
-    #One-time wipe of cached files for selected cats only
     try:
-        targets = set()
-        #Build id set from names by parsing leading number
-        for nm in names:
-            m = _re.match(r"\s*(\d+)[\.|\s]", nm or "")
-            if m:
-                targets.add(m.group(1).zfill(3))
-        for sub in os.listdir(base):
-            p = os.path.join(base, sub)
-            if os.path.isdir(p) and ((not targets) or (sub in targets)):
-                for fn in os.listdir(p):
-                    if fn.lower().endswith(('.jpg', '.json')):
-                        try:
-                            os.remove(os.path.join(p, fn))
-                        except Exception:
-                            pass
-    except Exception:
-        pass
+        if os.path.isdir(base):
+            for sub in os.listdir(base):
+                path = os.path.join(base, sub)
+                if not os.path.isdir(path):
+                    continue
+                for filename in os.listdir(path):
+                    full_path = os.path.join(path, filename)
+                    if not os.path.isfile(full_path):
+                        continue
+                    try:
+                        os.remove(full_path)
+                        removed_files += 1
+                    except Exception:
+                        pass
+                try:
+                    os.rmdir(path)
+                    removed_dirs += 1
+                except Exception:
+                    pass
+    except Exception as e:
+        log_action("recache_error", "clear_show_cache", str(e))
 
-    #Filter to valid cat rows (numeric prefix, non-zero), then deduplicate while preserving order
-    seen_names = set()
-    unique_names = []
-    for nm in names:
-        key = nm.strip()
-        if not key:
-            continue
-        m = _re.match(r"\s*(\d+)[\.|\s]", key)
-        if not m or m.group(1) == "0":
-            continue
-        if key in seen_names:
-            continue
-        seen_names.add(key)
-        unique_names.append(key)
-    target_count = len(unique_names)
-
-    from ..services import show_cache as _sc
-    _sc.reset_photo_metadata_cache()
-
-    queue: asyncio.Queue[str] = asyncio.Queue()
-    for nm in unique_names:
-        queue.put_nowait(nm)
-
-    async def _worker() -> None:
-        nonlocal total
-        while True:
-            try:
-                nm = queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-            try:
-                await ensure_cat_cache(nm, settings.show_cache_per_cat, prefer_random=True)
-                total += 1
-            except Exception as e:
-                log_action("recache_error", nm, str(e))
-            await asyncio.sleep(0.2)
-
-    concurrency = max(1, settings.show_cache_warm_concurrency)
-    await asyncio.gather(*[_worker() for _ in range(concurrency)])
     try:
-        _sc.rebuild_name_index()
-    except Exception:
-        pass
-    try:
-        await message.channel.send(f"Recache complete for {total}/{target_count} cat(s).")
+        await message.channel.send(
+            f"Deprecated show-photo cache cleared. Removed {removed_files} file(s) across {removed_dirs} directories."
+        )
     except Exception:
         pass
 
 
 async def handle_recache_catabase(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
-    """Officer-only: Refresh the Catabase cache and write the CSV snapshot.
-    Also refreshes the dynamic alias map so freshly cached names resolve immediately.
-    """
+    """Officer-only: Refresh the Catabase cache and alias map."""
     message: discord.Message = ctx["message"]
     author = ctx["author"]
     if not is_officer(author, settings):
         log_action("recache_catabase_denied", f"user={author.id}", "unauthorized")
         return
     try:
-        await message.channel.send("Refreshing Catabase profiles and names…")
+        await message.channel.send("Refreshing Catabase profiles and names...")
     except Exception:
         pass
     try:
-        n = await PC.refresh_async()
-        # Refresh aliases so the router can resolve freshly cached names immediately.
+        count = await PC.refresh_async()
         try:
             ALIAS.refresh_aliases_now()
         except Exception:
             pass
         try:
-            await message.channel.send(f"Catabase refreshed: {n} profiles.")
+            await message.channel.send(f"Catabase refreshed: {count} profiles.")
         except Exception:
             pass
     except Exception as e:

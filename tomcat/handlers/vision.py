@@ -62,6 +62,15 @@ async def _cleanup(paths: List[str]):
         except Exception:
             pass
 
+
+def _format_confidence_pct(score: Any) -> str:
+    try:
+        value = float(score)
+    except Exception:
+        value = 0.0
+    value = max(0.0, min(1.0, value))
+    return f"{value * 100:.1f}%"
+
 #---------- public handlers ----------
 async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     """Run object detection on an image and report bounding boxes."""
@@ -95,7 +104,7 @@ async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         await _cleanup(tmp)
 
 async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
-    """Crop detected cats and send the result (collage)."""
+    """Crop detected cats and send each crop as a separate attachment."""
     message: discord.Message = ctx["message"]
     ch: discord.abc.MessageableChannel = ctx["channel"]
 
@@ -111,9 +120,26 @@ async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         data = await _read_bytes(path)
         
         out = await asyncio.to_thread(V.crop, data)
-        file = discord.File(io.BytesIO(out.boxed_jpeg), filename="crop.jpg")
-        
-        await ch.send(content="Cropped view:", file=file)
+        crop_bytes = list(getattr(out, "crops", []) or [])
+        if crop_bytes:
+            files = [
+                discord.File(io.BytesIO(crop_bytes[i]), filename=f"crop_{i + 1}.jpg")
+                for i in range(len(crop_bytes))
+            ]
+            if len(files) <= 10:
+                content = "Cropped view:" if len(files) == 1 else f"Cropped views ({len(files)} cats):"
+                await ch.send(content=content, files=files)
+            else:
+                for start in range(0, len(files), 10):
+                    batch = files[start:start + 10]
+                    if start == 0:
+                        content = f"Cropped views ({len(files)} cats):"
+                    else:
+                        content = None
+                    await ch.send(content=content, files=batch)
+        else:
+            file = discord.File(io.BytesIO(out.boxed_jpeg), filename="crop.jpg")
+            await ch.send(content="Cropped view:", file=file)
 
     except ValueError as ve:
         await ch.send(str(ve))
@@ -148,7 +174,7 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
             name = r["name"]
             conf = r["conf"]
             idx = r["index"]
-            lines.append(f"{idx}. **{name}** ({conf*100:.1f}%)")
+            lines.append(f"{idx}. **{name}** ({_format_confidence_pct(conf)})")
 
         desc = ("\n".join(lines) if lines else "_no cat detected_")
         
@@ -158,12 +184,19 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         )
         # INSTRUCTIONAL FOOTER
         if out.results:
-            embed.set_footer(text="Was I right? React ✅/❌. React ❓ to see top 5 guesses.")
+            embed.set_footer(text="Was I right? React \u2705/\u274c. React \u2753 to see top 5 guesses.")
         
         embed.set_image(url="attachment://identified.jpg")
         file = discord.File(io.BytesIO(out.boxed_jpeg), filename="identified.jpg")
 
         await reply_msg.edit(content=None, attachments=[file], embed=embed)
+        if out.results:
+            try:
+                await reply_msg.add_reaction("\u2705")
+                await reply_msg.add_reaction("\u274c")
+                await reply_msg.add_reaction("\u2753")
+            except Exception:
+                pass
         try:
             await asyncio.to_thread(
                 register_identify_feedback,
@@ -191,14 +224,6 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         if not out.results:
             return
 
-        # Add Reactions
-        try:
-            await reply_msg.add_reaction("✅")
-            await reply_msg.add_reaction("❌")
-            await reply_msg.add_reaction("❓")
-        except Exception:
-            pass
-        
         # ACTIVE LISTENER FOR '?' REACTION
         # We try to get the bot client from the message context to wait for a reaction.
         # This allows the "Top 5" feature to work without a database.
@@ -211,7 +236,7 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
             if client:
                 def check(reaction, user):
                     return (
-                        str(reaction.emoji) == "❓" 
+                        str(reaction.emoji) == "\u2753"
                         and reaction.message.id == reply_msg.id 
                         and not user.bot
                     )
@@ -226,7 +251,7 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
                     top5 = r.get("top5", [])
                     expanded_lines.append(f"**Cat #{idx} Candidates:**")
                     for rank, (c_name, c_conf) in enumerate(top5):
-                        expanded_lines.append(f"`{rank+1}.` {c_name} ({c_conf*100:.1f}%)")
+                        expanded_lines.append(f"`{rank+1}.` {c_name} ({_format_confidence_pct(c_conf)})")
                     expanded_lines.append("") # Spacer
                 
                 new_desc = "\n".join(expanded_lines)

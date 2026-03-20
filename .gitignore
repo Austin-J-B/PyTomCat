@@ -13,11 +13,11 @@ credentials/*
 !credentials/gmail_oauth_client TEMPLATE.json
 
 ## Model weights and other large artifacts
-weights/
+weights/*
 !weights/.gitkeep
 !weights/984_917_yolo12s.pt
 !weights/R4.5.*_cat_DINOv3_gallery.pt
-
+!weights/R*.*.*_cat_DINOv3_gallery.pt
 
 ## Cached spreadsheet exports checked in for local reference only
 CCC megasheet - Membership Application List.csv
@@ -55,8 +55,6 @@ ENV/
 .ruff_cache/
 
 
-tests/
-
 cloudflared.exe
 cloudflared.exe.old
 config.yml
@@ -68,6 +66,8 @@ logs/finance/
 logs/human/
 logs/machine/
 logs/dues/
+
+tests/
 
 cache
 cloudflared.exe.old

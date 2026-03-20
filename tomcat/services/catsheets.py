@@ -35,6 +35,8 @@ _LABEL_SPLIT_RE = re.compile(r"[|,;/]+")
 _PHOTO_METADATA_ROWS_CACHE: list[list[str]] | None = None
 _PHOTO_METADATA_ROWS_TS: float = 0.0  # monotonic for in-memory cache
 _PHOTO_METADATA_SNAPSHOT = Path("cache") / "sheets" / "photo_metadata_rows.json"
+_PHOTO_METADATA_INDEX_CACHE: dict[str, list[list[str]]] | None = None
+_PHOTO_METADATA_INDEX_TS: float = 0.0
 
 
 def _normalize_rows(rows: Any) -> list[list[str]]:
@@ -84,17 +86,6 @@ def _photo_row_label_tokens(row: list[str]) -> list[str]:
         seen.add(key)
         tokens.append(token)
     return tokens
-
-
-def _photo_row_matches_query(row: list[str], query: str) -> bool:
-    """Return True when the local metadata row contains the requested cat label."""
-    query_key = _photo_query_key(query)
-    if not query_key:
-        return False
-    for token in _photo_row_label_tokens(row):
-        if norm_alnum_lower(token) == query_key:
-            return True
-    return False
 
 
 def _parse_serial_number(value: str) -> int:
@@ -170,6 +161,53 @@ def _write_photo_metadata_snapshot(rows: list[list[str]]) -> None:
     except Exception:
         pass
 
+
+def _reset_photo_metadata_index() -> None:
+    """Invalidate the derived photo metadata lookup index."""
+    global _PHOTO_METADATA_INDEX_CACHE, _PHOTO_METADATA_INDEX_TS
+    _PHOTO_METADATA_INDEX_CACHE = None
+    _PHOTO_METADATA_INDEX_TS = 0.0
+
+
+def _build_photo_metadata_index(rows: list[list[str]]) -> dict[str, list[list[str]]]:
+    """Group rows by normalized cat label for fast show-photo lookups."""
+    grouped: dict[str, list[list[str]]] = {}
+    for row in rows[1:] if rows else []:
+        if len(row) <= COL_SERIAL:
+            continue
+        for token in _photo_row_label_tokens(row):
+            key = norm_alnum_lower(token)
+            if not key:
+                continue
+            grouped.setdefault(key, []).append(row)
+    for match_rows in grouped.values():
+        match_rows.sort(key=lambda row: _parse_serial_number(row[COL_SERIAL] if len(row) > COL_SERIAL else ""))
+    return grouped
+
+
+def _get_photo_metadata_index(ttl_sec: int | None = None) -> dict[str, list[list[str]]]:
+    """Return the cached metadata-row index keyed by normalized cat label."""
+    global _PHOTO_METADATA_INDEX_CACHE, _PHOTO_METADATA_INDEX_TS
+    rows = get_photo_metadata_rows(ttl_sec)
+    if not rows:
+        return {}
+    rows_ts = float(_PHOTO_METADATA_ROWS_TS)
+    if _PHOTO_METADATA_INDEX_CACHE is not None and _PHOTO_METADATA_INDEX_TS == rows_ts:
+        return _PHOTO_METADATA_INDEX_CACHE
+    index = _build_photo_metadata_index(rows)
+    _PHOTO_METADATA_INDEX_CACHE = index
+    _PHOTO_METADATA_INDEX_TS = rows_ts
+    return index
+
+
+def _matched_photo_rows(full_name: str, ttl_sec: int | None = None) -> list[list[str]]:
+    """Return metadata rows matching a cat label via the cached index."""
+    query_key = _photo_query_key(full_name)
+    if not query_key:
+        return []
+    index = _get_photo_metadata_index(ttl_sec)
+    return list(index.get(query_key, []))
+
 def force_refresh_photo_rows_cache() -> list[list[str]]:
     """Force refresh the local photo metadata row cache, bypassing TTL."""
     global _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS
@@ -178,6 +216,7 @@ def force_refresh_photo_rows_cache() -> list[list[str]]:
         if not rows:
             return _PHOTO_METADATA_ROWS_CACHE or []
         _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = rows, time.monotonic()
+        _reset_photo_metadata_index()
         _write_photo_metadata_snapshot(rows)
         return rows
     except Exception:
@@ -201,6 +240,7 @@ def get_photo_metadata_rows(ttl_sec: int | None = None) -> list[list[str]]:
     snap_rows, snap_ts = _load_photo_metadata_snapshot()
     if snap_rows is not None and (now_unix - snap_ts) < ttl:
         _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = snap_rows, now_mono
+        _reset_photo_metadata_index()
         return snap_rows
     # Fetch live photo metadata
     try:
@@ -208,38 +248,33 @@ def get_photo_metadata_rows(ttl_sec: int | None = None) -> list[list[str]]:
         if not rows:
             return snap_rows or _PHOTO_METADATA_ROWS_CACHE or []
         _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = rows, now_mono
+        _reset_photo_metadata_index()
         _write_photo_metadata_snapshot(rows)
         return rows
     except Exception:
         # Fallback to whatever snapshot we have
         if snap_rows is not None:
             _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = snap_rows, now_mono
+            _reset_photo_metadata_index()
             return snap_rows
         return []
-
-async def _get_all_photos_long_format():
-    """Helper to fetch the master local photo metadata rows."""
-    rows = get_photo_metadata_rows()
-    return rows[1:] if rows else []  #Skip header
 
 async def get_most_recent_photo(full_name: str, _retried: bool = False) -> dict | str:
     """Fetch the most recent photo row for a cat from the long-format list.
     
     If no photos found, force-refresh cache and retry once.
     """
+    display_name = _display_label(full_name) or str(full_name or "").strip()
+    matches = []
+
     try:
-        rows = await _get_all_photos_long_format()
+        rows = _matched_photo_rows(full_name)
     except Exception as e:
         return f"Photo metadata error: {e}"
 
-    display_name = _display_label(full_name) or str(full_name or "").strip()
-    matches = []
-    
     for r in rows:
         #Safety check for row length
         if len(r) <= COL_SERIAL:
-            continue
-        if not _photo_row_matches_query(r, full_name):
             continue
         serial_num = _parse_serial_number(r[COL_SERIAL] if len(r) > COL_SERIAL else "")
         if serial_num <= 0 or not local_photos.has_local_photo(serial_num):
@@ -271,17 +306,16 @@ async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str
     
     If no photos found, force-refresh cache and retry once.
     """
+    display_name = _display_label(full_name) or str(full_name or "").strip()
+    matches = []
+
     try:
-        rows = await _get_all_photos_long_format()
+        rows = _matched_photo_rows(full_name)
     except Exception as e:
         return f"Photo metadata error: {e}"
 
-    display_name = _display_label(full_name) or str(full_name or "").strip()
-    matches = []
     for r in rows:
         if len(r) <= COL_SERIAL:
-            continue
-        if not _photo_row_matches_query(r, full_name):
             continue
         serial_num = _parse_serial_number(r[COL_SERIAL] if len(r) > COL_SERIAL else "")
         if serial_num <= 0 or not local_photos.has_local_photo(serial_num):
@@ -302,8 +336,8 @@ async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str
         return _parse_serial_number(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
     
     matches.sort(key=parse_serial)
-    pick = random.choice(matches)
-    pick_idx = matches.index(pick)  #0-based position in sorted list
+    pick_idx = random.randrange(len(matches))
+    pick = matches[pick_idx]
     
     return {
         "actual_name": display_name,

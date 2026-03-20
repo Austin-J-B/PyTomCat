@@ -54,6 +54,7 @@ def _ensure_dirs() -> None:
     _CORRECT_CROPS_DIR.mkdir(parents=True, exist_ok=True)
     _INCORRECT_RECORDS_DIR.mkdir(parents=True, exist_ok=True)
     _INCORRECT_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    _purge_expired_pending()
 
 
 def _migrate_one_dir(src: Path, dst: Path) -> None:
@@ -195,21 +196,43 @@ def _dump_json(path: Path, payload: Dict[str, Any]) -> None:
 
 def _purge_expired_pending() -> None:
     now = time.time()
+    live_ids: set[int] = set()
     pending_dirs = [_PENDING_META_DIR, _LEGACY_PENDING_META_DIR]
     for pending_dir in pending_dirs:
         for meta_path in pending_dir.glob("*.json"):
             meta = _load_json(meta_path)
             ts = float(meta.get("created_ts") or 0.0)
-            if ts <= 0 or (now - ts) <= _PENDING_TTL_SEC:
+            try:
+                msg_id = int(meta.get("reply_message_id") or int(meta_path.stem))
+            except Exception:
+                msg_id = 0
+            is_finalized = bool(meta.get("finalized"))
+            is_expired = ts > 0 and (now - ts) > _PENDING_TTL_SEC
+            if not is_finalized and not is_expired:
+                if msg_id > 0:
+                    live_ids.add(msg_id)
                 continue
             try:
                 meta_path.unlink(missing_ok=True)
             except Exception:
                 pass
+            if msg_id > 0:
+                try:
+                    _pending_image_path(msg_id).unlink(missing_ok=True)
+                    _legacy_pending_image_path(msg_id).unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+    for image_dir in (_PENDING_IMG_DIR, _LEGACY_PENDING_IMG_DIR):
+        for image_path in image_dir.glob("*.jpg"):
             try:
-                msg_id = int(meta.get("reply_message_id") or int(meta_path.stem))
-                _pending_image_path(msg_id).unlink(missing_ok=True)
-                _legacy_pending_image_path(msg_id).unlink(missing_ok=True)
+                msg_id = int(image_path.stem)
+            except Exception:
+                continue
+            if msg_id in live_ids:
+                continue
+            try:
+                image_path.unlink(missing_ok=True)
             except Exception:
                 pass
 
@@ -403,9 +426,6 @@ def register_identify_feedback(
             "finalized_at": "",
             "finalized_by": 0,
         }
-        serial = _ensure_feedback_serial(payload)
-        if serial > 0:
-            payload["serial"] = int(serial)
         _dump_json(_pending_meta_path(int(reply_message_id)), payload)
     except Exception as e:
         log_action("discord_feedback_register_error", f"msg={reply_message_id}", str(e))

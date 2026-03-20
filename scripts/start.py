@@ -71,6 +71,27 @@ def _wait_for_local_port(host: str, port: int, timeout_sec: float = 25.0) -> boo
         time.sleep(0.2)
     return False
 
+
+def _stop_process_quickly(proc: subprocess.Popen, *, deadline: float) -> None:
+    """Stop a child process without letting shutdown drag on."""
+    if proc.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            proc.kill()
+            return
+        proc.terminate()
+        timeout_left = max(0.0, float(deadline) - time.time())
+        if timeout_left <= 0.0:
+            proc.kill()
+            return
+        try:
+            proc.wait(timeout=min(0.5, timeout_left))
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    except Exception:
+        pass
+
 def _resolve_credentials_path(raw_value: str) -> Path:
     candidate = Path(raw_value.strip())
     if not candidate.is_absolute():
@@ -246,50 +267,43 @@ def main() -> None:
         processes.append(subprocess.Popen(bot_cmd, cwd=ROOT))
 
         if tunnel_cmd:
-            if _wait_for_local_port("127.0.0.1", 8080, timeout_sec=30.0):
-                print(f"-> Tunnel: {' '.join(tunnel_cmd)}")
-                # Keep cloudflared connection churn out of interactive terminal.
-                processes.append(
-                    subprocess.Popen(
-                        tunnel_cmd,
-                        cwd=ROOT,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
+            print("[Tunnel] Waiting for 127.0.0.1:8080 before starting cloudflared...")
+            while True:
+                if _wait_for_local_port("127.0.0.1", 8080, timeout_sec=1.0):
+                    print(f"-> Tunnel: {' '.join(tunnel_cmd)}")
+                    # Keep cloudflared connection churn out of interactive terminal.
+                    processes.append(
+                        subprocess.Popen(
+                            tunnel_cmd,
+                            cwd=ROOT,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
                     )
-                )
-            else:
-                print("[Tunnel] Skipped start because 127.0.0.1:8080 is not ready.")
+                    break
+                if processes[0].poll() is not None:
+                    print("[Tunnel] Bot exited before 127.0.0.1:8080 became ready.")
+                    break
         
         processes[0].wait() #Wait for bot
     except KeyboardInterrupt:
         print("\nShutting down...")
     finally:
+        deadline = time.time() + 3.0
         for p in processes:
-            try:
-                if p.poll() is None:
-                    p.terminate()
-            except Exception:
-                pass
+            _stop_process_quickly(p, deadline=deadline)
 
-        deadline = time.time() + 8.0
         for p in processes:
             if p.poll() is not None:
                 continue
-            timeout_left = max(0.2, deadline - time.time())
+            timeout_left = max(0.0, deadline - time.time())
+            if timeout_left <= 0.0:
+                _stop_process_quickly(p, deadline=deadline)
+                continue
             try:
                 p.wait(timeout=timeout_left)
             except subprocess.TimeoutExpired:
-                try:
-                    p.kill()
-                except Exception:
-                    pass
-
-        for p in processes:
-            if p.poll() is None:
-                try:
-                    p.wait(timeout=1.0)
-                except Exception:
-                    pass
+                _stop_process_quickly(p, deadline=deadline)
 
 if __name__ == "__main__":
     main()

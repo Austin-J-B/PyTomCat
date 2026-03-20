@@ -24,6 +24,11 @@ def main() -> int:
         help="Gallery update mode. Incremental currently resolves to full for correctness.",
     )
     parser.add_argument(
+        "--gallery-version",
+        default=None,
+        help="Write an explicit gallery version like 5.0.0, producing R5.0.0_cat_DINOv3_gallery.pt.",
+    )
+    parser.add_argument(
         "--no-tta-hflip",
         action="store_true",
         help="Disable horizontal-flip TTA while embedding crops.",
@@ -55,6 +60,7 @@ def main() -> int:
 
     kwargs = {
         "mode": args.mode,
+        "gallery_version": args.gallery_version,
         "tta_hflip": not args.no_tta_hflip,
         "use_local_photos": not args.disable_local_photos,
     }

@@ -32,7 +32,7 @@ LOCAL_LLM_GGUF_URL = (
 LLAMA_CPP_WHEEL_INDEX_CPU = "https://abetlen.github.io/llama-cpp-python/whl/cpu"
 CONFIG_PATH = ROOT / "config.yml"
 
-REQUIRED_WEIGHTS = ["R4_cat_DINOv3_encoder.pth", "R4.5_cat_DINOv3_gallery.pt", "sam2_s.pt"]
+REQUIRED_WEIGHTS = ["R4_cat_DINOv3_encoder.pth", "sam2_s.pt"]
 
 #PyTorch specifications for CPU and GPU (CUDA 12.1)
 TORCH_CPU_SPEC = ["torch==2.4.1", "torchvision==0.19.1"]
@@ -75,7 +75,6 @@ GOOGLE_SERVICE_ACCOUNT_JSON=./credentials/service_account.json
 
 # ===== Sheets =====
 SHEET_CATABASE_ID=                    # Catabase (cat bios + latest image URL)
-SHEET_VISION_ID=                      # Vision/aux (RecentPics, etc.)
 SHEET_MEGASHEET_ID=                   # Members/finance megasheet (used for dues/membership)
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
@@ -90,7 +89,7 @@ LOCAL_LLM_N_GPU_LAYERS=0
 LOCAL_LLM_TIMEOUT_SEC=12.0
 CV_DETECT_WEIGHTS=weights/984_917_yolo12s.pt
 CV_ENCODER_WEIGHTS=weights/R4_cat_DINOv3_encoder.pth
-CV_GALLERY_PATH=weights/R4.5_cat_DINOv3_gallery.pt
+CV_GALLERY_PATH=auto
 CV_CLF_IMGSZ=518
 # Advanced CV/labeler performance knobs intentionally use code defaults.
 # Keep .env focused on stable deployment config (secrets, IDs, paths, toggles).
@@ -101,6 +100,11 @@ GMAIL_ENABLED=true                    # Toggle Gmail integration; disable to ski
 GMAIL_CREDENTIALS_PATH=credentials/gmail_oauth_client.json  # OAuth client secrets downloaded from Google Cloud
 GMAIL_TOKEN_PATH=credentials/gmail_token.json              # Stored refresh/access token generated after auth
 GMAIL_LOCAL_PORT=8765                 # Local redirect port the OAuth helper spins up
+GOOGLE_API_HEALTHCHECK_ENABLED=true
+GOOGLE_API_HEALTHCHECK_ON_BOOT=true
+GOOGLE_API_HEALTHCHECK_HOUR=12
+GOOGLE_API_HEALTHCHECK_MINUTE=0
+TOMCAT_SHUTDOWN_TIMEOUT_SEC=3
 
 # ===== Dues Processing =====
 DUES_ENABLED=true                     # Master switch for dues automation
@@ -468,13 +472,17 @@ def _check_yolo_weights() -> None:
     for w in REQUIRED_WEIGHTS:
         if not (WEIGHTS_DIR / w).exists():
             missing.append(w)
-    
+
+    gallery_candidates = list(WEIGHTS_DIR.glob("R*_cat_DINOv3_gallery.pt"))
+    if not any(path.is_file() for path in gallery_candidates):
+        missing.append("R*_cat_DINOv3_gallery.pt (latest local gallery)")
+
     if missing:
         _print_header("MISSING WEIGHTS")
         print(f"The following files are missing in {WEIGHTS_DIR}:")
         for m in missing:
             print(f"  - {m}")
-print("\nManually copy these from backup if needed.")
+        print("\nManually copy these from backup if needed.")
 
 def _maybe_create_env_template() -> None:
     env_path = ROOT / ".env"

@@ -69,10 +69,26 @@ def _default_download_chunk_size(workers: int) -> int:
 
 _DEFAULT_DOWNLOAD_WORKERS = _default_download_workers()
 _DEFAULT_DOWNLOAD_CHUNK_SIZE = _default_download_chunk_size(_DEFAULT_DOWNLOAD_WORKERS)
+_VERSIONED_GALLERY_RE = re.compile(r"^R(\d+(?:\.\d+)*)_cat_DINOv3_gallery\.pt$", re.IGNORECASE)
 
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _normalize_gallery_version(raw: Any) -> Optional[str]:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if text.lower().startswith("r"):
+        text = text[1:].strip()
+    if not re.fullmatch(r"\d+(?:\.\d+)*", text):
+        raise ValueError(f"Invalid gallery version: {raw}")
+    return text
+
+
+def _gallery_filename_for_version(version: str) -> str:
+    return f"R{str(version).strip()}_cat_DINOv3_gallery.pt"
 
 
 def _gallery_path_for_env(path: Path) -> str:
@@ -83,59 +99,63 @@ def _gallery_path_for_env(path: Path) -> str:
         return str(path.resolve()).replace("\\", "/")
 
 
-def _update_cv_gallery_path_in_env(new_gallery_path: str) -> Dict[str, Any]:
+def _read_cv_gallery_path_from_env() -> Dict[str, Any]:
     env_path = _project_root() / ".env"
     out: Dict[str, Any] = {
         "ok": False,
-        "updated": False,
         "found": False,
         "env_path": str(env_path),
-        "value": str(new_gallery_path),
+        "value": "",
     }
     try:
         if not env_path.exists():
             out["error"] = ".env not found"
             return out
-
         raw = env_path.read_text(encoding="utf-8")
-        lines = raw.splitlines()
-        found_idx: Optional[int] = None
-
-        for i, line in enumerate(lines):
+        for line in raw.splitlines():
             if not re.match(r"^\s*CV_GALLERY_PATH\s*=", line):
                 continue
-            found_idx = i
             out["found"] = True
-            before_hash, sep, after_hash = line.partition("#")
-            prefix_match = re.match(r"^(\s*CV_GALLERY_PATH\s*=\s*).*$", before_hash)
-            prefix = prefix_match.group(1) if prefix_match else "CV_GALLERY_PATH="
-            rebuilt = f"{prefix}{new_gallery_path}"
-            if sep:
-                comment = f"#{after_hash}".rstrip()
-                rebuilt = f"{rebuilt} {comment}"
-            if rebuilt != line:
-                lines[i] = rebuilt
-                out["updated"] = True
+            before_hash = line.partition("#")[0]
+            _, _, value = before_hash.partition("=")
+            out["value"] = str(value or "").strip()
             break
-
-        if found_idx is None:
-            if lines and lines[-1].strip():
-                lines.append("")
-            lines.append(f"CV_GALLERY_PATH={new_gallery_path}")
-            out["updated"] = True
-
-        if out["updated"]:
-            tmp = env_path.with_name(env_path.name + ".tmp")
-            payload = "\n".join(lines)
-            if not payload.endswith("\n"):
-                payload += "\n"
-            tmp.write_text(payload, encoding="utf-8")
-            tmp.replace(env_path)
         out["ok"] = True
         return out
     except Exception as e:
         out["error"] = str(e)
         return out
+
+
+def _cv_gallery_path_should_track_latest(raw_value: str) -> bool:
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return True
+    lowered = raw.lower()
+    if lowered in {"auto", "latest", "latest_local"}:
+        return True
+    if any(ch in raw for ch in "*?[]"):
+        return True
+    return False
+
+
+def _summarize_cv_gallery_env_state(new_gallery_path: str) -> Dict[str, Any]:
+    env_current = _read_cv_gallery_path_from_env()
+    out: Dict[str, Any] = {
+        "env_gallery_path": str(new_gallery_path),
+        "env_gallery_env_file": str(env_current.get("env_path") or ""),
+        "env_gallery_env_updated": False,
+        "env_gallery_env_found": bool(env_current.get("found")),
+        "env_gallery_env_previous": str(env_current.get("value") or ""),
+        "env_gallery_env_tracking_latest": _cv_gallery_path_should_track_latest(
+            str(env_current.get("value") or "")
+        ),
+        "env_gallery_env_preserved": True,
+        "env_gallery_env_skip_reason": "preserved_by_design",
+    }
+    if not bool(env_current.get("ok")):
+        out["env_gallery_env_error"] = str(env_current.get("error") or "unknown")
+    return out
 
 
 def _parse_serial(val: str) -> Optional[int]:
@@ -146,6 +166,14 @@ def _parse_serial(val: str) -> Optional[int]:
     if sval.isdigit():
         return int(sval)
     return None
+
+
+def _parse_positive_int(val: Any) -> Optional[int]:
+    try:
+        parsed = int(val)
+    except Exception:
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _normalize_label(raw: str) -> Optional[str]:
@@ -288,7 +316,14 @@ def _build_row_crops(
             crop.save(crop_path, format="JPEG", quality=95)
         except Exception:
             continue
-        saved.append((cat_name, crop_id, str(crop_path)))
+        saved.append({
+            "cat_name": str(cat_name),
+            "crop_id": str(crop_id),
+            "crop_path": str(crop_path),
+            "serial": int(serial),
+            "crop": int(idx + 1),
+            "source": "photo_metadata",
+        })
     out["saved"] = saved
     out["crop_filtered_small"] = int(filtered_small)
     return out
@@ -309,7 +344,7 @@ def _next_version_path(weights_dir: Path) -> Path:
 
 
 def _is_versioned_gallery_path(path: Path) -> bool:
-    return bool(re.match(r"^R4\.5\.\d+_cat_DINOv3_gallery\.pt$", path.name, re.IGNORECASE))
+    return bool(_VERSIONED_GALLERY_RE.match(path.name))
 
 
 def _prune_old_versioned_galleries(weights_dir: Path, keep_version_path: Path) -> int:
@@ -385,6 +420,7 @@ def _initial_embed_batch_size(device: torch.device, base_batch: int) -> int:
 def run_gallery_update(
     *,
     mode: str = "full",
+    gallery_version: Optional[str] = None,
     min_pixels: int = _DEFAULT_MIN_PIXELS,
     min_per_cat: int = _DEFAULT_MIN_PER_CAT,
     batch_size: int = _DEFAULT_BATCH_SIZE,
@@ -410,6 +446,7 @@ def run_gallery_update(
     stats: Dict[str, Any] = {
         "mode_requested": mode_req,
         "mode_effective": mode_eff,
+        "gallery_version_requested": str(gallery_version or "").strip(),
         "tta_hflip": bool(tta_hflip),
         "download_workers": int(max(1, download_workers)),
         "download_chunk_size": int(max(16, download_chunk_size)),
@@ -435,7 +472,7 @@ def run_gallery_update(
         "verified_cats_included": 0,
     }
 
-    cat_to_crops: Dict[str, List[Tuple[str, Path]]] = defaultdict(list)
+    cat_to_crops: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     unique_crops: set[str] = set()
     verified_priority_cats: set[str] = set()
     started_mono = time.monotonic()
@@ -554,12 +591,26 @@ def run_gallery_update(
                             continue
                         stats["crop_candidates"] += int(crop_result.get("crop_candidates", 0) or 0)
                         stats["crop_filtered_small"] += int(crop_result.get("crop_filtered_small", 0) or 0)
-                        for cat_name, crop_id, crop_path_str in crop_result.get("saved") or []:
+                        for item in crop_result.get("saved") or []:
+                            if not isinstance(item, dict):
+                                continue
+                            cat_name = str(item.get("cat_name") or "").strip()
+                            crop_id = str(item.get("crop_id") or "").strip()
+                            crop_path_str = str(item.get("crop_path") or "").strip()
+                            if not cat_name or not crop_id or not crop_path_str:
+                                continue
                             unique_key = f"{str(cat_name).casefold()}::{crop_id}"
                             if unique_key in unique_crops:
                                 continue
                             unique_crops.add(unique_key)
-                            cat_to_crops[str(cat_name)].append((str(crop_id), Path(str(crop_path_str))))
+                            cat_to_crops[str(cat_name)].append({
+                                "cat_name": str(cat_name),
+                                "crop_id": str(crop_id),
+                                "crop_path": Path(str(crop_path_str)),
+                                "serial": int(item.get("serial") or 0) or None,
+                                "crop": int(item.get("crop") or 0) or None,
+                                "source": str(item.get("source") or "photo_metadata"),
+                            })
                             stats["crop_saved"] += 1
                         _log_progress("crop-build")
 
@@ -579,7 +630,14 @@ def run_gallery_update(
             if unique_key in unique_crops:
                 continue
             unique_crops.add(unique_key)
-            cat_to_crops[cat_name].append((rec_id, crop_path))
+            cat_to_crops[cat_name].append({
+                "cat_name": str(cat_name),
+                "crop_id": str(rec_id),
+                "crop_path": crop_path,
+                "serial": _parse_positive_int(rec.get("serial")),
+                "crop": _parse_positive_int(rec.get("crop")),
+                "source": str(rec.get("source") or "discord_correct"),
+            })
             verified_priority_cats.add(cat_name)
             stats["verified_used"] += 1
 
@@ -605,6 +663,7 @@ def run_gallery_update(
         all_emb: List[Tensor] = []
         all_labels: List[int] = []
         all_paths: List[str] = []
+        all_records: List[Dict[str, Any]] = []
         expected_embeddings = sum(len(cat_to_crops.get(cat, [])) for cat in eligible_cats)
         embedded_done = 0
 
@@ -616,14 +675,18 @@ def run_gallery_update(
                 cur_batch_size = int(max(1, embed_batch_size))
                 batch = items[start:start + cur_batch_size]
                 tensors: List[Tensor] = []
-                ids: List[str] = []
-                for crop_id, crop_path in batch:
+                batch_items: List[Dict[str, Any]] = []
+                for item in batch:
+                    crop_id = str(item.get("crop_id") or "").strip()
+                    crop_path = Path(item.get("crop_path"))
+                    if not crop_id:
+                        continue
                     try:
                         img = Image.open(crop_path).convert("RGB")
                     except Exception:
                         continue
                     tensors.append(_prep_tensor(img))
-                    ids.append(crop_id)
+                    batch_items.append(item)
                 if not tensors:
                     start += len(batch)
                     continue
@@ -660,14 +723,18 @@ def run_gallery_update(
                         )
                         batch = items[start:start + cur_batch_size]
                         tensors = []
-                        ids = []
-                        for crop_id, crop_path in batch:
+                        batch_items = []
+                        for item in batch:
+                            crop_id = str(item.get("crop_id") or "").strip()
+                            crop_path = Path(item.get("crop_path"))
+                            if not crop_id:
+                                continue
                             try:
                                 img = Image.open(crop_path).convert("RGB")
                             except Exception:
                                 continue
                             tensors.append(_prep_tensor(img))
-                            ids.append(crop_id)
+                            batch_items.append(item)
                         if not tensors:
                             break
                         continue
@@ -682,9 +749,21 @@ def run_gallery_update(
                 all_emb.append(emb)
                 all_labels.extend([cat_idx] * emb.shape[0])
                 embedded_done += int(emb.shape[0])
-                for crop_id in ids:
-                    all_paths.append(f"crop://{crop_id}:{cat}")
-                start += len(ids)
+                for item in batch_items:
+                    crop_id = str(item.get("crop_id") or "").strip()
+                    serial = int(item.get("serial") or 0) or None
+                    crop_num = int(item.get("crop") or 0) or None
+                    crop_uri = f"crop://{crop_id}:{cat}" if crop_id else ""
+                    all_paths.append(crop_uri)
+                    all_records.append({
+                        "cat_name": str(cat),
+                        "crop_id": crop_id,
+                        "path": crop_uri,
+                        "serial": serial,
+                        "crop": crop_num,
+                        "source": str(item.get("source") or "gallery_update"),
+                    })
+                start += len(batch_items)
                 stats["embed_batch_effective"] = int(embed_batch_size)
                 _log_progress(
                     "embedding",
@@ -708,13 +787,18 @@ def run_gallery_update(
             "label": label_tensor,
             "class_to_idx": class_to_idx,
             "path": all_paths,
+            "records": all_records,
+            "record_schema": "sn_crop_v1",
         }
 
         previous_active_gallery_path = Path(settings.cv_gallery_path)
         weights_dir = previous_active_gallery_path.parent if previous_active_gallery_path.parent else Path("weights")
         weights_dir.mkdir(parents=True, exist_ok=True)
         overwrite_active_version = bool(_DEFAULT_OVERWRITE_ACTIVE_VERSION)
-        if overwrite_active_version and _is_versioned_gallery_path(previous_active_gallery_path):
+        requested_gallery_version = _normalize_gallery_version(gallery_version)
+        if requested_gallery_version:
+            version_path = weights_dir / _gallery_filename_for_version(requested_gallery_version)
+        elif overwrite_active_version and _is_versioned_gallery_path(previous_active_gallery_path):
             version_path = previous_active_gallery_path
         else:
             version_path = _next_version_path(weights_dir)
@@ -724,15 +808,10 @@ def run_gallery_update(
         removed_old_versions = _prune_old_versioned_galleries(weights_dir, version_path)
         stats["old_versions_pruned"] = int(removed_old_versions)
         stats["overwrite_active_version"] = int(overwrite_active_version)
+        stats["gallery_version_written"] = version_path.name
 
         env_gallery_path = _gallery_path_for_env(version_path)
-        env_update = _update_cv_gallery_path_in_env(env_gallery_path)
-        stats["env_gallery_path"] = env_gallery_path
-        stats["env_gallery_env_file"] = str(env_update.get("env_path") or "")
-        stats["env_gallery_env_updated"] = bool(env_update.get("updated"))
-        if not bool(env_update.get("ok")):
-            stats["env_gallery_env_error"] = str(env_update.get("error") or "unknown")
-            log_action("gallery_updater_env_error", "CV_GALLERY_PATH", str(env_update.get("error") or "unknown"))
+        stats.update(_summarize_cv_gallery_env_state(env_gallery_path))
 
         # Persist the latest crop tree so crop:// gallery refs can resolve locally
         # without rebuilding thumbs from source images at runtime.

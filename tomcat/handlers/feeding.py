@@ -1179,44 +1179,41 @@ async def start_morning_scheduler(bot: discord.Client) -> None:
     async with _MORNING_SCHEDULER_LOCK:
         if _MORNING_SCHEDULER_STARTED:
             return
-
-        async def _runner():
-            global _LAST_MORNING_MESSAGE_KEY
-            while True:
-                try:
-                    await _sleep_until_local_time(7, 40)
-                    
-                    #Guard against duplicate sends for the same day
-                    now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
-                    today_key = now.date().isoformat()
-                    if _LAST_MORNING_MESSAGE_KEY == today_key:
-                        log_action("morning_scheduler", f"date={today_key}", "duplicate_skip")
-                        continue
-                    
-                    channel_id = getattr(settings, "ch_feeding_team", None)
-                    if not channel_id:
-                        log_action("morning_scheduler", "channel=None", "skipped")
-                        continue
-                    
-                    ch = bot.get_channel(int(channel_id))
-                    if not isinstance(ch, discord.abc.Messageable):
-                        log_action("morning_scheduler", f"channel={channel_id}", "not_messageable")
-                        continue
-
-                    message_content, view = await build_morning_message(bot)
-                    await ch.send(message_content, view=view)
-                    
-                    # Record the send only when the message succeeds.
-                    _LAST_MORNING_MESSAGE_KEY = today_key
-                    log_action("morning_scheduler", "sent", f"channel={channel_id}; date={today_key}")
-
-                except Exception as e:
-                    log_action("morning_scheduler_error", "loop", str(e))
-                    await asyncio.sleep(60)
-
-        asyncio.create_task(_runner())
         _MORNING_SCHEDULER_STARTED = True
         log_action("morning_scheduler", "started", "ok")
+
+    global _LAST_MORNING_MESSAGE_KEY
+    while True:
+        try:
+            await _sleep_until_local_time(7, 40)
+
+            #Guard against duplicate sends for the same day
+            now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+            today_key = now.date().isoformat()
+            if _LAST_MORNING_MESSAGE_KEY == today_key:
+                log_action("morning_scheduler", f"date={today_key}", "duplicate_skip")
+                continue
+
+            channel_id = getattr(settings, "ch_feeding_team", None)
+            if not channel_id:
+                log_action("morning_scheduler", "channel=None", "skipped")
+                continue
+
+            ch = bot.get_channel(int(channel_id))
+            if not isinstance(ch, discord.abc.Messageable):
+                log_action("morning_scheduler", f"channel={channel_id}", "not_messageable")
+                continue
+
+            message_content, view = await build_morning_message(bot)
+            await ch.send(message_content, view=view)
+
+            # Record the send only when the message succeeds.
+            _LAST_MORNING_MESSAGE_KEY = today_key
+            log_action("morning_scheduler", "sent", f"channel={channel_id}; date={today_key}")
+
+        except Exception as e:
+            log_action("morning_scheduler_error", "loop", str(e))
+            await asyncio.sleep(60)
 
 
 
@@ -1297,54 +1294,51 @@ async def start_feeding_scheduler(bot: discord.Client) -> None:
         if _FEEDING_SCHEDULER_STARTED:
             log_action("feeding_scheduler", "already_started", "skipped")
             return
-
-        async def _runner():
-            while True:
-                try:
-                    now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
-                    send_start, send_deadline = _feeding_8pm_window_bounds(now)
-                    today_key = now.date().isoformat()
-
-                    if now < send_start:
-                        await _sleep_until(send_start)
-                        continue
-
-                    if now > send_deadline:
-                        if not _feeding_8pm_was_verified_for_day(now.date()):
-                            log_action(
-                                "feeding_8pm",
-                                f"date={today_key}; now={now.isoformat(timespec='seconds')}",
-                                f"give_up(deadline={send_deadline.isoformat(timespec='seconds')})",
-                            )
-                        await _sleep_until(send_start + timedelta(days=1))
-                        continue
-
-                    await _run_8pm_check(bot)
-
-                    now_after = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
-                    if _feeding_8pm_was_verified_for_day(now_after.date()):
-                        await _sleep_until(_next_8pm_start(now_after))
-                        continue
-
-                    _, live_deadline = _feeding_8pm_window_bounds(now_after)
-                    next_attempt = _next_minute_tick(now_after)
-                    if next_attempt <= live_deadline:
-                        await _sleep_until(next_attempt)
-                        continue
-
-                    log_action(
-                        "feeding_8pm",
-                        f"date={today_key}; now={now_after.isoformat(timespec='seconds')}",
-                        f"give_up(deadline={live_deadline.isoformat(timespec='seconds')})",
-                    )
-                    await _sleep_until(_next_8pm_start(now_after))
-                except Exception as e:
-                    log_action("feeding_scheduler_error", "loop", str(e))
-                    await asyncio.sleep(10)
-
-        asyncio.create_task(_runner())
         _FEEDING_SCHEDULER_STARTED = True
         log_action("feeding_scheduler", "started", "ok")
+
+    while True:
+        try:
+            now = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+            send_start, send_deadline = _feeding_8pm_window_bounds(now)
+            today_key = now.date().isoformat()
+
+            if now < send_start:
+                await _sleep_until(send_start)
+                continue
+
+            if now > send_deadline:
+                if not _feeding_8pm_was_verified_for_day(now.date()):
+                    log_action(
+                        "feeding_8pm",
+                        f"date={today_key}; now={now.isoformat(timespec='seconds')}",
+                        f"give_up(deadline={send_deadline.isoformat(timespec='seconds')})",
+                    )
+                await _sleep_until(send_start + timedelta(days=1))
+                continue
+
+            await _run_8pm_check(bot)
+
+            now_after = datetime.now(CENTRAL_TZ) if CENTRAL_TZ else datetime.now()
+            if _feeding_8pm_was_verified_for_day(now_after.date()):
+                await _sleep_until(_next_8pm_start(now_after))
+                continue
+
+            _, live_deadline = _feeding_8pm_window_bounds(now_after)
+            next_attempt = _next_minute_tick(now_after)
+            if next_attempt <= live_deadline:
+                await _sleep_until(next_attempt)
+                continue
+
+            log_action(
+                "feeding_8pm",
+                f"date={today_key}; now={now_after.isoformat(timespec='seconds')}",
+                f"give_up(deadline={live_deadline.isoformat(timespec='seconds')})",
+            )
+            await _sleep_until(_next_8pm_start(now_after))
+        except Exception as e:
+            log_action("feeding_scheduler_error", "loop", str(e))
+            await asyncio.sleep(10)
 
 
 async def _sleep_until(target: datetime) -> None:

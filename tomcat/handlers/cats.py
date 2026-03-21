@@ -16,9 +16,7 @@ from ..logger import log_action, log_event
 import re
 import io, asyncio
 from datetime import datetime, timezone
-from ..vision import vision as V
 from typing import Optional
-from ..config import settings
 from ..services import profile_cache as PC, local_photos
 from discord.errors import NotFound
 
@@ -89,28 +87,12 @@ def _attachment_filename_for_serial(serial: Any, suffix: str = ".jpg", *, croppe
     return f"{base}{ext}"
 
 
-def _crop_local_photo(raw_bytes: bytes) -> Optional[bytes]:
-    """Run the existing CV cropper against already-local bytes."""
-    crops = V.crop(raw_bytes)
-    return crops.crops[0] if getattr(crops, "crops", None) else None
-
-
 async def _build_local_show_image_payload(serial: Any) -> tuple[Optional[bytes], str, bool]:
-    """Return bytes/filename for a local show-photo response, preferring an auto-crop."""
+    """Return original local photo bytes for a show-photo response."""
     raw_bytes, suffix = await _read_local_photo_bytes(serial)
     filename = _attachment_filename_for_serial(serial, suffix)
     if not raw_bytes:
         return None, filename, False
-    if settings.auto_crop_show_photo:
-        try:
-            cropped = await asyncio.wait_for(
-                asyncio.to_thread(_crop_local_photo, raw_bytes),
-                timeout=(settings.cv_timeout_ms / 1000.0),
-            )
-            if cropped:
-                return cropped, _attachment_filename_for_serial(serial, ".jpg", cropped=True), True
-        except Exception:
-            pass
     return raw_bytes, filename, False
 
 
@@ -346,6 +328,8 @@ class PhotoView(discord.ui.View):
             "serial": str(pick2.get('serial','Unknown')),
             "reverse_index": str(pick2.get('reverse_index','?')),
             "total": str(pick2.get('total_available','?')),
+            "matched_label": pick2.get("matched_label"),
+            "matched_box_index": pick2.get("matched_box_index"),
             "delivery": delivery,
             "message_id": interaction.message.id,
             "delivered_message_id": delivered_id,
@@ -431,6 +415,8 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
             "serial": str(pick.get('serial','Unknown')),
             "reverse_index": str(pick.get('reverse_index','?')),
             "total": str(pick.get('total_available','?')),
+            "matched_label": pick.get("matched_label"),
+            "matched_box_index": pick.get("matched_box_index"),
             "delivery": "send",
             "message_id": getattr(sent, "id", None),
             "delivered_message_id": getattr(sent, "id", None),
@@ -447,6 +433,8 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
         "serial": str(pick.get('serial','Unknown')),
         "reverse_index": str(pick.get('reverse_index','?')),
         "total": str(pick.get('total_available','?')),
+        "matched_label": pick.get("matched_label"),
+        "matched_box_index": pick.get("matched_box_index"),
         "delivery": "send",
         "message_id": getattr(sent, "id", None),
         "delivered_message_id": getattr(sent, "id", None),

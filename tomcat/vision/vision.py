@@ -273,31 +273,47 @@ def _rank_unique_candidates_for_similarity(
     """Return one scored row per cat, optionally reranked, sorted best-first."""
     if not _gallery_names:
         return []
-    vals, idxs = torch.sort(sims, descending=True)
     rows: List[Tuple[str, float, float]] = []
-    seen: set[str] = set()
-    target_unique = len(_gallery_cat_indices) if _gallery_cat_indices else 0
-    total = int(idxs.numel()) if hasattr(idxs, "numel") else len(_gallery_names)
-    for j in range(total):
-        try:
-            cat_idx = int(idxs[j].item())
-        except Exception:
-            continue
-        if cat_idx < 0 or cat_idx >= len(_gallery_names):
-            continue
-        cat_name = str(_gallery_names[cat_idx] or "").strip()
-        if not cat_name or cat_name in seen:
-            continue
-        try:
-            base_conf = float(vals[j].item())
-        except Exception:
-            continue
-        if not math.isfinite(base_conf):
-            continue
-        rows.append((cat_name, base_conf, base_conf))
-        seen.add(cat_name)
-        if target_unique and len(seen) >= target_unique:
-            break
+    if _gallery_cat_indices:
+        for cat_name, idxs in _gallery_cat_indices.items():
+            label = str(cat_name or "").strip()
+            if not label:
+                continue
+            try:
+                cat_sims = sims.index_select(0, idxs)
+            except Exception:
+                continue
+            if getattr(cat_sims, "numel", lambda: 0)() <= 0:
+                continue
+            try:
+                base_conf = float(torch.max(cat_sims).item())
+            except Exception:
+                continue
+            if not math.isfinite(base_conf):
+                continue
+            rows.append((label, base_conf, base_conf))
+    else:
+        vals, idxs = torch.sort(sims, descending=True)
+        seen: set[str] = set()
+        total = int(idxs.numel()) if hasattr(idxs, "numel") else len(_gallery_names)
+        for j in range(total):
+            try:
+                cat_idx = int(idxs[j].item())
+            except Exception:
+                continue
+            if cat_idx < 0 or cat_idx >= len(_gallery_names):
+                continue
+            cat_name = str(_gallery_names[cat_idx] or "").strip()
+            if not cat_name or cat_name in seen:
+                continue
+            try:
+                base_conf = float(vals[j].item())
+            except Exception:
+                continue
+            if not math.isfinite(base_conf):
+                continue
+            rows.append((cat_name, base_conf, base_conf))
+            seen.add(cat_name)
 
     if bool(rerank) and bool(_RERANK_ENABLED) and crop is not None and rows:
         rerank_pool = [name for name, _, _ in rows[: min(len(rows), int(_RERANK_TOP_N))]]
@@ -1322,11 +1338,14 @@ def identify_boxes(
     include_ref_thumbs: bool = True,
     enforce_unique_across_crops: bool = False,
     focus_crop_idx: Optional[int] = None,
+    trace_tag: Optional[str] = None,
 ) -> IdentifyResult:
     """Run DINOv3 identification on specific normalized boxes (cx, cy, w, h)."""
+    t0_total = time.perf_counter()
     img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
     _ensure_classifier()
+    preprocess_ms = (time.perf_counter() - t0_total) * 1000.0
 
     if _clf is None or _gallery_emb is None or not boxes:
         return IdentifyResult(boxed_jpeg=b"", results=[])
@@ -1335,6 +1354,7 @@ def identify_boxes(
     tiles: List[Tensor] = []
     tile_crops: List[Image.Image] = []
     valid_boxes: List[Tuple[int, int, int, int]] = []
+    tile_prep_t0 = time.perf_counter()
 
     for box in boxes:
         try:
@@ -1352,15 +1372,19 @@ def identify_boxes(
         tiles.append(_prep_tensor(crop))
         tile_crops.append(crop)
         valid_boxes.append((int(cx1), int(cy1), int(cx2), int(cy2)))
+    tile_prep_ms = (time.perf_counter() - tile_prep_t0) * 1000.0
 
     if not tiles:
         return IdentifyResult(boxed_jpeg=b"", results=[])
 
+    embed_t0 = time.perf_counter()
     batch = torch.stack(tiles).to(_device)
     with torch.inference_mode():
         query_embs = _clf(batch)
         similarities = query_embs @ _gallery_emb.T
+    embed_ms = (time.perf_counter() - embed_t0) * 1000.0
 
+    rank_t0 = time.perf_counter()
     candidate_rows_by_crop = [
         _rank_unique_candidates_for_similarity(
             similarities[i],
@@ -1374,6 +1398,7 @@ def identify_boxes(
         if bool(enforce_unique_across_crops)
         else []
     )
+    rank_ms = (time.perf_counter() - rank_t0) * 1000.0
 
     results: List[dict] = []
     focus_idx: Optional[int] = None
@@ -1384,6 +1409,12 @@ def identify_boxes(
                 focus_idx = parsed_focus
     except Exception:
         focus_idx = None
+    ref_gallery_ms = 0.0
+    ref_query_ms = 0.0
+    result_build_t0 = time.perf_counter()
+    ref_calls = 0
+    candidate_name_total = 0
+    returned_ref_total = 0
     for i in range(similarities.shape[0]):
         sims = similarities[i]
         if bool(enforce_unique_across_crops):
@@ -1403,6 +1434,7 @@ def identify_boxes(
         candidate_names = [name for name, _, _ in trimmed_rows]
         candidate_scores = [float(score) for _, score, _ in trimmed_rows]
         base_score_map = {name: float(base_score) for name, _, base_score in trimmed_rows}
+        candidate_name_total += len(candidate_names)
         refs_per_i = max(0, int(refs_per or 0))
         if focus_idx is not None and i != focus_idx:
             refs_per_i = 0
@@ -1410,6 +1442,8 @@ def identify_boxes(
         for name in candidate_names:
             refs: List[dict] = []
             if refs_per_i > 0:
+                ref_calls += 1
+                t_gallery_refs = time.perf_counter()
                 refs = _gallery_refs_for_candidate(
                     cat_name=name,
                     sims=sims,
@@ -1418,11 +1452,15 @@ def identify_boxes(
                     include_thumb=bool(include_ref_thumbs),
                     search_pool=_LABELER_REF_SEARCH_POOL,
                 )
+                ref_gallery_ms += (time.perf_counter() - t_gallery_refs) * 1000.0
                 if _labeler_ref_ready:
+                    t_query_refs = time.perf_counter()
                     extra = _get_labeler_refs_for_cat(name, query_embs[i], refs_per_i)
+                    ref_query_ms += (time.perf_counter() - t_query_refs) * 1000.0
                     if extra:
                         refs = _merge_query_specific_refs(refs, list(extra), refs_per_i)
             ref_lists[name] = refs
+            returned_ref_total += len(refs)
 
         candidates = []
         for name, conf in zip(candidate_names, candidate_scores):
@@ -1438,6 +1476,25 @@ def identify_boxes(
             "box": valid_boxes[i] if i < len(valid_boxes) else None,
             "candidates": candidates,
         })
+
+    result_build_ms = (time.perf_counter() - result_build_t0) * 1000.0
+    total_ms = (time.perf_counter() - t0_total) * 1000.0
+    if trace_tag or total_ms >= 5000.0 or ref_gallery_ms >= 1500.0:
+        log_action(
+            "labeler_identify_boxes_profile",
+            str(trace_tag or "trace=auto"),
+            (
+                f"total_ms={int(round(total_ms))}; preprocess_ms={int(round(preprocess_ms))}; "
+                f"tile_prep_ms={int(round(tile_prep_ms))}; embed_ms={int(round(embed_ms))}; "
+                f"rank_ms={int(round(rank_ms))}; gallery_refs_ms={int(round(ref_gallery_ms))}; "
+                f"query_refs_ms={int(round(ref_query_ms))}; result_build_ms={int(round(result_build_ms))}; "
+                f"crops={int(similarities.shape[0])}; candidate_names={int(candidate_name_total)}; "
+                f"ref_calls={int(ref_calls)}; returned_refs={int(returned_ref_total)}; "
+                f"thumbs={int(bool(include_ref_thumbs))}; rerank={int(bool(rerank))}; "
+                f"focus_idx={focus_idx if focus_idx is not None else -1}; "
+                f"labeler_ref_ready={int(bool(_labeler_ref_ready))}"
+            ),
+        )
 
     return IdentifyResult(boxed_jpeg=b"", results=results)
 

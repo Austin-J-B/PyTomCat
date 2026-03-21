@@ -58,7 +58,7 @@ _IDENTIFY_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_IDENTIFY_PREFETCH_TIME
 _IDENTIFY_PREFETCH_MAX_BOXES = max(1, int(os.getenv("LABELER_IDENTIFY_PREFETCH_MAX_BOXES", "12") or "12"))
 _IDENTIFY_PREFETCH_REFS_PER_CANDIDATE = max(
     1,
-    int(os.getenv("LABELER_IDENTIFY_PREFETCH_REFS_PER_CANDIDATE", "2") or "2"),
+    int(os.getenv("LABELER_IDENTIFY_PREFETCH_REFS_PER_CANDIDATE", "5") or "5"),
 )
 _MANUAL_CONCURRENCY = max(1, int(os.getenv("LABELER_MANUAL_CONCURRENCY", "1") or "1"))
 _MANUAL_TIMEOUT_SEC = float(os.getenv("LABELER_MANUAL_TIMEOUT_SEC", "60") or "60")
@@ -80,6 +80,18 @@ _detect_sem = asyncio.Semaphore(_DETECT_CONCURRENCY)
 _refine_sem = asyncio.Semaphore(_REFINE_CONCURRENCY)
 _HEAVY_CONCURRENCY = max(1, int(os.getenv("LABELER_HEAVY_CONCURRENCY", "3") or "3"))
 _heavy_sem = asyncio.Semaphore(_HEAVY_CONCURRENCY)
+_DEFAULT_REF_CROP_RENDER_CONCURRENCY = max(4, min(16, int(os.cpu_count() or 8)))
+_REF_CROP_RENDER_CONCURRENCY = max(
+    1,
+    int(
+        os.getenv(
+            "LABELER_REF_CROP_RENDER_CONCURRENCY",
+            str(_DEFAULT_REF_CROP_RENDER_CONCURRENCY),
+        )
+        or str(_DEFAULT_REF_CROP_RENDER_CONCURRENCY)
+    ),
+)
+_ref_crop_render_sem = asyncio.Semaphore(_REF_CROP_RENDER_CONCURRENCY)
 _identify_prefetch_timeout_streak = 0
 _identify_prefetch_backoff_until_mono = 0.0
 
@@ -338,6 +350,7 @@ def _labeler_runtime_snapshot() -> Dict[str, Any]:
             "identify": _sem_snapshot(_identify_sem, _IDENTIFY_CONCURRENCY),
             "manual": _sem_snapshot(_manual_sem, _MANUAL_CONCURRENCY),
             "heavy": _sem_snapshot(_heavy_sem, _HEAVY_CONCURRENCY),
+            "ref_crop_render": _sem_snapshot(_ref_crop_render_sem, _REF_CROP_RENDER_CONCURRENCY),
         },
         "caches": {
             "detect": int(len(_detect_result_cache)),
@@ -1852,6 +1865,63 @@ def _fallback_refs_for_cat(
     return refs
 
 
+def _supplement_candidate_refs_with_fallback(
+    selected_refs: List[Dict[str, Any]],
+    *,
+    cat_name: str,
+    ref_target: int,
+    ref_keep_limit: int,
+    seen_sc: Set[Tuple[int, int]],
+    prefer_serial: Optional[int] = None,
+) -> Tuple[List[Dict[str, Any]], int]:
+    out = list(selected_refs or [])
+    target = max(1, int(ref_target or 1))
+    keep_limit = max(target, int(ref_keep_limit or target))
+    if len(out) >= target:
+        return out, 0
+    cat_key = str(cat_name or "").strip()
+    if not cat_key:
+        return out, 0
+
+    pool_limit = max(target + 8, (target - len(out)) * 4)
+    fallback_refs = _fallback_refs_for_cat(
+        cat_key,
+        limit=pool_limit,
+        include_uncropped=False,
+        prefer_cached=True,
+        prefer_serial=prefer_serial,
+    )
+    added = 0
+    for ref in fallback_refs:
+        try:
+            serial_ref = int(ref.get("serial"))
+            crop_ref = int(ref.get("crop"))
+        except Exception:
+            continue
+        if serial_ref <= 0 or crop_ref <= 0:
+            continue
+        if _is_flagged_ref_serial(int(serial_ref)):
+            continue
+        key_sc = (serial_ref, crop_ref)
+        if key_sc in seen_sc:
+            continue
+        entry = _photo_crop_index_cache.get((int(serial_ref), int(crop_ref))) or {}
+        if not entry:
+            continue
+        seen_sc.add(key_sc)
+        out.append({
+            "img": "",
+            "url": _photo_ref_crop_url(serial_ref, crop_ref),
+            "serial": serial_ref,
+            "crop": crop_ref,
+            "source": "metadata_fallback",
+        })
+        added += 1
+        if len(out) >= target or len(out) >= keep_limit:
+            break
+    return out, added
+
+
 def _thumb_b64_from_crop(crop: Image.Image, size: int = 128) -> Optional[str]:
     try:
         out = crop.copy()
@@ -1862,79 +1932,6 @@ def _thumb_b64_from_crop(crop: Image.Image, size: int = 128) -> Optional[str]:
     except Exception:
         return None
 
-
-async def _materialize_fallback_refs(
-    refs: List[Dict[str, Any]],
-    *,
-    thumb_size: int = 128,
-) -> List[Dict[str, Any]]:
-    if not refs:
-        return []
-    image_cache: Dict[Optional[int], Optional[bytes]] = {}
-    out: List[Dict[str, Any]] = []
-
-    async def _fetch_data(serial: Optional[int]) -> Optional[bytes]:
-        key = serial
-        if key in image_cache:
-            return image_cache[key]
-        data: Optional[bytes] = None
-        if serial is not None:
-            data = await _fetch_image_bytes_for_labeler(serial)
-        image_cache[key] = data
-        return data
-
-    for ref in refs:
-        row = dict(ref or {})
-        box_str = str(row.get("box") or "").strip()
-        box = _parse_yolo_box_str(box_str) if box_str else None
-        serial_raw = row.get("serial")
-        serial: Optional[int] = None
-        try:
-            if serial_raw is not None and str(serial_raw).strip():
-                serial = int(serial_raw)
-        except Exception:
-            serial = None
-        if serial is not None and _is_flagged_ref_serial(serial):
-            continue
-        data = await _fetch_data(serial)
-        if data:
-            try:
-                img = _open_rgb_image(io.BytesIO(data))
-                crop_img: Optional[Image.Image] = None
-                if box is not None:
-                    img_w, img_h = img.size
-                    cx, cy, w, h = box
-                    x1 = (cx - w / 2) * img_w
-                    y1 = (cy - h / 2) * img_h
-                    x2 = (cx + w / 2) * img_w
-                    y2 = (cy + h / 2) * img_h
-                    bw = x2 - x1
-                    bh = y2 - y1
-                    px = bw * float(settings.cv_pad_pct)
-                    py = bh * float(settings.cv_pad_pct)
-                    cx1 = max(0, int(round(x1 - px)))
-                    cy1 = max(0, int(round(y1 - py)))
-                    cx2 = min(int(img_w), int(round(x2 + px)))
-                    cy2 = min(int(img_h), int(round(y2 + py)))
-                    if cx2 > cx1 and cy2 > cy1:
-                        crop_img = img.crop((cx1, cy1, cx2, cy2))
-                else:
-                    # For uncropped fallback refs, emit a thumbnail of the full frame.
-                    crop_img = img
-
-                if crop_img is not None:
-                    b64 = _thumb_b64_from_crop(crop_img, size=thumb_size)
-                    if b64:
-                        row["img"] = b64
-                        row["url"] = ""
-            except Exception:
-                pass
-
-        if not str(row.get("img") or "").strip():
-            if serial is not None and not str(row.get("url") or "").strip():
-                row["url"] = f"/api/labeler/cached_image/{int(serial)}"
-        out.append(row)
-    return out
 
 
 def _enrich_manual_candidates(
@@ -3536,6 +3533,7 @@ async def get_cached_image(request: web.Request) -> web.Response:
 async def get_ref_crop(request: web.Request) -> web.Response:
     """Return one metadata-defined crop as JPEG for classifier/manual reference cards."""
     try:
+        req_t0 = time.perf_counter()
         sn = _parse_serial(str(request.match_info.get("sn", "")).strip())
         if sn is None:
             return _with_cors(web.Response(status=400, text="Invalid serial"), request)
@@ -3560,6 +3558,11 @@ async def get_ref_crop(request: web.Request) -> web.Response:
         if cached:
             return _with_cors(web.Response(body=cached, content_type="image/jpeg"), request)
 
+        image_fetch_ms = 0.0
+        render_ms = 0.0
+        sem_wait_ms = 0.0
+        image_source = "none"
+
         # Avoid spamming downstream storage/network and logs for known-bad refs.
         neg_key = (int(sn), int(crop_num))
         bad_until = _ref_crop_negative_cache.get(neg_key, 0.0)
@@ -3582,21 +3585,32 @@ async def get_ref_crop(request: web.Request) -> web.Response:
             _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
             return _with_cors(web.Response(status=404, text="Crop coordinates missing"), request)
 
+        t_image = time.perf_counter()
         image_bytes = await labeler_cache.get_cached_image_async(int(sn))
+        if image_bytes:
+            image_source = "cache"
         if not image_bytes:
-            async with _heavy_sem:
-                image_bytes = await _fetch_image_bytes_for_labeler(
-                    int(sn),
-                    str(entry.get("url") or ""),
-                    bypass_backoff=True,
-                )
+            image_bytes = await _fetch_image_bytes_for_labeler(
+                int(sn),
+                str(entry.get("url") or ""),
+                bypass_backoff=True,
+            )
+            if image_bytes:
+                image_source = "local_fetch"
+        image_fetch_ms = (time.perf_counter() - t_image) * 1000.0
         if not image_bytes:
             _log_ref_crop_miss(int(sn), int(crop_num), "image_unavailable")
             # Treat source-image fetch failures as transient; avoid long false negatives.
             _ref_crop_negative_cache[neg_key] = time.monotonic() + 20.0
             return _with_cors(web.Response(status=502, text="Source image unavailable"), request)
 
-        async with _heavy_sem:
+        acquired = False
+        try:
+            t_sem = time.perf_counter()
+            await _ref_crop_render_sem.acquire()
+            acquired = True
+            sem_wait_ms = (time.perf_counter() - t_sem) * 1000.0
+            t_render = time.perf_counter()
             payload, crop_err, crop_detail = await asyncio.to_thread(
                 _render_ref_crop_jpeg,
                 image_bytes,
@@ -3604,6 +3618,10 @@ async def get_ref_crop(request: web.Request) -> web.Response:
                 int(thumb_size),
                 float(settings.cv_pad_pct),
             )
+            render_ms = (time.perf_counter() - t_render) * 1000.0
+        finally:
+            if acquired:
+                _ref_crop_render_sem.release()
         if not payload:
             if str(crop_err or "") == "invalid_bounds":
                 _log_ref_crop_miss(
@@ -4306,12 +4324,14 @@ async def post_identify(request: web.Request) -> web.Response:
         # visible gaps in the UI.
         refs_per_keep = max(refs_per_target, refs_per_target + 4)
         refs_per_query = (
-            max(1, int(_IDENTIFY_PREFETCH_REFS_PER_CANDIDATE))
+            max(refs_per_keep, int(_IDENTIFY_PREFETCH_REFS_PER_CANDIDATE))
             if prefetch
             else max(refs_per_keep, refs_per_target * 3)
         )
         top_k = max(1, int(getattr(settings, "labeler_top_k", 9) or 9))
-        include_ref_thumbs = not prefetch
+        # Serve classify refs through the existing ref-crop URL endpoint backed
+        # by local serial/crop metadata instead of inlining thumbs in the hot path.
+        include_ref_thumbs = False
 
         boxes_sig = "|".join(str(b).strip() for b in boxes_raw)
         req_id = _hash_cache_key(
@@ -4512,6 +4532,12 @@ async def post_identify(request: web.Request) -> web.Response:
                         refs_per=refs_per_query,
                         include_ref_thumbs=include_ref_thumbs,
                         focus_crop_idx=focus_crop_idx,
+                        trace_tag=(
+                            f"rid={req_id}; serial={serial_i}; prefetch={prefetch}; "
+                            f"thumbs={int(bool(include_ref_thumbs))}; focus={focus_crop_idx if focus_crop_idx is not None else -1}"
+                            if (not prefetch or trace_identify)
+                            else None
+                        ),
                     ),
                     timeout=timeout_sec,
                 )
@@ -4529,13 +4555,15 @@ async def post_identify(request: web.Request) -> web.Response:
                     )
                     _identify_prefetch_backoff_until_mono = time.monotonic() + backoff_sec
                 log_action("labeler_identify_timeout", f"serial={serial}", f"prefetch={prefetch}")
-                if trace_identify:
+                if trace_identify or not prefetch:
                     log_action(
                         "labeler_identify_timeout_trace",
                         f"rid={req_id}; serial={serial_i}; prefetch={prefetch}",
                         (
                             f"sem_wait_ms={int(round(sem_wait_ms))}; "
-                            f"timeout_s={timeout_sec}; img_ms={int(round(image_fetch_ms))}"
+                            f"timeout_s={timeout_sec}; img_ms={int(round(image_fetch_ms))}; "
+                            f"boxes={len(boxes)}; top_k={top_k}; refs_per={refs_per_query}; "
+                            f"thumbs={int(bool(include_ref_thumbs))}; focus={focus_crop_idx if focus_crop_idx is not None else -1}"
                         ),
                     )
                 return _with_cors(web.Response(status=504, text="Identify timed out"), request)
@@ -4631,11 +4659,20 @@ async def post_identify(request: web.Request) -> web.Response:
                             if len(selected_refs) >= ref_keep_limit:
                                 break
 
+                        selected_refs, fallback_added = _supplement_candidate_refs_with_fallback(
+                            selected_refs,
+                            cat_name=str(cand.get("name") or ""),
+                            ref_target=ref_target,
+                            ref_keep_limit=ref_keep_limit,
+                            seen_sc=seen_sc,
+                            prefer_serial=serial_i,
+                        )
                         cand["refs"] = selected_refs
                         if cand["refs"]:
                             metadata_ref_applied += 1
                         metadata_ref_total += len(cand["refs"])
                         metadata_ref_gallery += int(len(cand["refs"]))
+                        metadata_ref_fallback += int(fallback_added)
 
                 metadata_ref_ms = (time.perf_counter() - t_metadata_refs) * 1000.0
             except Exception as e:

@@ -5378,12 +5378,14 @@
             return;
         }
 
-        //Remove from pending
-        const idx = pendingUpdates.findIndex(u => String(u?.serial || '') === String(last?.serial || ''));
-        if (idx >= 0) pendingUpdates.splice(idx, 1);
+        const mutatesPending = last && ['detect', 'classify', 'reject'].includes(String(last.type || ''));
+        if (mutatesPending) {
+            const idx = pendingUpdates.findIndex(u => String(u?.serial || '') === String(last?.serial || ''));
+            if (idx >= 0) pendingUpdates.splice(idx, 1);
+        }
 
         if (!pendingUndoRestore && last) {
-            if (last.type === 'classify' && Array.isArray(last.labels)) {
+            if ((last.type === 'classify' || last.type === 'manual_defer') && Array.isArray(last.labels)) {
                 pendingUndoRestore = {
                     mode: String(last.mode || labelerMode || ''),
                     serial: Number(last.serial || 0),
@@ -6580,6 +6582,16 @@
 
     function deferManualPhoto() {
         if (labelerMode !== 'manual') return;
+        history.push({
+            type: 'manual_defer',
+            mode: labelerMode,
+            serial: Number(currentSerial),
+            queueIndex: Number(queueIndex),
+            cropIdx: currentBoxes.length
+                ? Math.max(0, Math.min(Number(currentCropIdx || 0), currentBoxes.length - 1))
+                : 0,
+            labels: [...currentLabels],
+        });
         setStatus(`Deferred sn${currentSerial}`);
         advanceQueue();
     }

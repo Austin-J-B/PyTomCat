@@ -88,6 +88,28 @@ def _photo_row_label_tokens(row: list[str]) -> list[str]:
     return tokens
 
 
+def _photo_row_match_details(row: list[str], query_key: str) -> list[dict[str, Any]]:
+    """Return ordered match metadata for one row's box labels."""
+    raw_labels = ""
+    if len(row) > COL_BOX_CAT_IDS:
+        raw_labels = str(row[COL_BOX_CAT_IDS] or "").strip()
+    if not raw_labels and len(row) > COL_LABEL:
+        raw_labels = str(row[COL_LABEL] or "").strip()
+    if not raw_labels or not query_key:
+        return []
+    matches: list[dict[str, Any]] = []
+    for idx, raw in enumerate(_LABEL_SPLIT_RE.split(raw_labels), start=1):
+        token = _display_label(raw)
+        key = norm_alnum_lower(token)
+        if not token or not key or key != query_key:
+            continue
+        matches.append({
+            "label": token,
+            "box_index": idx,
+        })
+    return matches
+
+
 def _parse_serial_number(value: str) -> int:
     """Parse a serial token like sn1234 into an integer for sorting/comparison."""
     digits = re.sub(r"\D", "", str(value or ""))
@@ -208,6 +230,23 @@ def _matched_photo_rows(full_name: str, ttl_sec: int | None = None) -> list[list
     index = _get_photo_metadata_index(ttl_sec)
     return list(index.get(query_key, []))
 
+
+def _matched_photo_entries(full_name: str, ttl_sec: int | None = None) -> list[dict[str, Any]]:
+    """Return matching rows plus the matching box-label position within each row."""
+    query_key = _photo_query_key(full_name)
+    if not query_key:
+        return []
+    entries: list[dict[str, Any]] = []
+    for row in _matched_photo_rows(full_name, ttl_sec):
+        match_details = _photo_row_match_details(row, query_key)
+        entries.append({
+            "row": row,
+            "matched_label": match_details[0]["label"] if match_details else None,
+            "matched_box_index": match_details[0]["box_index"] if match_details else None,
+            "matched_box_indices": [int(m["box_index"]) for m in match_details],
+        })
+    return entries
+
 def force_refresh_photo_rows_cache() -> list[list[str]]:
     """Force refresh the local photo metadata row cache, bypassing TTL."""
     global _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS
@@ -268,18 +307,19 @@ async def get_most_recent_photo(full_name: str, _retried: bool = False) -> dict 
     matches = []
 
     try:
-        rows = _matched_photo_rows(full_name)
+        entries = _matched_photo_entries(full_name)
     except Exception as e:
         return f"Photo metadata error: {e}"
 
-    for r in rows:
+    for entry in entries:
+        r = entry.get("row") or []
         #Safety check for row length
         if len(r) <= COL_SERIAL:
             continue
         serial_num = _parse_serial_number(r[COL_SERIAL] if len(r) > COL_SERIAL else "")
         if serial_num <= 0 or not local_photos.has_local_photo(serial_num):
             continue
-        matches.append(r)
+        matches.append(entry)
 
     if not matches:
         #Force refresh and retry once
@@ -289,16 +329,21 @@ async def get_most_recent_photo(full_name: str, _retried: bool = False) -> dict 
         return f"No photos found for {full_name}."
 
     #Sort by Serial Number (descending)
-    def parse_serial(row):
+    def parse_serial(entry):
+        row = entry.get("row") or []
         return _parse_serial_number(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
 
-    best_row = max(matches, key=parse_serial)
+    best_entry = max(matches, key=parse_serial)
+    best_row = best_entry.get("row") or []
     
     return {
         "actual_name": display_name,
         "url": best_row[COL_URL] if len(best_row) > COL_URL else "",
         "serial": best_row[COL_SERIAL],
-        "total_available": len(matches)
+        "total_available": len(matches),
+        "matched_label": best_entry.get("matched_label"),
+        "matched_box_index": best_entry.get("matched_box_index"),
+        "matched_box_indices": best_entry.get("matched_box_indices") or [],
     }
 
 async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str:
@@ -310,17 +355,18 @@ async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str
     matches = []
 
     try:
-        rows = _matched_photo_rows(full_name)
+        entries = _matched_photo_entries(full_name)
     except Exception as e:
         return f"Photo metadata error: {e}"
 
-    for r in rows:
+    for entry in entries:
+        r = entry.get("row") or []
         if len(r) <= COL_SERIAL:
             continue
         serial_num = _parse_serial_number(r[COL_SERIAL] if len(r) > COL_SERIAL else "")
         if serial_num <= 0 or not local_photos.has_local_photo(serial_num):
             continue
-        matches.append(r)
+        matches.append(entry)
 
     if not matches:
         #Force refresh and retry once
@@ -332,19 +378,24 @@ async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str
     import random
     
     #Sort by serial ascending (oldest=lowest serial first)
-    def parse_serial(row):
+    def parse_serial(entry):
+        row = entry.get("row") or []
         return _parse_serial_number(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
     
     matches.sort(key=parse_serial)
     pick_idx = random.randrange(len(matches))
     pick = matches[pick_idx]
+    pick_row = pick.get("row") or []
     
     return {
         "actual_name": display_name,
-        "url": pick[COL_URL] if len(pick) > COL_URL else "",
-        "serial": pick[COL_SERIAL],
+        "url": pick_row[COL_URL] if len(pick_row) > COL_URL else "",
+        "serial": pick_row[COL_SERIAL],
         "total_available": len(matches),
-        "reverse_index": pick_idx + 1  #1-based: oldest=1, newest=total
+        "reverse_index": pick_idx + 1,  #1-based: oldest=1, newest=total
+        "matched_label": pick.get("matched_label"),
+        "matched_box_index": pick.get("matched_box_index"),
+        "matched_box_indices": pick.get("matched_box_indices") or [],
     }
 
 IDX = {

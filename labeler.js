@@ -34,7 +34,7 @@
     const ZOOM_MAX = 6.0;
     const ZOOM_STEP = 0.12;
     const PREFETCH_AHEAD = 6;
-    const PREFETCH_CONCURRENCY = 1;
+    const PREFETCH_CONCURRENCY = 2;
     const IMAGE_PREFETCH_AHEAD = 3;
     const IMAGE_PREFETCH_AHEAD_CLASSIFY = 5;
     const IMAGE_PREFETCH_PARALLEL = 3;
@@ -67,11 +67,11 @@
     const INITIAL_DETECT_WARM_MIN = 10;
     const INITIAL_DETECT_WARM_TIMEOUT_MS = 25000;
     const INITIAL_CLASSIFY_WARM_WINDOW = 6;
-    const INITIAL_CLASSIFY_WARM_MIN = 3;
-    const INITIAL_CLASSIFY_WARM_TIMEOUT_MS = 20000;
+    const INITIAL_CLASSIFY_WARM_MIN = 5;
+    const INITIAL_CLASSIFY_WARM_TIMEOUT_MS = 30000;
     const ITEM_READY_WAIT_TIMEOUT_MS = 90000;
     const DETECT_READY_WAIT_TIMEOUT_MS = 60000;
-    const CLASSIFY_READY_WAIT_TIMEOUT_MS = 6000;
+    const CLASSIFY_READY_WAIT_TIMEOUT_MS = 15000;
     const CLASSIFY_WARM_JOIN_TIMEOUT_MS = 12000;
     const CLASSIFY_PREFETCH_TIMEOUT_MS = 30000;
     const READY_WAIT_DIAG_INTERVAL_MS = 2000;
@@ -85,9 +85,12 @@
     const CLASSIFY_REF_MIN_COVERAGE = 0.4;
     const CLASSIFY_REF_RETRY_ATTEMPTS = 2;
     const CLASSIFY_REF_REFRESH_COOLDOWN_MS = 2800;
+    const CLASSIFY_NEXT_CROP_PREFETCH_COOLDOWN_MS = 2200;
     const CLASSIFY_WARM_PREFETCH_MAX_CROPS = 1;
-    const CLASSIFY_WARM_PREFETCH_MAX_CANDIDATES = 3;
-    const CLASSIFY_WARM_PREFETCH_MAX_REFS = 2;
+    const CLASSIFY_WARM_PREFETCH_MAX_CANDIDATES = 5;
+    const CLASSIFY_WARM_PREFETCH_MAX_REFS = 3;
+    const CLASSIFY_DISPLAY_PREFETCH_MAX_CANDIDATES = 9;
+    const CLASSIFY_DISPLAY_PREFETCH_MAX_REFS = CLASSIFY_REFS_PER_CAT_TARGET;
     const CLASSIFY_REF_CACHE_VERSION = 'classify_refs_v2';
     const CLASSIFY_PREFETCH_FAIL_BASE_MS = 1500;
     const CLASSIFY_PREFETCH_FAIL_MAX_MS = 30000;
@@ -420,6 +423,7 @@
     let classifyForegroundInFlight = new Map();
     let classifyRefRefreshTs = new Map();
     let classifyRefRefreshInFlight = new Map();
+    let classifyNextCropPrefetchTs = new Map();
     let classifyPrefetchFailures = new Map();
     let classifyRefWarmStarted = false;
     let manualCandidates = [];
@@ -439,6 +443,7 @@
     let initialClassifyWarmDone = false;
     let loadCurrentItemInFlight = false;
     let loadCurrentItemQueued = false;
+    let loadCurrentItemModeToken = 0;
     let warmOverlayEl = null;
     let warmBarEl = null;
     let warmLabelEl = null;
@@ -727,7 +732,6 @@
         startRetrainStatusPoll();
         togglePrefetchTimer(true);
         startWarmLoop();
-        warmClassifierRefCache();
 
         //Load initial queue
         loadQueue({ forceRefresh: true });
@@ -736,6 +740,7 @@
     //---------- Mode Switching ----------
 
     function switchMode(mode) {
+        loadCurrentItemModeToken += 1;
         void releaseCurrentClaim();
         imageLoadToken += 1;
         activeImageLoadToken = imageLoadToken;
@@ -746,9 +751,18 @@
         setStatus(`Switching to ${mode}...`);
         const listEl = document.getElementById('predictions-list');
         if (listEl) listEl.innerHTML = '';
+        currentSerial = null;
+        currentImageUrl = null;
+        currentItem = null;
+        currentBoxes = [];
+        currentSamMaskTiles = [];
+        currentLabels = [];
+        currentCropIdx = 0;
+        selectedBoxIdx = 0;
         currentPredictions = [];
         manualCandidates = [];
         clearCanvas();
+        updateInfo();
         containerEl.querySelectorAll('.labeler-tab').forEach(tab => {
             tab.classList.toggle('active', tab.dataset.mode === mode);
         });
@@ -793,9 +807,7 @@
 
         togglePrefetchTimer(true);
         startWarmLoop();
-        if (mode === 'classify') {
-            warmClassifierRefCache();
-        } else if (mode === 'manual') {
+        if (mode === 'manual') {
             warmManualRefCache();
         }
         loadQueue({ forceRefresh: false });
@@ -1015,8 +1027,7 @@
         const prefetch = !!opts.prefetch;
         const focusCropIdxNum = Number(opts.focusCropIdx);
         const hasFocusCropIdx = Number.isInteger(focusCropIdxNum) && focusCropIdxNum >= 0;
-        const keyBase = getPredCacheKey(item);
-        const key = keyBase ? `${keyBase}|focus=${hasFocusCropIdx ? focusCropIdxNum : 'all'}` : '';
+        const key = getPredFocusCacheKey(item, hasFocusCropIdx ? focusCropIdxNum : null);
         if (key && classifyForegroundInFlight.has(key)) {
             return classifyForegroundInFlight.get(key);
         }
@@ -1426,7 +1437,7 @@
                     prefetchPredictions();
                     primeHotNextClassifyItem();
                     if (Array.isArray(currentPredictions) && currentPredictions.length) {
-                        prefetchWarmRefsForItem(currentItem, currentPredictions, 'high');
+                        prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
                         const rs = currentSerial;
                         const rk = getPredCacheKey(currentItem);
                         if (rs != null && rk) {
@@ -1573,8 +1584,7 @@
         if (!currentItem || !currentBoxes.length) return false;
         if (!imageReadyForCurrentItem || !imageElement || !imageElement.complete) return false;
         if (!_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) return false;
-        //Ref images load progressively; don't block the entire UI on downloads.
-        return true;
+        return _predictionLoadedRefsAtTargetForCrop(currentPredictions, currentCropIdx);
     }
 
     function startCurrentClassifyItemLoadOverlayWait() {
@@ -1599,9 +1609,6 @@
                 if (token === classifyItemLoadOverlayToken) {
                     classifyItemLoadOverlayActive = false;
                     setWarmOverlay(false);
-                    if (!initialClassifyWarmDone) {
-                        void ensureInitialClassifyWarmGate();
-                    }
                 }
                 clearInterval(id);
                 return;
@@ -1609,9 +1616,6 @@
             if (Date.now() > expire) {
                 clearInterval(id);
                 setWarmOverlay(false);
-                if (!initialClassifyWarmDone) {
-                    void ensureInitialClassifyWarmGate();
-                }
                 return;
             }
             const elapsed = Math.max(0, Date.now() - startedAt);
@@ -1619,7 +1623,7 @@
             const hasPreds = _predictionHasOptionsForCrop(currentPredictions, currentCropIdx);
             const cov = _predictionLoadedRefCoverageForCrop(currentPredictions, currentCropIdx);
 
-            let title = 'Loading classifier item...';
+            let title = initialClassifyWarmDone ? 'Loading classifier item...' : 'Preparing classifier queue...';
             let subtitle = '';
             let pct = 0;
 
@@ -1948,6 +1952,47 @@
         return _predictionHasOptionsForCrop(rows, idx);
     }
 
+    function _classifyItemRefsReady(item) {
+        const key = getPredCacheKey(item);
+        if (!key) return false;
+        const rows = predCache.get(key);
+        if (!Array.isArray(rows) || !rows.length) return false;
+        const idx = _targetCropIdxForItem(item);
+        return _predictionLoadedRefsAtTargetForCrop(rows, idx);
+    }
+
+    function _classifyItemFullyReady(item) {
+        if (!item || !item.serial) return false;
+        return (
+            isPrefetchedImageReady(item.serial)
+            && _classifyItemWarmReady(item)
+            && _classifyItemRefsReady(item)
+        );
+    }
+
+    function compactRefImageQueueDiag() {
+        let ready = 0;
+        let loading = 0;
+        let queued = 0;
+        let error = 0;
+        refImagePrefetchState.forEach((state) => {
+            const value = String(state || '');
+            if (value === 'ready') ready += 1;
+            else if (value === 'loading') loading += 1;
+            else if (value === 'queued') queued += 1;
+            else if (value === 'error') error += 1;
+        });
+        return {
+            ready,
+            loading,
+            queued,
+            error,
+            active_loads: Number(refImagesLoadingCount || 0),
+            queue_depth: Number(refImageFetchQueue.length || 0),
+            concurrency: Number(REF_IMAGE_CONCURRENCY || 0),
+        };
+    }
+
     function prefetchWarmRefsForItem(item, results, priority = 'normal') {
         const idx = _targetCropIdxForItem(item);
         prefetchRefsFromResults(results, {
@@ -1959,10 +2004,86 @@
         });
     }
 
+    function prefetchDisplayRefsForCrop(results, cropIdx, priority = 'high') {
+        const rows = Array.isArray(results) ? results : [];
+        if (!rows.length) return;
+        const idx = Math.max(0, Math.min(Number(cropIdx || 0), rows.length - 1));
+        prefetchRefsFromResults(rows, {
+            priority,
+            focusCropIdx: idx,
+            maxCrops: 1,
+            maxCandidates: CLASSIFY_DISPLAY_PREFETCH_MAX_CANDIDATES,
+            maxRefsPerCandidate: CLASSIFY_DISPLAY_PREFETCH_MAX_REFS,
+        });
+    }
+
+    function prefetchDisplayRefsForItem(item, results, priority = 'high') {
+        const idx = _targetCropIdxForItem(item);
+        prefetchDisplayRefsForCrop(results, idx, priority);
+    }
+
+    function _nextPendingClassifyCropIdx(startIdx = currentCropIdx) {
+        if (!Array.isArray(currentBoxes) || !currentBoxes.length) return -1;
+        const start = Math.max(-1, Math.min(Number(startIdx || 0), currentBoxes.length - 1));
+        for (let i = start + 1; i < currentBoxes.length; i++) {
+            if (String(currentLabels[i] || '').trim()) continue;
+            return i;
+        }
+        return -1;
+    }
+
+    async function prefetchUpcomingClassifyCrop(fromCropIdx = currentCropIdx) {
+        if (labelerMode !== 'classify' || !currentItem || !currentBoxes.length) return;
+        const nextIdx = _nextPendingClassifyCropIdx(fromCropIdx);
+        if (nextIdx < 0 || nextIdx >= currentBoxes.length) return;
+
+        const requestSerial = Number(currentSerial || 0);
+        const requestKey = getPredCacheKey(currentItem);
+        const focusKey = getPredFocusCacheKey(currentItem, nextIdx);
+        if (!requestKey || !focusKey) return;
+
+        const existingRows = predCache.get(requestKey) || currentPredictions || [];
+        if (_predictionRefsAtTargetForCrop(existingRows, nextIdx)) {
+            prefetchDisplayRefsForCrop(existingRows, nextIdx, 'normal');
+            return;
+        }
+
+        const now = Date.now();
+        const lastTs = Number(classifyNextCropPrefetchTs.get(focusKey) || 0);
+        if ((now - lastTs) < CLASSIFY_NEXT_CROP_PREFETCH_COOLDOWN_MS) return;
+        classifyNextCropPrefetchTs.set(focusKey, now);
+
+        try {
+            const retry = await postClassifyIdentify(
+                currentItem,
+                currentBoxes.map((b) => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
+                {
+                    prefetch: true,
+                    maxAttempts: 1,
+                    timeoutMs: Math.min(API_PREFETCH_TIMEOUT_MS, 12000),
+                    focusCropIdx: nextIdx,
+                },
+            );
+            const latestRows = predCache.get(requestKey) || existingRows;
+            const mergedPreds = mergePredictionResults(latestRows, retry?.results || [], nextIdx);
+            predCache.set(requestKey, mergedPreds);
+            prefetchDisplayRefsForCrop(mergedPreds, nextIdx, 'high');
+            if (
+                requestSerial === Number(currentSerial || 0)
+                && requestKey === getPredCacheKey(currentItem)
+            ) {
+                currentPredictions = mergedPreds;
+            }
+            void prefetchUpcomingClassifyCrop(nextIdx);
+        } catch (e) {
+            // Best-effort next-crop warm; foreground path remains authoritative.
+        }
+    }
+
     function countWarmReadyClassify(windowItems) {
         let ready = 0;
         for (const item of windowItems) {
-            if (_classifyItemWarmReady(item)) ready += 1;
+            if (_classifyItemFullyReady(item)) ready += 1;
         }
         return ready;
     }
@@ -1992,23 +2113,89 @@
     async function ensureInitialClassifyWarmGate() {
         if (initialClassifyWarmDone || labelerMode !== 'classify') return;
 
-        let windowItems = classifyQueue.slice(0, Math.min(classifyQueue.length, Math.max(2, SESSION_WARM_TARGET)));
+        const targetWindow = Math.max(INITIAL_CLASSIFY_WARM_WINDOW, INITIAL_CLASSIFY_WARM_MIN);
+        let windowItems = classifyQueue.slice(0, Math.min(classifyQueue.length, targetWindow));
         if (!windowItems.length) {
             initialClassifyWarmDone = true;
             setWarmOverlay(false);
             return;
         }
+        const targetReady = Math.max(1, Math.min(windowItems.length, INITIAL_CLASSIFY_WARM_MIN));
+        const activeItems = windowItems.slice(0, targetReady);
+        const deadline = Date.now() + INITIAL_CLASSIFY_WARM_TIMEOUT_MS;
+        let lastDiagAt = 0;
 
-        // Force the first item to load synchronously so the UI is ready
-        const first = windowItems[0];
-        if (!_classifyItemWarmReady(first)) {
-            setWarmOverlay(true, 'Preparing first image...', 'Fetching image and running DINOv3 API', 0);
-            await ensureClassifyItemReady(first, true, true);
+        while (Date.now() < deadline && labelerActive && labelerMode === 'classify') {
+            activeItems.forEach((item, idx) => {
+                if (!item || !item.serial) return;
+                queueImagePrefetchSerial(item.serial, { priority: idx === 0 ? 'high' : 'normal' });
+                const key = getPredCacheKey(item);
+                const rows = key ? predCache.get(key) : null;
+                if (Array.isArray(rows) && rows.length) {
+                    prefetchDisplayRefsForItem(item, rows, idx === 0 ? 'high' : 'normal');
+                }
+                if (
+                    key
+                    && !_classifyItemWarmReady(item)
+                    && !classifyWarmInFlight.has(key)
+                    && !classifyForegroundInFlight.has(key)
+                    && !classifyPrimeInFlight.has(key)
+                ) {
+                    void ensureClassifyItemReady(item, false, true);
+                }
+            });
+
+            const readyCount = countWarmReadyClassify(activeItems);
+            const elapsed = Math.max(0, INITIAL_CLASSIFY_WARM_TIMEOUT_MS - Math.max(0, deadline - Date.now()));
+            const pct = Math.max(
+                Math.min(0.95, readyCount / Math.max(1, targetReady)),
+                Math.min(0.15, elapsed / INITIAL_CLASSIFY_WARM_TIMEOUT_MS),
+            );
+            setWarmOverlay(
+                true,
+                'Preparing classifier queue...',
+                `${readyCount}/${targetReady} items ready for grading`,
+                pct,
+            );
+            if (readyCount >= targetReady) {
+                initialClassifyWarmDone = true;
+                setWarmOverlay(false);
+                void postUiDiag('classify_initial_warm_done', {
+                    target_ready: targetReady,
+                    ready_items: readyCount,
+                    queue_window: activeItems.length,
+                    ref_queue: compactRefImageQueueDiag(),
+                });
+                return;
+            }
+
+            const now = Date.now();
+            if ((now - lastDiagAt) >= READY_WAIT_DIAG_INTERVAL_MS) {
+                lastDiagAt = now;
+                void postUiDiag('classify_initial_warm_wait', {
+                    target_ready: targetReady,
+                    ready_items: readyCount,
+                    queue_window: activeItems.length,
+                    ref_queue: compactRefImageQueueDiag(),
+                    items: activeItems.map((item) => ({
+                        serial: Number(item?.serial || 0) || null,
+                        image_ready: !!isPrefetchedImageReady(item?.serial),
+                        preds_ready: !!_classifyItemWarmReady(item),
+                        refs_ready: !!_classifyItemRefsReady(item),
+                    })),
+                });
+            }
+            await waitMs(120);
         }
 
         initialClassifyWarmDone = true;
         setWarmOverlay(false);
-        // Let the background primeHotNextClassifyItem handle the rest of the queue
+        void postUiDiag('classify_initial_warm_timeout', {
+            target_ready: targetReady,
+            ready_items: countWarmReadyClassify(activeItems),
+            queue_window: activeItems.length,
+            ref_queue: compactRefImageQueueDiag(),
+        });
     }
 
     async function waitForCurrentItemReady(item) {
@@ -2112,27 +2299,26 @@
             while (Date.now() < deadline && labelerActive && labelerMode === 'classify') {
                 const rows = predCache.get(key);
                 if (Array.isArray(rows) && rows.length) {
-                    prefetchWarmRefsForItem(item, rows, 'high');
+                    prefetchDisplayRefsForItem(item, rows, 'high');
                 } else if (!classifyWarmInFlight.has(key) && !classifyForegroundInFlight.has(key)) {
                     void ensureClassifyItemReady(item, false, false);
                 }
                 const predsReady = _classifyItemWarmReady(item);
                 const imageReady = isPrefetchedImageReady(item.serial);
                 const idx = _targetCropIdxForItem(item);
-                const depth = _predictionLoadedRefDepthForCrop(rows, idx, CLASSIFY_WARM_READY_MIN_REFS_PER_CAT);
+                const depth = _predictionLoadedRefDepthForCrop(rows, idx, CLASSIFY_REFS_PER_CAT_TARGET);
                 const cov = _predictionLoadedRefCoverageForCrop(rows, idx);
+                const loadedCounts = _predictionLoadedRefCountsForCrop(rows, idx);
                 const refsSufficient = _predictionRefsSufficientForCrop(rows, idx);
-                const refsReadyForDisplay = predsReady || (FLAG_CLASSIFY_READY_RELAX && refsSufficient);
+                const refsAtTarget = _predictionLoadedRefsAtTargetForCrop(rows, idx);
+                const refsReadyForDisplay = refsAtTarget;
                 const predsCached = predCache.has(key);
                 const prefetchTerminalError = isPrefetchedImageTerminalError(item.serial);
                 const prefetchStalled = isPrefetchedImageStalled(item.serial);
                 const elapsed = Math.max(0, waitBudgetMs - Math.max(0, deadline - Date.now()));
                 const hasPreds = Array.isArray(rows) && rows.length > 0;
                 let readyReason = '';
-                if (!hasPreds && predsCached && imageReady) readyReason = 'preds_cached_empty+image_ready';
-                else if (predsReady && imageReady) readyReason = 'preds_ready+image_ready';
-                else if (predsCached && imageReady) readyReason = 'preds_cached+image_ready';
-                else if (refsReadyForDisplay && imageReady) readyReason = 'refs_ready+image_ready';
+                if (refsReadyForDisplay && imageReady) readyReason = 'refs_ready+image_ready';
                 else if (predsCached && prefetchTerminalError && elapsed >= Math.floor(waitBudgetMs * 0.75)) {
                     readyReason = 'preds_cached+prefetch_terminal_error';
                 } else if (predsCached && prefetchStalled && elapsed >= Math.floor(waitBudgetMs * 0.75)) {
@@ -2153,11 +2339,14 @@
                         classify_ready_relax_flag: !!FLAG_CLASSIFY_READY_RELAX,
                         cached_image_path: compactCachedImagePathDiag(item.serial),
                         refs_sufficient: refsSufficient,
+                        refs_at_target: refsAtTarget,
                         refs_depth_ready_candidates: Number(depth.candidatesAtDepth || 0),
                         refs_depth_target_candidates: Number(depth.targetCount || 0),
                         refs_depth_min_per_candidate: Number(depth.minRefsPerCandidate || 0),
+                        refs_loaded_per_candidate: loadedCounts.join(','),
                         refs_with_loaded_images: Number(cov.candidatesWithRefs || 0),
                         refs_target_candidates: Number(cov.targetCount || 0),
+                        ref_queue: compactRefImageQueueDiag(),
                     });
                     return true;
                 }
@@ -2165,7 +2354,8 @@
                 const subtitle = hasPreds
                     ? 'Loading reference photos...'
                     : 'Waiting for image and classifier results...';
-                setWarmOverlay(true, 'Loading classifier item...', subtitle, pct);
+                const title = initialClassifyWarmDone ? 'Loading classifier item...' : 'Preparing classifier queue...';
+                setWarmOverlay(true, title, subtitle, pct);
                 const now = Date.now();
                 if ((now - lastDiagAt) >= READY_WAIT_DIAG_INTERVAL_MS) {
                     lastDiagAt = now;
@@ -2175,6 +2365,7 @@
                         refs_ready: refsReadyForDisplay,
                         preds_ready: predsReady,
                         refs_sufficient: refsSufficient,
+                        refs_at_target: refsAtTarget,
                         image_prefetch_ready: imageReady,
                         image_prefetch_terminal_error: prefetchTerminalError,
                         image_prefetch_stalled: prefetchStalled,
@@ -2186,7 +2377,9 @@
                         refs_depth_ready_candidates: Number(depth.candidatesAtDepth || 0),
                         refs_depth_target_candidates: Number(depth.targetCount || 0),
                         refs_depth_min_per_candidate: Number(depth.minRefsPerCandidate || 0),
+                        refs_loaded_per_candidate: loadedCounts.join(','),
                         image_prefetch_state: getPrefetchedImageState(item.serial),
+                        ref_queue: compactRefImageQueueDiag(),
                     });
                 }
                 if (!imageReady) {
@@ -2198,20 +2391,20 @@
             const finalRows = predCache.get(key);
             const finalIdx = _targetCropIdxForItem(item);
             const finalCov = _predictionLoadedRefCoverageForCrop(finalRows, finalIdx);
-            const finalDepth = _predictionLoadedRefDepthForCrop(finalRows, finalIdx, CLASSIFY_WARM_READY_MIN_REFS_PER_CAT);
+            const finalDepth = _predictionLoadedRefDepthForCrop(finalRows, finalIdx, CLASSIFY_REFS_PER_CAT_TARGET);
+            const finalLoadedCounts = _predictionLoadedRefCountsForCrop(finalRows, finalIdx);
             const finalPredsReady = _classifyItemWarmReady(item);
             const finalRefsSufficient = _predictionRefsSufficientForCrop(finalRows, finalIdx);
-            const finalRefsReadyForDisplay = finalPredsReady || (FLAG_CLASSIFY_READY_RELAX && finalRefsSufficient);
+            const finalRefsAtTarget = _predictionLoadedRefsAtTargetForCrop(finalRows, finalIdx);
+            const finalRefsReadyForDisplay = finalRefsAtTarget;
             const finalPredsCached = predCache.has(key);
             const finalImageReady = isPrefetchedImageReady(item.serial);
             const finalPrefetchTerminalError = isPrefetchedImageTerminalError(item.serial);
             const finalPrefetchStalled = isPrefetchedImageStalled(item.serial);
             let finalReadyReason = '';
-            if (finalPredsReady && finalImageReady) finalReadyReason = 'deadline_preds_ready+image_ready';
-            else if (finalPredsCached && finalImageReady) finalReadyReason = 'deadline_preds_cached+image_ready';
+            if (finalRefsReadyForDisplay && finalImageReady) finalReadyReason = 'deadline_refs_ready+image_ready';
             else if (finalPredsCached && finalPrefetchTerminalError) finalReadyReason = 'deadline_preds_cached+prefetch_terminal_error';
             else if (finalPredsCached && finalPrefetchStalled) finalReadyReason = 'deadline_preds_cached+prefetch_stalled';
-            else if (finalRefsReadyForDisplay && finalImageReady) finalReadyReason = 'deadline_refs_ready+image_ready';
             if (finalReadyReason) {
                 void postUiDiag('classify_item_ready_done', {
                     serial: Number(item?.serial || 0) || null,
@@ -2220,6 +2413,7 @@
                     refs_ready: finalRefsReadyForDisplay,
                     preds_ready: finalPredsReady,
                     refs_sufficient: finalRefsSufficient,
+                    refs_at_target: finalRefsAtTarget,
                     image_prefetch_ready: finalImageReady,
                     image_prefetch_terminal_error: finalPrefetchTerminalError,
                     image_prefetch_stalled: finalPrefetchStalled,
@@ -2230,9 +2424,11 @@
                     refs_depth_ready_candidates: Number(finalDepth.candidatesAtDepth || 0),
                     refs_depth_target_candidates: Number(finalDepth.targetCount || 0),
                     refs_depth_min_per_candidate: Number(finalDepth.minRefsPerCandidate || 0),
+                    refs_loaded_per_candidate: finalLoadedCounts.join(','),
                     refs_with_loaded_images: Number(finalCov.candidatesWithRefs || 0),
                     refs_target_candidates: Number(finalCov.targetCount || 0),
                     image_prefetch_state: getPrefetchedImageState(item.serial),
+                    ref_queue: compactRefImageQueueDiag(),
                 });
                 return true;
             }
@@ -2252,8 +2448,11 @@
                 refs_depth_ready_candidates: Number(finalDepth.candidatesAtDepth || 0),
                 refs_depth_target_candidates: Number(finalDepth.targetCount || 0),
                 refs_depth_min_per_candidate: Number(finalDepth.minRefsPerCandidate || 0),
+                refs_loaded_per_candidate: finalLoadedCounts.join(','),
                 refs_sufficient: finalRefsSufficient,
+                refs_at_target: finalRefsAtTarget,
                 pred_cache_hit: !!(Array.isArray(finalRows) && finalRows.length),
+                ref_queue: compactRefImageQueueDiag(),
             });
             return false;
         }
@@ -2275,8 +2474,16 @@
             }
             if (queue.length > 0) {
                 startWarmLoop();
-                setWarmOverlay(true, 'Loading first item...', 'Claiming item and starting image load', 0.4);
+                if (labelerMode === 'classify') {
+                    await ensureInitialClassifyWarmGate();
+                    setWarmOverlay(true, 'Preparing classifier queue...', 'Claiming first ready item', 0.82);
+                } else {
+                    setWarmOverlay(true, 'Loading first item...', 'Claiming item and starting image load', 0.4);
+                }
                 await loadCurrentItem();
+                if (labelerMode === 'classify') {
+                    void warmClassifierRefCache();
+                }
                 if (labelerMode !== 'classify') {
                     setWarmOverlay(false);
                 }
@@ -2303,6 +2510,13 @@
             loadCurrentItemQueued = true;
             return;
         }
+        const modeTokenAtStart = loadCurrentItemModeToken;
+        const modeAtStart = labelerMode;
+        const isStaleLoad = () => (
+            !labelerActive
+            || modeTokenAtStart !== loadCurrentItemModeToken
+            || modeAtStart !== labelerMode
+        );
         loadCurrentItemInFlight = true;
         console.log('[Labeler] loadCurrentItem called, queueIndex:', queueIndex, 'queue.length:', queue.length);
         prunePrefetchedClaims();
@@ -2312,6 +2526,7 @@
         let claimRetryStartedAt = 0;
         try {
             while (queueIndex < queue.length) {
+                if (isStaleLoad()) return;
                 modePositions[labelerMode] = queueIndex;
                 const item = queue[queueIndex];
                 if (!item) break;
@@ -2322,6 +2537,7 @@
                     }
                 }
                 const claimResult = await claimQueueItem(item, labelerMode);
+                if (isStaleLoad()) return;
                 if (claimResult === 'error' || claimResult === 'retry' || claimResult === 'auth') {
                     claimRetryLoops += 1;
                     if (!claimRetryStartedAt) claimRetryStartedAt = Date.now();
@@ -2378,6 +2594,7 @@
                     }
                     const retryDelayMs = Math.min(4000, 500 * Math.pow(2, Math.min(claimRetryLoops - 1, 3)));
                     await waitMs(retryDelayMs);
+                    if (isStaleLoad()) return;
                     continue;
                 }
                 if (claimResult === 'denied') {
@@ -2400,14 +2617,75 @@
                     }
                 }
                 const readyWaitStartedAt = Date.now();
-                const readyForDisplay = await waitForCurrentItemReady(item);
+                let readyForDisplay = await waitForCurrentItemReady(item);
+                if (isStaleLoad()) return;
+                if (labelerMode === 'classify' && !readyForDisplay) {
+                    const hardDeadline = Date.now() + ITEM_READY_WAIT_TIMEOUT_MS;
+                    let hardGatePasses = 0;
+                    while (
+                        !readyForDisplay
+                        && labelerActive
+                        && labelerMode === 'classify'
+                        && Date.now() < hardDeadline
+                    ) {
+                        hardGatePasses += 1;
+                        const key = getPredCacheKey(item);
+                        queueImagePrefetchSerial(item.serial, {
+                            force: true,
+                            cacheBust: Date.now(),
+                            priority: 'high',
+                        });
+                        try {
+                            await ensureClassifyItemReady(item, true, false);
+                        } catch (e) {
+                            // The detailed diagnostics live in the identify/ref logs.
+                        }
+                        if (isStaleLoad()) return;
+                        const warmed = key ? predCache.get(key) : null;
+                        if (Array.isArray(warmed) && warmed.length) {
+                            prefetchDisplayRefsForItem(item, warmed, 'high');
+                        }
+                        void postUiDiag('classify_item_reveal_blocked', {
+                            serial: Number(item?.serial || 0) || null,
+                            hard_gate_passes: hardGatePasses,
+                            pred_cache_hit: !!(key && predCache.has(key)),
+                            refs_ready: !!_classifyItemRefsReady(item),
+                            image_ready: !!isPrefetchedImageReady(item?.serial),
+                            ref_queue: compactRefImageQueueDiag(),
+                        });
+                        readyForDisplay = await waitForCurrentItemReady(item);
+                        if (isStaleLoad()) return;
+                    }
+                }
                 if (queueAdvanceMeta) {
                     queueAdvanceMeta.item_ready_wait_ms = Math.max(0, Date.now() - readyWaitStartedAt);
                     queueAdvanceMeta.item_ready_wait_ready = !!readyForDisplay;
                 }
+                if (labelerMode === 'classify' && !readyForDisplay) {
+                    const stuckSerial = Number(item?.serial || 0) || null;
+                    setWarmOverlay(true, 'Still preparing classifier item', `sn${stuckSerial || '?'} is still preparing`, 0.98);
+                    setStatus(`Classifier is still preparing sn${stuckSerial || '?'}`);
+                    void postUiDiag('classify_item_reveal_stalled', {
+                        serial: stuckSerial,
+                        pred_cache_hit: !!predCache.has(getPredCacheKey(item)),
+                        refs_ready: !!_classifyItemRefsReady(item),
+                        image_ready: !!isPrefetchedImageReady(item?.serial),
+                        ref_queue: compactRefImageQueueDiag(),
+                    });
+                    return;
+                }
                 console.log('[Labeler] Loading item:', item);
                 currentItem = item;
                 currentSerial = item.serial;
+                if (labelerMode === 'classify') {
+                    void postUiDiag('classify_item_activated', {
+                        serial: Number(item?.serial || 0) || null,
+                        key: String(getPredCacheKey(item) || ''),
+                        num_boxes: Number(parseYoloBoxes(String(item?.boxes || '')).length || 0),
+                        pred_cache_hit: !!predCache.has(getPredCacheKey(item)),
+                        queue_index: Number(queueIndex || 0),
+                    });
+                }
                 const imageLoadChoice = resolveDisplayImageUrl(item.serial);
                 // Prefer reusing the already-prefetched URL to avoid a second network fetch.
                 currentImageUrl = imageLoadChoice.url || buildCachedImageUrl(item.serial, { intent: 'foreground' });
@@ -2477,7 +2755,7 @@
                     const cached = predCache.get(getPredCacheKey(currentItem));
                     if (cached) {
                         currentPredictions = cached;
-                        prefetchWarmRefsForItem(currentItem, currentPredictions, 'high');
+                        prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
                         clampPredictionCropIdx(currentPredictions);
                     }
                 } else if (labelerMode === 'manual' && currentBoxes.length) {
@@ -2653,6 +2931,7 @@
         classifyForegroundInFlight.clear();
         classifyRefRefreshTs.clear();
         classifyRefRefreshInFlight.clear();
+        classifyNextCropPrefetchTs.clear();
         prefetchInFlight.clear();
         prefetchRunning = false;
         prefetchRequested = false;
@@ -2717,6 +2996,88 @@
     function getPredCacheKey(item) {
         if (!item) return '';
         return `${item.serial || ''}|${item.boxes || ''}`;
+    }
+
+    function getPredFocusCacheKey(item, cropIdx = null) {
+        const base = getPredCacheKey(item);
+        if (!base) return '';
+        const idx = Number(cropIdx);
+        const hasIdx = Number.isInteger(idx) && idx >= 0;
+        return `${base}|focus=${hasIdx ? idx : 'all'}`;
+    }
+
+    function _mergePredictionCandidateRefs(prevCand, nextCand) {
+        const prevRefs = Array.isArray(prevCand?.refs) ? prevCand.refs : [];
+        const nextRefs = Array.isArray(nextCand?.refs) ? nextCand.refs : [];
+        return {
+            ...(prevCand || {}),
+            ...(nextCand || {}),
+            refs: nextRefs.length ? nextRefs : prevRefs,
+        };
+    }
+
+    function _mergePredictionCropRow(prevRow, nextRow) {
+        const prevCands = Array.isArray(prevRow?.candidates) ? prevRow.candidates : [];
+        const nextCands = Array.isArray(nextRow?.candidates) ? nextRow.candidates : [];
+        if (!prevRow) return nextRow || null;
+        if (!nextRow) return prevRow || null;
+        if (!prevCands.length) return nextRow;
+        if (!nextCands.length) return prevRow;
+
+        const prevByName = new Map();
+        for (const cand of prevCands) {
+            const key = String(cand?.name || '').trim();
+            if (!key || prevByName.has(key)) continue;
+            prevByName.set(key, cand);
+        }
+
+        const mergedCandidates = nextCands.map((cand) => {
+            const key = String(cand?.name || '').trim();
+            const prevCand = key ? prevByName.get(key) : null;
+            return prevCand ? _mergePredictionCandidateRefs(prevCand, cand) : cand;
+        });
+
+        return {
+            ...prevRow,
+            ...nextRow,
+            candidates: mergedCandidates,
+        };
+    }
+
+    function mergePredictionResults(prevResults, nextResults, focusCropIdx = null) {
+        const prevRows = Array.isArray(prevResults) ? prevResults : [];
+        const nextRows = Array.isArray(nextResults) ? nextResults : [];
+        if (!prevRows.length) return nextRows;
+        if (!nextRows.length) return prevRows;
+
+        const maxLen = Math.max(prevRows.length, nextRows.length);
+        const focusIdx = Number(focusCropIdx);
+        const hasFocus = Number.isInteger(focusIdx) && focusIdx >= 0;
+        const merged = [];
+
+        for (let i = 0; i < maxLen; i++) {
+            const prevRow = prevRows[i] || null;
+            const nextRow = nextRows[i] || null;
+            if (!prevRow) {
+                merged.push(nextRow);
+                continue;
+            }
+            if (!nextRow) {
+                merged.push(prevRow);
+                continue;
+            }
+            if (!hasFocus || i === focusIdx) {
+                merged.push(_mergePredictionCropRow(prevRow, nextRow));
+                continue;
+            }
+            const nextHasRefs = (Array.isArray(nextRow?.candidates) ? nextRow.candidates : []).some((cand) => {
+                const refs = Array.isArray(cand?.refs) ? cand.refs : [];
+                return refs.length > 0;
+            });
+            merged.push(nextHasRefs ? _mergePredictionCropRow(prevRow, nextRow) : prevRow);
+        }
+
+        return merged.filter(Boolean);
     }
 
     function _targetCropIdxForItem(item) {
@@ -3288,7 +3649,6 @@
             : (ref || {});
         const refImg = String(info.img || info.thumb || '').trim();
         const refUrl = String(info.url || info.src || '').trim();
-        const baseSrc = _extractRefSrc(info);
         const inlineSrc = refImg
             ? (refImg.startsWith('data:image')
                 ? refImg
@@ -3296,6 +3656,9 @@
             : '';
         const hasSheetCropMeta = Number.isInteger(Number(info?.serial)) && Number(info?.serial) > 0
             && Number.isInteger(Number(info?.crop)) && Number(info?.crop) > 0;
+        // For metadata-backed refs, use one stable crop URL only. Fetching both the
+        // default ref URL and a second HQ variant doubles server work for the same card.
+        const baseSrc = hasSheetCropMeta ? '' : _extractRefSrc(info);
         // Fast-tier path is intentionally disabled in local-only mode.
         const fastSrc = '';
         const hqSrc = hasSheetCropMeta ? _extractRefCropUrl(info, REF_DISPLAY_HQ_SIZE) : '';
@@ -3356,7 +3719,7 @@
     const refImageFetchQueue = [];
     const refImageFetchQueued = new Set();
     let refImagesLoadingCount = 0;
-    const REF_IMAGE_CONCURRENCY = 2;
+    const REF_IMAGE_CONCURRENCY = 12;
 
     function processRefImageQueue() {
         if (!labelerActive) return;
@@ -3633,8 +3996,14 @@
         if (predCache.has(key)) {
             const rows = predCache.get(key) || [];
             if (Array.isArray(rows) && rows.length) {
-                if (!usePrefetch) {
-                    prefetchWarmRefsForItem(item, rows, 'high');
+                if (usePrefetch) {
+                    if (waitForInFlight) {
+                        prefetchDisplayRefsForItem(item, rows, 'high');
+                    } else {
+                        prefetchWarmRefsForItem(item, rows, 'normal');
+                    }
+                } else {
+                    prefetchDisplayRefsForItem(item, rows, 'high');
                 }
                 return true;
             }
@@ -3652,6 +4021,7 @@
             prefetchImageSerial(item.serial);
             const parsed = parseYoloBoxes(item.boxes || '');
             if (!parsed.length) return false;
+            const focusCropIdx = _targetCropIdxForItem(item);
             let data = null;
             try {
                 data = await postClassifyIdentify(
@@ -3660,7 +4030,7 @@
                     {
                         prefetch: !!usePrefetch,
                         timeoutMs: usePrefetch ? CLASSIFY_PREFETCH_TIMEOUT_MS : API_POST_TIMEOUT_MS,
-                        focusCropIdx: _targetCropIdxForItem(item),
+                        focusCropIdx,
                     },
                 );
             } catch (e) {
@@ -3677,7 +4047,7 @@
                                 prefetch: false,
                                 timeoutMs: API_POST_TIMEOUT_MS,
                                 maxAttempts: 2,
-                                focusCropIdx: _targetCropIdxForItem(item),
+                                focusCropIdx,
                             },
                         );
                         recovered = true;
@@ -3689,9 +4059,12 @@
                 if (!recovered || !data) return false;
             }
             const nextResults = data?.results || [];
-            predCache.set(key, nextResults);
-            if (!usePrefetch) {
-                prefetchWarmRefsForItem(item, nextResults, 'high');
+            const mergedResults = mergePredictionResults(predCache.get(key), nextResults, focusCropIdx);
+            predCache.set(key, mergedResults);
+            if (usePrefetch) {
+                prefetchWarmRefsForItem(item, mergedResults, 'normal');
+            } else {
+                prefetchDisplayRefsForItem(item, mergedResults, 'high');
             }
             clearClassifyPrefetchFailure(key);
             return true;
@@ -3780,6 +4153,19 @@
             classifyTargets
                 .slice(0, IMAGE_PREFETCH_AHEAD_CLASSIFY)
                 .forEach((item, idx) => queueImagePrefetchSerial(item.serial, { priority: idx === 0 ? 'high' : 'normal' }));
+            if (labelerMode === 'classify') {
+                classifyTargets.forEach((item, idx) => {
+                    const key = getPredCacheKey(item);
+                    const rows = key ? predCache.get(key) : null;
+                    if (Array.isArray(rows) && rows.length && !_classifyItemRefsReady(item)) {
+                        if (idx === 0) {
+                            prefetchDisplayRefsForItem(item, rows, 'high');
+                        } else {
+                            prefetchWarmRefsForItem(item, rows, 'normal');
+                        }
+                    }
+                });
+            }
             const manualTargets = labelerMode === 'manual' ? warmWindowForMode('manual') : [];
             manualTargets.forEach((item, idx) => queueImagePrefetchSerial(item.serial, { priority: idx === 0 ? 'high' : 'normal' }));
 
@@ -3813,8 +4199,8 @@
                 await Promise.all(tasks);
             }
 
-            // Keep background classify warm focused on prediction readiness.
-            // Ref thumbnails are fetched when an item becomes foregrounded.
+            // Keep background classify warm working on both predictions and ref images
+            // so the next item is fully ready before reveal.
         } catch (e) {
             //Warm loop failures should not interrupt labeling.
         } finally {
@@ -3865,6 +4251,7 @@
         classifyForegroundInFlight.clear();
         classifyRefRefreshTs.clear();
         classifyRefRefreshInFlight.clear();
+        classifyNextCropPrefetchTs.clear();
         classifyPrefetchFailures.clear();
         detectQueue = [];
         classifyQueue = [];
@@ -4880,6 +5267,10 @@
         return clamped;
     }
 
+    function _readyPredictionCandidatesForCrop(results, cropIdx) {
+        return _visiblePredictionCandidatesForCrop(results, cropIdx).slice(0, 9);
+    }
+
     function _predictionRefCoverageForCrop(results, cropIdx) {
         const rows = Array.isArray(results) ? results : [];
         const idx = Math.max(0, Number(cropIdx || 0));
@@ -4893,7 +5284,7 @@
                 coverage: 0,
             };
         }
-        const candidates = (crop.candidates || []).slice(0, 9);
+        const candidates = _readyPredictionCandidatesForCrop(rows, idx);
         let count = 0;
         let withRefs = 0;
         for (const cand of candidates) {
@@ -4938,7 +5329,7 @@
                 coverage: 0,
             };
         }
-        const candidates = (crop.candidates || []).slice(0, 9);
+        const candidates = _readyPredictionCandidatesForCrop(rows, idx);
         let count = 0;
         let withRefs = 0;
         for (const cand of candidates) {
@@ -4984,7 +5375,7 @@
             };
         }
         const threshold = Math.max(1, Number(minRefsPerCandidate || 1));
-        const candidates = (crop.candidates || []).slice(0, 9);
+        const candidates = _readyPredictionCandidatesForCrop(rows, idx);
         let atDepth = 0;
         for (const cand of candidates) {
             let refCount = 0;
@@ -4999,7 +5390,9 @@
                 const url = String(ref.url || ref.src || '').trim();
                 if (img || url) refCount += 1;
             }
-            if (refCount >= threshold) atDepth += 1;
+            if (refs.length <= 0) continue;
+            const expectedRefs = Math.min(threshold, refs.length);
+            if (refCount >= expectedRefs) atDepth += 1;
         }
         return {
             targetCount: candidates.length,
@@ -5020,7 +5413,7 @@
             };
         }
         const threshold = Math.max(1, Number(minRefsPerCandidate || 1));
-        const candidates = (crop.candidates || []).slice(0, 9);
+        const candidates = _readyPredictionCandidatesForCrop(rows, idx);
         let atDepth = 0;
         for (const cand of candidates) {
             let refCount = 0;
@@ -5038,13 +5431,44 @@
                     refCount += 1;
                 }
             }
-            if (refCount >= threshold) atDepth += 1;
+            if (refs.length <= 0) continue;
+            const expectedRefs = Math.min(threshold, refs.length);
+            if (refCount >= expectedRefs) atDepth += 1;
         }
         return {
             targetCount: candidates.length,
             candidatesAtDepth: atDepth,
             minRefsPerCandidate: threshold,
         };
+    }
+
+    function _predictionLoadedRefCountsForCrop(results, cropIdx) {
+        const rows = Array.isArray(results) ? results : [];
+        const idx = Math.max(0, Number(cropIdx || 0));
+        const crop = rows[idx];
+        if (!crop || !Array.isArray(crop.candidates)) {
+            return [];
+        }
+        const counts = [];
+        for (const cand of _readyPredictionCandidatesForCrop(rows, idx)) {
+            let refCount = 0;
+            const refs = Array.isArray(cand?.refs) ? cand.refs : [];
+            for (const ref of refs) {
+                const srcs = _getRefDisplaySources(ref);
+                const baseSrc = srcs.baseSrc;
+                const fastSrc = srcs.fastSrc;
+                const hqSrc = srcs.hqSrc;
+                if (hqSrc && isRefImageReady(hqSrc)) {
+                    refCount += 1;
+                } else if (fastSrc && isRefImageReady(fastSrc)) {
+                    refCount += 1;
+                } else if (baseSrc && isRefImageReady(baseSrc)) {
+                    refCount += 1;
+                }
+            }
+            counts.push(refCount);
+        }
+        return counts;
     }
 
     function _predictionRefsDeepEnoughForCrop(results, cropIdx) {
@@ -5070,9 +5494,7 @@
         const rows = Array.isArray(results) ? results : [];
         if (!rows.length) return false;
         const idx = Math.max(0, Math.min(Number(cropIdx || 0), rows.length - 1));
-        const crop = rows[idx];
-        if (!crop || !Array.isArray(crop.candidates)) return false;
-        return crop.candidates.length > 0;
+        return _readyPredictionCandidatesForCrop(rows, idx).length > 0;
     }
 
     function _predictionHasInlineRefsForCrop(results, cropIdx, minInline = 1) {
@@ -5082,7 +5504,7 @@
         const crop = rows[idx];
         if (!crop || !Array.isArray(crop.candidates)) return false;
         let inlineCount = 0;
-        for (const cand of (crop.candidates || []).slice(0, 9)) {
+        for (const cand of _readyPredictionCandidatesForCrop(rows, idx)) {
             const refs = Array.isArray(cand?.refs) ? cand.refs : [];
             for (const ref of refs.slice(0, CLASSIFY_REFS_PER_CAT_TARGET)) {
                 if (typeof ref === 'string') {
@@ -5105,13 +5527,19 @@
         return depth.candidatesAtDepth >= depth.targetCount;
     }
 
+    function _predictionLoadedRefsAtTargetForCrop(results, cropIdx) {
+        const depth = _predictionLoadedRefDepthForCrop(results, cropIdx, CLASSIFY_REFS_PER_CAT_TARGET);
+        if (depth.targetCount <= 0) return false;
+        return depth.candidatesAtDepth >= depth.targetCount;
+    }
+
     function _predictionRefSignatureForCrop(results, cropIdx) {
         const rows = Array.isArray(results) ? results : [];
         const idx = Math.max(0, Number(cropIdx || 0));
         const crop = rows[idx];
         if (!crop || !Array.isArray(crop.candidates)) return '';
         const parts = [];
-        for (const cand of (crop.candidates || []).slice(0, 9)) {
+        for (const cand of _readyPredictionCandidatesForCrop(rows, idx)) {
             const refs = Array.isArray(cand?.refs) ? cand.refs : [];
             const refParts = [];
             for (const ref of refs.slice(0, CLASSIFY_REFS_PER_CAT_TARGET)) {
@@ -5134,21 +5562,23 @@
         if (!requestKey) return;
         const parsedBoxes = currentBoxes.map((b) => `${b.cx} ${b.cy} ${b.w} ${b.h}`);
         if (!parsedBoxes.length) return;
-        const inFlight = classifyRefRefreshInFlight.get(requestKey);
+        const focusCropIdx = Math.max(0, Math.min(Number(currentCropIdx || 0), parsedBoxes.length - 1));
+        const refreshKey = getPredFocusCacheKey(currentItem, focusCropIdx);
+        if (!refreshKey) return;
+        const inFlight = classifyRefRefreshInFlight.get(refreshKey);
         if (inFlight) {
             return inFlight;
         }
-        const lastRefresh = Number(classifyRefRefreshTs.get(requestKey) || 0);
+        const lastRefresh = Number(classifyRefRefreshTs.get(refreshKey) || 0);
         const now = Date.now();
         if ((now - lastRefresh) < CLASSIFY_REF_REFRESH_COOLDOWN_MS) {
             return;
         }
         const refreshPromise = (async () => {
-            classifyRefRefreshTs.set(requestKey, now);
+            classifyRefRefreshTs.set(refreshKey, now);
             for (let attempt = 0; attempt < CLASSIFY_REF_RETRY_ATTEMPTS; attempt++) {
                 if (requestSerial !== currentSerial || requestKey !== getPredCacheKey(currentItem)) return;
-                clampPredictionCropIdx(currentPredictions);
-                if (_predictionRefsAtTargetForCrop(currentPredictions, currentCropIdx)) return;
+                if (_predictionRefsAtTargetForCrop(currentPredictions, focusCropIdx)) return;
                 // Keep ref refresh fully in background; do not block interaction with an overlay.
                 try {
                     const retry = await postClassifyIdentify(
@@ -5157,22 +5587,19 @@
                         {
                             maxAttempts: 1,
                             timeoutMs: Math.min(API_PREFETCH_TIMEOUT_MS, 9000),
-                            focusCropIdx: currentCropIdx,
+                            focusCropIdx,
                         },
                     );
-                    prefetchWarmRefsForItem(currentItem, retry?.results || [], 'high');
-                    if (requestSerial !== currentSerial || requestKey !== getPredCacheKey(currentItem)) return;
-                    const prevIdx = clampPredictionCropIdx(currentPredictions);
-                    const prevCov = _predictionRefCoverageForCrop(currentPredictions, prevIdx);
-                    const prevDepth = _predictionRefDepthForCrop(currentPredictions, prevIdx, CLASSIFY_REFS_PER_CAT_TARGET);
-                    const prevSig = _predictionRefSignatureForCrop(currentPredictions, prevIdx);
                     const nextPreds = retry?.results || [];
-                    const nextIdx = Array.isArray(nextPreds) && nextPreds.length
-                        ? Math.max(0, Math.min(prevIdx, nextPreds.length - 1))
-                        : 0;
-                    const nextCov = _predictionRefCoverageForCrop(nextPreds, nextIdx);
-                    const nextDepth = _predictionRefDepthForCrop(nextPreds, nextIdx, CLASSIFY_REFS_PER_CAT_TARGET);
-                    const nextSig = _predictionRefSignatureForCrop(nextPreds, nextIdx);
+                    const mergedPreds = mergePredictionResults(currentPredictions, nextPreds, focusCropIdx);
+                    prefetchDisplayRefsForItem(currentItem, mergedPreds, 'high');
+                    if (requestSerial !== currentSerial || requestKey !== getPredCacheKey(currentItem)) return;
+                    const prevCov = _predictionRefCoverageForCrop(currentPredictions, focusCropIdx);
+                    const prevDepth = _predictionRefDepthForCrop(currentPredictions, focusCropIdx, CLASSIFY_REFS_PER_CAT_TARGET);
+                    const prevSig = _predictionRefSignatureForCrop(currentPredictions, focusCropIdx);
+                    const nextCov = _predictionRefCoverageForCrop(mergedPreds, focusCropIdx);
+                    const nextDepth = _predictionRefDepthForCrop(mergedPreds, focusCropIdx, CLASSIFY_REFS_PER_CAT_TARGET);
+                    const nextSig = _predictionRefSignatureForCrop(mergedPreds, focusCropIdx);
                     const improved = (
                         nextCov.candidatesWithRefs > prevCov.candidatesWithRefs
                         || nextCov.refCount > prevCov.refCount
@@ -5180,24 +5607,24 @@
                         || nextSig !== prevSig
                     );
                     if (improved) {
-                        currentPredictions = nextPreds;
-                        currentCropIdx = nextIdx;
+                        currentPredictions = mergedPreds;
+                        clampPredictionCropIdx(currentPredictions);
                         if (requestKey) predCache.set(requestKey, currentPredictions);
                         renderPredictions();
                     }
                 } catch (e) {
                     // Best-effort retries while refs load.
                 }
-                if (_predictionRefsAtTargetForCrop(currentPredictions, currentCropIdx)) return;
+                if (_predictionRefsAtTargetForCrop(currentPredictions, focusCropIdx)) return;
                 await waitMs(220 * (attempt + 1));
             }
         })();
-        classifyRefRefreshInFlight.set(requestKey, refreshPromise);
+        classifyRefRefreshInFlight.set(refreshKey, refreshPromise);
         try {
             await refreshPromise;
         } finally {
-            if (classifyRefRefreshInFlight.get(requestKey) === refreshPromise) {
-                classifyRefRefreshInFlight.delete(requestKey);
+            if (classifyRefRefreshInFlight.get(refreshKey) === refreshPromise) {
+                classifyRefRefreshInFlight.delete(refreshKey);
             }
         }
     }
@@ -5216,11 +5643,31 @@
         let rerunQueued = false;
         try {
             const activeKey = getPredCacheKey(currentItem);
+            const diagRenderWithoutTargetRefs = (source) => {
+                if (labelerMode !== 'classify') return;
+                const depth = _predictionLoadedRefDepthForCrop(currentPredictions, currentCropIdx, CLASSIFY_REFS_PER_CAT_TARGET);
+                const cov = _predictionLoadedRefCoverageForCrop(currentPredictions, currentCropIdx);
+                if (depth.targetCount <= 0) return;
+                if (depth.candidatesAtDepth >= depth.targetCount) return;
+                void postUiDiag('classify_predictions_rendered_before_full_refs', {
+                    serial: Number(currentSerial || 0) || null,
+                    key: String(activeKey || ''),
+                    source: String(source || ''),
+                    crop_idx: Number(currentCropIdx || 0),
+                    target_candidates: Number(depth.targetCount || 0),
+                    candidates_at_target_depth: Number(depth.candidatesAtDepth || 0),
+                    refs_with_loaded_images: Number(cov.candidatesWithRefs || 0),
+                    refs_target_candidates: Number(cov.targetCount || 0),
+                    ref_queue: compactRefImageQueueDiag(),
+                });
+            };
             if (!force) {
                 if (currentPredictions.length) {
                     if (_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) {
-                        prefetchWarmRefsForItem(currentItem, currentPredictions, 'high');
+                        prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
                         renderPredictions();
+                        diagRenderWithoutTargetRefs('current_predictions');
+                        void prefetchUpcomingClassifyCrop(currentCropIdx);
                         primeHotNextClassifyItem();
                         const rs = currentSerial;
                         const rk = getPredCacheKey(currentItem);
@@ -5233,10 +5680,12 @@
                 const cached = predCache.get(activeKey);
                 if (cached) {
                     currentPredictions = cached;
-                    prefetchWarmRefsForItem(currentItem, currentPredictions, 'high');
+                    prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
                     clampPredictionCropIdx(currentPredictions);
                     if (_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) {
                         renderPredictions();
+                        diagRenderWithoutTargetRefs('pred_cache');
+                        void prefetchUpcomingClassifyCrop(currentCropIdx);
                         primeHotNextClassifyItem();
                         const rs = currentSerial;
                         const rk = getPredCacheKey(currentItem);
@@ -5258,10 +5707,12 @@
                     const warmed = predCache.get(activeKey);
                     if (Array.isArray(warmed) && warmed.length) {
                         currentPredictions = warmed;
-                        prefetchWarmRefsForItem(currentItem, currentPredictions, 'high');
+                        prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
                         clampPredictionCropIdx(currentPredictions);
                         if (_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) {
                             renderPredictions();
+                            diagRenderWithoutTargetRefs('warm_join');
+                            void prefetchUpcomingClassifyCrop(currentCropIdx);
                             primeHotNextClassifyItem();
                             const rs = currentSerial;
                             const rk = getPredCacheKey(currentItem);
@@ -5278,12 +5729,16 @@
             try {
                 const requestSerial = currentSerial;
                 const requestKey = getPredCacheKey(currentItem);
+                const requestFocusCropIdx = Math.max(0, Math.min(
+                    Number(currentCropIdx || 0),
+                    Math.max(0, currentBoxes.length - 1),
+                ));
                 let data = null;
                 try {
                     data = await postClassifyIdentify(
                         currentItem,
                         currentBoxes.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
-                        { maxAttempts: 4, focusCropIdx: currentCropIdx },
+                        { maxAttempts: 4, focusCropIdx: requestFocusCropIdx },
                     );
                 } catch (e) {
                     if (!isNoImageApiError(e)) throw e;
@@ -5295,7 +5750,7 @@
                             data = await postClassifyIdentify(
                                 currentItem,
                                 currentBoxes.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
-                                { maxAttempts: 2, focusCropIdx: currentCropIdx },
+                                { maxAttempts: 2, focusCropIdx: requestFocusCropIdx },
                             );
                             lastErr = null;
                             break;
@@ -5310,17 +5765,27 @@
                 if (requestSerial !== currentSerial || requestKey !== getPredCacheKey(currentItem)) {
                     return;
                 }
-                currentPredictions = data.results || [];
+                const incomingPredictions = data.results || [];
+                const cachedPredictions = requestKey ? predCache.get(requestKey) : [];
+                currentPredictions = mergePredictionResults(
+                    cachedPredictions,
+                    incomingPredictions,
+                    requestFocusCropIdx,
+                );
                 if ((!Array.isArray(currentPredictions) || !currentPredictions.length) && currentBoxes.length) {
                     // Rare safety net: if identify returned empty despite valid boxes, retry once.
                     data = await postClassifyIdentify(
                         currentItem,
                         currentBoxes.map(b => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
-                        { maxAttempts: 2, focusCropIdx: currentCropIdx },
+                        { maxAttempts: 2, focusCropIdx: requestFocusCropIdx },
                     );
-                    currentPredictions = data.results || [];
+                    currentPredictions = mergePredictionResults(
+                        cachedPredictions,
+                        data.results || [],
+                        requestFocusCropIdx,
+                    );
                 }
-                prefetchWarmRefsForItem(currentItem, currentPredictions, 'high');
+                prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
                 clampPredictionCropIdx(currentPredictions);
                 const key = getPredCacheKey(currentItem);
                 if (key) {
@@ -5329,6 +5794,8 @@
                 }
                 const cov = _predictionLoadedRefCoverageForCrop(currentPredictions, currentCropIdx);
                 renderPredictions();
+                diagRenderWithoutTargetRefs('foreground_identify');
+                void prefetchUpcomingClassifyCrop(requestFocusCropIdx);
                 if (!_predictionRefsAtTargetForCrop(currentPredictions, currentCropIdx)) {
                     void _refreshCurrentPredictionRefs(requestSerial, requestKey, 'Loading reference photos...');
                 }
@@ -5813,19 +6280,30 @@
         const name = item.querySelector('.pred-name').textContent;
         pushCropLabelUndo(name);
         currentLabels[currentCropIdx] = name;
-
+        if (labelerMode === 'classify') {
+            currentPredictions = [];
+            renderPredictions();
+        }
         advanceCrop();
     }
 
     function markNeedsReview() {
         pushCropLabelUndo('NeedsReview');
         currentLabels[currentCropIdx] = 'NeedsReview';
+        if (labelerMode === 'classify') {
+            currentPredictions = [];
+            renderPredictions();
+        }
         advanceCrop();
     }
 
     function rejectCrop() {
         pushCropLabelUndo('Rejected');
         currentLabels[currentCropIdx] = 'Rejected';
+        if (labelerMode === 'classify') {
+            currentPredictions = [];
+            renderPredictions();
+        }
         advanceCrop();
     }
 
@@ -5996,8 +6474,12 @@
         if (!item || !item.boxes) return;
         const key = getPredCacheKey(item);
         if (key && predCache.has(key)) {
-            if (_classifyItemWarmReady(item)) {
+            const rows = predCache.get(key) || [];
+            if (_classifyItemFullyReady(item)) {
                 return;
+            }
+            if (Array.isArray(rows) && rows.length) {
+                prefetchDisplayRefsForItem(item, rows, offset === 1 ? 'high' : 'normal');
             }
         }
         if (
@@ -6026,6 +6508,9 @@
                     offset,
                     preds_cached: !!predCache.has(key),
                     warm_ready: !!_classifyItemWarmReady(item),
+                    refs_ready: !!_classifyItemRefsReady(item),
+                    image_ready: !!isPrefetchedImageReady(item?.serial),
+                    ref_queue: compactRefImageQueueDiag(),
                 });
             }
         })();

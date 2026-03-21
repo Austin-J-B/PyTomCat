@@ -68,6 +68,7 @@ logs/machine/
 logs/dues/
 
 tests/
+temp_images/
 
 cache
 cloudflared.exe.old

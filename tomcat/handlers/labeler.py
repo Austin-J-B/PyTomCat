@@ -377,6 +377,37 @@ _DETECT_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_DETECT_RESULT_CACHE_MA
 _REFINE_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_REFINE_RESULT_CACHE_MAX", "1200") or "1200"))
 _IDENTIFY_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_IDENTIFY_RESULT_CACHE_MAX", "900") or "900"))
 _MANUAL_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_MANUAL_RESULT_CACHE_MAX", "600") or "600"))
+_REF_CROP_RESULT_TTL_SEC = max(
+    _CV_RESULT_TTL_SEC,
+    float(os.getenv("LABELER_REF_CROP_RESULT_TTL_SEC", "21600") or "21600"),
+)
+_REF_CROP_WARM_SIZE = max(
+    96,
+    min(512, int(os.getenv("LABELER_REF_CROP_WARM_SIZE", "480") or "480")),
+)
+_REF_CROP_WARM_CONCURRENCY = max(
+    1,
+    min(
+        _REF_CROP_RENDER_CONCURRENCY,
+        int(os.getenv("LABELER_REF_CROP_WARM_CONCURRENCY", "4") or "4"),
+    ),
+)
+_CLASSIFY_REF_CROP_WARM_MAX_CANDIDATES = max(
+    1,
+    int(os.getenv("LABELER_CLASSIFY_REF_CROP_WARM_MAX_CANDIDATES", "9") or "9"),
+)
+_CLASSIFY_REF_CROP_WARM_MAX_REFS = max(
+    1,
+    int(os.getenv("LABELER_CLASSIFY_REF_CROP_WARM_MAX_REFS", "5") or "5"),
+)
+_MANUAL_REF_CROP_WARM_MAX_CANDIDATES = max(
+    1,
+    int(os.getenv("LABELER_MANUAL_REF_CROP_WARM_MAX_CANDIDATES", "18") or "18"),
+)
+_MANUAL_REF_CROP_WARM_MAX_REFS = max(
+    1,
+    int(os.getenv("LABELER_MANUAL_REF_CROP_WARM_MAX_REFS", "3") or "3"),
+)
 _CLASSIFY_MIN_PIXELS = max(0, int(os.getenv("LABELER_CLASSIFY_MIN_PIXELS", "122500") or "122500"))
 _CLASSIFY_MIN_DIM = max(0, int(os.getenv("LABELER_CLASSIFY_MIN_DIM", "0") or "0"))
 _CLASSIFY_MIN_BLUR = max(0.0, float(os.getenv("LABELER_CLASSIFY_MIN_BLUR", "35") or "35"))
@@ -2452,6 +2483,298 @@ def _manual_ref_cache_status_payload(
     }
 
 
+def _ref_crop_cache_key(serial: int, crop_num: int, thumb_size: int) -> str:
+    return _hash_cache_key("ref_crop", int(serial), int(crop_num), int(thumb_size))
+
+
+def _append_ref_crop_pair(
+    out: List[Tuple[int, int]],
+    seen: Set[Tuple[int, int]],
+    ref: Any,
+) -> None:
+    if not isinstance(ref, dict):
+        return
+    try:
+        serial_ref = int(ref.get("serial"))
+        crop_ref = int(ref.get("crop"))
+    except Exception:
+        return
+    if serial_ref <= 0 or crop_ref <= 0:
+        return
+    if _is_flagged_ref_serial(int(serial_ref)):
+        return
+    key = (int(serial_ref), int(crop_ref))
+    if key in seen:
+        return
+    seen.add(key)
+    out.append(key)
+
+
+def _collect_manual_candidate_ref_pairs(
+    candidates: List[Dict[str, Any]],
+    *,
+    max_candidates: int,
+    max_refs_per_candidate: int,
+) -> List[Tuple[int, int]]:
+    rows = list(candidates or [])
+    out: List[Tuple[int, int]] = []
+    seen: Set[Tuple[int, int]] = set()
+    for cand in rows[: max(1, int(max_candidates or 1))]:
+        refs = cand.get("refs") if isinstance(cand, dict) else []
+        for ref in list(refs or [])[: max(1, int(max_refs_per_candidate or 1))]:
+            _append_ref_crop_pair(out, seen, ref)
+    return out
+
+
+def _collect_identify_result_ref_pairs(
+    results: List[Dict[str, Any]],
+    *,
+    max_candidates: int,
+    max_refs_per_candidate: int,
+) -> List[Tuple[int, int]]:
+    out: List[Tuple[int, int]] = []
+    seen: Set[Tuple[int, int]] = set()
+    for crop in list(results or []):
+        candidates = crop.get("candidates") if isinstance(crop, dict) else []
+        for cand in list(candidates or [])[: max(1, int(max_candidates or 1))]:
+            refs = cand.get("refs") if isinstance(cand, dict) else []
+            for ref in list(refs or [])[: max(1, int(max_refs_per_candidate or 1))]:
+                _append_ref_crop_pair(out, seen, ref)
+    return out
+
+
+def _collect_classifier_ref_cache_pairs(
+    *,
+    refs_per_cat: int,
+) -> List[Tuple[int, int]]:
+    out: List[Tuple[int, int]] = []
+    seen: Set[Tuple[int, int]] = set()
+    cache = getattr(V, "_labeler_ref_cache", {}) or {}
+    per_cat = max(1, int(refs_per_cat or 1))
+    for pack in cache.values():
+        refs = pack.get("refs") if isinstance(pack, dict) else []
+        for ref in list(refs or [])[:per_cat]:
+            _append_ref_crop_pair(out, seen, ref)
+    return out
+
+
+def _collect_manual_metadata_ref_pairs(
+    *,
+    refs_per_cat: int,
+) -> List[Tuple[int, int]]:
+    out: List[Tuple[int, int]] = []
+    seen: Set[Tuple[int, int]] = set()
+    per_cat = max(1, int(refs_per_cat or 1))
+    for cat_key in list(_manual_metadata_ref_cache.keys()):
+        refs = _fallback_refs_for_cat(
+            str(cat_key or "").strip(),
+            limit=per_cat,
+            include_uncropped=False,
+            prefer_cached=True,
+        )
+        for ref in refs:
+            _append_ref_crop_pair(out, seen, ref)
+    return out
+
+
+async def _warm_single_ref_crop(
+    serial: int,
+    crop_num: int,
+    *,
+    thumb_size: int,
+    force: bool = False,
+) -> str:
+    cache_key = _ref_crop_cache_key(int(serial), int(crop_num), int(thumb_size))
+    if not force and _cache_get_bytes(
+        _ref_crop_result_cache,
+        cache_key,
+        ttl_sec=_REF_CROP_RESULT_TTL_SEC,
+    ):
+        return "cached"
+
+    neg_key = (int(serial), int(crop_num))
+    bad_until = _ref_crop_negative_cache.get(neg_key, 0.0)
+    if bad_until and time.monotonic() < float(bad_until):
+        return "negative"
+
+    entry = _photo_crop_index_cache.get((int(serial), int(crop_num)))
+    if not entry:
+        return "missing_entry"
+
+    box = _parse_yolo_box_str(str(entry.get("box") or "").strip())
+    if box is None:
+        return "missing_box"
+
+    image_bytes = await labeler_cache.get_cached_image_async(int(serial))
+    if not image_bytes:
+        image_bytes = await _fetch_image_bytes_for_labeler(
+            int(serial),
+            str(entry.get("url") or ""),
+            bypass_backoff=True,
+        )
+    if not image_bytes:
+        return "missing_image"
+
+    acquired = False
+    try:
+        await _ref_crop_render_sem.acquire()
+        acquired = True
+        payload, crop_err, _crop_detail = await asyncio.to_thread(
+            _render_ref_crop_jpeg,
+            image_bytes,
+            box,
+            int(thumb_size),
+            float(settings.cv_pad_pct),
+        )
+    finally:
+        if acquired:
+            _ref_crop_render_sem.release()
+
+    if not payload:
+        if str(crop_err or "") == "invalid_bounds":
+            _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
+            return "invalid_bounds"
+        return "render_failed"
+
+    _cache_set_bytes(
+        _ref_crop_result_cache,
+        cache_key,
+        payload,
+        max_items=_REF_CROP_RESULT_CACHE_MAX,
+        ttl_sec=_REF_CROP_RESULT_TTL_SEC,
+    )
+    return "rendered"
+
+
+async def _warm_ref_crop_pairs(
+    pairs: List[Tuple[int, int]],
+    *,
+    thumb_size: int,
+    force: bool = False,
+) -> Dict[str, int]:
+    ordered: List[Tuple[int, int]] = []
+    seen: Set[Tuple[int, int]] = set()
+    for pair in list(pairs or []):
+        try:
+            serial_ref = int(pair[0])
+            crop_ref = int(pair[1])
+        except Exception:
+            continue
+        key = (serial_ref, crop_ref)
+        if serial_ref <= 0 or crop_ref <= 0 or key in seen:
+            continue
+        seen.add(key)
+        ordered.append(key)
+    if not ordered:
+        return {"total": 0, "cached": 0, "rendered": 0, "failed": 0}
+
+    await _ensure_photo_crop_index_cache(force=False)
+    work_sem = asyncio.Semaphore(_REF_CROP_WARM_CONCURRENCY)
+    counts = {"total": len(ordered), "cached": 0, "rendered": 0, "failed": 0}
+
+    async def _one(pair: Tuple[int, int]) -> None:
+        async with work_sem:
+            status = await _warm_single_ref_crop(
+                int(pair[0]),
+                int(pair[1]),
+                thumb_size=int(thumb_size),
+                force=force,
+            )
+        if status == "cached":
+            counts["cached"] += 1
+        elif status == "rendered":
+            counts["rendered"] += 1
+        else:
+            counts["failed"] += 1
+
+    await asyncio.gather(*[_one(pair) for pair in ordered], return_exceptions=False)
+    return counts
+
+
+def _schedule_ref_crop_warm(
+    pairs: List[Tuple[int, int]],
+    *,
+    thumb_size: int = _REF_CROP_WARM_SIZE,
+    force: bool = False,
+) -> int:
+    queued: List[Tuple[int, int]] = []
+    seen: Set[Tuple[int, int]] = set()
+    for pair in list(pairs or []):
+        try:
+            serial_ref = int(pair[0])
+            crop_ref = int(pair[1])
+        except Exception:
+            continue
+        key = (serial_ref, crop_ref)
+        if serial_ref <= 0 or crop_ref <= 0 or key in seen:
+            continue
+        seen.add(key)
+        if not force and _cache_get_bytes(
+            _ref_crop_result_cache,
+            _ref_crop_cache_key(serial_ref, crop_ref, int(thumb_size)),
+            ttl_sec=_REF_CROP_RESULT_TTL_SEC,
+        ):
+            continue
+        queued.append(key)
+    if not queued:
+        return 0
+
+    async def _runner() -> None:
+        try:
+            await _warm_ref_crop_pairs(
+                queued,
+                thumb_size=int(thumb_size),
+                force=force,
+            )
+        except Exception:
+            pass
+
+    try:
+        asyncio.create_task(_runner())
+    except Exception:
+        return 0
+    return len(queued)
+
+
+def _schedule_classifier_ref_crop_warm(
+    *,
+    refs_per_cat: int,
+    thumb_size: int = _REF_CROP_WARM_SIZE,
+    force: bool = False,
+) -> bool:
+    async def _runner() -> None:
+        force_local = bool(force)
+        deadline = time.monotonic() + 120.0
+        while True:
+            try:
+                await V.warm_labeler_refs(force=force_local)
+            except Exception:
+                return
+            force_local = False
+            status = V.labeler_ref_status()
+            if bool(status.get("ready")):
+                break
+            if time.monotonic() >= deadline:
+                return
+            await asyncio.sleep(0.25)
+        pairs = _collect_classifier_ref_cache_pairs(
+            refs_per_cat=refs_per_cat,
+        )
+        if not pairs:
+            return
+        await _warm_ref_crop_pairs(
+            pairs,
+            thumb_size=int(thumb_size),
+            force=force,
+        )
+
+    try:
+        asyncio.create_task(_runner())
+    except Exception:
+        return False
+    return True
+
+
 def _normalize_manual_candidate_refs(
     refs: List[Dict[str, Any]],
     *,
@@ -3036,12 +3359,18 @@ def _cache_set(
         cache.pop(k, None)
 
 
-def _cache_get_bytes(cache: Dict[str, Tuple[float, bytes]], key: str) -> Optional[bytes]:
+def _cache_get_bytes(
+    cache: Dict[str, Tuple[float, bytes]],
+    key: str,
+    *,
+    ttl_sec: Optional[float] = None,
+) -> Optional[bytes]:
     rec = cache.get(str(key))
     if not rec:
         return None
     ts, payload = rec
-    if (time.monotonic() - float(ts)) > _CV_RESULT_TTL_SEC:
+    ttl = max(1.0, float(_CV_RESULT_TTL_SEC if ttl_sec is None else ttl_sec))
+    if (time.monotonic() - float(ts)) > ttl:
         cache.pop(str(key), None)
         return None
     return bytes(payload)
@@ -3053,11 +3382,13 @@ def _cache_set_bytes(
     payload: bytes,
     *,
     max_items: int,
+    ttl_sec: Optional[float] = None,
 ) -> None:
     now = time.monotonic()
     cache[str(key)] = (now, bytes(payload))
 
-    expiry = now - _CV_RESULT_TTL_SEC
+    ttl = max(1.0, float(_CV_RESULT_TTL_SEC if ttl_sec is None else ttl_sec))
+    expiry = now - ttl
     for k, (ts, _) in list(cache.items()):
         if float(ts) < expiry:
             cache.pop(k, None)
@@ -4224,8 +4555,12 @@ async def get_ref_crop(request: web.Request) -> web.Response:
                 int(request.query.get("size") or getattr(settings, "labeler_ref_thumb_size", 128) or 128),
             ),
         )
-        cache_key = _hash_cache_key("ref_crop", int(sn), int(crop_num), int(thumb_size))
-        cached = _cache_get_bytes(_ref_crop_result_cache, cache_key)
+        cache_key = _ref_crop_cache_key(int(sn), int(crop_num), int(thumb_size))
+        cached = _cache_get_bytes(
+            _ref_crop_result_cache,
+            cache_key,
+            ttl_sec=_REF_CROP_RESULT_TTL_SEC,
+        )
         if cached:
             return _with_cors(web.Response(body=cached, content_type="image/jpeg"), request)
 
@@ -4310,6 +4645,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
             cache_key,
             payload,
             max_items=_REF_CROP_RESULT_CACHE_MAX,
+            ttl_sec=_REF_CROP_RESULT_TTL_SEC,
         )
         return _with_cors(web.Response(body=payload, content_type="image/jpeg"), request)
     except Exception as e:
@@ -5361,6 +5697,15 @@ async def post_identify(request: web.Request) -> web.Response:
                 payload,
                 max_items=_IDENTIFY_RESULT_CACHE_MAX,
             )
+            _schedule_ref_crop_warm(
+                _collect_identify_result_ref_pairs(
+                    list(result.results or []),
+                    max_candidates=_CLASSIFY_REF_CROP_WARM_MAX_CANDIDATES,
+                    max_refs_per_candidate=_CLASSIFY_REF_CROP_WARM_MAX_REFS,
+                ),
+                thumb_size=_REF_CROP_WARM_SIZE,
+                force=False,
+            )
             if trace_identify:
                 stats = _identify_result_ref_stats(list(result.results or []))
                 total_ms = (time.perf_counter() - req_t0) * 1000.0
@@ -5512,6 +5857,15 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
             cache_key,
             payload,
             max_items=_MANUAL_RESULT_CACHE_MAX,
+        )
+        _schedule_ref_crop_warm(
+            _collect_manual_candidate_ref_pairs(
+                candidates,
+                max_candidates=_MANUAL_REF_CROP_WARM_MAX_CANDIDATES,
+                max_refs_per_candidate=_MANUAL_REF_CROP_WARM_MAX_REFS,
+            ),
+            thumb_size=_REF_CROP_WARM_SIZE,
+            force=False,
         )
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
@@ -5666,6 +6020,14 @@ async def post_refs_warm(request: web.Request) -> web.Response:
         except Exception:
             force = False
         status = await V.warm_labeler_refs(force=force)
+        started = _schedule_classifier_ref_crop_warm(
+            refs_per_cat=_CLASSIFY_REF_CROP_WARM_MAX_REFS,
+            thumb_size=_REF_CROP_WARM_SIZE,
+            force=force,
+        )
+        status = dict(status or {})
+        status["ref_crop_size"] = int(_REF_CROP_WARM_SIZE)
+        status["ref_crop_warm_started"] = bool(started)
         return _with_cors(web.json_response(status), request)
     except Exception as e:
         log_action("labeler_refs_warm_error", "error", str(e))
@@ -5692,11 +6054,27 @@ async def post_manual_refs_warm(request: web.Request) -> web.Response:
             force = False
         alias_lookup, ordered_profile, _ = await asyncio.to_thread(_load_profile_catalog)
         await asyncio.gather(
+            V.warm_labeler_refs(force=force),
             V.warm_labeler_manual_refs(force=force),
             _ensure_manual_metadata_ref_cache(alias_lookup, force=force),
             _ensure_photo_crop_index_cache(force=force),
         )
         status = _manual_ref_cache_status_payload(total_hint=len(ordered_profile))
+        queued = _schedule_ref_crop_warm(
+            _collect_manual_metadata_ref_pairs(
+                refs_per_cat=_MANUAL_FALLBACK_REFS_PER_CAT,
+            ),
+            thumb_size=_REF_CROP_WARM_SIZE,
+            force=force,
+        )
+        started = _schedule_classifier_ref_crop_warm(
+            refs_per_cat=_CLASSIFY_REF_CROP_WARM_MAX_REFS,
+            thumb_size=_REF_CROP_WARM_SIZE,
+            force=force,
+        )
+        status["ref_crop_size"] = int(_REF_CROP_WARM_SIZE)
+        status["ref_crop_queued"] = int(queued)
+        status["ref_crop_warm_started"] = bool(started)
         return _with_cors(web.json_response(status), request)
     except Exception as e:
         log_action("labeler_manual_refs_warm_error", "error", str(e))

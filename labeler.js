@@ -29,6 +29,11 @@
     'use strict';
 
     const NUDGE_PX = 2; //Pixels per WASD/arrow press
+    const MOVE_REPEAT_DELAY_MS = 180;
+    const MOVE_BASE_SPEED_PX_PER_SEC = (NUDGE_PX / 50) * 1000;
+    const MOVE_ACCEL_RAMP_MS = 1800;
+    const MOVE_MAX_SPEED_MULTIPLIER = 4.5;
+    const MOVE_ACCEL_EXPONENT = 1.6;
     const CROP_PAD_PCT = 0.03;
     const ZOOM_MIN = 0.5;
     const ZOOM_MAX = 6.0;
@@ -390,7 +395,15 @@
     let detectExtraRefinedSerials = new Set();
     let boxesTouched = false;
     let pressedKeys = new Set();
-    let moveIntervalId = null;
+    let movementHoldStartByKey = new Map();
+    let movementFrameId = null;
+    let lastMovementFrameTs = 0;
+    let movementRemainderPx = {
+        tlx: 0,
+        tly: 0,
+        brx: 0,
+        bry: 0,
+    };
     let actionCooldowns = new Map();
     let labelerInitialized = false;
     let labelerActive = false;
@@ -794,11 +807,7 @@
         const manualWrap = document.getElementById('manual-search-wrap');
         if (manualWrap) manualWrap.style.display = mode === 'manual' ? '' : 'none';
 
-        pressedKeys.clear();
-        if (moveIntervalId !== null) {
-            clearInterval(moveIntervalId);
-            moveIntervalId = null;
-        }
+        stopMovementLoop();
         actionCooldowns.clear();
         if (mode !== 'manual' && manualRefPollId) {
             clearInterval(manualRefPollId);
@@ -6712,13 +6721,12 @@
         const movementKeys = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
         if (labelerMode === 'detect' && movementKeys.has(key)) {
             if (key.startsWith('arrow')) e.preventDefault();
-            pressedKeys.add(key);
-            if (moveIntervalId === null) {
-                moveIntervalId = setInterval(() => {
-                    applyMovement();
-                }, 50);
+            if (!pressedKeys.has(key)) {
+                pressedKeys.add(key);
+                movementHoldStartByKey.set(key, performance.now());
+                applyMovementStep(NUDGE_PX);
+                ensureMovementLoop();
             }
-            applyMovement();
             return;
         }
 
@@ -6751,27 +6759,116 @@
         const movementKeys = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
         if (labelerMode === 'detect' && movementKeys.has(key)) {
             pressedKeys.delete(key);
-            if (pressedKeys.size === 0 && moveIntervalId !== null) {
-                clearInterval(moveIntervalId);
-                moveIntervalId = null;
+            movementHoldStartByKey.delete(key);
+            if (pressedKeys.size === 0) {
+                stopMovementLoop();
             }
         }
     }
 
-    function applyMovement() {
-        if (pressedKeys.size === 0) return;
+    function ensureMovementLoop() {
+        if (movementFrameId !== null) return;
+        lastMovementFrameTs = 0;
+        movementFrameId = requestAnimationFrame(runMovementFrame);
+    }
+
+    function stopMovementLoop() {
+        pressedKeys.clear();
+        movementHoldStartByKey.clear();
+        if (movementFrameId !== null) {
+            cancelAnimationFrame(movementFrameId);
+            movementFrameId = null;
+        }
+        lastMovementFrameTs = 0;
+        movementRemainderPx.tlx = 0;
+        movementRemainderPx.tly = 0;
+        movementRemainderPx.brx = 0;
+        movementRemainderPx.bry = 0;
+    }
+
+    function runMovementFrame(ts) {
+        movementFrameId = null;
+        if (pressedKeys.size === 0) {
+            stopMovementLoop();
+            return;
+        }
+        if (!lastMovementFrameTs) {
+            lastMovementFrameTs = ts;
+        } else {
+            const dtMs = Math.max(0, Math.min(80, ts - lastMovementFrameTs));
+            lastMovementFrameTs = ts;
+            applyHeldMovement(dtMs, ts);
+        }
+        if (pressedKeys.size > 0) {
+            movementFrameId = requestAnimationFrame(runMovementFrame);
+        }
+    }
+
+    function _movementSpeedMultiplier(heldMs) {
+        const activeMs = Math.max(0, heldMs - MOVE_REPEAT_DELAY_MS);
+        const t = Math.max(0, Math.min(1, activeMs / MOVE_ACCEL_RAMP_MS));
+        return 1 + ((MOVE_MAX_SPEED_MULTIPLIER - 1) * Math.pow(t, MOVE_ACCEL_EXPONENT));
+    }
+
+    function _flushMovementChannel(deltaPx, remainderKey) {
+        const total = movementRemainderPx[remainderKey] + deltaPx;
+        const wholePx = total >= 0 ? Math.floor(total) : Math.ceil(total);
+        movementRemainderPx[remainderKey] = total - wholePx;
+        return wholePx;
+    }
+
+    function _movementVectorsForStep(stepPx) {
         let dxTL = 0;
         let dyTL = 0;
         let dxBR = 0;
         let dyBR = 0;
-        if (pressedKeys.has('w')) dyTL -= NUDGE_PX;
-        if (pressedKeys.has('s')) dyTL += NUDGE_PX;
-        if (pressedKeys.has('a')) dxTL -= NUDGE_PX;
-        if (pressedKeys.has('d')) dxTL += NUDGE_PX;
-        if (pressedKeys.has('arrowup')) dyBR -= NUDGE_PX;
-        if (pressedKeys.has('arrowdown')) dyBR += NUDGE_PX;
-        if (pressedKeys.has('arrowleft')) dxBR -= NUDGE_PX;
-        if (pressedKeys.has('arrowright')) dxBR += NUDGE_PX;
+        if (pressedKeys.has('w')) dyTL -= stepPx;
+        if (pressedKeys.has('s')) dyTL += stepPx;
+        if (pressedKeys.has('a')) dxTL -= stepPx;
+        if (pressedKeys.has('d')) dxTL += stepPx;
+        if (pressedKeys.has('arrowup')) dyBR -= stepPx;
+        if (pressedKeys.has('arrowdown')) dyBR += stepPx;
+        if (pressedKeys.has('arrowleft')) dxBR -= stepPx;
+        if (pressedKeys.has('arrowright')) dxBR += stepPx;
+        return { dxTL, dyTL, dxBR, dyBR };
+    }
+
+    function applyMovementStep(stepPx) {
+        if (pressedKeys.size === 0) return;
+        const { dxTL, dyTL, dxBR, dyBR } = _movementVectorsForStep(stepPx);
+        if (dxTL || dyTL) nudgeBox('tl', dxTL, dyTL);
+        if (dxBR || dyBR) nudgeBox('br', dxBR, dyBR);
+    }
+
+    function applyHeldMovement(dtMs, nowTs) {
+        if (pressedKeys.size === 0 || dtMs <= 0) return;
+        const dtSec = dtMs / 1000;
+        let rawDxTL = 0;
+        let rawDyTL = 0;
+        let rawDxBR = 0;
+        let rawDyBR = 0;
+
+        for (const key of pressedKeys) {
+            const startedAt = movementHoldStartByKey.get(key) ?? nowTs;
+            const heldMs = Math.max(0, nowTs - startedAt);
+            if (heldMs < MOVE_REPEAT_DELAY_MS) continue;
+            const stepPx = MOVE_BASE_SPEED_PX_PER_SEC * _movementSpeedMultiplier(heldMs) * dtSec;
+            switch (key) {
+                case 'w': rawDyTL -= stepPx; break;
+                case 's': rawDyTL += stepPx; break;
+                case 'a': rawDxTL -= stepPx; break;
+                case 'd': rawDxTL += stepPx; break;
+                case 'arrowup': rawDyBR -= stepPx; break;
+                case 'arrowdown': rawDyBR += stepPx; break;
+                case 'arrowleft': rawDxBR -= stepPx; break;
+                case 'arrowright': rawDxBR += stepPx; break;
+            }
+        }
+
+        const dxTL = _flushMovementChannel(rawDxTL, 'tlx');
+        const dyTL = _flushMovementChannel(rawDyTL, 'tly');
+        const dxBR = _flushMovementChannel(rawDxBR, 'brx');
+        const dyBR = _flushMovementChannel(rawDyBR, 'bry');
         if (dxTL || dyTL) nudgeBox('tl', dxTL, dyTL);
         if (dxBR || dyBR) nudgeBox('br', dxBR, dyBR);
     }

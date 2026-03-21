@@ -1963,8 +1963,11 @@ def manual_review_candidates(
     *,
     refs_per: int = 1,
     thumb_size: int = 96,
+    query_ref_cat_limit: int = 0,
+    gallery_ref_search_pool: Optional[int] = None,
+    rerank: bool = False,
 ) -> List[dict]:
-    """Score gallery cats against one crop for manual review selection."""
+    """Return one ranked candidate row per gallery cat for manual review."""
     _ensure_classifier()
     if _clf is None or _gallery_emb is None:
         return []
@@ -1977,53 +1980,33 @@ def manual_review_candidates(
     if q.device != _gallery_emb.device:
         q = q.to(_gallery_emb.device)
     sims = (_gallery_emb @ q).view(-1)
-    refs_per_i = max(1, int(refs_per or 1))
-    thumb_px = max(48, int(thumb_size or 96))
+    refs_per_i = max(0, int(refs_per or 0))
+    query_ref_limit = max(0, int(query_ref_cat_limit or 0))
+    rows = _rank_unique_candidates_for_similarity(
+        sims,
+        crop=None,
+        rerank=bool(rerank),
+    )
     out: List[dict] = []
-
-    for cat in sorted(set(_gallery_names)):
-        idxs = _gallery_cat_indices.get(cat)
-        if idxs is None or idxs.numel() == 0:
-            continue
-        try:
-            cat_sims = sims.index_select(0, idxs)
-            k = min(refs_per_i, int(cat_sims.numel()))
-            if k <= 0:
-                continue
-            topk = torch.topk(cat_sims, k=k)
-            rel_idxs = [int(x) for x in topk.indices.tolist()]
-            vals = [float(x) for x in topk.values.tolist()]
-            refs: List[dict] = []
-            for rel in rel_idxs:
-                abs_idx = int(idxs[rel].item())
-                if abs_idx < 0:
-                    continue
-                rec = _gallery_record_for_index(abs_idx)
-                gpath = str(rec.get("path") or "")
-                thumb = _thumb_b64(gpath, size=thumb_px) if gpath else None
-                if thumb:
-                    refs.append({
-                        "img": thumb,
-                        "serial": _coerce_gallery_int(rec.get("serial")),
-                        "crop": _coerce_gallery_int(rec.get("crop")),
-                    })
-            out.append({
-                "name": cat,
-                "conf": vals[0] if vals else None,
-                "refs": refs,
-            })
-        except Exception:
-            out.append({"name": cat, "conf": None, "refs": []})
-
-    def _score(item: dict) -> float:
-        try:
-            val = item.get("conf")
-            if val is None:
-                return -1e9
-            return float(val)
-        except Exception:
-            return -1e9
-    out.sort(key=_score, reverse=True)
+    for rank, (cat_name, score, _base_score) in enumerate(rows):
+        refs: List[dict] = []
+        if refs_per_i > 0 and rank < query_ref_limit:
+            try:
+                refs = _gallery_refs_for_candidate(
+                    cat_name=str(cat_name or ""),
+                    sims=sims,
+                    refs_per=refs_per_i,
+                    thumb_size=max(48, int(thumb_size or 96)),
+                    include_thumb=False,
+                    search_pool=gallery_ref_search_pool,
+                )
+            except Exception:
+                refs = []
+        out.append({
+            "name": str(cat_name or ""),
+            "conf": _clamp_confidence_score(score),
+            "refs": refs,
+        })
     return out
 
 #---------- Visualization Helpers ----------

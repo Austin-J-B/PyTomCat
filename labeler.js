@@ -100,11 +100,14 @@
     const CLASSIFY_PREFETCH_FAIL_BASE_MS = 1500;
     const CLASSIFY_PREFETCH_FAIL_MAX_MS = 30000;
     const CLASSIFY_ITEM_DISPLAY_READY_TIMEOUT_MS = 30000;
-    const MANUAL_REF_CACHE_VERSION = 'manual_refs_v1';
+    const MANUAL_REF_CACHE_VERSION = 'manual_refs_v2';
     const FLAGGED_REF_SERIALS_STORAGE_KEY = 'labelerFlaggedRefSerials_v1';
-    const MANUAL_PREFETCH_AHEAD = 4;
-    const MANUAL_PREFETCH_CONCURRENCY = 1;
+    const MANUAL_PREFETCH_AHEAD = 6;
+    const MANUAL_PREFETCH_CONCURRENCY = 2;
     const MANUAL_CANDIDATE_CACHE_MAX = 240;
+    const MANUAL_REFS_PER_CAT_TARGET = 5;
+    const MANUAL_DISPLAY_PREFETCH_MAX_CANDIDATES = 18;
+    const MANUAL_DISPLAY_PREFETCH_MAX_REFS = 3;
     const UI_DIAG_MIN_INTERVAL_MS = 1500;
     const REF_IMAGE_PREFETCH_MAX = 12000;
     const IMAGE_PREFETCH_MAX = 2000;
@@ -375,6 +378,9 @@
     let cachedImagePathLatest = new Map();
     let cachedImagePathProbeInFlight = new Set();
     let cachedImagePathProbeTs = new Map();
+    let itemContextCache = new Map();
+    let itemContextInFlight = new Map();
+    let itemContextFetchAttempted = new Set();
     let refImagePrefetch = new Map();
     let refImagePrefetchState = new Map();
     let refImagePrefetchRetry = new Map();
@@ -442,7 +448,6 @@
     let manualCandidates = [];
     let manualReviewIndices = [];
     let manualReviewCursor = 0;
-    let manualRefPollId = null;
     let manualSearchDebounceTimer = null;
     let manualCandidateCache = new Map();
     let manualCandidatesKey = '';
@@ -536,11 +541,18 @@
 
                 <div class="labeler-banner">
                     <div class="labeler-info" id="labeler-info">
-                        <div class="info-row"><span class="info-label">Serial:</span> <span id="info-serial">-</span></div>
-                        <div class="info-row"><span class="info-label">Queue:</span> <span id="info-queue">-</span></div>
-                        <div class="info-row"><span class="info-label">Boxes:</span> <span id="info-boxes">-</span></div>
-                        <div class="info-row"><span class="info-label">Crop:</span> <span id="info-crop">-</span></div>
-                        <div class="info-row"><span class="info-label">Zoom:</span> <span id="info-zoom">100%</span></div>
+                        <div class="labeler-info-group labeler-info-left">
+                            <div class="info-row"><span class="info-label">Serial:</span> <span id="info-serial">-</span></div>
+                            <div class="info-row"><span class="info-label">Queue:</span> <span id="info-queue">-</span></div>
+                            <div class="info-row"><span class="info-label">Boxes:</span> <span id="info-boxes">-</span></div>
+                            <div class="info-row"><span class="info-label">Crop:</span> <span id="info-crop">-</span></div>
+                            <div class="info-row"><span class="info-label">Zoom:</span> <span id="info-zoom">100%</span></div>
+                        </div>
+                        <div class="labeler-info-group labeler-info-right">
+                            <div class="info-row"><span class="info-label">Date/Time:</span> <span id="info-datetime">-</span></div>
+                            <div class="info-row"><span class="info-label">Author:</span> <span id="info-author">-</span></div>
+                            <div class="info-row"><span class="info-label">Channel:</span> <span id="info-channel">-</span></div>
+                        </div>
                     </div>
                     <div class="labeler-help">
                         <div class="labeler-help-shortcuts">
@@ -788,8 +800,8 @@
         document.getElementById('shortcuts-manual').style.display = mode === 'manual' ? 'block' : 'none';
         predictionsEl.style.display = (mode === 'classify' || mode === 'manual') ? 'block' : 'none';
         if (predictionsTitleEl) {
-            predictionsTitleEl.textContent = mode === 'classify' ? 'Predictions' : '';
-            predictionsTitleEl.style.display = mode === 'classify' ? '' : 'none';
+            predictionsTitleEl.textContent = mode === 'classify' ? 'Predictions' : (mode === 'manual' ? 'Candidates' : '');
+            predictionsTitleEl.style.display = (mode === 'classify' || mode === 'manual') ? '' : 'none';
         }
         const retrainBtn = document.getElementById('btn-retrain-4am');
         const retrainStatus = document.getElementById('retrain-status');
@@ -809,15 +821,11 @@
 
         stopMovementLoop();
         actionCooldowns.clear();
-        if (mode !== 'manual' && manualRefPollId) {
-            clearInterval(manualRefPollId);
-            manualRefPollId = null;
-        }
 
         togglePrefetchTimer(true);
         startWarmLoop();
         if (mode === 'manual') {
-            warmManualRefCache();
+            void warmManualRefCache();
         }
         loadQueue({ forceRefresh: false });
     }
@@ -854,43 +862,15 @@
                     return true;
                 }
             })();
-            const status = await apiPost('/api/labeler/manual_refs/warm', { force: needsForce });
+            await apiPost('/api/labeler/manual_refs/warm', { force: needsForce });
             try {
                 localStorage.setItem('labelerManualRefCacheVersion', MANUAL_REF_CACHE_VERSION);
             } catch (e) {
                 //ignore storage errors
             }
-            if (status && !status.ready) {
-                startManualRefPoll();
-            }
         } catch (e) {
             console.warn('[Labeler] Manual ref cache warm failed:', e);
         }
-    }
-
-    function startManualRefPoll() {
-        if (manualRefPollId) return;
-        manualRefPollId = setInterval(async () => {
-            try {
-                const status = await apiGet('/api/labeler/manual_refs/status');
-                if (labelerMode === 'manual' && status && status.building) {
-                    const total = Number(status.total || allCats.length || 0);
-                    const built = Number(status.built || status.cats || 0);
-                    const pct = total > 0 ? Math.min(0.95, Math.max(0.05, built / total)) : 0.1;
-                    setWarmOverlay(true, 'Preparing manual review cache...', `${built}/${total || '?'} cats ready`, pct);
-                }
-                if (status && status.ready) {
-                    clearInterval(manualRefPollId);
-                    manualRefPollId = null;
-                    if (labelerMode === 'manual') {
-                        setWarmOverlay(false);
-                        loadManualCandidates(true);
-                    }
-                }
-            } catch (e) {
-                //Ignore transient errors
-            }
-        }, 2500);
     }
 
     //---------- API Calls ----------
@@ -997,6 +977,174 @@
         } catch (e) {
             throw e;
         }
+    }
+
+    function normalizeItemContext(data, fallbackSerial = null) {
+        const serial = Number.parseInt(String(data?.serial ?? fallbackSerial ?? ''), 10);
+        if (!Number.isInteger(serial) || serial <= 0) return null;
+        const ctx = {
+            serial,
+            author_id: String(data?.author_id || '').trim(),
+            author_display_name: String(data?.author_display_name || '').trim(),
+            channel_id: String(data?.channel_id || '').trim(),
+            channel_name: String(data?.channel_name || '').trim(),
+            guild_id: String(data?.guild_id || '').trim(),
+            message_id: String(data?.message_id || '').trim(),
+            timestamp: String(data?.timestamp || '').trim(),
+            has_context: !!data?.has_context,
+        };
+        const hasAny =
+            !!ctx.author_id
+            || !!ctx.author_display_name
+            || !!ctx.channel_id
+            || !!ctx.channel_name
+            || !!ctx.guild_id
+            || !!ctx.message_id
+            || !!ctx.timestamp
+            || !!ctx.has_context;
+        return hasAny ? ctx : null;
+    }
+
+    function mergeItemContext(target, ctx) {
+        if (!target || !ctx) return target;
+        [
+            'author_id',
+            'author_display_name',
+            'channel_id',
+            'channel_name',
+            'guild_id',
+            'message_id',
+            'timestamp',
+        ].forEach((field) => {
+            const value = String(ctx?.[field] || '').trim();
+            if (value) target[field] = value;
+        });
+        if (ctx?.has_context) target.has_context = true;
+        return target;
+    }
+
+    function seedItemContextCacheFromItems(items) {
+        if (!Array.isArray(items)) return;
+        items.forEach((item) => {
+            const ctx = normalizeItemContext(item, item?.serial);
+            if (!ctx) return;
+            const key = String(ctx.serial);
+            const existing = itemContextCache.get(key) || {};
+            itemContextCache.set(key, { ...existing, ...ctx });
+            mergeItemContext(item, itemContextCache.get(key));
+        });
+    }
+
+    function applyItemContextToKnownItems(serial, ctx) {
+        const sn = Number.parseInt(String(serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0 || !ctx) return;
+        const key = String(sn);
+        const merged = { ...(itemContextCache.get(key) || {}), ...ctx, serial: sn };
+        itemContextCache.set(key, merged);
+        [detectQueue, classifyQueue, manualQueue].forEach((items) => {
+            if (!Array.isArray(items)) return;
+            items.forEach((item) => {
+                if (Number(item?.serial) === sn) mergeItemContext(item, merged);
+            });
+        });
+        if (Number(currentSerial) === sn && currentItem) {
+            mergeItemContext(currentItem, merged);
+        }
+    }
+
+    function itemAuthorText(item) {
+        const display = String(item?.author_display_name || '').trim();
+        if (display) return display;
+        const authorId = String(item?.author_id || '').trim();
+        return authorId || '-';
+    }
+
+    function itemChannelText(item) {
+        const channelName = String(item?.channel_name || '').trim();
+        if (channelName) return channelName;
+        const channelId = String(item?.channel_id || '').trim();
+        return channelId || '-';
+    }
+
+    function formatTimestampCentral(rawTs) {
+        const text = String(rawTs || '').trim();
+        if (!text) return '-';
+        const dt = new Date(text);
+        if (Number.isNaN(dt.getTime())) return '-';
+        try {
+            const parts = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'America/Chicago',
+                month: 'numeric',
+                day: 'numeric',
+                year: '2-digit',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+            }).formatToParts(dt);
+            const partMap = {};
+            parts.forEach((part) => {
+                if (part && part.type && !(part.type in partMap)) {
+                    partMap[part.type] = String(part.value || '');
+                }
+            });
+            const month = String(partMap.month || '').trim();
+            const day = String(partMap.day || '').trim();
+            const year = String(partMap.year || '').trim();
+            const hour = String(partMap.hour || '').trim();
+            const minute = String(partMap.minute || '').trim();
+            const dayPeriod = String(partMap.dayPeriod || '').trim().toLowerCase();
+            if (!month || !day || !year || !hour || !minute || !dayPeriod) return '-';
+            return `${month}/${day}/${year} ${hour}:${minute}${dayPeriod}`;
+        } catch (e) {
+            return '-';
+        }
+    }
+
+    function itemTimestampText(item) {
+        return formatTimestampCentral(item?.timestamp);
+    }
+
+    async function fetchItemContext(serial, opts = {}) {
+        const sn = Number.parseInt(String(serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0) return null;
+        const key = String(sn);
+        if (itemContextInFlight.has(key)) {
+            return itemContextInFlight.get(key);
+        }
+        const suffix = opts.force ? '?force=1' : '';
+        const promise = (async () => {
+            try {
+                const data = await apiGet(`/api/labeler/context/${sn}${suffix}`);
+                const ctx = normalizeItemContext(data, sn) || { serial: sn, has_context: !!data?.has_context };
+                itemContextFetchAttempted.add(key);
+                applyItemContextToKnownItems(sn, ctx);
+                return itemContextCache.get(key) || ctx;
+            } finally {
+                itemContextInFlight.delete(key);
+            }
+        })();
+        itemContextInFlight.set(key, promise);
+        return promise;
+    }
+
+    function ensureCurrentItemContext(item = currentItem) {
+        const sn = Number.parseInt(String(item?.serial || ''), 10);
+        if (!Number.isInteger(sn) || sn <= 0) return;
+        const key = String(sn);
+        const cached = itemContextCache.get(key);
+        if (cached) {
+            mergeItemContext(item, cached);
+        }
+        const hasAuthor = !!String(item?.author_display_name || '').trim();
+        const hasChannel = !!String(item?.channel_name || '').trim();
+        if (hasAuthor && hasChannel) return;
+        if (itemContextFetchAttempted.has(key)) return;
+        void fetchItemContext(sn).then((ctx) => {
+            if (!ctx) return;
+            if (Number(currentSerial) === sn) updateInfo();
+        }).catch(() => {
+            // Item context fetch is best-effort.
+        });
     }
 
     async function warmCachedImage(serial, opts = {}) {
@@ -1363,6 +1511,7 @@
 
     function applyQueueResponseForMode(mode, data) {
         const payload = data || {};
+        seedItemContextCacheFromItems(payload.queue || []);
         const localMissing = {
             excluded: Math.max(0, Number(payload.local_missing_excluded || 0) || 0),
             sample: Array.isArray(payload.local_missing_sample)
@@ -3169,6 +3318,31 @@
         }
     }
 
+    function prefetchDisplayManualRefs(candidates, priority = 'high') {
+        const rows = Array.isArray(candidates) ? candidates : [];
+        if (!rows.length) return;
+        const visible = _visibleManualCandidatesForCrop(rows, currentCropIdx);
+        visible.slice(0, MANUAL_DISPLAY_PREFETCH_MAX_CANDIDATES).forEach((cand) => {
+            const refs = Array.isArray(cand?.refs) ? cand.refs : [];
+            refs.slice(0, MANUAL_DISPLAY_PREFETCH_MAX_REFS).forEach((ref) => {
+                const srcs = _getRefDisplaySources(ref);
+                const baseSrc = srcs.baseSrc;
+                const inlineSrc = srcs.inlineSrc;
+                const fastSrc = srcs.fastSrc;
+                const hqSrc = srcs.hqSrc;
+                const fallbackUrlSrc = srcs.fallbackUrlSrc;
+                if (inlineSrc && inlineSrc !== baseSrc) {
+                    prefetchRefImageSrc(inlineSrc, { priority });
+                    return;
+                }
+                if (fastSrc) prefetchRefImageSrc(fastSrc, { priority });
+                if (hqSrc) prefetchRefImageSrc(hqSrc, { priority });
+                if (baseSrc) prefetchRefImageSrc(baseSrc, { priority });
+                if (fallbackUrlSrc) prefetchRefImageSrc(fallbackUrlSrc, { priority });
+            });
+        });
+    }
+
     function prefetchManualCandidates() {
         if (labelerMode !== 'manual') return;
         if (manualPrefetchRunning) {
@@ -3212,9 +3386,8 @@
                     box: target.box,
                 }, { maxAttempts: 2, timeoutMs: 60000 });
                 if (payload && payload.ready !== false) {
-                    _setManualCandidateCache(target.key, {
-                        candidates: Array.isArray(payload.candidates) ? payload.candidates : [],
-                    });
+                    const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+                    _setManualCandidateCache(target.key, { candidates });
                 }
             } catch (e) {
                 //Manual prefetch is opportunistic.
@@ -4245,10 +4418,6 @@
         resetAutoSkipStreak();
         loadPredictionsBusy = false;
         loadPredictionsQueuedForce = false;
-        if (manualRefPollId) {
-            clearInterval(manualRefPollId);
-            manualRefPollId = null;
-        }
         resetPredCache();
         incorrectFlagMode = false;
         flagRequestsInFlight.clear();
@@ -4762,6 +4931,23 @@
         document.getElementById('info-serial').textContent = currentSerial || '-';
         const total = queueTotal || queue.length;
         document.getElementById('info-queue').textContent = total ? `${Math.min(queueIndex + 1, total)} / ${total}` : '-';
+        const datetimeEl = document.getElementById('info-datetime');
+        if (datetimeEl) {
+            datetimeEl.textContent = currentItem ? itemTimestampText(currentItem) : '-';
+            datetimeEl.title = String(currentItem?.timestamp || '').trim()
+                ? `${String(currentItem.timestamp).trim()} (shown in Central time)`
+                : '';
+        }
+        const authorEl = document.getElementById('info-author');
+        if (authorEl) {
+            authorEl.textContent = currentItem ? itemAuthorText(currentItem) : '-';
+            authorEl.title = String(currentItem?.author_id || '').trim() ? `User ID: ${String(currentItem.author_id).trim()}` : '';
+        }
+        const channelEl = document.getElementById('info-channel');
+        if (channelEl) {
+            channelEl.textContent = currentItem ? itemChannelText(currentItem) : '-';
+            channelEl.title = String(currentItem?.channel_id || '').trim() ? `Channel ID: ${String(currentItem.channel_id).trim()}` : '';
+        }
         document.getElementById('info-boxes').textContent = currentBoxes.length;
         const cropEl = document.getElementById('info-crop');
         if (cropEl) {
@@ -4777,6 +4963,7 @@
             zoomEl.textContent = `${Math.round(zoomLevel * 100)}%`;
         }
         document.getElementById('pending-count').textContent = `${pendingUpdates.length} pending`;
+        if (currentItem) ensureCurrentItemContext(currentItem);
     }
 
     function setStatus(msg) {
@@ -5976,6 +6163,7 @@
         if (!requestKey) return;
 
         if (!force && manualCandidates.length && manualCandidatesKey === requestKey) {
+            prefetchDisplayManualRefs(manualCandidates, 'high');
             renderManualCandidates();
             prefetchManualCandidates();
             return;
@@ -5985,6 +6173,7 @@
             const cached = manualCandidateCache.get(requestKey) || {};
             manualCandidates = Array.isArray(cached.candidates) ? cached.candidates : [];
             manualCandidatesKey = requestKey;
+            prefetchDisplayManualRefs(manualCandidates, 'high');
             renderManualCandidates();
             setStatus(`Ready - sn${currentSerial}`);
             prefetchManualCandidates();
@@ -5992,7 +6181,6 @@
         }
         setStatus('Loading manual review options...');
         setWarmOverlay(true, 'Loading manual review options...', 'Comparing against all cats', 0.25);
-        let keepOverlay = false;
 
         try {
             const payload = await apiPost('/api/labeler/manual/candidates', {
@@ -6005,27 +6193,18 @@
             const liveBox = currentBoxes[currentCropIdx];
             const liveKey = liveBox ? _manualCandidateKey(currentSerial, currentItem?.url || '', _manualBoxSig(liveBox)) : '';
             if (requestKey !== liveKey) return;
-            if (payload && payload.ready === false) {
-                const status = payload.cache_status || {};
-                const built = Number(status.built || status.cats || 0);
-                const total = Number(status.total || allCats.length || 0);
-                const pct = total > 0 ? Math.min(0.95, Math.max(0.05, built / total)) : 0.1;
-                setWarmOverlay(true, 'Preparing manual review cache...', `${built}/${total || '?'} cats ready`, pct);
-                startManualRefPoll();
-                keepOverlay = true;
-                return;
-            }
 
             manualCandidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
             manualCandidatesKey = requestKey;
             _setManualCandidateCache(requestKey, { candidates: manualCandidates });
+            prefetchDisplayManualRefs(manualCandidates, 'high');
             renderManualCandidates();
             setStatus(`Ready - sn${currentSerial}`);
             prefetchManualCandidates();
         } catch (e) {
             setStatus(`Manual review load failed: ${e.message}`);
         } finally {
-            if (labelerMode === 'manual' && !keepOverlay) {
+            if (labelerMode === 'manual') {
                 setWarmOverlay(false);
             }
         }
@@ -6046,22 +6225,39 @@
             return;
         }
 
-        listEl.innerHTML = visibleCandidates.map((cand) => {
+        listEl.innerHTML = visibleCandidates.map((cand, candIdx) => {
             const name = String(cand?.name || '').trim();
             const catId = cand && cand.cat_id != null ? String(cand.cat_id) : '';
             const rawDisplay = String(cand?.display_name || name || '').trim();
-            const hasIdPrefix = !!catId && new RegExp(`^\\s*${catId}\\s*[.)\\-:]`).test(rawDisplay);
-            const displayName = hasIdPrefix
-                ? rawDisplay
-                : (catId ? `${catId}. ${rawDisplay}` : rawDisplay);
+            const displayName = (
+                catId
+                    ? rawDisplay.replace(new RegExp(`^\\s*${catId}\\s*[.)\\-:]\\s*`), '').trim()
+                    : rawDisplay
+            ) || name;
             const refs = Array.isArray(cand?.refs) ? cand.refs : [];
             const safeDisplayName = escapeHtml(displayName || name);
             const safeDesc = escapeHtml(String(cand?.desc || '').trim());
             const selectName = String(name || rawDisplay || '').trim();
             const safeSelectName = escapeHtml(selectName);
+            const confRaw = Number(cand?.conf);
+            const hasConf = Number.isFinite(confRaw) && confRaw > 0;
+            const confPct = hasConf ? Math.max(0, Math.min(100, confRaw * 100)) : 0;
+            let confLabel = '';
+            let confClass = '';
+            if (hasConf) {
+                confLabel = 'Low Confidence';
+                confClass = 'conf-low';
+                if (confPct >= 75) {
+                    confLabel = 'High Confidence';
+                    confClass = 'conf-high';
+                } else if (confPct >= 50) {
+                    confLabel = 'Medium Confidence';
+                    confClass = 'conf-med';
+                }
+            }
             const refsHtml = [];
             for (let refIdx = 0; refIdx < refs.length; refIdx++) {
-                if (refsHtml.length >= 5) break;
+                if (refsHtml.length >= MANUAL_REFS_PER_CAT_TARGET) break;
                 const ref = refs[refIdx];
                 const info = typeof ref === 'string'
                     ? { img: ref, serial: null, crop: null }
@@ -6072,15 +6268,6 @@
                 const fastSrc = srcs.fastSrc;
                 const hqSrc = srcs.hqSrc;
                 const fallbackUrlSrc = srcs.fallbackUrlSrc;
-
-                if (inlineSrc && inlineSrc !== baseSrc) {
-                    prefetchRefImageSrc(inlineSrc, { priority: 'high' });
-                } else {
-                    if (fastSrc) prefetchRefImageSrc(fastSrc, { priority: 'high' });
-                    if (baseSrc) prefetchRefImageSrc(baseSrc, { priority: 'high' });
-                    if (hqSrc) prefetchRefImageSrc(hqSrc);
-                    if (fallbackUrlSrc) prefetchRefImageSrc(fallbackUrlSrc);
-                }
 
                 let src = '';
                 if (hqSrc && isRefImageReady(hqSrc)) {
@@ -6130,7 +6317,7 @@
                 const cropAttr = cropNum ? ` data-ref-crop="${escapeHtml(String(cropNum))}"` : '';
                 refsHtml.push(`
                     <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}${isFlagging ? ' ref-flagging' : ''}"${serialAttr}${cropAttr}>
-                        <img loading="eager" decoding="async" src="${escapeHtml(src)}" alt="${safeDisplayName} ref ${refIdx + 1}">
+                        <img loading="lazy" decoding="async" src="${escapeHtml(src)}" alt="${safeDisplayName} ref ${refIdx + 1}">
                         ${caption ? `<div class="ref-overlay">${escapeHtml(caption)}</div>` : ''}
                     </div>
                 `);
@@ -6143,7 +6330,9 @@
             return `
                 <div class="manual-cat-card" data-name="${safeSelectName}" data-search="${searchText}" data-cat-id="${escapeHtml(catId)}">
                     <div class="prediction-head">
+                        <span class="pred-key">#${candIdx + 1}</span>
                         <span class="pred-name">${safeDisplayName}</span>
+                        ${hasConf ? `<span class="pred-conf ${confClass}">${confLabel} (${confPct.toFixed(1)}%)</span>` : ''}
                     </div>
                     ${safeDesc ? `<div class="pred-desc">${safeDesc}</div>` : ''}
                     <div class="prediction-refs">${refsHtml.join('') || '<div class="no-predictions">No references</div>'}</div>

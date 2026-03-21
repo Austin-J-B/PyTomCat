@@ -458,6 +458,19 @@ _SKIP_CATID_LABELS = {
     "0.notacat",
 }
 _MANUAL_FALLBACK_REFS_PER_CAT = max(1, int(os.getenv("LABELER_MANUAL_FALLBACK_REFS_PER_CAT", "5") or "5"))
+_MANUAL_QUERY_REFS_PER_CAT = max(
+    0,
+    int(os.getenv("LABELER_MANUAL_QUERY_REFS_PER_CAT", "1") or "1"),
+)
+_MANUAL_QUERY_REF_CAT_LIMIT = max(
+    0,
+    int(os.getenv("LABELER_MANUAL_QUERY_REF_CAT_LIMIT", "24") or "24"),
+)
+_MANUAL_QUERY_REF_SEARCH_POOL = max(
+    max(1, int(_MANUAL_QUERY_REFS_PER_CAT or 0)),
+    int(os.getenv("LABELER_MANUAL_QUERY_REF_SEARCH_POOL", "12") or "12"),
+)
+_MANUAL_CANDIDATE_PIPELINE_VERSION = "manual_rank_v2_local_refs"
 _MANUAL_METADATA_REF_SAMPLE_PER_CAT = max(
     _MANUAL_FALLBACK_REFS_PER_CAT,
     int(
@@ -615,11 +628,33 @@ _boot_cache_warm_task: Optional[asyncio.Task] = None
 _boot_cache_warm_started: bool = False
 _LOCAL_MISSING_SAMPLE_MAX = 50
 _local_mode_logged: bool = False
+_PHOTO_ITEM_CONTEXT_CACHE_TTL_SEC = max(
+    30.0,
+    float(os.getenv("LABELER_PHOTO_ITEM_CONTEXT_CACHE_TTL_SEC", "300") or "300"),
+)
+_DISCORD_CONTEXT_CACHE_TTL_SEC = max(
+    300.0,
+    float(os.getenv("LABELER_DISCORD_CONTEXT_CACHE_TTL_SEC", "43200") or "43200"),
+)
+_CONTEXT_WARM_CONCURRENCY = max(
+    1,
+    min(12, int(os.getenv("LABELER_CONTEXT_WARM_CONCURRENCY", "6") or "6")),
+)
+_CONTEXT_CACHE_MAX_ITEMS = max(
+    256,
+    int(os.getenv("LABELER_CONTEXT_CACHE_MAX_ITEMS", "6000") or "6000"),
+)
 _QUEUE_LOCAL_FILTER_LOG_COOLDOWN_SEC = max(
     5.0,
     float(os.getenv("LABELER_QUEUE_LOCAL_FILTER_LOG_COOLDOWN_SEC", "60") or "60"),
 )
 _queue_local_filter_next_log_mono: Dict[str, float] = {}
+_photo_item_context_cache: Dict[int, Dict[str, Any]] = {}
+_photo_item_context_cache_built_mono: float = 0.0
+_photo_item_context_cache_lock = asyncio.Lock()
+_discord_member_display_cache: Dict[Tuple[int, int], Tuple[float, str]] = {}
+_discord_user_display_cache: Dict[int, Tuple[float, str]] = {}
+_discord_channel_name_cache: Dict[int, Tuple[float, str]] = {}
 
 
 def _parse_serial(val: str) -> Optional[int]:
@@ -1086,6 +1121,12 @@ def _maybe_schedule_queue_cache_warm(mode: str, queue: List[Dict[str, Any]]) -> 
                 scan_limit=scan_limit,
             )
         )
+        asyncio.create_task(
+            _warm_item_context_cache_for_items(
+                queue[:scan_limit],
+                force_raw=False,
+            )
+        )
     except Exception:
         pass
 
@@ -1149,11 +1190,19 @@ def _kickoff_boot_cache_warm_once() -> None:
                 return
             target_guess = labeler_cache.estimate_cache_target_from_budget(float(_BOOT_WARM_BUDGET_GB))
             target = max(int(_QUEUE_CACHE_WARM_TARGET), min(int(target_guess), len(boot_items)))
-            await labeler_cache.ensure_cache_filled(
-                boot_items,
-                target_count=target,
-                scan_limit=min(len(boot_items), int(_BOOT_WARM_SCAN_LIMIT)),
-                concurrency=max(1, int(_BOOT_WARM_CONCURRENCY)),
+            scan_limit = min(len(boot_items), int(_BOOT_WARM_SCAN_LIMIT))
+            await asyncio.gather(
+                labeler_cache.ensure_cache_filled(
+                    boot_items,
+                    target_count=target,
+                    scan_limit=scan_limit,
+                    concurrency=max(1, int(_BOOT_WARM_CONCURRENCY)),
+                ),
+                _warm_item_context_cache_for_items(
+                    boot_items[:scan_limit],
+                    force_raw=False,
+                ),
+                return_exceptions=True,
             )
             log_action(
                 "labeler_boot_cache_warm_done",
@@ -1191,6 +1240,429 @@ async def _log_local_mode_once() -> None:
             f"root={str(local_photos.photo_root())}; "
             f"serials={int(count)}"
         ),
+    )
+
+
+def _parse_int_token(value: Any) -> int:
+    try:
+        return int(str(value or "").strip())
+    except Exception:
+        return 0
+
+
+def _ttl_cache_get_text(
+    cache: Dict[Any, Tuple[float, str]],
+    key: Any,
+    ttl_sec: float,
+) -> str:
+    rec = cache.get(key)
+    if not rec:
+        return ""
+    ts, value = rec
+    if (time.monotonic() - float(ts)) > float(ttl_sec):
+        cache.pop(key, None)
+        return ""
+    return str(value or "").strip()
+
+
+def _ttl_cache_set_text(
+    cache: Dict[Any, Tuple[float, str]],
+    key: Any,
+    value: Any,
+    *,
+    max_items: int = _CONTEXT_CACHE_MAX_ITEMS,
+) -> None:
+    cache[key] = (time.monotonic(), str(value or "").strip())
+    if len(cache) <= int(max_items):
+        return
+    overflow = len(cache) - int(max_items)
+    if overflow <= 0:
+        return
+    oldest = sorted(cache.items(), key=lambda kv: float(kv[1][0]))[:overflow]
+    for old_key, _ in oldest:
+        cache.pop(old_key, None)
+
+
+def _get_labeler_bot_client() -> Any:
+    for mod_name in ("tomcat.main", "__main__", "main"):
+        mod = sys.modules.get(mod_name)
+        client = getattr(mod, "bot", None) if mod is not None else None
+        if client is not None:
+            return client
+    for mod in list(sys.modules.values()):
+        try:
+            if mod is None:
+                continue
+            mod_file = str(getattr(mod, "__file__", "") or "").replace("/", "\\").lower()
+            if not mod_file.endswith("\\tomcat\\main.py"):
+                continue
+            client = getattr(mod, "bot", None)
+            if client is not None:
+                return client
+        except Exception:
+            continue
+    try:
+        from .. import main as main_mod
+
+        return getattr(main_mod, "bot", None)
+    except Exception:
+        return None
+
+
+def _build_photo_item_context_cache_sync() -> Dict[int, Dict[str, Any]]:
+    out: Dict[int, Dict[str, Any]] = {}
+    try:
+        rows = local_photos.read_metadata_rows()
+    except Exception:
+        return out
+    for row in rows or []:
+        serial = _parse_serial(str((row or {}).get("Serial Number", "") or ""))
+        if serial is None or int(serial) <= 0:
+            continue
+        out[int(serial)] = {
+            "serial": int(serial),
+            "author_id": str((row or {}).get("Author ID", "") or "").strip(),
+            "channel_id": str((row or {}).get("Channel", "") or "").strip(),
+            "guild_id": str((row or {}).get("Guild ID", "") or "").strip(),
+            "message_id": str((row or {}).get("Message ID", "") or "").strip(),
+            "timestamp": str((row or {}).get("Timestamp", "") or "").strip(),
+            "url": str((row or {}).get("Discord URL", "") or "").strip(),
+        }
+    return out
+
+
+async def _get_photo_item_context_cache_async(
+    *,
+    force: bool = False,
+    serials: Optional[List[int]] = None,
+) -> Dict[int, Dict[str, Any]]:
+    global _photo_item_context_cache, _photo_item_context_cache_built_mono
+    now_mono = time.monotonic()
+    clean_serials = [
+        int(sn)
+        for sn in list(serials or [])
+        if isinstance(sn, int) and int(sn) > 0
+    ]
+    needs_refresh = bool(force) or not _photo_item_context_cache
+    if not needs_refresh:
+        age_sec = now_mono - float(_photo_item_context_cache_built_mono or 0.0)
+        needs_refresh = age_sec >= float(_PHOTO_ITEM_CONTEXT_CACHE_TTL_SEC)
+    if not needs_refresh and clean_serials:
+        needs_refresh = any(int(sn) not in _photo_item_context_cache for sn in clean_serials)
+    if not needs_refresh:
+        return _photo_item_context_cache
+    async with _photo_item_context_cache_lock:
+        now_mono = time.monotonic()
+        needs_refresh = bool(force) or not _photo_item_context_cache
+        if not needs_refresh:
+            age_sec = now_mono - float(_photo_item_context_cache_built_mono or 0.0)
+            needs_refresh = age_sec >= float(_PHOTO_ITEM_CONTEXT_CACHE_TTL_SEC)
+        if not needs_refresh and clean_serials:
+            needs_refresh = any(int(sn) not in _photo_item_context_cache for sn in clean_serials)
+        if needs_refresh:
+            _photo_item_context_cache = await asyncio.to_thread(_build_photo_item_context_cache_sync)
+            _photo_item_context_cache_built_mono = time.monotonic()
+    return _photo_item_context_cache
+
+
+async def _ensure_labeler_bot_ready() -> Any:
+    client = _get_labeler_bot_client()
+    if client is None:
+        return None
+    try:
+        if hasattr(client, "is_ready") and not client.is_ready():
+            await asyncio.wait_for(client.wait_until_ready(), timeout=2.0)
+    except Exception:
+        pass
+    return client
+
+
+async def _resolve_author_display_name(
+    guild_id: Any,
+    author_id: Any,
+    *,
+    allow_fetch: bool = True,
+) -> str:
+    uid = _parse_int_token(author_id)
+    gid = _parse_int_token(guild_id)
+    if uid <= 0:
+        return ""
+    if gid > 0:
+        cached_member = _ttl_cache_get_text(
+            _discord_member_display_cache,
+            (int(gid), int(uid)),
+            _DISCORD_CONTEXT_CACHE_TTL_SEC,
+        )
+        if cached_member:
+            return cached_member
+    cached_user = _ttl_cache_get_text(
+        _discord_user_display_cache,
+        int(uid),
+        _DISCORD_CONTEXT_CACHE_TTL_SEC,
+    )
+    if cached_user and (gid <= 0 or not allow_fetch):
+        return cached_user
+    if not allow_fetch:
+        return cached_user
+
+    client = await _ensure_labeler_bot_ready()
+    if client is None:
+        return cached_user
+
+    display = ""
+    if gid > 0:
+        guild = client.get_guild(int(gid))
+        if guild is not None:
+            member = guild.get_member(int(uid))
+            if member is None:
+                try:
+                    member = await guild.fetch_member(int(uid))
+                except Exception:
+                    member = None
+            if member is not None:
+                display = (
+                    str(getattr(member, "display_name", None) or "").strip()
+                    or str(getattr(member, "global_name", None) or "").strip()
+                    or str(getattr(member, "name", None) or "").strip()
+                )
+        if display:
+            _ttl_cache_set_text(_discord_member_display_cache, (int(gid), int(uid)), display)
+            _ttl_cache_set_text(_discord_user_display_cache, int(uid), display)
+            return display
+
+    user = client.get_user(int(uid))
+    if user is None and hasattr(client, "fetch_user"):
+        try:
+            user = await client.fetch_user(int(uid))
+        except Exception:
+            user = None
+    if user is not None:
+        display = (
+            str(getattr(user, "global_name", None) or "").strip()
+            or str(getattr(user, "name", None) or "").strip()
+        )
+        if display:
+            _ttl_cache_set_text(_discord_user_display_cache, int(uid), display)
+            return display
+    return cached_user
+
+
+async def _resolve_channel_name(channel_id: Any, *, allow_fetch: bool = True) -> str:
+    cid = _parse_int_token(channel_id)
+    if cid <= 0:
+        return ""
+    cached = _ttl_cache_get_text(
+        _discord_channel_name_cache,
+        int(cid),
+        _DISCORD_CONTEXT_CACHE_TTL_SEC,
+    )
+    if cached or not allow_fetch:
+        return cached
+
+    client = await _ensure_labeler_bot_ready()
+    if client is None:
+        return ""
+
+    channel = client.get_channel(int(cid))
+    if channel is None and hasattr(client, "fetch_channel"):
+        try:
+            channel = await client.fetch_channel(int(cid))
+        except Exception:
+            channel = None
+    if channel is None:
+        return ""
+    name = str(getattr(channel, "name", None) or "").strip() or str(channel).strip()
+    if name:
+        _ttl_cache_set_text(_discord_channel_name_cache, int(cid), name)
+    return name
+
+
+def _build_item_context_payload_from_caches(
+    serial: int,
+    raw_meta: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "serial": int(serial),
+        "author_id": "",
+        "author_display_name": "",
+        "channel_id": "",
+        "channel_name": "",
+        "guild_id": "",
+        "message_id": "",
+        "timestamp": "",
+        "has_context": False,
+    }
+    meta = raw_meta if isinstance(raw_meta, dict) else {}
+    if not meta:
+        return payload
+    payload["has_context"] = True
+    payload["author_id"] = str(meta.get("author_id") or "").strip()
+    payload["channel_id"] = str(meta.get("channel_id") or "").strip()
+    payload["guild_id"] = str(meta.get("guild_id") or "").strip()
+    payload["message_id"] = str(meta.get("message_id") or "").strip()
+    payload["timestamp"] = str(meta.get("timestamp") or "").strip()
+
+    uid = _parse_int_token(payload["author_id"])
+    gid = _parse_int_token(payload["guild_id"])
+    cid = _parse_int_token(payload["channel_id"])
+    if gid > 0 and uid > 0:
+        payload["author_display_name"] = _ttl_cache_get_text(
+            _discord_member_display_cache,
+            (int(gid), int(uid)),
+            _DISCORD_CONTEXT_CACHE_TTL_SEC,
+        )
+    if not payload["author_display_name"] and uid > 0:
+        payload["author_display_name"] = _ttl_cache_get_text(
+            _discord_user_display_cache,
+            int(uid),
+            _DISCORD_CONTEXT_CACHE_TTL_SEC,
+        )
+    if cid > 0:
+        payload["channel_name"] = _ttl_cache_get_text(
+            _discord_channel_name_cache,
+            int(cid),
+            _DISCORD_CONTEXT_CACHE_TTL_SEC,
+        )
+    return payload
+
+
+def _apply_item_context_to_items(
+    items: List[Dict[str, Any]],
+    raw_context_cache: Dict[int, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for item in items or []:
+        row = dict(item or {})
+        try:
+            serial = int(row.get("serial") or 0)
+        except Exception:
+            serial = 0
+        if serial > 0:
+            ctx = _build_item_context_payload_from_caches(serial, raw_context_cache.get(int(serial)))
+            for field in (
+                "author_id",
+                "author_display_name",
+                "channel_id",
+                "channel_name",
+                "guild_id",
+                "message_id",
+                "timestamp",
+                "has_context",
+            ):
+                if field == "has_context":
+                    row[field] = bool(ctx.get(field))
+                    continue
+                value = str(ctx.get(field) or "").strip()
+                if value:
+                    row[field] = value
+        out.append(row)
+    return out
+
+
+async def _warm_item_context_cache_for_items(
+    items: List[Dict[str, Any]],
+    *,
+    force_raw: bool = False,
+) -> None:
+    serials: List[int] = []
+    seen_serials: Set[int] = set()
+    for item in items or []:
+        try:
+            serial = int(item.get("serial") or 0)
+        except Exception:
+            serial = 0
+        if serial <= 0 or serial in seen_serials:
+            continue
+        seen_serials.add(serial)
+        serials.append(int(serial))
+    if not serials:
+        return
+
+    raw_context_cache = await _get_photo_item_context_cache_async(force=force_raw, serials=serials)
+    author_targets: List[Tuple[int, int]] = []
+    channel_targets: List[int] = []
+    seen_authors: Set[Tuple[int, int]] = set()
+    seen_channels: Set[int] = set()
+    for serial in serials:
+        meta = raw_context_cache.get(int(serial)) or {}
+        uid = _parse_int_token(meta.get("author_id"))
+        gid = _parse_int_token(meta.get("guild_id"))
+        cid = _parse_int_token(meta.get("channel_id"))
+        if uid > 0:
+            author_key = (int(gid), int(uid))
+            if author_key not in seen_authors:
+                seen_authors.add(author_key)
+                author_targets.append(author_key)
+        if cid > 0 and cid not in seen_channels:
+            seen_channels.add(int(cid))
+            channel_targets.append(int(cid))
+
+    sem = asyncio.Semaphore(_CONTEXT_WARM_CONCURRENCY)
+
+    async def _warm_author(gid: int, uid: int) -> None:
+        async with sem:
+            try:
+                await _resolve_author_display_name(int(gid), int(uid), allow_fetch=True)
+            except Exception:
+                pass
+
+    async def _warm_channel(cid: int) -> None:
+        async with sem:
+            try:
+                await _resolve_channel_name(int(cid), allow_fetch=True)
+            except Exception:
+                pass
+
+    tasks: List[asyncio.Future] = []
+    for gid, uid in author_targets:
+        if gid > 0:
+            member_cached = _ttl_cache_get_text(
+                _discord_member_display_cache,
+                (int(gid), int(uid)),
+                _DISCORD_CONTEXT_CACHE_TTL_SEC,
+            )
+            if member_cached:
+                continue
+        user_cached = _ttl_cache_get_text(
+            _discord_user_display_cache,
+            int(uid),
+            _DISCORD_CONTEXT_CACHE_TTL_SEC,
+        )
+        if not user_cached or gid > 0:
+            tasks.append(asyncio.create_task(_warm_author(int(gid), int(uid))))
+    for cid in channel_targets:
+        cached = _ttl_cache_get_text(
+            _discord_channel_name_cache,
+            int(cid),
+            _DISCORD_CONTEXT_CACHE_TTL_SEC,
+        )
+        if cached:
+            continue
+        tasks.append(asyncio.create_task(_warm_channel(int(cid))))
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _get_resolved_item_context_payload(
+    serial: int,
+    *,
+    force_raw: bool = False,
+    allow_fetch: bool = True,
+) -> Dict[str, Any]:
+    clean_serial = int(serial)
+    raw_context_cache = await _get_photo_item_context_cache_async(
+        force=force_raw,
+        serials=[int(clean_serial)],
+    )
+    if allow_fetch:
+        await _warm_item_context_cache_for_items(
+            [{"serial": int(clean_serial)}],
+            force_raw=force_raw,
+        )
+        raw_context_cache = await _get_photo_item_context_cache_async(serials=[int(clean_serial)])
+    return _build_item_context_payload_from_caches(
+        int(clean_serial),
+        raw_context_cache.get(int(clean_serial)),
     )
 
 
@@ -1952,6 +2424,168 @@ def _enrich_manual_candidates(
         if meta.get("desc") and not row.get("desc"):
             row["desc"] = str(meta.get("desc"))
         row["profile_key"] = str(meta.get("key") or key)
+        out.append(row)
+    return out
+
+
+def _manual_ref_cache_status_payload(
+    *,
+    total_hint: int = 0,
+) -> Dict[str, Any]:
+    total = max(0, int(total_hint or 0))
+    if total <= 0:
+        try:
+            total = len(_load_profile_catalog()[1])
+        except Exception:
+            total = max(len(_manual_metadata_ref_cache), len(_photo_crop_index_cache))
+    built = int(len(_manual_metadata_ref_cache or {}))
+    ready = bool(_manual_metadata_ref_cache) and bool(_photo_crop_index_cache)
+    return {
+        "ready": bool(ready),
+        "building": False,
+        "cats": int(total),
+        "built": int(total if ready else max(0, built)),
+        "total": int(total),
+        "per_cat": int(_MANUAL_FALLBACK_REFS_PER_CAT),
+        "query_refs_per_cat": int(_MANUAL_QUERY_REFS_PER_CAT),
+        "query_ref_cat_limit": int(_MANUAL_QUERY_REF_CAT_LIMIT),
+    }
+
+
+def _normalize_manual_candidate_refs(
+    refs: List[Dict[str, Any]],
+    *,
+    cat_name: str,
+    prefer_serial: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    selected_refs: List[Dict[str, Any]] = []
+    seen_sc: Set[Tuple[int, int]] = set()
+    keep_limit = max(1, int(_MANUAL_FALLBACK_REFS_PER_CAT))
+    for ref in list(refs or []):
+        if not isinstance(ref, dict):
+            continue
+        try:
+            serial_ref = int(ref.get("serial"))
+            crop_ref = int(ref.get("crop"))
+        except Exception:
+            continue
+        if serial_ref <= 0 or crop_ref <= 0:
+            continue
+        if _is_flagged_ref_serial(int(serial_ref)):
+            continue
+        key_sc = (int(serial_ref), int(crop_ref))
+        if key_sc in seen_sc:
+            continue
+        entry = _photo_crop_index_cache.get(key_sc) or {}
+        if not entry:
+            continue
+        seen_sc.add(key_sc)
+        selected_refs.append({
+            "img": "",
+            "url": _photo_ref_crop_url(int(serial_ref), int(crop_ref)),
+            "serial": int(serial_ref),
+            "crop": int(crop_ref),
+            "source": str(ref.get("source") or "manual_query"),
+        })
+        if len(selected_refs) >= keep_limit:
+            break
+    selected_refs, _ = _supplement_candidate_refs_with_fallback(
+        selected_refs,
+        cat_name=str(cat_name or "").strip(),
+        ref_target=int(_MANUAL_FALLBACK_REFS_PER_CAT),
+        ref_keep_limit=keep_limit,
+        seen_sc=seen_sc,
+        prefer_serial=prefer_serial,
+    )
+    if selected_refs:
+        return selected_refs[:keep_limit]
+    return _fallback_refs_for_cat(
+        str(cat_name or "").strip(),
+        limit=keep_limit,
+        prefer_cached=True,
+        prefer_serial=prefer_serial,
+    )
+
+
+def _build_manual_candidate_catalog(
+    raw_candidates: List[Dict[str, Any]],
+    *,
+    alias_lookup: Dict[str, Dict[str, Any]],
+    ordered_profile: List[Dict[str, Any]],
+    prefer_serial: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    by_key: Dict[str, Dict[str, Any]] = {}
+    ranked_keys: List[str] = []
+    for cand in _enrich_manual_candidates(raw_candidates or [], alias_lookup):
+        row = dict(cand or {})
+        pkey = str(row.pop("profile_key", "")).strip()
+        if not pkey:
+            pkey = _norm_cat_lookup_token(str(row.get("name") or ""))
+        if not pkey or pkey in by_key:
+            continue
+        row["refs"] = _normalize_manual_candidate_refs(
+            list(row.get("refs") or []),
+            cat_name=pkey,
+            prefer_serial=prefer_serial,
+        )
+        by_key[pkey] = row
+        ranked_keys.append(pkey)
+
+    def _safe_cat_id(val: Any) -> int:
+        try:
+            if val is None or str(val).strip() == "":
+                return 10**9
+            return int(val)
+        except Exception:
+            return 10**9
+
+    tail_keys: List[str] = []
+    for meta in ordered_profile or []:
+        key = str(meta.get("key") or "").strip()
+        if not key:
+            continue
+        existing = by_key.get(key)
+        if existing:
+            if not existing.get("display_name"):
+                existing["display_name"] = str(meta.get("display_name") or existing.get("name") or "")
+            if existing.get("cat_id") is None:
+                existing["cat_id"] = meta.get("cat_id")
+            if not existing.get("desc") and meta.get("desc"):
+                existing["desc"] = str(meta.get("desc"))
+            if not existing.get("refs"):
+                existing["refs"] = _fallback_refs_for_cat(
+                    key,
+                    limit=_MANUAL_FALLBACK_REFS_PER_CAT,
+                    prefer_cached=True,
+                    prefer_serial=prefer_serial,
+                )
+            continue
+        by_key[key] = {
+            "name": str(meta.get("name") or ""),
+            "display_name": str(meta.get("display_name") or meta.get("name") or ""),
+            "cat_id": meta.get("cat_id"),
+            "desc": str(meta.get("desc") or ""),
+            "conf": None,
+            "refs": _fallback_refs_for_cat(
+                key,
+                limit=_MANUAL_FALLBACK_REFS_PER_CAT,
+                prefer_cached=True,
+                prefer_serial=prefer_serial,
+            ),
+        }
+        tail_keys.append(key)
+
+    tail_keys.sort(
+        key=lambda key: (
+            _safe_cat_id((by_key.get(key) or {}).get("cat_id")),
+            str((by_key.get(key) or {}).get("display_name") or (by_key.get(key) or {}).get("name") or ""),
+        )
+    )
+    out: List[Dict[str, Any]] = []
+    for key in ranked_keys + tail_keys:
+        row = by_key.get(key)
+        if not row:
+            continue
         out.append(row)
     return out
 
@@ -3174,9 +3808,15 @@ async def get_queue_detect(request: web.Request) -> web.Response:
             local_serials_snapshot=local_serials_snapshot,
         )
         total = len(queue)
+        queue_page = queue[:500]
+        raw_context_cache = await _get_photo_item_context_cache_async(
+            force=force,
+            serials=[int(item.get("serial") or 0) for item in queue_page if int(item.get("serial") or 0) > 0],
+        )
+        queue_page = _apply_item_context_to_items(queue_page, raw_context_cache)
         #Trigger background cache fill for first images in queue (throttled)
         _maybe_schedule_queue_cache_warm("detect", queue)
-        payload = {"queue": queue[:500], "total": total}
+        payload = {"queue": queue_page, "total": total}
         payload.update(_local_missing_payload(local_excluded, local_sample))
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
@@ -3343,10 +3983,16 @@ async def get_queue_classify(request: web.Request) -> web.Response:
         )
         queue.sort(key=lambda item: int(item.get("serial") or 0))
         total = len(queue)
+        queue_page = queue[:500]
+        raw_context_cache = await _get_photo_item_context_cache_async(
+            force=force,
+            serials=[int(item.get("serial") or 0) for item in queue_page if int(item.get("serial") or 0) > 0],
+        )
+        queue_page = _apply_item_context_to_items(queue_page, raw_context_cache)
         #Trigger background cache fill for first images in queue (throttled)
         _maybe_schedule_queue_cache_warm("classify", queue)
         payload = {
-            "queue": queue[:500],
+            "queue": queue_page,
             "total": total,
             "filtered_low_quality": int(skipped_low_quality),
             "pending_quality_scan": int(len(deferred_for_queue)),
@@ -3418,8 +4064,14 @@ async def get_queue_manual(request: web.Request) -> web.Response:
             local_serials_snapshot=local_serials_snapshot,
         )
         total = len(queue)
+        queue_page = queue[:500]
+        raw_context_cache = await _get_photo_item_context_cache_async(
+            force=force,
+            serials=[int(item.get("serial") or 0) for item in queue_page if int(item.get("serial") or 0) > 0],
+        )
+        queue_page = _apply_item_context_to_items(queue_page, raw_context_cache)
         _maybe_schedule_queue_cache_warm("manual", queue)
-        payload = {"queue": queue[:500], "total": total}
+        payload = {"queue": queue_page, "total": total}
         payload.update(_local_missing_payload(local_excluded, local_sample))
         return _with_cors(web.json_response(payload), request)
     except Exception as e:
@@ -3475,6 +4127,25 @@ async def get_image(request: web.Request) -> web.Response:
         return _with_cors(web.Response(status=404, text="Serial not found"), request)
     except Exception as e:
         log_action("labeler_get_image_error", "error", str(e))
+        return _internal_error_response(request)
+
+
+async def get_item_context(request: web.Request) -> web.Response:
+    """Resolve author/channel context for one serial."""
+    try:
+        sn_str = request.match_info.get("sn", "")
+        sn = _parse_serial(sn_str)
+        if sn is None or int(sn) <= 0:
+            return _with_cors(web.Response(status=400, text="Invalid serial"), request)
+        force = str(request.query.get("force") or "").strip().lower() in {"1", "true", "yes", "y"}
+        payload = await _get_resolved_item_context_payload(
+            int(sn),
+            force_raw=force,
+            allow_fetch=True,
+        )
+        return _with_cors(web.json_response(payload), request)
+    except Exception as e:
+        log_action("labeler_get_item_context_error", "error", f"{type(e).__name__}: {e!r}")
         return _internal_error_response(request)
 
 
@@ -4743,9 +5414,14 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
 
         cache_key = _hash_cache_key(
             "manual_candidates",
+            _MANUAL_CANDIDATE_PIPELINE_VERSION,
             serial_i or "",
             str(url or "").strip(),
             box_raw,
+            int(_MANUAL_QUERY_REFS_PER_CAT),
+            int(_MANUAL_QUERY_REF_CAT_LIMIT),
+            int(_MANUAL_QUERY_REF_SEARCH_POOL),
+            int(_MANUAL_FALLBACK_REFS_PER_CAT),
         )
         cached_payload = _cache_get(_manual_result_cache, cache_key)
         if cached_payload is not None:
@@ -4783,7 +5459,10 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
                     V.manual_review_candidates,
                     image_bytes,
                     box,
-                    refs_per=_MANUAL_FALLBACK_REFS_PER_CAT,
+                    refs_per=_MANUAL_QUERY_REFS_PER_CAT,
+                    query_ref_cat_limit=_MANUAL_QUERY_REF_CAT_LIMIT,
+                    gallery_ref_search_pool=_MANUAL_QUERY_REF_SEARCH_POOL,
+                    rerank=False,
                 ),
                 timeout=_MANUAL_TIMEOUT_SEC,
             )
@@ -4814,80 +5493,14 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
                 f"{type(e).__name__}: {e!r}",
             )
 
-        by_key: Dict[str, Dict[str, Any]] = {}
-        for cand in _enrich_manual_candidates(raw_candidates or [], alias_lookup):
-            row = dict(cand)
-            pkey = str(row.pop("profile_key", "")).strip()
-            if not pkey:
-                pkey = f"gallery::{_norm_cat_lookup_token(str(row.get('name') or ''))}"
-            if pkey in by_key:
-                continue
-            # Gallery-backed cats should still have fallback refs if no local thumb was produced.
-            if not row.get("refs"):
-                row["refs"] = _fallback_refs_for_cat(
-                    pkey,
-                    limit=_MANUAL_FALLBACK_REFS_PER_CAT,
-                    prefer_cached=True,
-                )
-            by_key[pkey] = row
-
-        # Ensure every CatDatabase cat appears, even if not in current gallery embeddings.
-        for meta in ordered_profile:
-            key = str(meta.get("key") or "")
-            if not key:
-                continue
-            existing = by_key.get(key)
-            if existing:
-                if not existing.get("refs"):
-                    existing["refs"] = _fallback_refs_for_cat(
-                        key,
-                        limit=_MANUAL_FALLBACK_REFS_PER_CAT,
-                        prefer_cached=True,
-                    )
-                if not existing.get("display_name"):
-                    existing["display_name"] = str(meta.get("display_name") or existing.get("name") or "")
-                if existing.get("cat_id") is None:
-                    existing["cat_id"] = meta.get("cat_id")
-                if not existing.get("desc") and meta.get("desc"):
-                    existing["desc"] = str(meta.get("desc"))
-                continue
-
-            by_key[key] = {
-                "name": str(meta.get("name") or ""),
-                "display_name": str(meta.get("display_name") or meta.get("name") or ""),
-                "cat_id": meta.get("cat_id"),
-                "desc": str(meta.get("desc") or ""),
-                "conf": None,  # Not present in gallery embeddings yet
-                "refs": _fallback_refs_for_cat(
-                    key,
-                    limit=_MANUAL_FALLBACK_REFS_PER_CAT,
-                    prefer_cached=True,
-                ),
-            }
-
-        def _safe_cat_id(val: Any) -> int:
-            try:
-                if val is None or str(val).strip() == "":
-                    return 10**9
-                return int(val)
-            except Exception:
-                return 10**9
-
-        def _candidate_sort_key(row: Dict[str, Any]) -> Tuple[int, str]:
-            return (
-                _safe_cat_id(row.get("cat_id")),
-                str(row.get("display_name") or row.get("name") or ""),
-            )
-
-        candidates = sorted(list(by_key.values()), key=_candidate_sort_key)
-        status = dict(V.labeler_manual_ref_status() or {})
+        candidates = _build_manual_candidate_catalog(
+            raw_candidates or [],
+            alias_lookup=alias_lookup,
+            ordered_profile=ordered_profile,
+            prefer_serial=serial_i,
+        )
         total_known = len(ordered_profile) if ordered_profile else len(candidates)
-        status["total"] = max(int(status.get("total") or 0), int(total_known))
-        status["cats"] = int(total_known)
-        if status.get("ready"):
-            status["built"] = int(status.get("total") or total_known)
-        else:
-            status["built"] = max(int(status.get("built") or 0), 0)
+        status = _manual_ref_cache_status_payload(total_hint=total_known)
 
         payload = {
             "ready": True,
@@ -5069,7 +5682,7 @@ async def get_refs_status(request: web.Request) -> web.Response:
 
 
 async def post_manual_refs_warm(request: web.Request) -> web.Response:
-    """Warm the lighter manual-review reference cache."""
+    """Warm manual-review metadata refs + crop index + classifier state."""
     try:
         force = False
         try:
@@ -5077,7 +5690,13 @@ async def post_manual_refs_warm(request: web.Request) -> web.Response:
             force = bool(body.get("force"))
         except Exception:
             force = False
-        status = await V.warm_labeler_manual_refs(force=force)
+        alias_lookup, ordered_profile, _ = await asyncio.to_thread(_load_profile_catalog)
+        await asyncio.gather(
+            V.warm_labeler_manual_refs(force=force),
+            _ensure_manual_metadata_ref_cache(alias_lookup, force=force),
+            _ensure_photo_crop_index_cache(force=force),
+        )
+        status = _manual_ref_cache_status_payload(total_hint=len(ordered_profile))
         return _with_cors(web.json_response(status), request)
     except Exception as e:
         log_action("labeler_manual_refs_warm_error", "error", str(e))
@@ -5085,9 +5704,9 @@ async def post_manual_refs_warm(request: web.Request) -> web.Response:
 
 
 async def get_manual_refs_status(request: web.Request) -> web.Response:
-    """Get manual-review reference cache status."""
+    """Get manual-review metadata-ref cache status."""
     try:
-        return _with_cors(web.json_response(V.labeler_manual_ref_status()), request)
+        return _with_cors(web.json_response(_manual_ref_cache_status_payload()), request)
     except Exception as e:
         log_action("labeler_manual_refs_status_error", "error", str(e))
         return _internal_error_response(request)
@@ -5187,11 +5806,19 @@ async def post_cache_warm(request: web.Request) -> web.Response:
 
         async def _runner() -> None:
             try:
-                await labeler_cache.ensure_cache_filled(
-                    items,
-                    target_count=target,
-                    scan_limit=min(scan_limit, len(items)),
-                    concurrency=max(1, concurrency),
+                warm_scan_limit = min(scan_limit, len(items))
+                await asyncio.gather(
+                    labeler_cache.ensure_cache_filled(
+                        items,
+                        target_count=target,
+                        scan_limit=warm_scan_limit,
+                        concurrency=max(1, concurrency),
+                    ),
+                    _warm_item_context_cache_for_items(
+                        items[:warm_scan_limit],
+                        force_raw=False,
+                    ),
+                    return_exceptions=True,
                 )
             except Exception:
                 pass
@@ -5237,6 +5864,7 @@ def get_labeler_routes() -> List:
         web.get("/api/labeler/queue/manual", get_queue_manual),
         web.post("/api/labeler/claim", post_claim),
         web.get("/api/labeler/image/{sn}", get_image),
+        web.get("/api/labeler/context/{sn}", get_item_context),
         web.get("/api/labeler/cached_image/{sn}", get_cached_image),
         web.get("/api/labeler/ref_crop/{sn}/{crop}", get_ref_crop),
         web.post("/api/labeler/detect", post_detect),
@@ -5260,6 +5888,7 @@ def get_labeler_routes() -> List:
         web.options("/api/labeler/queue/manual", options_handler),
         web.options("/api/labeler/claim", options_handler),
         web.options("/api/labeler/image/{sn}", options_handler),
+        web.options("/api/labeler/context/{sn}", options_handler),
         web.options("/api/labeler/cached_image/{sn}", options_handler),
         web.options("/api/labeler/ref_crop/{sn}/{crop}", options_handler),
         web.options("/api/labeler/detect", options_handler),

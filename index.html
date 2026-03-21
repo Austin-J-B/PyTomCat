@@ -1567,13 +1567,26 @@
         .labeler-banner .labeler-info {
             min-width: 0;
             display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            font-size: 0.74rem;
+            line-height: 1.2;
+        }
+
+        .labeler-banner .labeler-info-group {
+            min-width: 0;
+            display: flex;
             flex-wrap: nowrap;
             align-items: center;
             gap: 10px;
-            font-size: 0.74rem;
-            line-height: 1.2;
             overflow-x: auto;
             overflow-y: hidden;
+        }
+
+        .labeler-banner .labeler-info-right {
+            margin-left: auto;
+            justify-content: flex-end;
         }
 
         .labeler-banner .labeler-help {
@@ -1664,6 +1677,7 @@
             gap: 6px;
             display: inline-flex;
             align-items: center;
+            white-space: nowrap;
         }
 
         .labeler-banner .info-label {
@@ -2154,6 +2168,17 @@
         }
 
         @media (max-width: 1100px) {
+            .labeler-banner .labeler-info {
+                flex-direction: column;
+                gap: 4px;
+            }
+            .labeler-banner .labeler-info-group {
+                width: 100%;
+            }
+            .labeler-banner .labeler-info-right {
+                margin-left: 0;
+                justify-content: flex-start;
+            }
             .labeler-main {
                 grid-template-columns: 1fr;
             }
@@ -2188,7 +2213,7 @@
 
     </style>
 
-    <script src="labeler.js?v=20260211j"></script>
+    <script src="labeler.js?v=20260321d"></script>
 
     <script>
         //--- CONFIG ---

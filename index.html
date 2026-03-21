@@ -2220,6 +2220,7 @@
         let appInitialized = false;
         let oauthNonce = null;
         let authState = { token: null, user: null, permissions: {}, csrf: null };
+        let pendingAuthView = null;
         if (typeof window !== 'undefined') window.__TC_CSRF_TOKEN = '';
         let scheduleReadOnly = false;
         let checklistDate = null;
@@ -3101,10 +3102,21 @@
             return null;
         }
 
+        function isRestrictedView(view) {
+            return view === 'checklist' || view === 'labeler';
+        }
+
         function updateUrlForView(view) {
             const url = new URL(window.location.href);
             url.hash = view;
             history.replaceState(null, "", url);
+        }
+
+        function syncViewFromLocation(fallbackView = null) {
+            const locationView = getViewFromLocation();
+            const nextView = locationView || (VIEWS.includes(fallbackView) ? fallbackView : null) || 'schedule';
+            const shouldRestoreMissingUrl = !locationView && VIEWS.includes(fallbackView) && fallbackView !== 'schedule';
+            setView(nextView, { skipUrlUpdate: !shouldRestoreMissingUrl });
         }
 
         function highlightMenu(view) {
@@ -3973,10 +3985,16 @@
         }
 
         const initialView = getViewFromLocation() || 'schedule';
-        setView(initialView, { skipUrlUpdate: true });
+        pendingAuthView = initialView;
+        if (!isRestrictedView(initialView)) {
+            setView(initialView, { skipUrlUpdate: true });
+        }
         window.addEventListener('hashchange', () => {
             const hashView = getViewFromLocation();
-            if (hashView && hashView !== activeView) {
+            if (!hashView) return;
+            pendingAuthView = hashView;
+            if (isRestrictedView(hashView) && !authState.user) return;
+            if (hashView !== activeView) {
                 setView(hashView, { skipUrlUpdate: true });
             }
         });
@@ -4018,7 +4036,11 @@
         function buildState() {
             const nonce = crypto.randomUUID();
             rememberNonce(nonce);
-            return btoa(JSON.stringify({ api: apiBase, nonce }));
+            return btoa(JSON.stringify({
+                api: apiBase,
+                nonce,
+                view: getViewFromLocation() || activeView || 'schedule'
+            }));
         }
 
         function parseState(stateStr) {
@@ -4054,6 +4076,9 @@
                     return;
                 }
                 if (stateObj.api) currentApi = stateObj.api;
+                if (VIEWS.includes((stateObj.view || '').toLowerCase())) {
+                    pendingAuthView = String(stateObj.view).toLowerCase();
+                }
             }
 
             //Set global apiBase
@@ -4139,6 +4164,8 @@
                 syncAuthGlobals();
                 updateUIForUser();
                 await init(true);
+                syncViewFromLocation(pendingAuthView);
+                pendingAuthView = null;
                 return true;
             } catch (e) {
                 console.warn('Session resume failed', e);
@@ -4182,6 +4209,8 @@
 
                 updateUIForUser();
                 await init(true);
+                syncViewFromLocation(pendingAuthView);
+                pendingAuthView = null;
 
             } catch (e) {
                 console.error("Login Error:", e);

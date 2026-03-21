@@ -91,6 +91,16 @@ def _gallery_filename_for_version(version: str) -> str:
     return f"R{str(version).strip()}_cat_DINOv3_gallery.pt"
 
 
+def _gallery_version_key(path: Path) -> Optional[Tuple[int, ...]]:
+    match = _VERSIONED_GALLERY_RE.match(path.name)
+    if not match:
+        return None
+    try:
+        return tuple(int(part) for part in match.group(1).split("."))
+    except Exception:
+        return None
+
+
 def _gallery_path_for_env(path: Path) -> str:
     root = _project_root()
     try:
@@ -330,17 +340,24 @@ def _build_row_crops(
 
 
 def _next_version_path(weights_dir: Path) -> Path:
-    pat = re.compile(r"^R4\.5\.(\d+)_cat_DINOv3_gallery\.pt$", re.IGNORECASE)
-    max_n = 0
+    highest_key: Optional[Tuple[int, ...]] = None
     if weights_dir.exists():
         for p in weights_dir.iterdir():
-            m = pat.match(p.name)
-            if m:
-                try:
-                    max_n = max(max_n, int(m.group(1)))
-                except Exception:
-                    pass
-    return weights_dir / f"R4.5.{max_n + 1}_cat_DINOv3_gallery.pt"
+            key = _gallery_version_key(p)
+            if key is None:
+                continue
+            if highest_key is None or key > highest_key:
+                highest_key = key
+    if highest_key is None:
+        next_key = (4, 5, 1)
+    elif len(highest_key) == 1:
+        next_key = (highest_key[0], 0, 1)
+    elif len(highest_key) == 2:
+        next_key = (*highest_key, 1)
+    else:
+        next_key = (*highest_key[:-1], highest_key[-1] + 1)
+    next_version = ".".join(str(part) for part in next_key)
+    return weights_dir / _gallery_filename_for_version(next_version)
 
 
 def _is_versioned_gallery_path(path: Path) -> bool:
@@ -348,14 +365,18 @@ def _is_versioned_gallery_path(path: Path) -> bool:
 
 
 def _prune_old_versioned_galleries(weights_dir: Path, keep_version_path: Path) -> int:
-    """Keep only the newest numbered R4.5.N gallery file."""
-    pat = re.compile(r"^R4\.5\.(\d+)_cat_DINOv3_gallery\.pt$", re.IGNORECASE)
+    """Keep only the newest auto-generated patch gallery for the current release line."""
     removed = 0
     if not weights_dir.exists():
         return 0
+    keep_key = _gallery_version_key(keep_version_path)
+    keep_prefix = keep_key[:-1] if keep_key and len(keep_key) >= 3 else None
     keep_resolved = keep_version_path.resolve()
     for p in weights_dir.iterdir():
-        if not pat.match(p.name):
+        key = _gallery_version_key(p)
+        if key is None or len(key) < 3 or key[-1] <= 0:
+            continue
+        if keep_prefix is None or key[:-1] != keep_prefix:
             continue
         try:
             if p.resolve() == keep_resolved:

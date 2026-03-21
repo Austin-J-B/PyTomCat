@@ -16,11 +16,11 @@ os.chdir(project_root)
 #Add the root directory to Python's import path so 'from tomcat...' works
 sys.path.insert(0, str(project_root))
 
-# Expanded test-time augmentation: nine rotation angles plus horizontal flips.
+# Expanded rerank augmentation: nine rotation angles, with mirroring disabled by default.
 os.environ["LABELER_RERANK_ANGLES"] = "-20,-15,-10,-5,0,5,10,15,20"
 # Rerank the top 100 candidates for a deeper second pass.
 os.environ["LABELER_RERANK_TOP_N"] = "100"
-os.environ["LABELER_RERANK_HFLIP"] = "1"
+os.environ["LABELER_RERANK_HFLIP"] = "0"
 os.environ["LABELER_RERANK_ENABLED"] = "1"
 
 # Import project modules once environment overrides are set.

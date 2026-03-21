@@ -28,11 +28,20 @@ def main() -> int:
         default=None,
         help="Write an explicit gallery version like 5.0.0, producing R5.0.0_cat_DINOv3_gallery.pt.",
     )
-    parser.add_argument(
-        "--no-tta-hflip",
+    hflip_group = parser.add_mutually_exclusive_group()
+    hflip_group.add_argument(
+        "--tta-hflip",
+        dest="tta_hflip",
         action="store_true",
+        help="Enable horizontal-flip TTA while embedding crops.",
+    )
+    hflip_group.add_argument(
+        "--no-tta-hflip",
+        dest="tta_hflip",
+        action="store_false",
         help="Disable horizontal-flip TTA while embedding crops.",
     )
+    parser.set_defaults(tta_hflip=None)
     parser.add_argument(
         "--disable-local-photos",
         action="store_true",
@@ -61,9 +70,10 @@ def main() -> int:
     kwargs = {
         "mode": args.mode,
         "gallery_version": args.gallery_version,
-        "tta_hflip": not args.no_tta_hflip,
         "use_local_photos": not args.disable_local_photos,
     }
+    if args.tta_hflip is not None:
+        kwargs["tta_hflip"] = bool(args.tta_hflip)
     if args.image_workers is not None:
         kwargs["download_workers"] = int(args.image_workers)
     if args.image_chunk_size is not None:

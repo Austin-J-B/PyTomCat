@@ -127,7 +127,7 @@ _CROP_NUM_PATTERN = re.compile(
 )
 _RERANK_ENABLED = str(os.getenv("LABELER_RERANK_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
 _RERANK_TOP_N = max(1, int(os.getenv("LABELER_RERANK_TOP_N", "15") or "15"))
-_RERANK_HFLIP = str(os.getenv("LABELER_RERANK_HFLIP", "1")).strip().lower() in {"1", "true", "yes", "on"}
+_RERANK_HFLIP = str(os.getenv("LABELER_RERANK_HFLIP", "0")).strip().lower() in {"1", "true", "yes", "on"}
 _LABELER_REF_SEARCH_POOL = max(5, int(os.getenv("LABELER_REF_SEARCH_POOL", "250") or "250"))
 _DEFAULT_LABELER_REF_BUILD_WORKERS = max(4, min(32, int(os.cpu_count() or 8)))
 _LABELER_REF_BUILD_WORKERS = max(
@@ -720,7 +720,7 @@ def _prep_tensor(pil: Image.Image) -> Tensor:
 
 
 def _rerank_variant_tensors(crop: Image.Image) -> List[Tensor]:
-    """Build rotation/hflip variants for rerank embedding."""
+    """Build rotation variants, with optional mirroring, for rerank embedding."""
     variants: List[Tensor] = []
     for angle in _RERANK_ANGLES:
         if abs(float(angle)) < 1e-6:

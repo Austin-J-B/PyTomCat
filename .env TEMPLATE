@@ -64,7 +64,7 @@ LABELER_CLAIM_TTL_SEC=180             # Per-photo lock TTL for concurrent labeli
 LABELER_RERANK_ENABLED=1              # Enable rotation rerank on top classifier candidates
 LABELER_RERANK_TOP_N=15               # Number of candidate cats considered for rerank
 LABELER_RERANK_ANGLES=-10,0,10        # Rotation angles (degrees) used for rerank variants
-LABELER_RERANK_HFLIP=1                # Include horizontal-flip variants during rerank
+LABELER_RERANK_HFLIP=0                # Include horizontal-flip variants during rerank
 LABELER_REF_EMBED_BATCH_SIZE=8        # Batch size for building labeler ref embeddings
 LABELER_MANUAL_REF_PER_CAT=50         # Manual review cache sample count per cat (lighter all-cat view)
 LABELER_MANUAL_FALLBACK_REFS_PER_CAT=5 # Random fallback refs for cats not in current gallery embeddings
@@ -84,7 +84,7 @@ LABELER_CLASSIFY_PREFILTER_CACHE_MAX=20000 # Max cached serial quality results i
 GALLERY_MIN_PIXELS=122500             # Minimum crop area for gallery training (350x350)
 GALLERY_MIN_PER_CAT=4                 # Minimum eligible crops required per cat
 GALLERY_EMBED_BATCH_SIZE=32           # Encoder batch size during gallery rebuild
-GALLERY_TTA_HFLIP=1                   # Apply horizontal-flip TTA when embedding crops
+GALLERY_TTA_HFLIP=0                   # Apply horizontal-flip TTA when embedding crops
 GALLERY_KEEP_WORKDIR=0                # Set 1 to keep intermediate crops in cache/gallery_retrain/work
 
 # ===== Gmail Ingestion =====

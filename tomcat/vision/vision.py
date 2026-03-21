@@ -60,7 +60,7 @@ _LABELER_SAM_MIN_DETECTOR_MASK_RATIO = min(
     1.0,
     max(
         0.0,
-        float(os.getenv("LABELER_SAM_MIN_DETECTOR_MASK_RATIO", "0.30") or "0.30"),
+        float(os.getenv("LABELER_SAM_MIN_DETECTOR_MASK_RATIO", "0.35") or "0.35"),
     ),
 )
 _LABELER_SAM_MIN_DETECTOR_COVERAGE = min(
@@ -72,13 +72,20 @@ _LABELER_SAM_MIN_DETECTOR_COVERAGE = min(
 )
 _LABELER_SAM_MAX_REFINED_AREA_RATIO = max(
     1.0,
-    float(os.getenv("LABELER_SAM_MAX_REFINED_AREA_RATIO", "1.20") or "1.20"),
+    float(os.getenv("LABELER_SAM_MAX_REFINED_AREA_RATIO", "1.09") or "1.09"),
 )
 _LABELER_SAM_TIGHT_OVERLAP_RATIO = min(
     1.0,
     max(
         0.0,
         float(os.getenv("LABELER_SAM_TIGHT_OVERLAP_RATIO", "0.62") or "0.62"),
+    ),
+)
+_LABELER_SAM_MAX_EDGE_SHIFT_RATIO = min(
+    1.0,
+    max(
+        0.0,
+        float(os.getenv("LABELER_SAM_MAX_EDGE_SHIFT_RATIO", "0.06") or "0.06"),
     ),
 )
 
@@ -2119,6 +2126,7 @@ def _fallback_sam_box_diag(
         "max_detector_mask_ratio": 0.0,
         "max_detector_coverage": 0.0,
         "max_area_ratio": 1.0,
+        "max_edge_shift_ratio": 0.0,
         "samples": [
             {
                 "box_index": 0,
@@ -2137,6 +2145,11 @@ def _choose_guarded_sam_box(
     overlap_threshold: float = _LABELER_SAM_TIGHT_OVERLAP_RATIO,
 ) -> Tuple[Optional[Tuple[float, float, float, float]], Dict[str, Any]]:
     detector_area = _box_area(detector_box)
+    detector_w = max(1.0, abs(float(detector_box[2]) - float(detector_box[0])))
+    detector_h = max(1.0, abs(float(detector_box[3]) - float(detector_box[1])))
+    detector_max_dim = max(detector_w, detector_h)
+    detector_cx = (float(detector_box[0]) + float(detector_box[2])) / 2.0
+    detector_cy = (float(detector_box[1]) + float(detector_box[3])) / 2.0
     best_tight: Optional[Tuple[float, float, float, float]] = None
     best_tight_area = float("inf")
     best_tight_diag: Optional[Dict[str, Any]] = None
@@ -2159,6 +2172,19 @@ def _choose_guarded_sam_box(
             if detector_area > 0
             else 0.0
         )
+        cand_cx = (float(cand_box[0]) + float(cand_box[2])) / 2.0
+        cand_cy = (float(cand_box[1]) + float(cand_box[3])) / 2.0
+        center_shift_px = ((cand_cx - detector_cx) ** 2 + (cand_cy - detector_cy) ** 2) ** 0.5
+        edge_shift_px = max(
+            abs(float(cand_box[0]) - float(detector_box[0])),
+            abs(float(cand_box[1]) - float(detector_box[1])),
+            abs(float(cand_box[2]) - float(detector_box[2])),
+            abs(float(cand_box[3]) - float(detector_box[3])),
+        )
+        edge_shift_ratio = edge_shift_px / detector_max_dim if detector_max_dim > 0 else 0.0
+        cand["center_shift_px"] = center_shift_px
+        cand["edge_shift_px"] = edge_shift_px
+        cand["edge_shift_ratio"] = edge_shift_ratio
         ix1 = max(float(cand_box[0]), float(detector_box[0]))
         iy1 = max(float(cand_box[1]), float(detector_box[1]))
         ix2 = min(float(cand_box[2]), float(detector_box[2]))
@@ -2176,6 +2202,7 @@ def _choose_guarded_sam_box(
             and detector_mask_ratio >= float(_LABELER_SAM_MIN_DETECTOR_MASK_RATIO)
             and detector_coverage >= float(_LABELER_SAM_MIN_DETECTOR_COVERAGE)
             and area_ratio <= float(_LABELER_SAM_MAX_REFINED_AREA_RATIO)
+            and edge_shift_ratio <= float(_LABELER_SAM_MAX_EDGE_SHIFT_RATIO)
         )
         if not allowed:
             guard_rejections += 1
@@ -2216,10 +2243,14 @@ def _choose_guarded_sam_box(
             "detector_mask_ratio": 0.0,
             "detector_coverage": 0.0,
             "area_ratio": 1.0,
+            "center_shift_px": 0.0,
+            "edge_shift_px": 0.0,
+            "edge_shift_ratio": 0.0,
             "preview_outside_guard_ratio": _round_metric(preview_diag.get("outside_guard_ratio", 0.0)),
             "preview_detector_mask_ratio": _round_metric(preview_diag.get("detector_mask_ratio", 0.0)),
             "preview_detector_coverage": _round_metric(preview_diag.get("detector_coverage", 0.0)),
             "preview_area_ratio": _round_metric(preview_diag.get("area_ratio", 1.0)),
+            "preview_edge_shift_ratio": _round_metric(preview_diag.get("edge_shift_ratio", 0.0)),
         }
 
     return chosen_box, {
@@ -2235,6 +2266,9 @@ def _choose_guarded_sam_box(
         "detector_mask_ratio": _round_metric(chosen_diag.get("detector_mask_ratio", 0.0)),
         "detector_coverage": _round_metric(chosen_diag.get("detector_coverage", 0.0)),
         "area_ratio": _round_metric(chosen_diag.get("area_ratio", 1.0)),
+        "center_shift_px": _round_metric(chosen_diag.get("center_shift_px", 0.0), digits=2),
+        "edge_shift_px": _round_metric(chosen_diag.get("edge_shift_px", 0.0), digits=2),
+        "edge_shift_ratio": _round_metric(chosen_diag.get("edge_shift_ratio", 0.0)),
     }
 
 
@@ -2299,6 +2333,7 @@ def _summarize_sam_refine_diags(diags: List[Dict[str, Any]], *, passes: int) -> 
     max_detector_mask = max((_round_metric(d.get("detector_mask_ratio", 0.0)) for d in diags), default=0.0)
     max_detector_coverage = max((_round_metric(d.get("detector_coverage", 0.0)) for d in diags), default=0.0)
     max_area_ratio = max((_round_metric(d.get("area_ratio", 1.0)) for d in diags), default=1.0)
+    max_edge_shift_ratio = max((_round_metric(d.get("edge_shift_ratio", 0.0)) for d in diags), default=0.0)
 
     samples: List[Dict[str, Any]] = []
     for d in diags:
@@ -2321,12 +2356,14 @@ def _summarize_sam_refine_diags(diags: List[Dict[str, Any]], *, passes: int) -> 
                 "detector_mask_ratio": _round_metric(d.get("detector_mask_ratio", 0.0)),
                 "detector_coverage": _round_metric(d.get("detector_coverage", 0.0)),
                 "area_ratio": _round_metric(d.get("area_ratio", 1.0)),
+                "edge_shift_ratio": _round_metric(d.get("edge_shift_ratio", 0.0)),
             }
             if str(d.get("selected_source") or "") == "fallback":
                 sample["preview_iou"] = _round_metric(d.get("preview_iou", 0.0))
                 sample["preview_detector_mask_ratio"] = _round_metric(d.get("preview_detector_mask_ratio", 0.0))
                 sample["preview_detector_coverage"] = _round_metric(d.get("preview_detector_coverage", 0.0))
                 sample["preview_area_ratio"] = _round_metric(d.get("preview_area_ratio", 1.0))
+                sample["preview_edge_shift_ratio"] = _round_metric(d.get("preview_edge_shift_ratio", 0.0))
             samples.append(sample)
 
     return {
@@ -2347,6 +2384,7 @@ def _summarize_sam_refine_diags(diags: List[Dict[str, Any]], *, passes: int) -> 
         "max_detector_mask_ratio": _round_metric(max_detector_mask),
         "max_detector_coverage": _round_metric(max_detector_coverage),
         "max_area_ratio": _round_metric(max_area_ratio),
+        "max_edge_shift_ratio": _round_metric(max_edge_shift_ratio),
         "samples": samples,
     }
 

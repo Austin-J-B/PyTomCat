@@ -12,7 +12,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..aliases import resolve_station_or_cat, resolve_stations
 from . import local_photos
 
-_CSV_PATHS = [Path("Catabase - CatDatabase.csv")]
+_CSV_PATHS = [
+    Path("cache/catabase/Catabase - CatDatabase.csv"),
+    Path("Catabase - CatDatabase.csv"),
+]
 _PROFILE_CACHE_PATHS = [Path("cache/catabase/profiles.json")]
 _ACTIVE_LOOKBACK_DAYS = 90
 

@@ -4,14 +4,14 @@ from __future__ import annotations
 import discord
 from typing import List, Tuple
 
-from ..config import settings
-
 #Command definitions: (display_format, description)
 USER_COMMANDS: List[Tuple[str, str]] = [
     ("TomCat, show me [cat name]", "Shows a photo of the specified cat."),
     ("TomCat, who is [cat name]", "Shows the profile card for a cat."),
     ("TomCat, who is this?", "Identifies the cat in an attached or recent image."),
     ("TomCat, identify", "Runs cat identification on an attached image."),
+    ("TomCat, detect", "Detects cats in an attached image and draws bounding boxes."),
+    ("TomCat, crop", "Crops detected cats from an attached image."),
     ("TomCat, who lives at [station]?", "Lists which cats live at a feeding station."),
     ("TomCat, feeding update", "Shows today's feeding status for all stations."),
     ("TomCat, who feeds today?", "Shows who is scheduled to feed today."),
@@ -30,12 +30,13 @@ ADMIN_COMMANDS: List[Tuple[str, str]] = [
     ("TomCat, update due-paying members", "Full dues update: check, verify, sync roles."),
     ("TomCat, run dues perks", "Grants perks to verified dues-paying members."),
     ("TomCat, run dues job", "Manually triggers the daily dues scheduler."),
-    ("TomCat, recache [cat name]", "Refreshes the photo cache for a specific cat."),
-    ("TomCat, recache all photos", "Refreshes the entire cat photo cache."),
+    ("TomCat, recache all photos", "Clears the deprecated show-photo cache."),
     ("TomCat, recache catabase", "Reloads cat names from the catabase sheet."),
     ("TomCat, silent mode on/off", "Toggles quiet mode for bot responses."),
     ("TomCat, manual 8pm update", "Previews the 8pm feeding reminder."),
-    ("TomCat, create profile [N]", "Creates profile card for cat number N."),
+    ("TomCat, create profile [N]", "Creates a profile card for cat number N."),
+    ("TomCat, create profiles [N] through [M]", "Creates profile cards for a range of cat IDs."),
+    ("TomCat, update profile [N]", "Refreshes one existing profile card."),
     ("TomCat, update all profiles", "Regenerates all cat profile cards."),
     ("TomCat, remove role [ID]", "Removes a role from all server members."),
 ]

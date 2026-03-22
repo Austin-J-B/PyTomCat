@@ -30,7 +30,8 @@ __pycache__/
 *.pyc
 
 ## Ephemeral cache data regenerated on boot
-cache/catabase
+cache/*
+!cache/catabase
 cache/show_photos
 cache/labeler
 cache/gallery_retrain
@@ -70,7 +71,6 @@ logs/dues/
 tests/
 temp_images/
 
-cache
 cloudflared.exe.old
 
 CCC megasheet.xlsxcsv

@@ -16,7 +16,7 @@ import time
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Dict, Mapping, Optional, Set, Tuple
 
 import discord
 from PIL import Image, ImageOps
@@ -78,6 +78,7 @@ _SKIP_LABEL_TOKENS = {
     "0.notacat",
     "0. notacat",
 }
+_CAT_LABEL_PREFIX_RE = re.compile(r"^\s*\d+\s*[.)\-:]?\s*")
 
 
 @dataclass(frozen=True)
@@ -707,6 +708,89 @@ def _parse_metadata_timestamp(value: str) -> Optional[dt.datetime]:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=dt.timezone.utc)
     return parsed.astimezone(dt.timezone.utc)
+
+
+def _display_cat_label(value: Any) -> str:
+    """Normalize a cat label to display text without numeric prefixes."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return _CAT_LABEL_PREFIX_RE.sub("", text, count=1).strip()
+
+
+def _norm_cat_label(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", _display_cat_label(value).lower())
+
+
+def rename_metadata_cat_labels(rename_map: Mapping[str, str]) -> dict[str, Any]:
+    """Rewrite Box Cat IDs when CatDatabase renames an existing cat ID."""
+    clean_pairs: dict[str, str] = {}
+    pair_descriptions: list[str] = []
+    for raw_old, raw_new in (rename_map or {}).items():
+        old_name = _display_cat_label(raw_old)
+        new_name = _display_cat_label(raw_new)
+        old_key = _norm_cat_label(old_name)
+        if not old_key or not new_name or old_name == new_name:
+            continue
+        clean_pairs[old_key] = new_name
+        pair_descriptions.append(f"{old_name}->{new_name}")
+    if not clean_pairs:
+        return {
+            "status": "no_renames",
+            "rename_pairs": 0,
+            "rows_changed": 0,
+            "labels_replaced": 0,
+        }
+
+    _, metadata_path = ensure_storage_ready()
+    rows_changed = 0
+    labels_replaced = 0
+
+    with _METADATA_FILE_LOCK:
+        rows = _read_metadata_rows_locked(metadata_path)
+        for row in rows:
+            raw_labels = str((row or {}).get("Box Cat IDs", "") or "")
+            if not raw_labels:
+                continue
+            tokens = [str(token or "").strip() for token in raw_labels.split("|")]
+            updated_tokens: list[str] = []
+            changed = False
+            for token in tokens:
+                replacement = clean_pairs.get(_norm_cat_label(token))
+                if replacement:
+                    updated_tokens.append(replacement)
+                    if replacement != token:
+                        changed = True
+                        labels_replaced += 1
+                else:
+                    updated_tokens.append(token)
+            if not changed:
+                continue
+            row["Box Cat IDs"] = "|".join(updated_tokens)
+            rows_changed += 1
+
+        if rows_changed > 0:
+            _write_metadata_rows_locked(metadata_path, rows)
+
+    if rows_changed > 0:
+        _refresh_photo_metadata_consumers()
+        log_action(
+            "catabase_name_sync",
+            f"rows={rows_changed}; labels={labels_replaced}",
+            ",".join(pair_descriptions[:8]),
+        )
+        return {
+            "status": "ok",
+            "rename_pairs": len(clean_pairs),
+            "rows_changed": rows_changed,
+            "labels_replaced": labels_replaced,
+        }
+    return {
+        "status": "no_matches",
+        "rename_pairs": len(clean_pairs),
+        "rows_changed": 0,
+        "labels_replaced": 0,
+    }
 
 
 def _missing_photo_sync_limit() -> int:

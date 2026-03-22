@@ -126,6 +126,10 @@ VISION_FEEDBACK_SHEET_BACKOFF_SEC=21600 # Pause Discord feedback sheet sync afte
 FEEDING_8PM_CATCHUP_MINUTES=30        # If 8pm send is missed, allow catch-up only until 8:30pm local
 CAT_ALIASES_TTL_SEC=7200              # Seconds before alias table refreshes from Sheets
 FINANCE_SHEET_THROTTLE_SEC=0.5        # When finances are requested, it waits this long between queries
+PHOTO_METADATA_SHEET_SYNC_ENABLED=true
+PHOTO_METADATA_SHEET_SYNC_INTERVAL_SEC=300
+CATABASE_PHOTO_SYNC_ENABLED=true      # Update CatDatabase C/D/E/Q from local photo metadata
+CATABASE_PHOTO_SYNC_INTERVAL_SEC=300
 
 # ===== UI / Role IDs =====
 UITEST_ACTIVITY_APP_ID=               # For the user interface to work

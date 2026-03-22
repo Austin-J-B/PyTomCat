@@ -21,7 +21,10 @@ _CACHE_TTL_SEC = 15 * 60
 _ACTIVE_CAT_STATIONS: Dict[str, List[str]] = {}
 _ACTIVE_CAT_STATIONS_TS: float = 0.0
 
-_FALLBACK_PATHS = [Path("Catabase - CatDatabase.csv")]
+_FALLBACK_PATHS = [
+    Path("cache/catabase/Catabase - CatDatabase.csv"),
+    Path("Catabase - CatDatabase.csv"),
+]
 
 _LOCATION_HEADERS = {"location", "preferred location", "station"}
 _RECENTLY_SEEN_HEADERS = {

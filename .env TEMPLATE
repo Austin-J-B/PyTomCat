@@ -122,6 +122,10 @@ PROFILE_UPDATE_EDIT_MIN_INTERVAL_SEC=4.5   # Minimum seconds between profile mes
 PROFILE_UPDATE_EDIT_MAX_RETRIES=3          # Retry attempts on Discord 429 during profile edits
 CAT_ALIASES_TTL_SEC=7200              # Seconds before alias table refreshes from Sheets
 FINANCE_SHEET_THROTTLE_SEC=0.5        # When finances are requested, it waits this long between queries
+PHOTO_METADATA_SHEET_SYNC_ENABLED=true
+PHOTO_METADATA_SHEET_SYNC_INTERVAL_SEC=300
+CATABASE_PHOTO_SYNC_ENABLED=true      # Update CatDatabase C/D/E/Q from local photo metadata
+CATABASE_PHOTO_SYNC_INTERVAL_SEC=300
 
 # ===== UI / Role IDs =====
 UITEST_ACTIVITY_APP_ID=               # For the user interface to work

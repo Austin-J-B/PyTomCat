@@ -101,7 +101,9 @@ except Exception:
 _FALLBACK_CAT_ALIAS_MAP: Dict[str, str] = {}
 _FALLBACK_CAT_ALIAS_PAIRS: List[Tuple[str, str]] = []
 _FALLBACK_CAT_MTIME: float = -1.0
-_FALLBACK_CSV_PATHS: List[Path] = [Path("Catabase - CatDatabase.csv")]
+_CATABASE_CSV_PATH = Path("cache/catabase/Catabase - CatDatabase.csv")
+_LEGACY_CATABASE_CSV_PATH = Path("Catabase - CatDatabase.csv")
+_FALLBACK_CSV_PATHS: List[Path] = [_CATABASE_CSV_PATH, _LEGACY_CATABASE_CSV_PATH]
 
 def _parse_full_name_to_display(full: str) -> Optional[str]:
     if not full:
@@ -161,7 +163,8 @@ def _refresh_dyn_aliases(force: bool = False) -> None:
             #Persist a lightweight CSV snapshot for offline fallback
             try:
                 import csv as _csv
-                with open("Catabase - CatDatabase.csv", "w", encoding="utf-8", newline="") as f:
+                _CATABASE_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+                with _CATABASE_CSV_PATH.open("w", encoding="utf-8", newline="") as f:
                     w = _csv.writer(f)
                     #Write just Full Name + Common Nicknames if we have headers
                     w.writerow(["Full Name", "Common Nicknames"])
@@ -177,44 +180,47 @@ def _refresh_dyn_aliases(force: bool = False) -> None:
     #Fallback: local CSV in repo if Sheets unavailable
     try:
         import csv
-        path = "Catabase - CatDatabase.csv"
-        with open(path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            header = next(reader, None)
-            for row in reader:
-                full = (row[0] if row else '').strip()
-                disp = _parse_full_name_to_display(full)
-                if not disp:
-                    continue
-                key = disp.lower()
-                vals: List[str] = []
-                vals.extend(_alias_variants(disp))
-                #Guess nicknames column by header if present
-                nicks = ''
-                if header:
-                    try:
-                        idx = [h.strip().lower() for h in header].index('common nicknames')
-                        nicks = (row[idx] if len(row) > idx else '').strip()
-                    except Exception:
-                        nicks = ''
-                if nicks:
-                    for nick in re.split(r",|/|;|\n", nicks):
-                        nick = nick.strip()
-                        if not nick:
-                            continue
-                        vals.extend(_alias_variants(nick))
-                        for tok in re.split(r"[^a-z0-9]+", nick.lower()):
-                            if tok:
-                                vals.extend(_alias_variants(tok))
-                seen = set(); out: List[str] = []
-                for v in vals:
-                    if v and v not in seen:
-                        seen.add(v); out.append(v)
-                new_aliases[key] = out
-                new_display[key] = disp
-        _DYN_CAT_ALIASES = new_aliases
-        _DYN_DISPLAY = new_display
-        _DYN_LAST_TS = now
+        for path in _FALLBACK_CSV_PATHS:
+            if not path.exists():
+                continue
+            with path.open('r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                header = next(reader, None)
+                for row in reader:
+                    full = (row[0] if row else '').strip()
+                    disp = _parse_full_name_to_display(full)
+                    if not disp:
+                        continue
+                    key = disp.lower()
+                    vals: List[str] = []
+                    vals.extend(_alias_variants(disp))
+                    #Guess nicknames column by header if present
+                    nicks = ''
+                    if header:
+                        try:
+                            idx = [h.strip().lower() for h in header].index('common nicknames')
+                            nicks = (row[idx] if len(row) > idx else '').strip()
+                        except Exception:
+                            nicks = ''
+                    if nicks:
+                        for nick in re.split(r",|/|;|\n", nicks):
+                            nick = nick.strip()
+                            if not nick:
+                                continue
+                            vals.extend(_alias_variants(nick))
+                            for tok in re.split(r"[^a-z0-9]+", nick.lower()):
+                                if tok:
+                                    vals.extend(_alias_variants(tok))
+                    seen = set(); out: List[str] = []
+                    for v in vals:
+                        if v and v not in seen:
+                            seen.add(v); out.append(v)
+                    new_aliases[key] = out
+                    new_display[key] = disp
+            _DYN_CAT_ALIASES = new_aliases
+            _DYN_DISPLAY = new_display
+            _DYN_LAST_TS = now
+            return
     except Exception:
         #leave dynamic empty on failure
         _DYN_CAT_ALIASES = {}

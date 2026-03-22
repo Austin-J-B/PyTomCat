@@ -229,7 +229,6 @@ LOG_PAST_EMAILS_RE = re.compile(r"\blog(?:\s+the)?\s+past\s+(\d+)\s+emails\b", r
 CHECK_EMAILS_RE = re.compile(r"\b(?:check|log|scan|process|read)\s+(?:the\s+)?(?:our\s+)?(?:new\s+)?emails?\b",re.I)
 LOG_LAST_FINANCES_RE = re.compile(r"\blog(?:\s+the)?\s+last\s+(\d+)\s+finances\b", re.I)
 DUE_CHECK_RE = re.compile(r"\bcheck\s+due\s+payments\b", re.I)
-EXPORT_DUES_RE = re.compile(r"\bexport\s+due(?:s)?\s+portal\b", re.I)
 DUES_PERKS_RE = re.compile(r"\brun\s+dues\s+perks\b", re.I)
 RUN_DUES_JOB_RE = re.compile(r"\brun\s+dues\s+job\b", re.I)
 DUES_UPDATE_RE = re.compile(r"\bupdate\s+due[-\s]?pay(?:ing)?\s+members\b", re.I)
@@ -653,19 +652,6 @@ class IntentRouter:
                     return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
                 return IntentEvent(
                     type="role_remove_all", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #Officer-only: export dues portal (full channel dump)
-            if EXPORT_DUES_RE.search(text_wo):
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="dues_export_portal", confidence=0.99,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
@@ -1377,11 +1363,6 @@ class IntentRouter:
             await handle_check_dues(_intent("dues_check", {}), {**ctx, "bot": ctx.get("bot")})
             return
 
-        if event.type == "dues_export_portal":
-            from .handlers.dues import handle_export_dues_portal
-            await handle_export_dues_portal(_intent("dues_export_portal", {}), {**ctx, "bot": ctx.get("bot")})
-            return
-        
         if event.type == "profiles_create":
             m = CREATE_PROFILES_RE.search(self._strip_wake_tokens(event.text or "", message))
             if m:

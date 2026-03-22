@@ -708,6 +708,7 @@ from .services.local_photos import (
     sync_missing_local_photos as _sync_missing_local_photos,
     start_photo_metadata_sheet_sync_scheduler,
 )
+from .services.catabase_sheet_sync import start_catabase_photo_sync_scheduler
 from .services.profile_cache import start_profile_cache_scheduler
 from .handlers import feeding as _feed
 from .stations import station_names, station_definitions, save_stations_version, station_versions
@@ -1871,6 +1872,10 @@ async def on_ready():
         pass
     try:
         _start_background_task("photo_metadata_sheet_sync", lambda: start_photo_metadata_sheet_sync_scheduler())
+    except Exception:
+        pass
+    try:
+        _start_background_task("catabase_photo_sync", lambda: start_catabase_photo_sync_scheduler())
     except Exception:
         pass
     #Wire gallery retrain notifications into CH_LOGGING.

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Any, Dict
 
 import discord
@@ -97,54 +96,6 @@ async def handle_remove_role_from_all(args: Dict[str, Any], ctx: Dict[str, Any])
     except Exception:
         pass
     log_action("role_remove_all_done", f"role={role_id}", f"removed={removed}")
-
-
-async def handle_recache_show_cache(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:
-    """Officer-only: clear the deprecated show-photo cache directories."""
-    del args
-    message: discord.Message = ctx["message"]
-    author = ctx["author"]
-    if not is_officer(author, settings):
-        log_action("recache_denied", f"user={author.id}", "unauthorized")
-        return
-
-    try:
-        await message.channel.send("Clearing deprecated show-photo cache...")
-    except Exception:
-        pass
-
-    removed_files = 0
-    removed_dirs = 0
-    base = settings.show_cache_dir
-    try:
-        if os.path.isdir(base):
-            for sub in os.listdir(base):
-                path = os.path.join(base, sub)
-                if not os.path.isdir(path):
-                    continue
-                for filename in os.listdir(path):
-                    full_path = os.path.join(path, filename)
-                    if not os.path.isfile(full_path):
-                        continue
-                    try:
-                        os.remove(full_path)
-                        removed_files += 1
-                    except Exception:
-                        pass
-                try:
-                    os.rmdir(path)
-                    removed_dirs += 1
-                except Exception:
-                    pass
-    except Exception as e:
-        log_action("recache_error", "clear_show_cache", str(e))
-
-    try:
-        await message.channel.send(
-            f"Deprecated show-photo cache cleared. Removed {removed_files} file(s) across {removed_dirs} directories."
-        )
-    except Exception:
-        pass
 
 
 async def handle_recache_catabase(args: Dict[str, Any], ctx: Dict[str, Any]) -> None:

@@ -30,7 +30,6 @@ ADMIN_COMMANDS: List[Tuple[str, str]] = [
     ("TomCat, update due-paying members", "Full dues update: check, verify, sync roles."),
     ("TomCat, run dues perks", "Grants perks to verified dues-paying members."),
     ("TomCat, run dues job", "Manually triggers the daily dues scheduler."),
-    ("TomCat, recache all photos", "Clears the deprecated show-photo cache."),
     ("TomCat, recache catabase", "Reloads cat names from the catabase sheet."),
     ("TomCat, silent mode on/off", "Toggles quiet mode for bot responses."),
     ("TomCat, manual 8pm update", "Previews the 8pm feeding reminder."),

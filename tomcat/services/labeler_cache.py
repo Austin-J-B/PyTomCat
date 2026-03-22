@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from . import local_photos
 
@@ -63,11 +63,6 @@ def shutdown_cache_executor(*, wait: bool = False) -> None:
         pool.shutdown(wait=wait, cancel_futures=True)
     except Exception:
         pass
-
-
-def get_download_stats() -> str:
-    """Return inert cache diagnostics for existing logging hooks."""
-    return "active=0/0; inflight_tasks=0; total_started=0"
 
 
 def clear_cache() -> int:
@@ -121,39 +116,6 @@ async def has_cached_image_async(serial: int) -> bool:
         return has_cached_image(serial)
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_disk_io_pool, has_cached_image, serial)
-
-
-async def cache_local_image_async(serial: int) -> bool:
-    """Compatibility shim: local images are already the source of truth."""
-    return await has_cached_image_async(serial)
-
-
-def download_inflight_count() -> int:
-    """Current in-flight cache fill tasks."""
-    return 0
-
-
-def estimate_cache_target_from_budget(budget_gb: float) -> int:
-    """Return the number of currently available local images."""
-    del budget_gb
-    return max(10, len(_refresh_cached_serials(force_refresh=False)))
-
-
-async def ensure_cache_filled(
-    queue: List[dict],
-    target_count: Optional[int] = None,
-    *,
-    scan_limit: Optional[int] = None,
-    concurrency: int = 3,
-) -> int:
-    """Compatibility shim for old warm endpoints.
-
-    No image mirroring is needed anymore; this just drops legacy mirror files and
-    refreshes the locally available serial set.
-    """
-    del queue, target_count, scan_limit, concurrency
-    prune_legacy_image_cache()
-    return len(_refresh_cached_serials(force_refresh=False))
 
 
 try:

@@ -339,7 +339,6 @@ class Settings:
     cv_timeout_ms: int = int(os.getenv("CV_TIMEOUT_MS", "6000"))
 
     #Show-photo cache (for fast "show me" responses)
-    show_cache_dir: str = os.getenv("SHOW_CACHE_DIR", "./cache/show_photos")
     show_cache_per_cat: int = int(os.getenv("SHOW_CACHE_PER_CAT", "5") or "5")
     show_cache_prefill_on_boot: bool = _get_env_bool("SHOW_CACHE_PREFILL_ON_BOOT", True)
     show_cache_warm_concurrency: int = int(os.getenv("SHOW_CACHE_WARM_CONCURRENCY", "2") or "2")

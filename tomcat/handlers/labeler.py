@@ -368,7 +368,7 @@ def _labeler_runtime_snapshot() -> Dict[str, Any]:
             "quality_scan": int(len(_classify_quality_scan_inflight)),
             "detector_warm_task": int(bool(_detector_warm_task and not _detector_warm_task.done())),
         },
-        "downloads": str(labeler_cache.get_download_stats() or ""),
+        "downloads": _labeler_download_stats(),
         "loop_lag_ms": int(round(float(_loop_lag_ms))),
         "loop_lag_max_ms": int(round(float(_loop_lag_max_ms))),
     }
@@ -1129,6 +1129,46 @@ def _has_reviewed_cat_label_token(label: Any) -> bool:
     return bool(token) and token not in _SKIP_CATID_LABELS
 
 
+def _labeler_download_stats() -> str:
+    """Expose stable warm diagnostics now that local photos are the source of truth."""
+    return "active=0/0; inflight_tasks=0; total_started=0"
+
+
+def _labeler_cache_inflight_count() -> int:
+    """Legacy warm requests do not enqueue downloader work anymore."""
+    return 0
+
+
+def _labeler_cache_target_from_budget(budget_gb: float) -> int:
+    """Estimate a warm target from currently available local photos."""
+    del budget_gb
+    try:
+        available = len(local_photos.local_serials(force_refresh=False))
+    except Exception:
+        available = 0
+    return max(10, available)
+
+
+async def _refresh_local_photo_cache_state(
+    queue: List[Dict[str, Any]],
+    target_count: Optional[int] = None,
+    *,
+    scan_limit: Optional[int] = None,
+    concurrency: int = 3,
+) -> int:
+    """Preserve warm-call behavior by pruning legacy mirrors and refreshing the local snapshot."""
+    del queue, target_count, scan_limit, concurrency
+    try:
+        await asyncio.to_thread(labeler_cache.prune_legacy_image_cache)
+    except Exception:
+        pass
+    try:
+        serials = await asyncio.to_thread(local_photos.local_serials, force_refresh=False)
+    except Exception:
+        serials = set()
+    return len(serials)
+
+
 def _maybe_schedule_queue_cache_warm(mode: str, queue: List[Dict[str, Any]]) -> None:
     """Throttle repeated queue cache warm kicks to reduce redundant local disk churn."""
     if not queue:
@@ -1146,7 +1186,7 @@ def _maybe_schedule_queue_cache_warm(mode: str, queue: List[Dict[str, Any]]) -> 
     scan_limit = min(int(_QUEUE_CACHE_WARM_SCAN_LIMIT), len(queue))
     try:
         asyncio.create_task(
-            labeler_cache.ensure_cache_filled(
+            _refresh_local_photo_cache_state(
                 queue[:scan_limit],
                 target_count=warm_target,
                 scan_limit=scan_limit,
@@ -1219,11 +1259,11 @@ def _kickoff_boot_cache_warm_once() -> None:
             boot_items = _queue_items_from_rows(rows, mode="boot", max_items=int(_BOOT_WARM_SCAN_LIMIT))
             if not boot_items:
                 return
-            target_guess = labeler_cache.estimate_cache_target_from_budget(float(_BOOT_WARM_BUDGET_GB))
+            target_guess = _labeler_cache_target_from_budget(float(_BOOT_WARM_BUDGET_GB))
             target = max(int(_QUEUE_CACHE_WARM_TARGET), min(int(target_guess), len(boot_items)))
             scan_limit = min(len(boot_items), int(_BOOT_WARM_SCAN_LIMIT))
             await asyncio.gather(
-                labeler_cache.ensure_cache_filled(
+                _refresh_local_photo_cache_state(
                     boot_items,
                     target_count=target,
                     scan_limit=scan_limit,
@@ -4765,7 +4805,7 @@ async def post_claim(request: web.Request) -> web.Response:
         if should_log_diag:
             include_census = (action != "heartbeat") and (is_slow or (lag_ms >= 900))
             task_census = _get_task_census() if include_census else "tasks=skip"
-            dl_stats = labeler_cache.get_download_stats()
+            dl_stats = _labeler_download_stats()
             log_action(
                 "labeler_claim_diag",
                 f"mode={mode}; serial={int(serial)}; action={action}",
@@ -6117,7 +6157,7 @@ async def post_cache_warm(request: web.Request) -> web.Response:
     try:
         if not _BATCH_WARM_ENABLE:
             return _with_cors(
-                web.json_response({"accepted": False, "queued": 0, "in_flight": labeler_cache.download_inflight_count(), "cache_target": 0}),
+                web.json_response({"accepted": False, "queued": 0, "in_flight": _labeler_cache_inflight_count(), "cache_target": 0}),
                 request,
             )
         try:
@@ -6162,7 +6202,7 @@ async def post_cache_warm(request: web.Request) -> web.Response:
                     {
                         "accepted": True,
                         "queued": 0,
-                        "in_flight": labeler_cache.download_inflight_count(),
+                        "in_flight": _labeler_cache_inflight_count(),
                         "cache_target": 0,
                     }
                 ),
@@ -6172,7 +6212,7 @@ async def post_cache_warm(request: web.Request) -> web.Response:
         if target_raw > 0:
             target = min(target_raw, len(items))
         elif mode == "boot":
-            target = min(labeler_cache.estimate_cache_target_from_budget(float(_BOOT_WARM_BUDGET_GB)), len(items))
+            target = min(_labeler_cache_target_from_budget(float(_BOOT_WARM_BUDGET_GB)), len(items))
         else:
             target = min(int(_QUEUE_CACHE_WARM_TARGET), len(items))
 
@@ -6186,7 +6226,7 @@ async def post_cache_warm(request: web.Request) -> web.Response:
             try:
                 warm_scan_limit = min(scan_limit, len(items))
                 await asyncio.gather(
-                    labeler_cache.ensure_cache_filled(
+                    _refresh_local_photo_cache_state(
                         items,
                         target_count=target,
                         scan_limit=warm_scan_limit,
@@ -6207,7 +6247,7 @@ async def post_cache_warm(request: web.Request) -> web.Response:
                 {
                     "accepted": True,
                     "queued": int(len(items)),
-                    "in_flight": labeler_cache.download_inflight_count(),
+                    "in_flight": _labeler_cache_inflight_count(),
                     "cache_target": int(target),
                 }
             ),

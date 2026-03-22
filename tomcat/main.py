@@ -1058,10 +1058,10 @@ async def start_web_server(bot):
             pass
 
     async def _cleanup_labeler_cache_http(_app: web.Application) -> None:
-        """Close pooled labeler HTTP clients on web server shutdown."""
+        """Release labeler cache helpers on web server shutdown."""
         try:
             from .services import labeler_cache as _labeler_cache
-            await _labeler_cache.close_http_session()
+            _labeler_cache.shutdown_cache_executor(wait=False)
         except Exception:
             pass
 

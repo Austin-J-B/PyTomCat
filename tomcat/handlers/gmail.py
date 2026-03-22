@@ -108,12 +108,12 @@ async def _build_gmail_service(channel) -> Any:
         try:
             await safe_send(channel, (
                 "Gmail Authorization Needed\n\n"
-                "Follow these steps:\n"
-                "1. Click the link below to open Google's authorization page\n"
+                "Here are the steps:\n"
+                "1. Open the link below\n"
                 "2. Sign in with the organization's Gmail account\n"
-                "3. Click Continue and then Authorize when prompted\n"
-                "4. You'll be redirected to a blank page or an 'error' page — this is expected!\n"
-                "5. Copy the entire URL from your browser's address bar\n"
+                "3. Click Continue, then Authorize\n"
+                "4. You may land on a blank page or an error page after that, that's normal.\n"
+                "5. Copy the full URL from your browser's address bar\n"
                 "6. Reply here with: `TomCat, auth url <paste the full URL here>`\n\n"
                 f"Authorization Link:\n{auth_url}"
             ))

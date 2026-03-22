@@ -379,7 +379,7 @@ class Settings:
     local_llm_n_gpu_layers: int = int(os.getenv("LOCAL_LLM_N_GPU_LAYERS", "0"))
     local_llm_timeout_sec: float = float(os.getenv("LOCAL_LLM_TIMEOUT_SEC", "12.0"))
     #Hard cap for user-visible parser latency; lower keeps bot responsive even when local model is overloaded.
-    local_llm_timeout_cap_sec: float = float(os.getenv("LOCAL_LLM_TIMEOUT_CAP_SEC", "1.2"))
+    local_llm_timeout_cap_sec: float = float(os.getenv("LOCAL_LLM_TIMEOUT_CAP_SEC", "1.5"))
 
     #======== Feeding windows ========
     feed_lookback_minutes_before: int = int(os.getenv("FEED_LOOKBACK_MINUTES_BEFORE", "5"))

@@ -27,7 +27,7 @@ _ALLOWED_RECENT_SCOPES = {"active", "inactive", "all"}
 _PHOTO_COUNTS_CACHE: Optional[Dict[str, int]] = None
 _PHOTO_COUNTS_CACHE_SIG: Tuple[Tuple[str, float, int], ...] = ()
 _CAT_QUERY_TOPIC_RE = re.compile(
-    r"\b(cat|cats|catabase|cat\s*database|tnr(?:'d|d)?|tabby|tabbies|brown|gray|grey|orange|ginger|black|white|tuxedo|neuter(?:ed)?|spay(?:ed)?|fixed|location|lot\s*\d+|recently\s+seen|active|inactive|born|birthday|birth\s+year|photos?|pics?|pictures?)\b"
+    r"\b(cat|cats|catabase|cat\s*database|tnr(?:'d|d)?|tabby|tabbies|brown|gray|grey|orange|ginger|black|white|tuxedo|neuter(?:ed)?|spay(?:ed)?|fixed|location|lot\s*\d+|recently\s+seen|active|inactive|born|birthday|birth\s+year|photos?|pics?|pictures?|live|lives)\b"
 )
 _CAT_QUERY_INTENT_RE = re.compile(r"\b(which|what|who|how\s+many|list|count|have|has|need(?:s)?)\b|\?")
 _CAT_QUERY_CONSTRAINT_RE = re.compile(

@@ -7,6 +7,8 @@ credentials/*
 #credentials/service_account.json
 #gmail_token.json
 
+.claude/
+
 # allow credential template files to be committed (but keep real credentials ignored)
 !credentials/*TEMPLATE.json
 !credentials/*.json.TEMPLATE
@@ -18,6 +20,8 @@ weights/*
 !weights/984_917_yolo12s.pt
 !weights/R4.5.*_cat_DINOv3_gallery.pt
 !weights/R*.*.*_cat_DINOv3_gallery.pt
+!weights/R*.*_cat_DINOv3_gallery.pt
+!weights/R*_cat_DINOv3_gallery.pt
 
 ## Cached spreadsheet exports checked in for local reference only
 CCC megasheet - Membership Application List.csv

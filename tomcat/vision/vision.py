@@ -665,21 +665,24 @@ def _ensure_classifier() -> None:
         #2. Load Gallery (.pt memories)
         gallery_target = str(settings.cv_gallery_path or "").strip()
         gallery_path = Path(gallery_target)
-        if gallery_target and not gallery_path.exists():
+        if gallery_target and (not gallery_path.exists() or gallery_path.stat().st_size == 0):
             fallback = _find_latest_local_gallery()
-            if fallback:
+            if fallback and str(fallback) != gallery_target:
                 gallery_target = fallback
                 settings.cv_gallery_path = str(fallback)
+                gallery_path = Path(gallery_target)
+        if not gallery_path.exists() or gallery_path.stat().st_size == 0:
+            raise RuntimeError(f"Gallery file is missing or empty: {gallery_target}. Please run a gallery retrain.")
         try:
-            gal_data = torch.load(gallery_target, map_location=_device, weights_only=False)
+            gal_data = torch.load(gallery_target, map_location=_device, weights_only=True)
         except Exception:
-            gal_data = torch.load(gallery_target, map_location=_device)
+            gal_data = torch.load(gallery_target, map_location=_device, weights_only=False)
 
-        _gallery_emb = gal_data['emb'].to(_device)
+        _gallery_emb = (gal_data.get('emb') or gal_data['embeddings']).to(_device)
         _gallery_emb = torch.nn.functional.normalize(_gallery_emb, p=2, dim=1)
-        
-        idx_to_class = {v: k for k, v in gal_data['class_to_idx'].items()}
-        _gallery_names = [idx_to_class[int(i)] for i in gal_data['label']]
+
+        idx_to_class = gal_data.get('idx_to_class') or {v: k for k, v in gal_data['class_to_idx'].items()}
+        _gallery_names = [idx_to_class[int(i)] for i in (gal_data.get('label') or gal_data['labels'])]
         raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
         raw_records = gal_data.get("records") or gal_data.get("gallery_records") or []
         _gallery_records, _gallery_paths = _build_gallery_runtime_metadata(
@@ -2925,20 +2928,23 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
             settings.cv_gallery_path = str(path)
         target = str(settings.cv_gallery_path or "").strip()
         target_path = Path(target)
-        if target and not target_path.exists():
+        if target and (not target_path.exists() or target_path.stat().st_size == 0):
             fallback = _find_latest_local_gallery()
-            if fallback:
+            if fallback and str(fallback) != target:
                 target = fallback
                 settings.cv_gallery_path = str(fallback)
+                target_path = Path(target)
+        if not target_path.exists() or target_path.stat().st_size == 0:
+            raise RuntimeError(f"Gallery file is missing or empty: {target}. Please run a gallery retrain.")
         try:
-            gal_data = torch.load(target, map_location=_device, weights_only=False)
+            gal_data = torch.load(target, map_location=_device, weights_only=True)
         except Exception:
-            gal_data = torch.load(target, map_location=_device)
+            gal_data = torch.load(target, map_location=_device, weights_only=False)
 
-        emb = gal_data["emb"].to(_device)
+        emb = (gal_data.get("emb") or gal_data["embeddings"]).to(_device)
         emb = torch.nn.functional.normalize(emb, p=2, dim=1)
-        idx_to_class = {v: k for k, v in gal_data["class_to_idx"].items()}
-        labels = gal_data["label"]
+        idx_to_class = gal_data.get("idx_to_class") or {v: k for k, v in gal_data["class_to_idx"].items()}
+        labels = gal_data.get("label") or gal_data["labels"]
         names = [idx_to_class[int(i)] for i in labels]
         raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
         raw_records = gal_data.get("records") or gal_data.get("gallery_records") or []

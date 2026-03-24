@@ -968,6 +968,8 @@ async def sync_missing_local_photos(
                             message = await channel.fetch_message(int(message_id))
                         except Exception:
                             message = None
+                        # Pace Discord API calls to avoid rate-limit 429s.
+                        await asyncio.sleep(0.25)
                     else:
                         message = None
                     message_cache[cache_key] = message
@@ -1011,7 +1013,7 @@ async def sync_missing_local_photos(
                 continue
 
             try:
-                await asyncio.to_thread(
+                upsert_result = await asyncio.to_thread(
                     upsert_photo_bytes,
                     image_bytes,
                     discord_url=str((row or {}).get("Discord URL", "") or ""),
@@ -1022,6 +1024,7 @@ async def sync_missing_local_photos(
                     message_id=str((row or {}).get("Message ID", "") or ""),
                     filename=filename,
                     content_type=content_type,
+                    refresh=False,
                 )
             except Exception:
                 result["errors"] += 1
@@ -1029,7 +1032,7 @@ async def sync_missing_local_photos(
                     result["sample_failures"].append(str((row or {}).get("Serial Number", "") or serial))
                 continue
 
-            if await asyncio.to_thread(has_local_photo, int(serial), force_refresh=True):
+            if upsert_result.get("wrote_file") or upsert_result.get("duplicate"):
                 result["restored"] += 1
                 if source == "csv_url":
                     result["restored_from_csv_url"] += 1
@@ -1045,6 +1048,17 @@ async def sync_missing_local_photos(
                 await session.close()
             except Exception:
                 pass
+
+    # Single bulk refresh after all items instead of per-item refreshes.
+    if result["restored"] > 0:
+        try:
+            await asyncio.to_thread(refresh_local_index)
+        except Exception:
+            pass
+        try:
+            await asyncio.to_thread(_refresh_photo_metadata_consumers)
+        except Exception:
+            pass
 
     log_action(
         "photo_sync_missing",
@@ -1104,6 +1118,7 @@ def upsert_photo_bytes(
     message_id: str = "",
     filename: str = "",
     content_type: str = "",
+    refresh: bool = True,
 ) -> dict[str, Any]:
     """Ensure arbitrary image bytes exist in the local photo store and metadata CSV."""
     global _NEXT_SERIAL
@@ -1212,10 +1227,11 @@ def upsert_photo_bytes(
                 if metadata_changed:
                     _write_metadata_rows_locked(metadata_path, rows)
 
-    if wrote_file:
-        refresh_local_index()
-    if metadata_changed:
-        _refresh_photo_metadata_consumers()
+    if refresh:
+        if wrote_file:
+            refresh_local_index()
+        if metadata_changed:
+            _refresh_photo_metadata_consumers()
     return {
         "serial": int(serial or 0),
         "serial_token": serial_token,
@@ -1393,7 +1409,7 @@ def _duplicate_review_labels(box_cat_ids: Any) -> list[str]:
     return duplicates
 
 
-def update_metadata_annotations(updates: list[dict[str, Any]], actor_name: str) -> dict[str, Any]:
+def update_metadata_annotations(updates: list[dict[str, Any]], actor_name: str, *, refresh: bool = True) -> dict[str, Any]:
     """Apply labeler annotation updates to the metadata CSV via fast streaming rewrite."""
     _, metadata_path = ensure_storage_ready()
     
@@ -1462,7 +1478,7 @@ def update_metadata_annotations(updates: list[dict[str, Any]], actor_name: str) 
                 
         tmp_path.replace(metadata_path)
 
-    if saved > 0:
+    if saved > 0 and refresh:
         _refresh_photo_metadata_consumers()
     return {
         "saved": int(saved),

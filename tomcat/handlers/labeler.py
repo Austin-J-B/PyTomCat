@@ -5975,8 +5975,14 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
 #---------- Save Endpoint ----------
 
 def _apply_save_updates_sync(updates: List[Dict[str, Any]], actor_name: str) -> Dict[str, Any]:
-    """Apply annotation updates to the local metadata CSV."""
-    return local_photos.update_metadata_annotations(updates, actor_name)
+    """Apply annotation updates to the local metadata CSV.
+
+    Skips the synchronous cache refresh here because post_save already
+    fires _kickoff_photo_metadata_cache_refresh as a non-blocking
+    background task, avoiding redundant I/O that can push remote
+    clients past the 90 s request timeout.
+    """
+    return local_photos.update_metadata_annotations(updates, actor_name, refresh=False)
 
 
 async def post_save(request: web.Request) -> web.Response:

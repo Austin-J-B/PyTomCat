@@ -2167,10 +2167,16 @@
 
     function prefetchWarmRefsForItem(item, results, priority = 'normal') {
         const idx = _targetCropIdxForItem(item);
+        const rows = Array.isArray(results) ? results : [];
+        // Warm refs for ALL crops in the item, not just the focus crop.
+        // The API already returns refs for every crop; only the focus crop
+        // gets 'high' priority while the rest use 'normal' so the current
+        // crop's refs still land first.
+        const totalCrops = rows.length || 1;
         prefetchRefsFromResults(results, {
             priority,
             focusCropIdx: idx,
-            maxCrops: CLASSIFY_WARM_PREFETCH_MAX_CROPS,
+            maxCrops: totalCrops,
             maxCandidates: CLASSIFY_WARM_PREFETCH_MAX_CANDIDATES,
             maxRefsPerCandidate: CLASSIFY_WARM_PREFETCH_MAX_REFS,
         });
@@ -2191,7 +2197,20 @@
 
     function prefetchDisplayRefsForItem(item, results, priority = 'high') {
         const idx = _targetCropIdxForItem(item);
+        const rows = Array.isArray(results) ? results : [];
+        // Prefetch display-quality refs for the focus crop at requested
+        // priority, then warm-level refs for remaining crops at 'normal'
+        // so every crop in a multi-crop image starts loading early.
         prefetchDisplayRefsForCrop(results, idx, priority);
+        if (rows.length > 1) {
+            prefetchRefsFromResults(results, {
+                priority: 'normal',
+                focusCropIdx: idx,
+                maxCrops: rows.length,
+                maxCandidates: CLASSIFY_WARM_PREFETCH_MAX_CANDIDATES,
+                maxRefsPerCandidate: CLASSIFY_WARM_PREFETCH_MAX_REFS,
+            });
+        }
     }
 
     function _nextPendingClassifyCropIdx(startIdx = currentCropIdx) {

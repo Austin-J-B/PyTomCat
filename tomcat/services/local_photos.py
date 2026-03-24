@@ -1227,11 +1227,15 @@ def upsert_photo_bytes(
                 if metadata_changed:
                     _write_metadata_rows_locked(metadata_path, rows)
 
-    if refresh:
+        # Refresh the local file index while still holding _SERIAL_ALLOC_LOCK so
+        # any concurrent ingest queued behind us will see the new file before it
+        # runs _find_duplicate_photo, closing the race window between releasing
+        # _METADATA_FILE_LOCK and the post-lock refresh_local_index() call.
         if wrote_file:
             refresh_local_index()
-        if metadata_changed:
-            _refresh_photo_metadata_consumers()
+
+    if refresh and metadata_changed:
+        _refresh_photo_metadata_consumers()
     return {
         "serial": int(serial or 0),
         "serial_token": serial_token,

@@ -97,5 +97,5 @@
 {"date":"2026-03-21","status":{"Mary Kay & Zen":true,"The Greens":true,"Lot 50":true,"HOP":true,"Maintenance":true,"West Hall":true,"Microwave":true,"Snickers":true,"Business":true}}
 {"date":"2026-03-22","status":{"West Hall":true,"Lot 50":true,"Microwave":true,"Maintenance":true,"The Greens":true,"Business":true,"Snickers":true,"HOP":true}}
 {"date":"2026-03-23","status":{"Business":true,"Microwave":true,"HOP":true,"Maintenance":true,"Snickers":true,"The Greens":true,"Lot 50":true,"West Hall":true}}
-{"date":"2026-03-24","status":{"Lot 50":true}}
-{"meta":{"updated_at":"2026-03-23T20:48:27.118963-05:00"}}
+{"date":"2026-03-24","status":{"Lot 50":true,"Business":true,"The Greens":true}}
+{"meta":{"updated_at":"2026-03-24T15:46:32.266484-05:00"}}

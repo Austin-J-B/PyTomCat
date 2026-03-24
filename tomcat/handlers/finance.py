@@ -7,7 +7,7 @@ import hashlib
 import json
 import os
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Tuple, Set
@@ -259,8 +259,11 @@ def _append_index(record: dict) -> None:
     compact = _compact_index_record(record)
     if not compact:
         return
-    with open(FINANCE_INDEX, "a", encoding="utf-8") as f:
-        f.write(json.dumps(compact, ensure_ascii=False) + "\n")
+    try:
+        with open(FINANCE_INDEX, "a", encoding="utf-8") as f:
+            f.write(json.dumps(compact, ensure_ascii=False) + "\n")
+    except Exception as e:
+        log_action("finance_index_write_error", f"email_id={compact.get('email_id')}", str(e))
 
 
 def _load_fingerprints() -> Set[str]:
@@ -605,6 +608,9 @@ def _extract_note_hints_from_field(field: str) -> Tuple[str, str]:
     m = re.search(r"\(Message:\s*(.*?)\)\s*$", base)
     if m:
         note = m.group(1).strip()
+        # "none" is the sentinel the bot writes for blank notes — treat as empty
+        if note.lower() == "none":
+            note = ""
         base = base[:m.start()].strip()
     return base.strip(), note
 
@@ -1193,12 +1199,14 @@ def _parse_sheet_records(rows: List[List[str]], kind: str) -> List[dict]:
                 #[Timestamp, Month, Year, Email, Name, Type, Amount, Payment]
                 date_s = (r[0] if len(r) > 0 else '').strip()
                 name_field = (r[4] if len(r) > 4 else '').strip()
+                income_type = (r[5] if len(r) > 5 else '').strip()
                 amount_s = (r[6] if len(r) > 6 else '').strip().replace('$', '')
                 provider = (r[7] if len(r) > 7 else '').strip()
             else:
                 #[Timestamp, Month, Year, Name, Type, Amount]
                 date_s = (r[0] if len(r) > 0 else '').strip()
                 name_field = (r[3] if len(r) > 3 else '').strip()
+                income_type = ''
                 amount_s = (r[5] if len(r) > 5 else '').strip().replace('$', '')
                 provider = ''
 
@@ -1223,6 +1231,7 @@ def _parse_sheet_records(rows: List[List[str]], kind: str) -> List[dict]:
                 'provider': provider,
                 'counterparty': counterparty,
                 'note': note,
+                'income_type': income_type,
                 'recorded_by_bot': '[Recorded by the TomCat bot]' in name_field,
             })
         except Exception:
@@ -1374,12 +1383,18 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
     seen_fp = _load_fingerprints()
     seen_txn = _load_txn_ids()
     seen_msg = _load_message_ids()
+    seen_email_ids = set(_load_index().keys())
 
     results: Dict[str, Tuple[bool, str]] = {}
     rows: List[List[str]] = []
     idx_events: List[FinanceEvent] = []
 
     for ev in events:
+        # Primary dedup: one email = one payment, never log the same email twice
+        if ev.email_id and ev.email_id in seen_email_ids:
+            results[ev.email_id] = (False, 'dup_skipped')
+            continue
+
         #Skip known dues just in case classifier missed
         if _is_dues_email(ev.amount, f"{ev.raw_subject} {ev.note}", ev.message_id):
             try:
@@ -1418,6 +1433,8 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
         rows.append(row)
         idx_events.append(ev)
         seen_fp.add(fp_hash)
+        if ev.email_id:
+            seen_email_ids.add(ev.email_id)
         if ev.txn_id:
             seen_txn.add(ev.txn_id)
         if ev.message_id:
@@ -1470,12 +1487,18 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
     seen_fp = _load_fingerprints()
     seen_txn = _load_txn_ids()
     seen_msg = _load_message_ids()
+    seen_email_ids = set(_load_index().keys())
 
     results: Dict[str, Tuple[bool, str]] = {}
     rows: List[List[str]] = []
     idx_events: List[FinanceEvent] = []
 
     for ev in events:
+        # Primary dedup: one email = one payment, never log the same email twice
+        if ev.email_id and ev.email_id in seen_email_ids:
+            results[ev.email_id] = (False, 'dup_skipped')
+            continue
+
         if ev.txn_id and ev.txn_id in seen_txn:
             try:
                 log_action('finance_skip_duplicate', 'expense_txn', f'{ev.counterparty} ${ev.amount:.2f}')
@@ -1506,6 +1529,8 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
         idx_events.append(ev)
         #Optimistically add to seen sets so subsequent items in this batch are checked against this one
         seen_fp.add(fp_hash)
+        if ev.email_id:
+            seen_email_ids.add(ev.email_id)
         if ev.txn_id:
             seen_txn.add(ev.txn_id)
         if ev.message_id:
@@ -1560,13 +1585,29 @@ async def _process_finance_events(
 
     events = unique_events
 
-    income_counts: Dict[datetime.date, Counter] = defaultdict(Counter)
+    # Fetch sheet snapshot for category inference (nearby logged entries)
+    sheet_records: Optional[List[dict]] = None
+    has_blank_income = any(
+        ev.direction == 'income' and ev.message_blank
+        and (not ev.category or ev.category == _DONATION_DEFAULT)
+        for ev in events
+    )
+    if has_blank_income:
+        sid = getattr(settings, 'sheet_megasheet_id', None)
+        if sid:
+            try:
+                ws_name = getattr(settings, 'income_ws_title', 'Income')
+                ws = sheets_client().open_by_key(sid).worksheet(ws_name)
+                sheet_records = _fetch_recent_records(ws, 'income')
+            except Exception:
+                pass  # Non-critical: inference will still use batch context
+
     income_events: List[Tuple[FinanceEvent, bool]] = []
     expense_events: List[Tuple[FinanceEvent, bool]] = []
 
     for event in events:
         if event.direction == 'income':
-            _, inferred = _assign_income_category(event, income_counts)
+            _, inferred = _assign_income_category(event, events, sheet_records)
             income_events.append((event, inferred))
         else:
             _, inferred = _assign_expense_category(event)
@@ -1683,9 +1724,13 @@ async def _notify_logging_channel(
         extra_details.append(f"sheet error: {sheet_msg}")
 
     if blank_note and event.direction == 'income':
+        if fallback and category != _DONATION_DEFAULT:
+            type_reason = f"Inferred as {category} from nearby entries."
+        else:
+            type_reason = "Unsure of payment type; logged as Donations by default."
         body = (
             f"{provider}: {amount} from {counterparty}, message: {MESSAGE_EMPTY_SENTINEL}.\n"
-            "Unsure of payment type; logged as Donations by default."
+            f"{type_reason}"
         )
         if extra_details:
             body += f" ({'; '.join(extra_details)})"
@@ -1707,20 +1752,77 @@ async def _notify_logging_channel(
         pass
 
 
-def _assign_income_category(event: FinanceEvent, counts: Dict[datetime.date, Counter]) -> Tuple[str, bool]:
-    """Lock in category, borrowing context from prior same-day events."""
-    if event.category:
-        counts[event.ts.date()][event.category] += 1
+_CATEGORY_WINDOW_HOURS = 5
+
+def _assign_income_category(
+    event: FinanceEvent,
+    batch_events: List[FinanceEvent],
+    sheet_records: Optional[List[dict]] = None,
+) -> Tuple[str, bool]:
+    """Lock in category, borrowing context from nearby events within a time window.
+
+    If the event has a concrete keyword-based category (not the default
+    "Donations"), keep it.  Otherwise, look at income events within a
+    configurable time window (default 5 hours) — both from the current batch
+    and from previously logged sheet entries — and infer the dominant
+    non-donation category if at least 2 nearby entries share it.
+    """
+    from datetime import timedelta
+
+    # Event already has a keyword-based category that isn't the default
+    if event.category and event.category != _DONATION_DEFAULT:
         return event.category, False
-    date_counts = counts[event.ts.date()]
-    if date_counts:
-        cat, num = date_counts.most_common(1)[0]
+
+    # Only try to infer when the note was blank (keyword classifier had nothing)
+    if not event.message_blank:
+        if event.category:
+            return event.category, False
+        event.category = _DONATION_DEFAULT
+        return event.category, True
+
+    # Collect categories from nearby events within the time window
+    window = timedelta(hours=_CATEGORY_WINDOW_HOURS)
+    ev_ts = event.provider_ts or event.ts
+    nearby_cats: Counter = Counter()
+
+    # Count from current batch (already-categorised events processed before this one)
+    for other in batch_events:
+        if other is event:
+            continue
+        if other.direction != 'income':
+            continue
+        other_cat = other.category
+        if not other_cat or other_cat == _DONATION_DEFAULT:
+            continue
+        other_ts = other.provider_ts or other.ts
+        if abs((ev_ts - other_ts).total_seconds()) <= window.total_seconds():
+            nearby_cats[other_cat] += 1
+
+    # Count from sheet snapshot (previously logged entries)
+    if sheet_records:
+        ev_date = ev_ts.date()
+        for rec in sheet_records:
+            r_date = rec.get('date')
+            if not r_date:
+                continue
+            # Quick filter: only look at entries within 1 day (dates don't have times)
+            if abs((r_date - ev_date).days) > 1:
+                continue
+            r_cat = (rec.get('income_type') or '').strip()
+            if not r_cat or r_cat == _DONATION_DEFAULT:
+                continue
+            nearby_cats[r_cat] += 1
+
+    # Infer if there's a dominant non-donation category with 2+ entries
+    if nearby_cats:
+        cat, num = nearby_cats.most_common(1)[0]
         if num >= 2:
             event.category = cat
-            date_counts[cat] += 1
             return cat, True
-    event.category = _DONATION_DEFAULT
-    counts[event.ts.date()][event.category] += 1
+
+    # Fall back to default
+    if not event.category:
+        event.category = _DONATION_DEFAULT
     return event.category, True
 
 

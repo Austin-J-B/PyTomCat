@@ -216,9 +216,16 @@ def _scan_index(root: Path, exts: Tuple[str, ...]) -> tuple[Dict[int, Path], Set
 def _ensure_index(force: bool = False) -> None:
     global _INDEX_PATHS, _INDEX_SERIALS, _INDEX_NEXT_REFRESH_MONO, _INDEX_ROOT_SIG, _INDEX_VERSION
     now = time.monotonic()
+    # Fast path: within TTL, skip the stat() entirely.  This avoids hundreds
+    # of redundant filesystem stat calls when has_local_photo is invoked in a
+    # tight loop (e.g. building the manual candidate catalog).
+    if not force and now < float(_INDEX_NEXT_REFRESH_MONO):
+        return
     root = photo_root()
     sig = _root_signature(root)
-    if not force and now < float(_INDEX_NEXT_REFRESH_MONO) and sig == _INDEX_ROOT_SIG:
+    if not force and sig == _INDEX_ROOT_SIG:
+        # Sig unchanged — reset TTL and return without acquiring the lock.
+        _INDEX_NEXT_REFRESH_MONO = now + float(_INDEX_REFRESH_SEC)
         return
     with _INDEX_LOCK:
         now = time.monotonic()

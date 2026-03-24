@@ -1595,7 +1595,7 @@
                     prefetchPredictions();
                     primeHotNextClassifyItem();
                     if (Array.isArray(currentPredictions) && currentPredictions.length) {
-                        prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
+                        prefetchDisplayRefsForCrop(currentPredictions, currentCropIdx, 'high');
                         const rs = currentSerial;
                         const rk = getPredCacheKey(currentItem);
                         if (rs != null && rk) {
@@ -1649,6 +1649,20 @@
             queue = activeQueue;
         }
         queueTotal = queueTotalForMode(labelerMode);
+
+        // After a refresh the queue may have shrunk (e.g. saved items removed).
+        // Re-locate the current serial in the new queue so the user continues
+        // where they left off instead of jumping to the end.
+        if (currentSerial && queue.length) {
+            const serialNum = Number(currentSerial);
+            const foundIdx = queue.findIndex((item) => Number(item?.serial) === serialNum);
+            if (foundIdx >= 0) {
+                queueIndex = foundIdx;
+                modePositions[labelerMode] = foundIdx;
+                return;
+            }
+        }
+
         const maxIdx = Math.max(0, queue.length - 1);
         if (queueIndex > maxIdx) {
             queueIndex = maxIdx;
@@ -2192,49 +2206,65 @@
 
     async function prefetchUpcomingClassifyCrop(fromCropIdx = currentCropIdx) {
         if (labelerMode !== 'classify' || !currentItem || !currentBoxes.length) return;
-        const nextIdx = _nextPendingClassifyCropIdx(fromCropIdx);
-        if (nextIdx < 0 || nextIdx >= currentBoxes.length) return;
 
         const requestSerial = Number(currentSerial || 0);
         const requestKey = getPredCacheKey(currentItem);
-        const focusKey = getPredFocusCacheKey(currentItem, nextIdx);
-        if (!requestKey || !focusKey) return;
+        if (!requestKey) return;
 
-        const existingRows = predCache.get(requestKey) || currentPredictions || [];
-        if (_predictionRefsAtTargetForCrop(existingRows, nextIdx)) {
-            prefetchDisplayRefsForCrop(existingRows, nextIdx, 'normal');
-            return;
-        }
+        // Fan out to ALL remaining pending crops simultaneously. Previously this
+        // chained one crop at a time (crop N+1 → await API → crop N+2 → await API...),
+        // meaning the last crop in a multi-crop photo never started warming until every
+        // preceding crop's API call had resolved. Now each crop's warm runs in parallel:
+        // first remaining crop gets 'high' ref priority, subsequent get 'normal'.
+        let scanIdx = fromCropIdx;
+        let refPriority = 'high';
+        while (true) {
+            const nextIdx = _nextPendingClassifyCropIdx(scanIdx);
+            if (nextIdx < 0 || nextIdx >= currentBoxes.length) break;
 
-        const now = Date.now();
-        const lastTs = Number(classifyNextCropPrefetchTs.get(focusKey) || 0);
-        if ((now - lastTs) < CLASSIFY_NEXT_CROP_PREFETCH_COOLDOWN_MS) return;
-        classifyNextCropPrefetchTs.set(focusKey, now);
+            void (async (cropIdx, priority) => {
+                const focusKey = getPredFocusCacheKey(currentItem, cropIdx);
+                if (!focusKey) return;
 
-        try {
-            const retry = await postClassifyIdentify(
-                currentItem,
-                currentBoxes.map((b) => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
-                {
-                    prefetch: true,
-                    maxAttempts: 1,
-                    timeoutMs: Math.min(API_PREFETCH_TIMEOUT_MS, 12000),
-                    focusCropIdx: nextIdx,
-                },
-            );
-            const latestRows = predCache.get(requestKey) || existingRows;
-            const mergedPreds = mergePredictionResults(latestRows, retry?.results || [], nextIdx);
-            predCache.set(requestKey, mergedPreds);
-            prefetchDisplayRefsForCrop(mergedPreds, nextIdx, 'high');
-            if (
-                requestSerial === Number(currentSerial || 0)
-                && requestKey === getPredCacheKey(currentItem)
-            ) {
-                currentPredictions = mergedPreds;
-            }
-            void prefetchUpcomingClassifyCrop(nextIdx);
-        } catch (e) {
-            // Best-effort next-crop warm; foreground path remains authoritative.
+                const existingRows = predCache.get(requestKey) || currentPredictions || [];
+                if (_predictionRefsAtTargetForCrop(existingRows, cropIdx)) {
+                    prefetchDisplayRefsForCrop(existingRows, cropIdx, priority);
+                    return;
+                }
+
+                const now = Date.now();
+                const lastTs = Number(classifyNextCropPrefetchTs.get(focusKey) || 0);
+                if ((now - lastTs) < CLASSIFY_NEXT_CROP_PREFETCH_COOLDOWN_MS) return;
+                classifyNextCropPrefetchTs.set(focusKey, now);
+
+                try {
+                    const retry = await postClassifyIdentify(
+                        currentItem,
+                        currentBoxes.map((b) => `${b.cx} ${b.cy} ${b.w} ${b.h}`),
+                        {
+                            prefetch: true,
+                            maxAttempts: 1,
+                            timeoutMs: Math.min(API_PREFETCH_TIMEOUT_MS, 12000),
+                            focusCropIdx: cropIdx,
+                        },
+                    );
+                    const latestRows = predCache.get(requestKey) || existingRows;
+                    const mergedPreds = mergePredictionResults(latestRows, retry?.results || [], cropIdx);
+                    predCache.set(requestKey, mergedPreds);
+                    prefetchDisplayRefsForCrop(mergedPreds, cropIdx, priority);
+                    if (
+                        requestSerial === Number(currentSerial || 0)
+                        && requestKey === getPredCacheKey(currentItem)
+                    ) {
+                        currentPredictions = mergedPreds;
+                    }
+                } catch (e) {
+                    // Best-effort; foreground path remains authoritative.
+                }
+            })(nextIdx, refPriority);
+
+            refPriority = 'normal';
+            scanIdx = nextIdx;
         }
     }
 
@@ -2481,6 +2511,8 @@
                     readyReason = 'preds_cached+prefetch_terminal_error';
                 } else if (predsCached && prefetchStalled && elapsed >= Math.floor(waitBudgetMs * 0.75)) {
                     readyReason = 'preds_cached+prefetch_stalled';
+                } else if (refsSufficient && imageReady && predsCached && elapsed >= Math.min(500, Math.floor(waitBudgetMs * 0.04))) {
+                    readyReason = 'refs_sufficient+image_ready';
                 }
                 if (readyReason) {
                     setWarmOverlay(false);
@@ -2563,6 +2595,7 @@
             if (finalRefsReadyForDisplay && finalImageReady) finalReadyReason = 'deadline_refs_ready+image_ready';
             else if (finalPredsCached && finalPrefetchTerminalError) finalReadyReason = 'deadline_preds_cached+prefetch_terminal_error';
             else if (finalPredsCached && finalPrefetchStalled) finalReadyReason = 'deadline_preds_cached+prefetch_stalled';
+            else if (finalRefsSufficient && finalImageReady && finalPredsCached) finalReadyReason = 'deadline_refs_sufficient+image_ready';
             if (finalReadyReason) {
                 void postUiDiag('classify_item_ready_done', {
                     serial: Number(item?.serial || 0) || null,
@@ -2892,6 +2925,21 @@
                 if (currentLabels.length > currentBoxes.length) {
                     currentLabels = currentLabels.slice(0, currentBoxes.length);
                 }
+                // Auto-fix pre-existing duplicate cat labels so they don't
+                // softlock the grading flow.  Later occurrences are cleared so
+                // the user can re-assign them.
+                {
+                    const _seen = new Set();
+                    for (let _i = 0; _i < currentLabels.length; _i++) {
+                        const _k = _normalizeAssignedCatKey(currentLabels[_i]);
+                        if (!_k) continue;
+                        if (_seen.has(_k)) {
+                            currentLabels[_i] = '';
+                        } else {
+                            _seen.add(_k);
+                        }
+                    }
+                }
                 while (currentLabels.length < currentBoxes.length) {
                     currentLabels.push('');
                 }
@@ -2913,7 +2961,7 @@
                     const cached = predCache.get(getPredCacheKey(currentItem));
                     if (cached) {
                         currentPredictions = cached;
-                        prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
+                        prefetchDisplayRefsForCrop(currentPredictions, currentCropIdx, 'high');
                         clampPredictionCropIdx(currentPredictions);
                     }
                 } else if (labelerMode === 'manual' && currentBoxes.length) {
@@ -3114,6 +3162,9 @@
         refImageFetchQueue.length = 0;
         refImageFetchQueued.clear();
         refImagesLoadingCount = 0;
+        refImageLoadingOrder.length = 0;
+        refImageLoadingPriority.clear();
+        refImagePreempted.clear();
         if (refImageRetryTimers.size) {
             for (const timer of refImageRetryTimers.values()) {
                 clearTimeout(timer);
@@ -3902,6 +3953,28 @@
     const refImageFetchQueued = new Set();
     let refImagesLoadingCount = 0;
     const REF_IMAGE_CONCURRENCY = 12;
+    // Keys currently being loaded, in start order, with their priority.
+    // Used to find a preemption candidate when a high-priority item arrives
+    // and all slots are occupied by normal-priority loads.
+    const refImageLoadingOrder = [];           // [key, ...]  oldest-first
+    const refImageLoadingPriority = new Map(); // key → 'high' | 'normal'
+    const refImagePreempted = new Set();       // keys cancelled intentionally (no backoff on re-queue)
+
+    function _preemptOneNormalLoad() {
+        // Find the oldest normal-priority in-flight load and abort it so the
+        // slot can be used immediately by the waiting high-priority item.
+        for (let i = 0; i < refImageLoadingOrder.length; i++) {
+            const candidate = refImageLoadingOrder[i];
+            if (refImageLoadingPriority.get(candidate) !== 'normal') continue;
+            const img = refImagePrefetch.get(candidate);
+            if (!img || typeof img.src !== 'string') continue;
+            // Mark as preempted so onerror requeues cleanly without backoff.
+            refImagePreempted.add(candidate);
+            img.src = '';
+            return true;
+        }
+        return false;
+    }
 
     function processRefImageQueue() {
         if (!labelerActive) return;
@@ -3916,6 +3989,9 @@
             refImagesLoadingCount++;
             refImagePrefetchState.set(key, 'loading');
 
+            const loadPriority = refImageLoadingPriority.get(key) || 'normal';
+            refImageLoadingOrder.push(key);
+
             const img = new Image();
             img.decoding = 'async';
             img.loading = 'eager';
@@ -3925,10 +4001,14 @@
                 if (finished) return;
                 finished = true;
                 refImagesLoadingCount--;
+                const idx = refImageLoadingOrder.indexOf(key);
+                if (idx !== -1) refImageLoadingOrder.splice(idx, 1);
+                refImageLoadingPriority.delete(key);
                 setTimeout(processRefImageQueue, 10);
             };
 
             img.onload = () => {
+                refImagePreempted.delete(key);
                 refImagePrefetchState.set(key, 'ready');
                 refImagePrefetchRetry.delete(key);
                 _clearRefRetryTimer(key);
@@ -3936,6 +4016,22 @@
                 _onFinish();
             };
             img.onerror = () => {
+                if (refImagePreempted.has(key)) {
+                    // Intentionally cancelled to free a slot for a high-priority load.
+                    // Re-queue immediately without backoff using the original priority.
+                    refImagePreempted.delete(key);
+                    refImagePrefetch.delete(key);
+                    refImagePrefetchState.set(key, 'queued');
+                    if (loadPriority === 'high') {
+                        refImageFetchQueue.unshift(key);
+                    } else {
+                        refImageFetchQueue.push(key);
+                    }
+                    refImageFetchQueued.add(key);
+                    scheduleRefRenderRefresh();
+                    _onFinish();
+                    return;
+                }
                 refImagePrefetchState.set(key, 'error');
                 refImagePrefetch.delete(key);
                 const retry = _recordRefImageError(key);
@@ -3989,6 +4085,8 @@
 
         refImagePrefetchState.set(key, 'queued');
         refImagePrefetch.set(key, { complete: false, naturalWidth: 0 });
+        const loadPri = isHighPriority ? 'high' : 'normal';
+        refImageLoadingPriority.set(key, loadPri);
         if (!refImageFetchQueued.has(key)) {
             if (isHighPriority) {
                 refImageFetchQueue.unshift(key);
@@ -3996,6 +4094,12 @@
                 refImageFetchQueue.push(key);
             }
             refImageFetchQueued.add(key);
+        }
+        // If all slots are occupied by normal-priority loads, preempt one so this
+        // high-priority item can start immediately rather than waiting for a slot to
+        // free up on its own (which could take hundreds of milliseconds per load).
+        if (isHighPriority && refImagesLoadingCount >= REF_IMAGE_CONCURRENCY) {
+            _preemptOneNormalLoad();
         }
         processRefImageQueue();
 
@@ -4068,9 +4172,17 @@
             if (cropsSeen >= maxCrops) break;
             cropsSeen += 1;
             const cands = Array.isArray(crop?.candidates) ? crop.candidates : [];
-            for (const cand of cands.slice(0, maxCandidates)) {
-                const refs = Array.isArray(cand?.refs) ? cand.refs : [];
-                for (const ref of refs.slice(0, maxRefsPerCandidate)) {
+            const activeCands = cands.slice(0, maxCandidates);
+            // Round-robin by depth: enqueue 1 ref per candidate per pass so
+            // every candidate gets at least one ref loading before any gets a
+            // second.  Since unshift puts the last-added item at the front of
+            // the queue, iterate depths in REVERSE so depth-0 (the first ref
+            // per candidate) ends up at the very front.
+            for (let depth = maxRefsPerCandidate - 1; depth >= 0; depth--) {
+                for (const cand of activeCands) {
+                    const refs = Array.isArray(cand?.refs) ? cand.refs : [];
+                    if (depth >= refs.length) continue;
+                    const ref = refs[depth];
                     const srcs = _getRefDisplaySources(ref);
                     // Always prefetch display-path sources for next-up readiness.
                     if (srcs.inlineSrc && srcs.inlineSrc !== srcs.baseSrc) {
@@ -5790,7 +5902,7 @@
                     );
                     const nextPreds = retry?.results || [];
                     const mergedPreds = mergePredictionResults(currentPredictions, nextPreds, focusCropIdx);
-                    prefetchDisplayRefsForItem(currentItem, mergedPreds, 'high');
+                    prefetchDisplayRefsForCrop(mergedPreds, focusCropIdx, 'high');
                     if (requestSerial !== currentSerial || requestKey !== getPredCacheKey(currentItem)) return;
                     const prevCov = _predictionRefCoverageForCrop(currentPredictions, focusCropIdx);
                     const prevDepth = _predictionRefDepthForCrop(currentPredictions, focusCropIdx, CLASSIFY_REFS_PER_CAT_TARGET);
@@ -5862,7 +5974,7 @@
             if (!force) {
                 if (currentPredictions.length) {
                     if (_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) {
-                        prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
+                        prefetchDisplayRefsForCrop(currentPredictions, currentCropIdx, 'high');
                         renderPredictions();
                         diagRenderWithoutTargetRefs('current_predictions');
                         void prefetchUpcomingClassifyCrop(currentCropIdx);
@@ -5878,7 +5990,7 @@
                 const cached = predCache.get(activeKey);
                 if (cached) {
                     currentPredictions = cached;
-                    prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
+                    prefetchDisplayRefsForCrop(currentPredictions, currentCropIdx, 'high');
                     clampPredictionCropIdx(currentPredictions);
                     if (_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) {
                         renderPredictions();
@@ -5905,7 +6017,7 @@
                     const warmed = predCache.get(activeKey);
                     if (Array.isArray(warmed) && warmed.length) {
                         currentPredictions = warmed;
-                        prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
+                        prefetchDisplayRefsForCrop(currentPredictions, currentCropIdx, 'high');
                         clampPredictionCropIdx(currentPredictions);
                         if (_predictionHasOptionsForCrop(currentPredictions, currentCropIdx)) {
                             renderPredictions();
@@ -5983,7 +6095,7 @@
                         requestFocusCropIdx,
                     );
                 }
-                prefetchDisplayRefsForItem(currentItem, currentPredictions, 'high');
+                prefetchDisplayRefsForCrop(currentPredictions, currentCropIdx, 'high');
                 clampPredictionCropIdx(currentPredictions);
                 const key = getPredCacheKey(currentItem);
                 if (key) {

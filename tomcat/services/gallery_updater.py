@@ -374,7 +374,7 @@ def _prune_old_versioned_galleries(weights_dir: Path, keep_version_path: Path) -
     keep_resolved = keep_version_path.resolve()
     for p in weights_dir.iterdir():
         key = _gallery_version_key(p)
-        if key is None or len(key) < 3 or key[-1] <= 0:
+        if key is None or len(key) < 3 or key[-1] < 0:
             continue
         if keep_prefix is None or key[:-1] != keep_prefix:
             continue

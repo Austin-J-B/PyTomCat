@@ -351,6 +351,7 @@ def _labeler_runtime_snapshot() -> Dict[str, Any]:
             "manual": _sem_snapshot(_manual_sem, _MANUAL_CONCURRENCY),
             "heavy": _sem_snapshot(_heavy_sem, _HEAVY_CONCURRENCY),
             "ref_crop_render": _sem_snapshot(_ref_crop_render_sem, _REF_CROP_RENDER_CONCURRENCY),
+            "ref_crop_warm_render": _sem_snapshot(_ref_crop_warm_render_sem, _REF_CROP_WARM_CONCURRENCY),
         },
         "caches": {
             "detect": int(len(_detect_result_cache)),
@@ -371,6 +372,8 @@ def _labeler_runtime_snapshot() -> Dict[str, Any]:
         "downloads": _labeler_download_stats(),
         "loop_lag_ms": int(round(float(_loop_lag_ms))),
         "loop_lag_max_ms": int(round(float(_loop_lag_max_ms))),
+        "warm_generation": int(_warm_generation),
+        "warm_generation_grace": int(_WARM_GENERATION_GRACE),
     }
 _CV_RESULT_TTL_SEC = max(5.0, float(os.getenv("LABELER_CV_RESULT_TTL_SEC", "180") or "180"))
 _DETECT_RESULT_CACHE_MAX = max(50, int(os.getenv("LABELER_DETECT_RESULT_CACHE_MAX", "1000") or "1000"))
@@ -387,10 +390,26 @@ _REF_CROP_WARM_SIZE = max(
 )
 _REF_CROP_WARM_CONCURRENCY = max(
     1,
-    min(
-        _REF_CROP_RENDER_CONCURRENCY,
-        int(os.getenv("LABELER_REF_CROP_WARM_CONCURRENCY", "4") or "4"),
+    int(
+        os.getenv(
+            "LABELER_REF_CROP_WARM_CONCURRENCY",
+            str(_DEFAULT_REF_CROP_RENDER_CONCURRENCY),
+        )
+        or str(_DEFAULT_REF_CROP_RENDER_CONCURRENCY)
     ),
+)
+# Separate semaphore exclusively for background warm tasks. On-demand requests from
+# the get_ref_crop endpoint use _ref_crop_render_sem (higher concurrency) and are
+# completely isolated from warm tasks, so warm cannot starve foreground renders.
+_ref_crop_warm_render_sem = asyncio.Semaphore(_REF_CROP_WARM_CONCURRENCY)
+# Generation counter for warm work.  Each new scheduling call increments the
+# generation.  Tasks whose generation falls more than _WARM_GENERATION_GRACE
+# behind the current value bail out before doing expensive work, so the most
+# recent item always gets priority and old queue entries drain quickly.
+_warm_generation: int = 0
+_WARM_GENERATION_GRACE = max(
+    1,
+    int(os.getenv("LABELER_WARM_GENERATION_GRACE", "3") or "3"),
 )
 _CLASSIFY_REF_CROP_WARM_MAX_CANDIDATES = max(
     1,
@@ -1514,7 +1533,11 @@ async def _resolve_author_display_name(
         )
         if display:
             _ttl_cache_set_text(_discord_user_display_cache, int(uid), display)
+            if gid > 0:
+                _ttl_cache_set_text(_discord_member_display_cache, (int(gid), int(uid)), display)
             return display
+    if cached_user and gid > 0:
+        _ttl_cache_set_text(_discord_member_display_cache, (int(gid), int(uid)), cached_user)
     return cached_user
 
 
@@ -2623,7 +2646,14 @@ async def _warm_single_ref_crop(
     *,
     thumb_size: int,
     force: bool = False,
+    generation: int = 0,
 ) -> str:
+    # generation > 0 means this came from a scheduled warm batch.  Bail out
+    # early if the generation has fallen too far behind the current head so we
+    # don't waste a semaphore slot on work the user has already moved past.
+    if generation > 0 and (_warm_generation - generation) > _WARM_GENERATION_GRACE:
+        return "stale"
+
     cache_key = _ref_crop_cache_key(int(serial), int(crop_num), int(thumb_size))
     if not force and _cache_get_bytes(
         _ref_crop_result_cache,
@@ -2645,6 +2675,10 @@ async def _warm_single_ref_crop(
     if box is None:
         return "missing_box"
 
+    # Re-check before the potentially long image fetch.
+    if generation > 0 and (_warm_generation - generation) > _WARM_GENERATION_GRACE:
+        return "stale"
+
     image_bytes = await labeler_cache.get_cached_image_async(int(serial))
     if not image_bytes:
         image_bytes = await _fetch_image_bytes_for_labeler(
@@ -2657,8 +2691,15 @@ async def _warm_single_ref_crop(
 
     acquired = False
     try:
-        await _ref_crop_render_sem.acquire()
+        # Check right before the semaphore wait — this is the main queue point
+        # where stale tasks pile up.
+        if generation > 0 and (_warm_generation - generation) > _WARM_GENERATION_GRACE:
+            return "stale"
+        await _ref_crop_warm_render_sem.acquire()
         acquired = True
+        # Check once more after acquiring — we may have waited a while.
+        if generation > 0 and (_warm_generation - generation) > _WARM_GENERATION_GRACE:
+            return "stale"
         payload, crop_err, _crop_detail = await asyncio.to_thread(
             _render_ref_crop_jpeg,
             image_bytes,
@@ -2668,7 +2709,7 @@ async def _warm_single_ref_crop(
         )
     finally:
         if acquired:
-            _ref_crop_render_sem.release()
+            _ref_crop_warm_render_sem.release()
 
     if not payload:
         if str(crop_err or "") == "invalid_bounds":
@@ -2691,6 +2732,7 @@ async def _warm_ref_crop_pairs(
     *,
     thumb_size: int,
     force: bool = False,
+    generation: int = 0,
 ) -> Dict[str, int]:
     ordered: List[Tuple[int, int]] = []
     seen: Set[Tuple[int, int]] = set()
@@ -2706,21 +2748,28 @@ async def _warm_ref_crop_pairs(
         seen.add(key)
         ordered.append(key)
     if not ordered:
-        return {"total": 0, "cached": 0, "rendered": 0, "failed": 0}
+        return {"total": 0, "cached": 0, "rendered": 0, "failed": 0, "stale": 0}
 
     await _ensure_photo_crop_index_cache(force=False)
     work_sem = asyncio.Semaphore(_REF_CROP_WARM_CONCURRENCY)
-    counts = {"total": len(ordered), "cached": 0, "rendered": 0, "failed": 0}
+    counts = {"total": len(ordered), "cached": 0, "rendered": 0, "failed": 0, "stale": 0}
 
     async def _one(pair: Tuple[int, int]) -> None:
+        # Fast exit before even waiting on the internal work semaphore.
+        if generation > 0 and (_warm_generation - generation) > _WARM_GENERATION_GRACE:
+            counts["stale"] += 1
+            return
         async with work_sem:
             status = await _warm_single_ref_crop(
                 int(pair[0]),
                 int(pair[1]),
                 thumb_size=int(thumb_size),
                 force=force,
+                generation=generation,
             )
-        if status == "cached":
+        if status == "stale":
+            counts["stale"] += 1
+        elif status == "cached":
             counts["cached"] += 1
         elif status == "rendered":
             counts["rendered"] += 1
@@ -2737,6 +2786,10 @@ def _schedule_ref_crop_warm(
     thumb_size: int = _REF_CROP_WARM_SIZE,
     force: bool = False,
 ) -> int:
+    global _warm_generation
+    _warm_generation += 1
+    gen = _warm_generation
+
     queued: List[Tuple[int, int]] = []
     seen: Set[Tuple[int, int]] = set()
     for pair in list(pairs or []):
@@ -2765,6 +2818,7 @@ def _schedule_ref_crop_warm(
                 queued,
                 thumb_size=int(thumb_size),
                 force=force,
+                generation=gen,
             )
         except Exception:
             pass
@@ -2782,6 +2836,10 @@ def _schedule_classifier_ref_crop_warm(
     thumb_size: int = _REF_CROP_WARM_SIZE,
     force: bool = False,
 ) -> bool:
+    global _warm_generation
+    _warm_generation += 1
+    gen = _warm_generation
+
     async def _runner() -> None:
         force_local = bool(force)
         deadline = time.monotonic() + 120.0
@@ -2806,6 +2864,7 @@ def _schedule_classifier_ref_crop_warm(
             pairs,
             thumb_size=int(thumb_size),
             force=force,
+            generation=gen,
         )
 
     try:
@@ -5427,7 +5486,6 @@ async def post_identify(request: web.Request) -> web.Response:
             int(top_k),
             int(refs_per_query),
             int(bool(include_ref_thumbs)),
-            focus_crop_idx if (focus_crop_idx is not None) else "",
             boxes_sig,
         )
         cached_payload = _cache_get(_identify_result_cache, cache_key)
@@ -5878,7 +5936,8 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
                 f"{type(e).__name__}: {e!r}",
             )
 
-        candidates = _build_manual_candidate_catalog(
+        candidates = await asyncio.to_thread(
+            _build_manual_candidate_catalog,
             raw_candidates or [],
             alias_lookup=alias_lookup,
             ordered_profile=ordered_profile,

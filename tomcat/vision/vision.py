@@ -100,6 +100,7 @@ _gallery_names: List[str] = []
 _gallery_paths: List[str] = []
 _gallery_records: List[dict[str, Any]] = []
 _gallery_cat_indices: dict[str, Tensor] = {}
+_gallery_cat_indices_cpu: dict[str, Tensor] = {}
 _gallery_root_hints: Optional[List[Path]] = None
 _device: Optional[torch.device] = None
 _half: bool = False
@@ -240,9 +241,10 @@ def get_all_known_cats() -> List[str]:
 
 def _rebuild_gallery_cat_indices() -> None:
     """Build name -> embedding-index tensor lookup for fast per-cat rerank scoring."""
-    global _gallery_cat_indices
+    global _gallery_cat_indices, _gallery_cat_indices_cpu
     if _gallery_emb is None or not _gallery_names:
         _gallery_cat_indices = {}
+        _gallery_cat_indices_cpu = {}
         return
     by_cat: dict[str, List[int]] = {}
     for idx, name in enumerate(_gallery_names):
@@ -252,6 +254,9 @@ def _rebuild_gallery_cat_indices() -> None:
         name: torch.tensor(idxs, dtype=torch.long, device=device)
         for name, idxs in by_cat.items()
         if idxs
+    }
+    _gallery_cat_indices_cpu = {
+        name: t.cpu() for name, t in _gallery_cat_indices.items()
     }
 
 
@@ -281,8 +286,14 @@ def _rank_unique_candidates_for_similarity(
     if not _gallery_names:
         return []
     rows: List[Tuple[str, float, float]] = []
-    if _gallery_cat_indices:
-        for cat_name, idxs in _gallery_cat_indices.items():
+    # Use CPU index tensors when sims is on CPU to avoid device mismatch.
+    cat_idx_lookup = (
+        _gallery_cat_indices_cpu
+        if _gallery_cat_indices_cpu and not sims.is_cuda
+        else _gallery_cat_indices
+    )
+    if cat_idx_lookup:
+        for cat_name, idxs in cat_idx_lookup.items():
             label = str(cat_name or "").strip()
             if not label:
                 continue
@@ -678,11 +689,11 @@ def _ensure_classifier() -> None:
         except Exception:
             gal_data = torch.load(gallery_target, map_location=_device, weights_only=False)
 
-        _gallery_emb = (gal_data.get('emb') or gal_data['embeddings']).to(_device)
+        _gallery_emb = (gal_data['emb'] if 'emb' in gal_data else gal_data['embeddings']).to(_device)
         _gallery_emb = torch.nn.functional.normalize(_gallery_emb, p=2, dim=1)
 
         idx_to_class = gal_data.get('idx_to_class') or {v: k for k, v in gal_data['class_to_idx'].items()}
-        _gallery_names = [idx_to_class[int(i)] for i in (gal_data.get('label') or gal_data['labels'])]
+        _gallery_names = [idx_to_class[int(i)] for i in (gal_data['label'] if 'label' in gal_data else gal_data['labels'])]
         raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
         raw_records = gal_data.get("records") or gal_data.get("gallery_records") or []
         _gallery_records, _gallery_paths = _build_gallery_runtime_metadata(
@@ -1209,7 +1220,8 @@ def _gallery_refs_for_candidate(
     search_pool: Optional[int] = None,
 ) -> List[dict]:
     """Return top-k gallery refs (serial/crop metadata, optionally with thumbs)."""
-    idxs = _gallery_cat_indices.get(cat_name)
+    idx_lookup = _gallery_cat_indices_cpu if (_gallery_cat_indices_cpu and not sims.is_cuda) else _gallery_cat_indices
+    idxs = idx_lookup.get(cat_name)
     if idxs is None or idxs.numel() == 0:
         return []
     k_target = max(0, int(refs_per or 0))
@@ -1392,16 +1404,20 @@ def identify_boxes(
     with torch.inference_mode():
         query_embs = _clf(batch)
         similarities = query_embs @ _gallery_emb.T
+    # Move to CPU once so the per-cat ranking loop avoids repeated GPU→CPU
+    # sync stalls (each .item() call blocks until all pending GPU work
+    # completes, which is very expensive under concurrent identify calls).
+    similarities_cpu = similarities.cpu()
     embed_ms = (time.perf_counter() - embed_t0) * 1000.0
 
     rank_t0 = time.perf_counter()
     candidate_rows_by_crop = [
         _rank_unique_candidates_for_similarity(
-            similarities[i],
+            similarities_cpu[i],
             crop=tile_crops[i] if i < len(tile_crops) else None,
             rerank=bool(rerank),
         )
-        for i in range(similarities.shape[0])
+        for i in range(similarities_cpu.shape[0])
     ]
     assigned_names = (
         _assign_unique_cat_names(candidate_rows_by_crop)
@@ -1415,7 +1431,7 @@ def identify_boxes(
     try:
         if focus_crop_idx is not None:
             parsed_focus = int(focus_crop_idx)
-            if 0 <= parsed_focus < int(similarities.shape[0]):
+            if 0 <= parsed_focus < int(similarities_cpu.shape[0]):
                 focus_idx = parsed_focus
     except Exception:
         focus_idx = None
@@ -1425,8 +1441,8 @@ def identify_boxes(
     ref_calls = 0
     candidate_name_total = 0
     returned_ref_total = 0
-    for i in range(similarities.shape[0]):
-        sims = similarities[i]
+    for i in range(similarities_cpu.shape[0]):
+        sims = similarities_cpu[i]
         if bool(enforce_unique_across_crops):
             taken_elsewhere = {
                 str(name).strip()
@@ -1446,8 +1462,6 @@ def identify_boxes(
         base_score_map = {name: float(base_score) for name, _, base_score in trimmed_rows}
         candidate_name_total += len(candidate_names)
         refs_per_i = max(0, int(refs_per or 0))
-        if focus_idx is not None and i != focus_idx:
-            refs_per_i = 0
         ref_lists: dict[str, List[dict]] = {n: [] for n in candidate_names}
         for name in candidate_names:
             refs: List[dict] = []
@@ -1786,12 +1800,15 @@ async def warm_labeler_refs(force: bool = False) -> dict:
             )
             return labeler_ref_status()
 
+    # Set building flag BEFORE creating the task to close the race window
+    # where multiple callers see building=False and each spawn a build.
+    _labeler_ref_building = True
+    _labeler_ref_progress_total = 0
+    _labeler_ref_progress_built = 0
+
     async def _build() -> None:
         global _labeler_ref_ready, _labeler_ref_building, _labeler_ref_cache
         global _labeler_ref_progress_total, _labeler_ref_progress_built
-        _labeler_ref_building = True
-        _labeler_ref_progress_total = 0
-        _labeler_ref_progress_built = 0
         try:
             max_per_cat = int(getattr(settings, "labeler_ref_per_cat", 250) or 250)
             thumb_size = int(getattr(settings, "labeler_ref_thumb_size", 128) or 128)
@@ -2941,10 +2958,10 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
         except Exception:
             gal_data = torch.load(target, map_location=_device, weights_only=False)
 
-        emb = (gal_data.get("emb") or gal_data["embeddings"]).to(_device)
+        emb = (gal_data["emb"] if "emb" in gal_data else gal_data["embeddings"]).to(_device)
         emb = torch.nn.functional.normalize(emb, p=2, dim=1)
         idx_to_class = gal_data.get("idx_to_class") or {v: k for k, v in gal_data["class_to_idx"].items()}
-        labels = gal_data.get("label") or gal_data["labels"]
+        labels = gal_data["label"] if "label" in gal_data else gal_data["labels"]
         names = [idx_to_class[int(i)] for i in labels]
         raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
         raw_records = gal_data.get("records") or gal_data.get("gallery_records") or []

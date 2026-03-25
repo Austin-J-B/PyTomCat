@@ -71,6 +71,43 @@ def _format_confidence_pct(score: Any) -> str:
     value = max(0.0, min(1.0, value))
     return f"{value * 100:.1f}%"
 
+#---------- background reaction listener ----------
+async def _wait_for_top5_reaction(
+    client: Any,
+    reply_msg: discord.Message,
+    embed: discord.Embed,
+    results: list,
+) -> None:
+    """Wait (in the background) for a user to click '?' then expand the embed."""
+    try:
+        def check(reaction, user):
+            return (
+                str(reaction.emoji) == "\u2753"
+                and reaction.message.id == reply_msg.id
+                and not user.bot
+            )
+
+        reaction, user = await client.wait_for("reaction_add", timeout=120.0, check=check)
+
+        expanded_lines = []
+        for r in results:
+            idx = r["index"]
+            top5 = r.get("top5", [])
+            expanded_lines.append(f"**Cat #{idx} Candidates:**")
+            for rank, (c_name, c_conf) in enumerate(top5):
+                expanded_lines.append(f"`{rank+1}.` {c_name} ({_format_confidence_pct(c_conf)})")
+            expanded_lines.append("")
+
+        embed.description = "\n".join(expanded_lines)
+        embed.set_footer(text="Showing Top 5 Candidates")
+        await reply_msg.edit(embed=embed)
+
+    except asyncio.TimeoutError:
+        pass
+    except Exception as e:
+        log_action("viz_reaction_wait_error", f"err={type(e).__name__}", str(e))
+
+
 #---------- public handlers ----------
 async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     """Run object detection on an image and report bounding boxes."""
@@ -225,46 +262,16 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
             return
 
         # ACTIVE LISTENER FOR '?' REACTION
-        # We try to get the bot client from the message context to wait for a reaction.
-        # This allows the "Top 5" feature to work without a database.
-        try:
-            client = ctx.get("client")
-            # Fallback if client wasn't passed directly in ctx
-            if not client and message.guild:
-                client = message.guild.me._state._get_client()
-            
-            if client:
-                def check(reaction, user):
-                    return (
-                        str(reaction.emoji) == "\u2753"
-                        and reaction.message.id == reply_msg.id 
-                        and not user.bot
-                    )
-                
-                # Wait up to 2 minutes for someone to ask "Who else could it be?"
-                reaction, user = await client.wait_for("reaction_add", timeout=120.0, check=check)
-                
-                # If we get here, someone clicked '?' - Update the Embed!
-                expanded_lines = []
-                for r in out.results:
-                    idx = r["index"]
-                    top5 = r.get("top5", [])
-                    expanded_lines.append(f"**Cat #{idx} Candidates:**")
-                    for rank, (c_name, c_conf) in enumerate(top5):
-                        expanded_lines.append(f"`{rank+1}.` {c_name} ({_format_confidence_pct(c_conf)})")
-                    expanded_lines.append("") # Spacer
-                
-                new_desc = "\n".join(expanded_lines)
-                embed.description = new_desc
-                embed.set_footer(text="Showing Top 5 Candidates")
-                await reply_msg.edit(embed=embed)
-                
-        except asyncio.TimeoutError:
-            # No one clicked '?' in time, just stop listening.
-            pass
-        except Exception as e:
-            # Reaction listening isn't critical, so don't crash if permissions fail
-            log_action("viz_reaction_wait_error", f"err={type(e).__name__}", str(e))
+        # Spawn as a background task so the handler returns immediately and
+        # doesn't hold the dispatch chain alive for up to 2 minutes.
+        client = ctx.get("client")
+        if not client and message.guild:
+            client = message.guild.me._state._get_client()
+
+        if client:
+            asyncio.create_task(
+                _wait_for_top5_reaction(client, reply_msg, embed, out.results)
+            )
 
     except ValueError as ve:
         if reply_msg:

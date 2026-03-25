@@ -2013,7 +2013,7 @@ async def on_message(message: discord.Message):
                         "no handler for this intake target",
                     )
             except Exception as e:
-                log_action("image_intake_error", f"channel={getattr(msg.channel,'id','?')}", str(e))
+                log_action("image_intake_error", f"channel={getattr(msg.channel,'id','?')}", f"{type(e).__name__}: {e}" if str(e) else type(e).__name__)
 
         # Intake can be expensive on cold start because duplicate indexing scans the local photo corpus.
         # Keep it off the command-response path so CV requests still route immediately.
@@ -2022,8 +2022,8 @@ async def on_message(message: discord.Message):
     #Lightweight fun triggers (e.g., "meow") anywhere; safe_send respects silent mode
     try:
         await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
-    except Exception:
-        pass
+    except Exception as e:
+        log_action("handle_misc_error", f"ch={getattr(message.channel, 'id', '?')}", str(e))
 
     #Build ctx once
     ctx: Dict[str, Any] = {

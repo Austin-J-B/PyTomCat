@@ -821,22 +821,38 @@ class IntentRouter:
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
                 )
             #Deterministic cat-query parser for catabase questions.
-            #Keep this independent of local LLM availability.
             q_direct = infer_query_from_text(text_wo)
             if q_direct:
-                q_conf = _deterministic_cat_query_confidence(text_wo, q_direct)
-                trace.append("intent:cat_query(deterministic)")
-                self._traces[row["message_id"]] = trace
-                return IntentEvent(
-                    type="cat_query", confidence=q_conf,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                    trigger_phrase="deterministic_parser",
-                    query={**q_direct, "source_text": text_wo},
+                # Check if the deterministic parser actually extracted meaningful filters.
+                # If not and the LLM is available, skip claiming the query so the LLM
+                # can try to understand the user's intent with its full NLU capability.
+                _has_filters = (
+                    q_direct.get("location")
+                    or q_direct.get("tnrd") is not None
+                    or q_direct.get("color_family")
+                    or q_direct.get("birth_year") is not None
+                    or q_direct.get("photo_count_min") is not None
+                    or q_direct.get("photo_count_max") is not None
+                    or q_direct.get("photo_count_extreme")
+                    or q_direct.get("recent_scope")
+                    or q_direct.get("op") in {"count_all_cats", "count_by_filters"}
                 )
+                if _has_filters or not self._local_llm:
+                    q_conf = _deterministic_cat_query_confidence(text_wo, q_direct)
+                    trace.append("intent:cat_query(deterministic)")
+                    self._traces[row["message_id"]] = trace
+                    return IntentEvent(
+                        type="cat_query", confidence=q_conf,
+                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                        trigger_phrase="deterministic_parser",
+                        query={**q_direct, "source_text": text_wo},
+                    )
+                else:
+                    trace.append("deterministic:no_filters,deferring_to_llm")
             # If we can tell it's a catabase question but slot extraction is unclear,
-            # route directly with source_text so the generic CSV plan can parse it.
-            if looks_like_cat_query_text(text_wo):
+            # and no LLM is available, route with source_text for the generic CSV plan.
+            if looks_like_cat_query_text(text_wo) and not self._local_llm:
                 trace.append("intent:cat_query(source_text_fallback)")
                 self._traces[row["message_id"]] = trace
                 return IntentEvent(

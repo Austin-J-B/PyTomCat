@@ -113,8 +113,18 @@ def _csv_columns_for_prompt() -> str:
     cols = [_clean_text(c) for c in (header or []) if _clean_text(c)]
     if not cols:
         return "(unknown)"
-    #Keep prompt small; all needed columns should fit here.
-    return ", ".join(cols[:32])
+    # Truncate verbose column names to save prompt tokens for the small local model.
+    trimmed = []
+    for c in cols[:32]:
+        # Strip parenthetical explanations: "Recently seen? (Automatically checked...)" -> "Recently seen?"
+        short = re.sub(r"\s*\(.*\)\s*$", "", c).strip()
+        if not short:
+            short = c
+        # Cap individual column name length
+        if len(short) > 40:
+            short = short[:37] + "..."
+        trimmed.append(short)
+    return ", ".join(trimmed)
 
 
 @dataclass
@@ -156,6 +166,17 @@ class LocalLLMParser:
             log_action("local_llm_disabled", "model_path", f"missing={model_path or '(empty)'}")
             return None
 
+        # CUDA builds of llama-cpp-python need cudart/cublas DLLs at load time.
+        # PyTorch bundles these but only in its own lib dir, which isn't on the
+        # default DLL search path. Add it before importing llama_cpp.
+        try:
+            import torch as _torch
+            _torch_lib = os.path.join(os.path.dirname(_torch.__file__), "lib")
+            if os.path.isdir(_torch_lib):
+                os.add_dll_directory(_torch_lib)
+        except Exception:
+            pass
+
         try:
             from llama_cpp import Llama  #type: ignore
         except Exception as e:
@@ -166,14 +187,21 @@ class LocalLLMParser:
             llm = Llama(
                 model_path=model_path,
                 n_ctx=int(getattr(settings, "local_llm_ctx", 2048) or 2048),
-                n_gpu_layers=int(getattr(settings, "local_llm_n_gpu_layers", 0) or 0),
+                n_gpu_layers=int(getattr(settings, "local_llm_n_gpu_layers", -1)),
                 verbose=False,
             )
         except Exception as e:
             log_action("local_llm_disabled", "init", str(e))
             return None
 
-        log_action("local_llm_loaded", "runtime=llama_cpp", os.path.basename(model_path))
+        try:
+            from llama_cpp import llama_cpp as _ll
+            gpu_ok = bool(_ll.llama_supports_gpu_offload())
+        except Exception:
+            gpu_ok = False
+        gpu_layers = int(getattr(settings, "local_llm_n_gpu_layers", -1))
+        log_action("local_llm_loaded", "runtime=llama_cpp",
+                   f"{os.path.basename(model_path)}; gpu_offload={'yes' if gpu_ok else 'NO (CPU only)'}; n_gpu_layers={gpu_layers}")
         timeout_config = float(getattr(settings, "local_llm_timeout_sec", 4.0) or 4.0)
         timeout_cap = float(getattr(settings, "local_llm_timeout_cap_sec", 1.2) or 1.2)
         timeout_eff = max(0.2, min(timeout_config, timeout_cap if timeout_cap > 0 else timeout_config))
@@ -226,62 +254,30 @@ class LocalLLMParser:
 
     def _parse_sync(self, text: str) -> LocalParseResult:
         csv_columns = _csv_columns_for_prompt()
+        # Keep the system prompt compact — a 1.7B model needs short, direct
+        # instructions with concrete examples to produce valid JSON.
+        # IMPORTANT: Small models copy pipe-separated options literally
+        # (e.g. "route": "none|cat_query") instead of picking one.
+        # Use examples instead of schema enums.
         system_prompt = (
-            "You are a routing parser for TomCat. Return only one JSON object.\n"
-            "No markdown, no explanation.\n"
-            f"Available CatDatabase columns: {csv_columns}\n"
-            "Schema:\n"
-            "{\n"
-            '  "route": "none|dispatch_existing|cat_query",\n'
-            '  "confidence": 0.0,\n'
-            '  "intent": "show_photo|who_is|null",\n'
-            '  "cat_name": "string|null",\n'
-            '  "query": {\n'
-            '    "op": "count_all_cats|count_by_filters|list_names_by_filters",\n'
-            '    "location": "string|null",\n'
-            '    "tnrd": true|false|null,\n'
-            '    "color_family": "brown|gray|orange|black_white|tabby|white|null",\n'
-            '    "recent_scope": "active|inactive|all|null",\n'
-            '    "birth_year": 4-digit-year|null,\n'
-            '    "photo_count_min": integer|null,\n'
-            '    "photo_count_max": integer|null,\n'
-            '    "photo_count_extreme": "max|min|null",\n'
-            '    "result": "list|count|null",\n'
-            '    "logical": "and|or|null",\n'
-            '    "select_column": "string|null",\n'
-            '    "limit": integer|null,\n'
-            '    "filters": [\n'
-            "      {\n"
-            '        "column": "exact column name from available columns",\n'
-            '        "op": "eq|neq|gt|gte|lt|lte|contains|not_contains|month_eq|year_eq|is_true|is_false|is_empty|is_not_empty",\n'
-            '        "value": "any|null",\n'
-            '        "value2": "any|null"\n'
-            "      }\n"
-            "    ]\n"
-            "  },\n"
-            '  "reason": "short string"\n'
-            "}\n"
-            "Rules:\n"
-            "- If user asks for photo/show image of a cat -> route=dispatch_existing intent=show_photo.\n"
-            "- If user asks who a cat is -> route=dispatch_existing intent=who_is.\n"
-            "- If user asks count/list/filter question about cats/catabase -> route=cat_query.\n"
-            "- If user asks for total cat count -> query.op=count_all_cats.\n"
-            "- For brown semantics, brown may include tabby/tan/buff (but not explicit orange requests).\n"
-            "- Keep orange distinct from brown when user explicitly asks for orange.\n"
-            "- Map black-and-white/tuxedo requests to color_family=black_white.\n"
-            "- Map tabby/tabbies requests to color_family=tabby.\n"
-            "- Map white/snow/cream/ivory requests to color_family=white (but black-and-white/tuxedo -> black_white).\n"
-            "- If user asks for recently seen/active cats -> query.recent_scope=active.\n"
-            "- If user asks for inactive/not recently seen cats -> query.recent_scope=inactive.\n"
-            "- If user explicitly asks to include inactive/all cats -> query.recent_scope=all.\n"
-            "- If user asks for cats born in a year, set query.birth_year.\n"
-            "- If user asks for photo-count thresholds, set query.photo_count_min/max.\n"
-            "- If user asks who has the most/fewest photos, set query.photo_count_extreme=max|min.\n"
-            "- Prefer query.filters with exact column names for nuanced asks.\n"
-            "- For date phrases like 'in october', use month_eq on a date column.\n"
-            "- For 'exactly X' use eq, for 'X or more' use gte.\n"
-            "- Never invent a column that is not in Available CatDatabase columns.\n"
-            "- If unclear or unrelated -> route=none confidence<=0.4.\n"
+            "You are a routing parser for TomCat, a cat database bot. "
+            "Return one JSON object. No markdown.\n"
+            f"CatDatabase columns: {csv_columns}\n\n"
+            "EXAMPLES:\n"
+            'User: "show me Gizmo" -> {"route":"dispatch_existing","confidence":0.9,"intent":"show_photo","cat_name":"Gizmo","query":{},"reason":"show photo"}\n'
+            'User: "who is Patches" -> {"route":"dispatch_existing","confidence":0.9,"intent":"who_is","cat_name":"Patches","query":{},"reason":"cat profile"}\n'
+            'User: "how many orange cats" -> {"route":"cat_query","confidence":0.9,"intent":null,"cat_name":null,"query":{"op":"count_by_filters","color_family":"orange"},"reason":"count by color"}\n'
+            'User: "which cats are white" -> {"route":"cat_query","confidence":0.9,"intent":null,"cat_name":null,"query":{"op":"list_names_by_filters","color_family":"white"},"reason":"list by color"}\n'
+            'User: "cats at the bookstore" -> {"route":"cat_query","confidence":0.9,"intent":null,"cat_name":null,"query":{"op":"list_names_by_filters","location":"bookstore"},"reason":"list by location"}\n'
+            'User: "which cats have spots" -> {"route":"cat_query","confidence":0.9,"intent":null,"cat_name":null,"query":{"op":"list_names_by_filters","filters":[{"column":"Physical Description","op":"contains","value":"spots"}]},"reason":"physical trait"}\n'
+            'User: "hello there" -> {"route":"none","confidence":0.1,"intent":null,"cat_name":null,"query":{},"reason":"not cat related"}\n\n'
+            "RULES:\n"
+            "- route is one of: none, dispatch_existing, cat_query\n"
+            "- intent is one of: show_photo, who_is, or null\n"
+            "- color_family is one of: brown, gray, orange, black_white, tabby, white, or null\n"
+            "- op is one of: count_all_cats, count_by_filters, list_names_by_filters\n"
+            "- For nuanced filters use: query.filters=[{\"column\":\"exact column name\",\"op\":\"contains\",\"value\":\"search term\"}]\n"
+            "- black-and-white or tuxedo -> color_family=black_white. white/cream/snow -> color_family=white\n"
         )
         user_prompt = f"Message: {text}"
 

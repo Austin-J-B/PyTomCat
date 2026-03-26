@@ -1090,9 +1090,20 @@ class IntentRouter:
                                 include_stopword_aliases=True,
                             ) or str(llm_location)
 
-                        #When deterministic parsing succeeds, trust its slot extraction.
-                        #This clears hallucinated LLM slots (e.g., random brown filters).
-                        if q_hint and not has_plan_filters:
+                        #When deterministic parsing extracted meaningful filters, trust those
+                        #over the LLM to avoid hallucinated slots. But only overwrite if
+                        #the deterministic parser actually found something useful.
+                        _hint_has_slots = (
+                            q_hint.get("location")
+                            or q_hint.get("tnrd") is not None
+                            or q_hint.get("color_family")
+                            or q_hint.get("birth_year") is not None
+                            or q_hint.get("photo_count_min") is not None
+                            or q_hint.get("photo_count_max") is not None
+                            or q_hint.get("photo_count_extreme")
+                            or q_hint.get("recent_scope")
+                        )
+                        if q_hint and not has_plan_filters and _hint_has_slots:
                             q["location"] = q_hint.get("location")
                             q["tnrd"] = q_hint.get("tnrd")
                             q["color_family"] = q_hint.get("color_family")
@@ -1108,20 +1119,6 @@ class IntentRouter:
                         if (not has_plan_filters) and hint_op in {"count_all_cats", "count_by_filters", "list_names_by_filters"}:
                             q["op"] = hint_op
 
-                        #Final guard: unconstrained list -> count_all for concise response.
-                        if (
-                            q.get("op") == "list_names_by_filters"
-                            and not has_plan_filters
-                            and not q.get("location")
-                            and q.get("tnrd") is None
-                            and not q.get("color_family")
-                            and q.get("birth_year") is None
-                            and q.get("photo_count_min") is None
-                            and q.get("photo_count_max") is None
-                            and q.get("photo_count_extreme") is None
-                            and not q.get("recent_scope")
-                        ):
-                            q["op"] = "count_all_cats"
                         q["source_text"] = text_wo
                         trace.append("intent:cat_query(local_llm)")
                         self._traces[row["message_id"]] = trace

@@ -1152,6 +1152,21 @@ def _infer_generic_plan_from_text(text: str, header: List[str]) -> Optional[Dict
             else:
                 missing_column = raw_col
 
+    # Fallback: "which cats have/are <trait>" → search Physical Description.
+    # Catches queries like "which cats have spots", "which cats are fluffy", etc.
+    if not filters and not missing_column:
+        phys_idx = _resolve_column_index(header, "Physical Description", default=-1)
+        if phys_idx >= 0:
+            phys_col = header[phys_idx] if phys_idx < len(header) else "Physical Description"
+            trait_m = re.search(
+                r"\b(?:which|what|who)\s+cats?\s+(?:have|are|look|with)\s+(.{2,40}?)(?:\?|$)",
+                txt,
+            )
+            if trait_m:
+                trait = trait_m.group(1).strip(" ,.-?")
+                if trait:
+                    filters.append({"column": phys_col, "op": "contains", "value": trait})
+
     if not filters:
         if missing_column:
             return {
@@ -1271,8 +1286,7 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
                 "count": 0,
                 "names": [],
                 "filters": {},
-                "message": "I wasn't able to understand that query. Try asking something like "
-                           "\"which cats are orange?\" or \"how many cats are at Lot 5?\"",
+                "message": "I wasn't able to understand that query.",
             }
         op = "count_all_cats"
 

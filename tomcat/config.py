@@ -373,8 +373,8 @@ class Settings:
         os.path.join("weights", "SmolLM2-1.7B-Instruct-Q6_K.gguf"),
     )
     local_llm_conf_min: float = float(os.getenv("LOCAL_LLM_CONF_MIN", "0.80"))
-    local_llm_max_tokens: int = int(os.getenv("LOCAL_LLM_MAX_TOKENS", "220"))
-    local_llm_ctx: int = int(os.getenv("LOCAL_LLM_CTX", "2048"))
+    local_llm_max_tokens: int = int(os.getenv("LOCAL_LLM_MAX_TOKENS", "128"))
+    local_llm_ctx: int = int(os.getenv("LOCAL_LLM_CTX", "1024"))
     #-1 offloads all layers to GPU; override via env to 0 for CPU-only fallback
     local_llm_n_gpu_layers: int = int(os.getenv("LOCAL_LLM_N_GPU_LAYERS", "-1"))
     local_llm_timeout_sec: float = float(os.getenv("LOCAL_LLM_TIMEOUT_SEC", "12.0"))

@@ -22,6 +22,7 @@ _ACTIVE_LOOKBACK_DAYS = 90
 _BROWN_POS = ("brown", "tan", "buff", "gold", "cinnamon", "chocolate")
 _ORANGE_POS = ("orange", "ginger", "rust", "amber", "peach", "creamsicle")
 _GRAY_POS = ("gray", "grey", "silver", "smoke", "charcoal", "ash")
+_WHITE_POS = ("white", "snow", "cream", "ivory")
 _EYE_COLOR_POS = ("orange", "amber", "yellow", "green", "blue", "gold", "golden", "hazel")
 _ALLOWED_RECENT_SCOPES = {"active", "inactive", "all"}
 _PHOTO_COUNTS_CACHE: Optional[Dict[str, int]] = None
@@ -193,6 +194,8 @@ def _canonical_color(value: Any) -> Optional[str]:
         return "brown"
     if txt in {"gray", "grey", "silver", "smoke"}:
         return "gray"
+    if txt in {"white", "snow", "cream", "ivory"}:
+        return "white"
     if re.search(r"\bblack\s*(?:and|&|/)\s*white\b|\btuxedo\b", txt):
         return "black_white"
     if any(token in txt for token in _ORANGE_POS):
@@ -203,6 +206,8 @@ def _canonical_color(value: Any) -> Optional[str]:
         return "tabby"
     if any(token in txt for token in _BROWN_POS):
         return "brown"
+    if any(token in txt for token in _WHITE_POS):
+        return "white"
     return None
 
 
@@ -280,6 +285,18 @@ def _matches_tabby(text: str) -> bool:
     if not t:
         return False
     return ("tabby" in t or "tabbies" in t)
+
+
+def _matches_white(text: str) -> bool:
+    t = _prepare_color_text(text)
+    if not t:
+        return False
+    # "black and white" / tuxedo cats are not "white cats"
+    if re.search(r"\bblack\s*(?:and|&|/)\s*white\b|\btuxedo\b", t):
+        return False
+    if any(token in t for token in _WHITE_POS):
+        return True
+    return False
 
 
 def _parse_date(value: Any) -> Optional[date]:
@@ -1234,9 +1251,8 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
     has_explicit_recent_scope = recent_scope_raw is not None and requested_recent_scope is not None
 
     # Avoid dumping every cat name when a filter parse misses all slots.
-    if (
-        op == "list_names_by_filters"
-        and not requested_location
+    _all_filters_empty = (
+        not requested_location
         and requested_tnrd is None
         and not requested_color
         and requested_birth_year is None
@@ -1244,7 +1260,20 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
         and requested_photo_max is None
         and requested_photo_extreme is None
         and not has_explicit_recent_scope
-    ):
+    )
+    if op == "list_names_by_filters" and _all_filters_empty:
+        # If source_text is present, the user asked something specific that we
+        # couldn't parse — return an honest failure instead of a misleading count.
+        if source_text:
+            return {
+                "ok": True,
+                "op": "list_names_by_filters",
+                "count": 0,
+                "names": [],
+                "filters": {},
+                "message": "I wasn't able to understand that query. Try asking something like "
+                           "\"which cats are orange?\" or \"how many cats are at Lot 5?\"",
+            }
         op = "count_all_cats"
 
     effective_recent_scope = requested_recent_scope
@@ -1345,6 +1374,9 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
                     continue
             elif requested_color == "tabby":
                 if not _matches_tabby(color_text):
+                    continue
+            elif requested_color == "white":
+                if not _matches_white(color_text):
                     continue
 
         if requested_birth_year is not None:
@@ -1734,6 +1766,10 @@ def infer_query_from_text(text: str) -> Optional[Dict[str, Any]]:
         color_family = "orange"
     elif re.search(r"\b(brown|tan|buff|gold)\b", txt):
         color_family = "brown"
+    elif re.search(r"\b(white|snow|cream|ivory)\b", txt):
+        # Only match standalone white, not "black and white"
+        if not re.search(r"\bblack\s*(?:and|&|/)\s*white\b", txt):
+            color_family = "white"
 
     photo_count_min: Optional[int] = None
     photo_count_max: Optional[int] = None

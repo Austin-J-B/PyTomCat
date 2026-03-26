@@ -18,7 +18,7 @@ from ..logger import log_action
 _ALLOWED_ROUTES = {"none", "dispatch_existing", "cat_query"}
 _ALLOWED_INTENTS = {"show_photo", "who_is"}
 _ALLOWED_QUERY_OPS = {"count_all_cats", "count_by_filters", "list_names_by_filters"}
-_ALLOWED_COLOR_FAMILIES = {"brown", "gray", "orange", "black_white", "tabby"}
+_ALLOWED_COLOR_FAMILIES = {"brown", "gray", "orange", "black_white", "tabby", "white"}
 _ALLOWED_RECENT_SCOPES = {"active", "inactive", "all"}
 _ALLOWED_QUERY_RESULTS = {"list", "count"}
 _ALLOWED_LOGICAL = {"and", "or"}
@@ -240,7 +240,7 @@ class LocalLLMParser:
             '    "op": "count_all_cats|count_by_filters|list_names_by_filters",\n'
             '    "location": "string|null",\n'
             '    "tnrd": true|false|null,\n'
-            '    "color_family": "brown|gray|orange|black_white|tabby|null",\n'
+            '    "color_family": "brown|gray|orange|black_white|tabby|white|null",\n'
             '    "recent_scope": "active|inactive|all|null",\n'
             '    "birth_year": 4-digit-year|null,\n'
             '    "photo_count_min": integer|null,\n'
@@ -270,6 +270,7 @@ class LocalLLMParser:
             "- Keep orange distinct from brown when user explicitly asks for orange.\n"
             "- Map black-and-white/tuxedo requests to color_family=black_white.\n"
             "- Map tabby/tabbies requests to color_family=tabby.\n"
+            "- Map white/snow/cream/ivory requests to color_family=white (but black-and-white/tuxedo -> black_white).\n"
             "- If user asks for recently seen/active cats -> query.recent_scope=active.\n"
             "- If user asks for inactive/not recently seen cats -> query.recent_scope=inactive.\n"
             "- If user explicitly asks to include inactive/all cats -> query.recent_scope=all.\n"

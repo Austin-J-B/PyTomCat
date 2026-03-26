@@ -203,6 +203,7 @@ class IntentEvent:
     raw_station: Optional[str] = None      #original station query text (for station-specific intents)
     trigger_phrase: Optional[str] = None   #snippet that matched the routing logic
     query: Optional[Dict[str, Any]] = None #payload for deterministic cat queries
+    target_user_id: Optional[int] = None   #Discord user ID of timeout target
 
 #Simple ring buffer per (channel_id, user_id)
 MachineRow = Dict[str, Any]
@@ -240,6 +241,8 @@ CREATE_PROFILES_RE = re.compile(r"^create\s+profiles?\s+(\d+)(?:\s+through\s+(\d
 UPDATE_PROFILE_RE  = re.compile(r"^update\s+profile\s+(\d+)$", re.I)
 UPDATE_ALL_PROFILES_RE = re.compile(r"^update\s+all\s+profiles$", re.I)
 FUNCTIONS_RE = re.compile(r"\b(?:functions?|commands?|help|glossary)\b", re.I)
+TIMEOUT_RE = re.compile(r"\b(?:time\s*[-\s]?\s*out|timeout|put\b.*?\btimeout)\b", re.I)
+USER_MENTION_RE = re.compile(r"<@!?(\d+)>")
 
 MONTH_NAME_MAP = {
     "jan": 1, "january": 1,
@@ -651,6 +654,28 @@ class IntentRouter:
                     type="role_remove_all", confidence=0.99,
                     channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
                     text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
+                )
+
+            #Officer-only: timeout a user
+            if TIMEOUT_RE.search(text_wo):
+                author = message.author
+                is_admin = is_officer(author, settings)
+                if not is_admin:
+                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
+                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                # Extract target mention (first non-bot user mention)
+                mentions = USER_MENTION_RE.findall(row["text"])
+                target_uid = None
+                for uid_str in mentions:
+                    uid = int(uid_str)
+                    if uid != _BOT_ID_INT:
+                        target_uid = uid
+                        break
+                return IntentEvent(
+                    type="timeout_user", confidence=0.99,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                    target_user_id=target_uid,
                 )
 
             # Check this branch ahead of the generic photo recache path so
@@ -1393,6 +1418,14 @@ class IntentRouter:
         if event.type == "recache_catabase":
             from .handlers.admin import handle_recache_catabase
             await handle_recache_catabase({}, {**ctx, "bot": ctx.get("bot")})
+            return
+
+        if event.type == "timeout_user":
+            from .handlers.admin import handle_timeout
+            await handle_timeout(
+                {"target_user_id": event.target_user_id, "text": event.text},
+                {**ctx, "bot": ctx.get("bot")}
+            )
             return
 
         if event.type == "feeding_schedule_link":

@@ -624,9 +624,11 @@ def _ensure_detector() -> None:
     global _yolo
     _ensure_device_only()
     if _yolo is not None: return
-    if YOLO is None: raise RuntimeError("ultralytics not installed")
-    y: Any = YOLO(settings.cv_detect_weights)
-    _yolo = y
+    with _yolo_lock:
+        if _yolo is not None: return
+        if YOLO is None: raise RuntimeError("ultralytics not installed")
+        y: Any = YOLO(settings.cv_detect_weights)
+        _yolo = y
 
 def _ensure_sam() -> None:
     """Load SAM2 model for box refinement."""
@@ -662,52 +664,54 @@ def _ensure_classifier() -> None:
     global _clf, _gallery_emb, _gallery_names, _gallery_paths, _gallery_records
     _ensure_device_only()
     if _clf is not None and _gallery_emb is not None: return
+    with _clf_lock:
+        if _clf is not None and _gallery_emb is not None: return
 
-    try:
-        #1. Load Encoder (.pth brain)
-        encoder = DINOv3Wrapper()
         try:
-            state = torch.load(settings.cv_encoder_weights, map_location=_device, weights_only=True)
-        except:
-            state = torch.load(settings.cv_encoder_weights, map_location=_device)
+            #1. Load Encoder (.pth brain)
+            encoder = DINOv3Wrapper()
+            try:
+                state = torch.load(settings.cv_encoder_weights, map_location=_device, weights_only=True)
+            except:
+                state = torch.load(settings.cv_encoder_weights, map_location=_device)
 
-        encoder.load_state_dict(state, strict=True)
-        encoder.to(_device).eval()
-        _clf = encoder
+            encoder.load_state_dict(state, strict=True)
+            encoder.to(_device).eval()
+            _clf = encoder
 
-        #2. Load Gallery (.pt memories)
-        gallery_target = str(settings.cv_gallery_path or "").strip()
-        gallery_path = Path(gallery_target)
-        if gallery_target and (not gallery_path.exists() or gallery_path.stat().st_size == 0):
-            fallback = _find_latest_local_gallery()
-            if fallback and str(fallback) != gallery_target:
-                gallery_target = fallback
-                settings.cv_gallery_path = str(fallback)
-                gallery_path = Path(gallery_target)
-        if not gallery_path.exists() or gallery_path.stat().st_size == 0:
-            raise RuntimeError(f"Gallery file is missing or empty: {gallery_target}. Please run a gallery retrain.")
-        try:
-            gal_data = torch.load(gallery_target, map_location=_device, weights_only=True)
-        except Exception:
-            gal_data = torch.load(gallery_target, map_location=_device, weights_only=False)
+            #2. Load Gallery (.pt memories)
+            gallery_target = str(settings.cv_gallery_path or "").strip()
+            gallery_path = Path(gallery_target)
+            if gallery_target and (not gallery_path.exists() or gallery_path.stat().st_size == 0):
+                fallback = _find_latest_local_gallery()
+                if fallback and str(fallback) != gallery_target:
+                    gallery_target = fallback
+                    settings.cv_gallery_path = str(fallback)
+                    gallery_path = Path(gallery_target)
+            if not gallery_path.exists() or gallery_path.stat().st_size == 0:
+                raise RuntimeError(f"Gallery file is missing or empty: {gallery_target}. Please run a gallery retrain.")
+            try:
+                gal_data = torch.load(gallery_target, map_location=_device, weights_only=True)
+            except Exception:
+                gal_data = torch.load(gallery_target, map_location=_device, weights_only=False)
 
-        _gallery_emb = (gal_data['emb'] if 'emb' in gal_data else gal_data['embeddings']).to(_device)
-        _gallery_emb = torch.nn.functional.normalize(_gallery_emb, p=2, dim=1)
+            _gallery_emb = (gal_data['emb'] if 'emb' in gal_data else gal_data['embeddings']).to(_device)
+            _gallery_emb = torch.nn.functional.normalize(_gallery_emb, p=2, dim=1)
 
-        idx_to_class = gal_data.get('idx_to_class') or {v: k for k, v in gal_data['class_to_idx'].items()}
-        _gallery_names = [idx_to_class[int(i)] for i in (gal_data['label'] if 'label' in gal_data else gal_data['labels'])]
-        raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
-        raw_records = gal_data.get("records") or gal_data.get("gallery_records") or []
-        _gallery_records, _gallery_paths = _build_gallery_runtime_metadata(
-            _gallery_names,
-            raw_paths,
-            raw_records,
-        )
-        _rebuild_gallery_cat_indices()
-        log_action("viz_clf_load_info", "reid_ready", f"cats={len(set(_gallery_names))}; gallery={gallery_target}")
-    except Exception as e:
-        log_action("viz_clf_load_error", f"type={type(e).__name__}", str(e))
-        _clf = None
+            idx_to_class = gal_data.get('idx_to_class') or {v: k for k, v in gal_data['class_to_idx'].items()}
+            _gallery_names = [idx_to_class[int(i)] for i in (gal_data['label'] if 'label' in gal_data else gal_data['labels'])]
+            raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
+            raw_records = gal_data.get("records") or gal_data.get("gallery_records") or []
+            _gallery_records, _gallery_paths = _build_gallery_runtime_metadata(
+                _gallery_names,
+                raw_paths,
+                raw_records,
+            )
+            _rebuild_gallery_cat_indices()
+            log_action("viz_clf_load_info", "reid_ready", f"cats={len(set(_gallery_names))}; gallery={gallery_target}")
+        except Exception as e:
+            log_action("viz_clf_load_error", f"type={type(e).__name__}", str(e))
+            _clf = None
 
 #---------- Image Processing Helpers ----------
 def _enforce_max_dim(img: Image.Image) -> None:

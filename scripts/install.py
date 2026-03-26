@@ -30,6 +30,7 @@ LOCAL_LLM_GGUF_URL = (
     "SmolLM2-1.7B-Instruct-Q6_K.gguf?download=true"
 )
 LLAMA_CPP_WHEEL_INDEX_CPU = "https://abetlen.github.io/llama-cpp-python/whl/cpu"
+LLAMA_CPP_WHEEL_INDEX_CUDA = "https://abetlen.github.io/llama-cpp-python/whl/cu121"
 CONFIG_PATH = ROOT / "config.yml"
 
 REQUIRED_WEIGHTS = ["R4_cat_DINOv3_encoder.pth", "sam2_s.pt"]
@@ -83,9 +84,9 @@ LOCAL_LLM_ENABLED=true
 LOCAL_LLM_RUNTIME=llama_cpp
 LOCAL_LLM_GGUF_PATH=weights/SmolLM2-1.7B-Instruct-Q6_K.gguf
 LOCAL_LLM_CONF_MIN=0.80
-LOCAL_LLM_MAX_TOKENS=220
-LOCAL_LLM_CTX=2048
-LOCAL_LLM_N_GPU_LAYERS=0
+LOCAL_LLM_MAX_TOKENS=128
+LOCAL_LLM_CTX=1024
+LOCAL_LLM_N_GPU_LAYERS=-1
 LOCAL_LLM_TIMEOUT_SEC=12.0
 CV_DETECT_WEIGHTS=weights/984_917_yolo12s.pt
 CV_ENCODER_WEIGHTS=weights/R4_cat_DINOv3_encoder.pth
@@ -398,17 +399,52 @@ def _install_torch(force: str | None = None) -> None:
             return
         raise
 
-def _ensure_llama_cpp_runtime() -> None:
+def _llama_cpp_has_gpu() -> bool:
+    """Check if the currently installed llama-cpp-python supports GPU offload."""
+    try:
+        result = subprocess.run(
+            [str(_venv_python()), "-c",
+             "from llama_cpp import llama_cpp; print(bool(llama_cpp.llama_supports_gpu_offload()))"],
+            capture_output=True, text=True, timeout=15,
+        )
+        return result.stdout.strip() == "True"
+    except Exception:
+        return False
+
+def _ensure_llama_cpp_runtime(wants_gpu: bool = False) -> None:
     """Install llama.cpp Python bindings used by local structured fallback parsing."""
-    _print_header("Installing local LLM runtime (llama-cpp-python)")
+    label = "GPU/CUDA 12.1" if wants_gpu else "CPU"
+    _print_header(f"Installing local LLM runtime (llama-cpp-python, {label})")
+    wheel_index = LLAMA_CPP_WHEEL_INDEX_CUDA if wants_gpu else LLAMA_CPP_WHEEL_INDEX_CPU
+
+    # If switching between CPU and GPU builds, force-reinstall since pip won't
+    # replace a satisfied version with a different build variant on its own.
+    needs_force = False
+    if wants_gpu and not _llama_cpp_has_gpu():
+        print("Existing install is CPU-only; forcing reinstall for CUDA build...")
+        needs_force = True
+
+    force_flags = ["--force-reinstall", "--no-deps"] if needs_force else []
     try:
         #Prefer prebuilt wheels to avoid requiring local MSVC/CMake toolchains.
         _pip([
             "--prefer-binary",
-            "--extra-index-url", LLAMA_CPP_WHEEL_INDEX_CPU,
+            *force_flags,
+            "--extra-index-url", wheel_index,
             "llama-cpp-python>=0.3.0,<0.4",
         ])
     except subprocess.CalledProcessError:
+        if wants_gpu:
+            print("GPU llama-cpp-python install failed; falling back to CPU...")
+            try:
+                _pip([
+                    "--prefer-binary",
+                    "--extra-index-url", LLAMA_CPP_WHEEL_INDEX_CPU,
+                    "llama-cpp-python>=0.3.0,<0.4",
+                ])
+                return
+            except subprocess.CalledProcessError:
+                pass
         #Fallback to default index in case prebuilt wheel index is unavailable.
         try:
             _pip(["--prefer-binary", "llama-cpp-python>=0.3.0,<0.4"])
@@ -545,10 +581,12 @@ def main() -> None:
     _ensure_cloudflared_auth(cf_path)
     _ensure_cloudflared_credentials(cf_path, args.tunnel_credentials.resolve() if args.tunnel_credentials else None, args.tunnel_name)
 
+    has_gpu = args.gpu or (not args.cpu and _detect_cuda())
+
     if args.resume_model:
         if not _venv_python().exists():
             raise InstallError(".venv not found.")
-        _ensure_llama_cpp_runtime()
+        _ensure_llama_cpp_runtime(wants_gpu=has_gpu)
         if args.clean_hf_cache:
             _clean_hf_cache()
         _ensure_local_llm_model()
@@ -575,7 +613,7 @@ def main() -> None:
             _install_torch(torch_force)
             _install_base_dependencies(force_reinstall=True)
 
-        _ensure_llama_cpp_runtime()
+        _ensure_llama_cpp_runtime(wants_gpu=has_gpu)
 
         if not args.skip_model:
             if args.clean_hf_cache:

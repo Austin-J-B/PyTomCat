@@ -1878,6 +1878,24 @@ async def on_ready():
         _start_background_task("catabase_photo_sync", lambda: start_catabase_photo_sync_scheduler())
     except Exception:
         pass
+    # Pre-warm CV models so the first user request doesn't timeout
+    # while loading weights from disk.
+    async def _preload_cv_models():
+        try:
+            from .vision import vision as _V
+            await asyncio.to_thread(_V._ensure_detector)
+            log_event({"event": "health", "component": "cv_detector", "status": "preloaded"})
+        except Exception as e:
+            log_event({"event": "health", "component": "cv_detector", "status": "error", "error": str(e)})
+        try:
+            from .vision import vision as _V
+            await asyncio.to_thread(_V._ensure_classifier)
+            log_event({"event": "health", "component": "cv_classifier", "status": "preloaded"})
+        except Exception as e:
+            log_event({"event": "health", "component": "cv_classifier", "status": "error", "error": str(e)})
+
+    _start_background_task("cv_model_preload", lambda: _preload_cv_models())
+
     #Wire gallery retrain notifications into CH_LOGGING.
     async def _notify_gallery_retrain(msg: str) -> None:
         text = str(msg or "").strip()

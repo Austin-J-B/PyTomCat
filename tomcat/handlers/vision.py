@@ -17,6 +17,13 @@ if TYPE_CHECKING:
 from ..vision import vision as V
 from ..services.vision_feedback import register_identify_feedback
 
+# Serialize all CV operations through a single semaphore.  YOLO's predict()
+# and the DINOv3 encoder mutate internal state and are not thread-safe; running
+# concurrent asyncio.to_thread(V.*) calls on the shared module-level models
+# causes deadlocks that permanently freeze the handler coroutine.
+_CV_SEM = asyncio.Semaphore(1)
+_CV_TIMEOUT_SEC = max(6.0, float(getattr(settings, "cv_timeout_ms", 6000)) / 1000.0)
+
 #---------- helpers ----------
 async def _download_attachment(att: discord.Attachment) -> str:
     """Save a Discord attachment locally and return the temp path."""
@@ -124,14 +131,21 @@ async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     try:
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
-        
-        out = await asyncio.to_thread(V.detect, data)
+
+        async with _CV_SEM:
+            out = await asyncio.wait_for(
+                asyncio.to_thread(V.detect, data),
+                timeout=_CV_TIMEOUT_SEC,
+            )
         file = discord.File(io.BytesIO(out.boxed_jpeg), filename="detected.jpg")
-        
+
         count = len(out.results)
         msg = f"Found {count} object{'s' if count != 1 else ''}."
         await ch.send(content=msg, file=file)
 
+    except asyncio.TimeoutError:
+        log_action("viz_detect_error", "err=TimeoutError", f"cap={_CV_TIMEOUT_SEC:.1f}s")
+        await ch.send("Sorry, detection timed out. Try again in a moment.")
     except ValueError as ve:
         await ch.send(str(ve))
     except Exception as e:
@@ -155,8 +169,12 @@ async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     try:
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
-        
-        out = await asyncio.to_thread(V.crop, data)
+
+        async with _CV_SEM:
+            out = await asyncio.wait_for(
+                asyncio.to_thread(V.crop, data),
+                timeout=_CV_TIMEOUT_SEC,
+            )
         crop_bytes = list(getattr(out, "crops", []) or [])
         if crop_bytes:
             files = [
@@ -178,6 +196,9 @@ async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
             file = discord.File(io.BytesIO(out.boxed_jpeg), filename="crop.jpg")
             await ch.send(content="Cropped view:", file=file)
 
+    except asyncio.TimeoutError:
+        log_action("viz_crop_error", "err=TimeoutError", f"cap={_CV_TIMEOUT_SEC:.1f}s")
+        await ch.send("Sorry, crop timed out. Try again in a moment.")
     except ValueError as ve:
         await ch.send(str(ve))
     except Exception as e:
@@ -203,7 +224,12 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         reply_msg = await ch.send("Processing image...")
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
-        out = await asyncio.to_thread(V.identify, data)
+
+        async with _CV_SEM:
+            out = await asyncio.wait_for(
+                asyncio.to_thread(V.identify, data),
+                timeout=_CV_TIMEOUT_SEC,
+            )
 
         # Build initial Description
         lines = []
@@ -273,6 +299,12 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
                 _wait_for_top5_reaction(client, reply_msg, embed, out.results)
             )
 
+    except asyncio.TimeoutError:
+        log_action("viz_identify_error", "err=TimeoutError", f"cap={_CV_TIMEOUT_SEC:.1f}s")
+        if reply_msg:
+            await reply_msg.edit(content="Sorry, identify timed out. Try again in a moment.", attachments=[], embed=None)
+        else:
+            await ch.send("Sorry, identify timed out. Try again in a moment.")
     except ValueError as ve:
         if reply_msg:
             await reply_msg.edit(content=str(ve), attachments=[], embed=None)

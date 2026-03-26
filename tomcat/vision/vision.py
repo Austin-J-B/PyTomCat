@@ -91,10 +91,12 @@ _LABELER_SAM_MAX_EDGE_SHIFT_RATIO = min(
 
 #---------- Internal State ----------
 _yolo: Optional[Any] = None
+_yolo_lock = threading.Lock()
 _sam: Optional[Any] = None
 _sam_lock = threading.Lock()
 _sam_failed: bool = False
 _clf: Optional[torch.nn.Module] = None
+_clf_lock = threading.Lock()
 _gallery_emb: Optional[Tensor] = None
 _gallery_names: List[str] = []
 _gallery_paths: List[str] = []
@@ -776,7 +778,8 @@ def _rerank_scores_for_crop(crop: Image.Image, candidate_names: List[str]) -> di
 
     batch = torch.stack(variants).to(_device)
     with torch.inference_mode():
-        q = _clf(batch)
+        with _clf_lock:
+            q = _clf(batch)
 
     out: dict[str, float] = {}
     for name in candidate_names:
@@ -1089,7 +1092,8 @@ def _make_collage(crops: List[Image.Image]) -> Image.Image:
 #---------- Core Logic ----------
 def _run_yolo(img: Image.Image) -> List[Det]:
     _ensure_detector()
-    res = _yolo.predict(img, conf=settings.cv_conf or _DEFAULT_CONF, imgsz=settings.cv_detect_imgsz, verbose=False)
+    with _yolo_lock:
+        res = _yolo.predict(img, conf=settings.cv_conf or _DEFAULT_CONF, imgsz=settings.cv_detect_imgsz, verbose=False)
     dets = []
     for r in res:
         boxes = r.boxes.xyxy.detach().cpu().numpy()
@@ -1166,7 +1170,8 @@ def identify(image_bytes: bytes) -> IdentifyResult:
         if tiles:
             batch = torch.stack(tiles).to(_device)
             with torch.inference_mode():
-                query_embs = _clf(batch)
+                with _clf_lock:
+                    query_embs = _clf(batch)
                 similarities = query_embs @ _gallery_emb.T
             candidate_rows_by_crop = [
                 _rank_unique_candidates_for_similarity(
@@ -1402,7 +1407,8 @@ def identify_boxes(
     embed_t0 = time.perf_counter()
     batch = torch.stack(tiles).to(_device)
     with torch.inference_mode():
-        query_embs = _clf(batch)
+        with _clf_lock:
+            query_embs = _clf(batch)
         similarities = query_embs @ _gallery_emb.T
     # Move to CPU once so the per-cat ranking loop avoids repeated GPU→CPU
     # sync stalls (each .item() call blocks until all pending GPU work
@@ -1563,7 +1569,8 @@ def _embed_crops(crops: List[Image.Image]) -> Tensor:
         batch = torch.stack(tensors[i:i + batch_size]).to(_device)
         try:
             with torch.inference_mode():
-                emb = _clf(batch)
+                with _clf_lock:
+                    emb = _clf(batch)
             out.append(emb.detach().cpu())
         except RuntimeError as e:
             if "out of memory" not in str(e).lower():
@@ -1577,7 +1584,8 @@ def _embed_crops(crops: List[Image.Image]) -> Tensor:
             for t in tensors[i:i + batch_size]:
                 single = t.unsqueeze(0).to(_device)
                 with torch.inference_mode():
-                    emb1 = _clf(single)
+                    with _clf_lock:
+                        emb1 = _clf(single)
                 out.append(emb1.detach().cpu())
     return torch.cat(out, dim=0) if out else torch.empty((0, 512))
 

@@ -1,4 +1,4 @@
-{"stations":["Business","Fine Arts","HOP","Lot 50","Maintenance","Microwave","Snickers","The Greens","West Hall"]}
+{"stations":["Business","Fine Arts","HOP","Lot 50","Maintenance","Mary Kay & Zen","Microwave","Snickers","The Greens","West Hall"]}
 {"date":"2025-12-16","status":{"Maintenance":true,"West Hall":true,"Business":true,"HOP":true,"Lot 50":true,"Mary Kay & Zen":false,"Microwave":true,"Snickers":true,"The Greens":true}}
 {"date":"2025-12-17","status":{"West Hall":true,"Maintenance":true,"The Greens":true,"HOP":true,"Lot 50":true}}
 {"date":"2025-12-18","status":{"Microwave":true,"Lot 50":true,"Business":true,"Snickers":true,"Maintenance":true,"West Hall":true,"The Greens":true,"HOP":true}}
@@ -99,5 +99,9 @@
 {"date":"2026-03-23","status":{"Business":true,"Microwave":true,"HOP":true,"Maintenance":true,"Snickers":true,"The Greens":true,"Lot 50":true,"West Hall":true}}
 {"date":"2026-03-24","status":{"Lot 50":true,"Business":true,"The Greens":true,"HOP":true,"Microwave":true,"West Hall":true,"Maintenance":true}}
 {"date":"2026-03-25","status":{"Lot 50":true,"Maintenance":true,"West Hall":true,"Microwave":true,"Snickers":true,"HOP":true,"Business":true}}
-{"date":"2026-03-26","status":{"The Greens":true}}
-{"meta":{"updated_at":"2026-03-26T00:32:37.171255-05:00"}}
+{"date":"2026-03-26","status":{"The Greens":true,"Business":true,"HOP":true,"Lot 50":true,"West Hall":true,"Snickers":true,"Maintenance":true,"Microwave":true}}
+{"date":"2026-03-27","status":{"Microwave":true,"Business":true,"Lot 50":true,"The Greens":true,"Maintenance":true,"West Hall":true,"HOP":true,"Snickers":true}}
+{"date":"2026-03-28","status":{"Microwave":true,"Business":true,"The Greens":true,"HOP":true,"Snickers":true,"Maintenance":true,"West Hall":true}}
+{"date":"2026-03-29","status":{"Microwave":true,"Maintenance":true,"The Greens":true,"HOP":true,"Lot 50":true,"West Hall":true,"Snickers":true,"Business":true}}
+{"date":"2026-03-30","status":{"Microwave":true,"West Hall":true,"Maintenance":true,"Lot 50":true,"Business":true,"Snickers":true,"Mary Kay & Zen":true}}
+{"meta":{"updated_at":"2026-03-30T14:46:55.081450-05:00"}}

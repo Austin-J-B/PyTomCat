@@ -15,7 +15,7 @@ httplib2==0.22.0
 
 #Data processing / parsing
 numpy==1.26.4
-Pillow==12.1.1
+Pillow==12.2.0
 rapidfuzz==3.10.1
 beautifulsoup4==4.12.3
 

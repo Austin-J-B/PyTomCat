@@ -1,6 +1,6 @@
 # TomCat VI
 
-TomCat is the Campus Cat Coalitionâ€™s Discord automation bot. The bot checks feeding,
+TomCat is the Campus Cat Coalition's Discord automation bot. The bot checks feeding,
 documents dues and finances, runs computer vision tasks, and keeps large amounts
 of data stored and organized for each of the campus cats.
 The codebase is built around our 'Intent_router' to keep things modular, which
@@ -19,24 +19,24 @@ the Computer Vision system are still in development.
 
 ## Main Funcitons
 
-- **Intent-driven sorting** â€“ every message is normalized, evaluated for
+- **Intent-driven sorting**: every message is normalized, evaluated for
   wake words/mentions, matched through aliases/fuzzy/NLP, and routed to the
   appropriate handler.
-- **Feeding coordination** â€“ logs stations as fed in the CCC's google sheet,
+- **Feeding coordination**: logs stations as fed in the CCC's google sheet,
   tracks volunteer substitution requests, posts nightly 8â€¯PM feeding reminders,
   and keeps uses the github page website as a user interface.
-- **Finance automation** â€“ harvests Gmail payment notifications, separates dues
+- **Finance automation**: harvests Gmail payment notifications, separates dues
   from other income/expenses, inputs financial data to Google Sheets, and uses
   the logs as a way to understand what type of income or expense any given
   payment is.
-- **Cat profiles & photos** â€“ serves profile embeds, random photos, and uses
+- **Cat profiles & photos**: serves profile embeds, random photos, and uses
   the computer vision capability to auto-crop 'Show me' images. On top of that,
   the bot maintains a local cache of images so follow-up requests get quick responses.
-- **Computer vision** â€“ detect/crop/identify workflows using Ultralytics YOLOv8 and
+- **Computer vision**: detect/crop/identify workflows using Ultralytics YOLOv8 and
   a lightweight classifier. Currently still in development.
-- **Spam mitigation** â€“ regex heuristics and fuzzy phrase matching; moderators
+- **Spam mitigation**: regex heuristics and fuzzy phrase matching; moderators
   can ban straight from the alert reaction.
-- **Audit trail** â€“ human-readable daily logs plus machine NDJSON for every
+- **Audit trail**: human-readable daily logs plus machine NDJSON for every
   message, edit, reaction, role change, health check, and financial event.
 
 ---

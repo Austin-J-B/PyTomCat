@@ -23,7 +23,7 @@ the Computer Vision system are still in development.
   wake words/mentions, matched through aliases/fuzzy/NLP, and routed to the
   appropriate handler.
 - **Feeding coordination**: logs stations as fed in the CCC's google sheet,
-  tracks volunteer substitution requests, posts nightly 8â€¯PM feeding reminders,
+  tracks volunteer substitution requests, posts nightly 8PM feeding reminders,
   and keeps uses the github page website as a user interface.
 - **Finance automation**: harvests Gmail payment notifications, separates dues
   from other income/expenses, inputs financial data to Google Sheets, and uses
@@ -32,7 +32,7 @@ the Computer Vision system are still in development.
 - **Cat profiles & photos**: serves profile embeds, random photos, and uses
   the computer vision capability to auto-crop 'Show me' images. On top of that,
   the bot maintains a local cache of images so follow-up requests get quick responses.
-- **Computer vision**: detect/crop/identify workflows using Ultralytics YOLOv8 and
+- **Computer vision**: detect/crop/identify workflows using Ultralytics YOLO12 and
   a lightweight classifier. Currently still in development.
 - **Spam mitigation**: regex heuristics and fuzzy phrase matching; moderators
   can ban straight from the alert reaction.

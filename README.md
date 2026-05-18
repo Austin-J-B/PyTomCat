@@ -47,7 +47,9 @@ the Computer Vision system are still in development.
 
 - **Discord stack:** `discord.py`, `aiohttp`, `python-dotenv`.
 - **Google APIs:** `gspread`, `google-api-python-client`, `google-auth-*`.
-- **NLP:** `llama-cpp-python` with a local GGUF model for structured routing fallback.
+- **NLP:** deterministic rule-based intent router (no LLM). Earlier versions
+  used `llama-cpp-python` with SmolLM2 for ambiguous-query routing; that path
+  was retired since rules cover the actually-used command surface.
 - **CV:** `ultralytics`, `opencv-python-headless`, `torch`, `torchvision` with
   CUDA 12.1 wheels.
 - **Parsing:** `numpy`, `Pillow`, `rapidfuzz`, `beautifulsoup4`, `requests`.

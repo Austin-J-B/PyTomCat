@@ -23,7 +23,30 @@ from ..services.vision_feedback import register_identify_feedback
 # causes deadlocks that permanently freeze the handler coroutine.
 _CV_SEM = asyncio.Semaphore(1)
 _CV_TIMEOUT_SEC = max(6.0, float(getattr(settings, "cv_timeout_ms", 6000)) / 1000.0)
+_CV_MODAL_TIMEOUT_SEC = max(
+    _CV_TIMEOUT_SEC,
+    float(getattr(settings, "cv_modal_timeout_ms", 30000)) / 1000.0,
+)
 _CV_COLD_TIMEOUT_SEC = 120.0  # generous timeout for first-time model loading
+
+
+def _identify_timeout_sec() -> float:
+    """Pick a per-call timeout based on the active backend.
+
+    Local: warm path is sub-second; 6s is generous.
+    Modal: cold path (snapshot restore + GPU move + first inference) can take
+    a few seconds; warm path is well under 1s. Use the modal-specific floor
+    so the first call after a scaledown doesn't strand the user.
+    Cold (models not yet loaded): always allow 120s on first-ever call.
+    """
+    from ..vision.backend import LocalBackend, get_backend
+
+    backend = get_backend()
+    if not isinstance(backend, LocalBackend):
+        return _CV_MODAL_TIMEOUT_SEC
+    if V._yolo is None or V._clf is None:
+        return _CV_COLD_TIMEOUT_SEC
+    return _CV_TIMEOUT_SEC
 
 #---------- helpers ----------
 async def _download_attachment(att: discord.Attachment) -> str:
@@ -223,10 +246,18 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
             await ch.send("Attach an image or reply to one, then say `TomCat, identify`.")
         return
 
+    # Bump the Modal keep-warm window on every identify request. No-op when
+    # CV_BACKEND=local or when keep-warm is disabled in settings.
+    try:
+        from ..vision.backend import notify_modal_activity
+        await notify_modal_activity()
+    except Exception as e:
+        log_action("modal_keep_warm_notify_error", f"err={type(e).__name__}", str(e))
+
     tmp = []
     reply_msg: Optional[discord.Message] = None
     try:
-        timeout = _CV_COLD_TIMEOUT_SEC if (V._yolo is None or V._clf is None) else _CV_TIMEOUT_SEC
+        timeout = _identify_timeout_sec()
         reply_msg = await ch.send("Processing image...")
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)

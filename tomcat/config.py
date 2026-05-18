@@ -328,6 +328,9 @@ class Settings:
     cv_max_download_mb: int = int(os.getenv("CV_MAX_DOWNLOAD_MB", "16"))
     #Device/precision
     cv_half: bool = os.getenv("CV_FP16", "1").strip().lower() in {"1","true","yes","on"}
+    #CV backend selection: 'local' runs models in-process; 'modal' routes the
+    #GPU forward passes to a remote Modal function (Phase 2 of cloud migration).
+    cv_backend: str = os.getenv("CV_BACKEND", "local").strip().lower()
 
     #Temp folder for downloads (repo-local, not hidden OS temp)
     cv_temp_dir: str = os.getenv("CV_TEMP_DIR", "./temp_images")
@@ -337,6 +340,23 @@ class Settings:
     auto_crop_show_photo: bool = os.getenv("AUTO_CROP_SHOW_PHOTO", "1").strip().lower() in {"1","true","yes","on"}
     #Hard budget for auto-crop work in handlers (ms). If exceeded, show original image.
     cv_timeout_ms: int = int(os.getenv("CV_TIMEOUT_MS", "6000"))
+    #Timeout floor when CV_BACKEND=modal. Cold paths can include snapshot
+    #restore + GPU move + first inference; 30s leaves headroom without
+    #stranding users. Warm paths still complete in well under 1s.
+    cv_modal_timeout_ms: int = int(os.getenv("CV_MODAL_TIMEOUT_MS", "30000"))
+    #Interval in seconds for the optional Modal keep-warm pinger. 0 disables
+    #(default). Only useful if you want to extend warm time BEYOND the Modal
+    #app's scaledown_window (currently 900s = 15 min) — for example, set to
+    #300 during busy semester weeks to keep the container alive longer.
+    #Must be < scaledown_window to actually keep the container alive.
+    cv_modal_keep_warm_sec: int = int(os.getenv("CV_MODAL_KEEP_WARM_SEC", "0"))
+    #Activity window: how long after the last user CV request to keep pinging
+    #(only relevant when cv_modal_keep_warm_sec > 0). 0 means always-on
+    #pinging — expensive, ~$425/mo on T4. Default 900s = 15 min covers a use
+    #burst then exits.
+    cv_modal_activity_window_sec: int = int(
+        os.getenv("CV_MODAL_ACTIVITY_WINDOW_SEC", "900")
+    )
 
     #Show-photo cache (for fast "show me" responses)
     show_cache_per_cat: int = int(os.getenv("SHOW_CACHE_PER_CAT", "5") or "5")
@@ -363,23 +383,6 @@ class Settings:
     #Stored profile message IDs (cat ID -> Discord message ID), loaded from env.
     #Env format: PROFILE_MESSAGES="1:123456789,2:987654321,..."
     profile_messages: dict[str, int] = field(default_factory=lambda: _parse_profile_messages())
-
-    #======== NLP CONFIG ========
-    #Local LLM is the only language-model runtime used by the bot.
-    local_llm_enabled: bool = _get_env_bool("LOCAL_LLM_ENABLED", True)
-    local_llm_runtime: str = os.getenv("LOCAL_LLM_RUNTIME", "llama_cpp").strip().lower()
-    local_llm_gguf_path: str = os.getenv(
-        "LOCAL_LLM_GGUF_PATH",
-        os.path.join("weights", "SmolLM2-1.7B-Instruct-Q6_K.gguf"),
-    )
-    local_llm_conf_min: float = float(os.getenv("LOCAL_LLM_CONF_MIN", "0.80"))
-    local_llm_max_tokens: int = int(os.getenv("LOCAL_LLM_MAX_TOKENS", "128"))
-    local_llm_ctx: int = int(os.getenv("LOCAL_LLM_CTX", "1024"))
-    #-1 offloads all layers to GPU; override via env to 0 for CPU-only fallback
-    local_llm_n_gpu_layers: int = int(os.getenv("LOCAL_LLM_N_GPU_LAYERS", "-1"))
-    local_llm_timeout_sec: float = float(os.getenv("LOCAL_LLM_TIMEOUT_SEC", "12.0"))
-    #Hard cap for user-visible parser latency; lower keeps bot responsive even when local model is overloaded.
-    local_llm_timeout_cap_sec: float = float(os.getenv("LOCAL_LLM_TIMEOUT_CAP_SEC", "3.0"))
 
     #======== Feeding windows ========
     feed_lookback_minutes_before: int = int(os.getenv("FEED_LOOKBACK_MINUTES_BEFORE", "5"))

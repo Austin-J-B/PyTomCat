@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from PIL import Image
+from PIL import Image, ImageOps
 import torch
 from torch import Tensor
 
@@ -24,7 +24,8 @@ from ..logger import log_action
 from ..services import labeler_cache
 from ..services import local_photos
 from ..services.vision_feedback import load_verified_gallery_records
-from ..vision.vision import DINOv3Wrapper, refresh_gallery
+from ..vision.backend import LocalBackend, get_backend
+from ..vision.vision import refresh_gallery
 
 
 # Local photo metadata columns (0-based).
@@ -396,28 +397,6 @@ def _load_rows() -> List[List[str]]:
     return local_photos.read_metadata_table()
 
 
-def _load_encoder(device: torch.device) -> torch.nn.Module:
-    model = DINOv3Wrapper()
-    try:
-        state = torch.load(settings.cv_encoder_weights, map_location=device, weights_only=True)
-    except Exception:
-        state = torch.load(settings.cv_encoder_weights, map_location=device)
-    model.load_state_dict(state, strict=True)
-    model.to(device).eval()
-    return model
-
-
-def _prep_tensor(img: Image.Image) -> Tensor:
-    from torchvision.transforms import Compose, Normalize, Resize, ToTensor
-
-    tfm = Compose([
-        Resize((int(settings.cv_clf_imgsz), int(settings.cv_clf_imgsz))),
-        ToTensor(),
-        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
-    return tfm(img)
-
-
 def _initial_embed_batch_size(device: torch.device, base_batch: int) -> int:
     batch = max(1, int(base_batch))
     if device.type != "cuda":
@@ -672,13 +651,21 @@ def run_gallery_update(
         if not eligible_cats:
             raise RuntimeError("No eligible cats after quality filtering")
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = _load_encoder(device)
-        embed_batch_size = _initial_embed_batch_size(device, int(batch_size))
+        # Pick chunk size for backend embedding. LocalBackend benefits from
+        # device-aware sizing (more VRAM = bigger batch). ModalBackend uses a
+        # fixed size — server-side VRAM is unknown to us, and Modal handles
+        # its own scheduling.
+        backend = get_backend()
+        if isinstance(backend, LocalBackend):
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            embed_batch_size = _initial_embed_batch_size(device, int(batch_size))
+        else:
+            device = None
+            embed_batch_size = max(8, int(batch_size))
         stats["embed_batch_requested"] = int(batch_size)
         stats["embed_batch_initial"] = int(embed_batch_size)
         stats["embed_batch_max"] = int(_DEFAULT_EMBED_BATCH_MAX)
-        stats["embed_autocast_fp16"] = int(device.type == "cuda")
+        stats["backend"] = type(backend).__name__
 
         class_to_idx = {cat: i for i, cat in enumerate(eligible_cats)}
         all_emb: List[Tensor] = []
@@ -694,10 +681,10 @@ def run_gallery_update(
             start = 0
             while start < len(items):
                 cur_batch_size = int(max(1, embed_batch_size))
-                batch = items[start:start + cur_batch_size]
-                tensors: List[Tensor] = []
+                chunk = items[start:start + cur_batch_size]
+                crops: List[Image.Image] = []
                 batch_items: List[Dict[str, Any]] = []
-                for item in batch:
+                for item in chunk:
                     crop_id = str(item.get("crop_id") or "").strip()
                     crop_path = Path(item.get("crop_path"))
                     if not crop_id:
@@ -706,30 +693,31 @@ def run_gallery_update(
                         img = Image.open(crop_path).convert("RGB")
                     except Exception:
                         continue
-                    tensors.append(_prep_tensor(img))
+                    crops.append(img)
                     batch_items.append(item)
-                if not tensors:
-                    start += len(batch)
+                if not crops:
+                    start += len(chunk)
                     continue
                 while True:
-                    batch_t = torch.stack(tensors).to(device, non_blocking=(device.type == "cuda"))
                     try:
-                        with torch.inference_mode():
-                            autocast_ctx = (
-                                torch.autocast(device_type="cuda", dtype=torch.float16)
-                                if device.type == "cuda"
-                                else contextlib.nullcontext()
-                            )
-                            with autocast_ctx:
-                                emb = model(batch_t)
-                                if tta_hflip:
-                                    emb_flip = model(torch.flip(batch_t, dims=[3]))
-                                    emb = (emb + emb_flip) / 2.0
-                            emb = torch.nn.functional.normalize(emb, p=2, dim=1)
-                            emb = emb.detach().float().cpu()
+                        if tta_hflip:
+                            # Send originals + horizontal flips in one call,
+                            # average paired embeddings, then renormalize.
+                            flipped = [ImageOps.mirror(c) for c in crops]
+                            embs_all = backend.embed_crops(crops + flipped)
+                            n = len(crops)
+                            emb = (embs_all[:n] + embs_all[n:]) / 2.0
+                        else:
+                            emb = backend.embed_crops(crops)
+                        emb = torch.nn.functional.normalize(emb, p=2, dim=1)
+                        emb = emb.detach().float().cpu()
                         break
                     except RuntimeError as e:
-                        oom = device.type == "cuda" and "out of memory" in str(e).lower()
+                        # OOM retry only makes sense on local CUDA.
+                        oom = (
+                            isinstance(backend, LocalBackend)
+                            and "out of memory" in str(e).lower()
+                        )
                         if not oom or cur_batch_size <= 1:
                             raise
                         try:
@@ -742,30 +730,13 @@ def run_gallery_update(
                             int(stats.get("embed_batch_initial", cur_batch_size)),
                             int(cur_batch_size),
                         )
-                        batch = items[start:start + cur_batch_size]
-                        tensors = []
-                        batch_items = []
-                        for item in batch:
-                            crop_id = str(item.get("crop_id") or "").strip()
-                            crop_path = Path(item.get("crop_path"))
-                            if not crop_id:
-                                continue
-                            try:
-                                img = Image.open(crop_path).convert("RGB")
-                            except Exception:
-                                continue
-                            tensors.append(_prep_tensor(img))
-                            batch_items.append(item)
-                        if not tensors:
+                        crops = crops[:cur_batch_size]
+                        batch_items = batch_items[:cur_batch_size]
+                        if not crops:
                             break
                         continue
-                    finally:
-                        try:
-                            del batch_t
-                        except Exception:
-                            pass
-                if not tensors:
-                    start += len(batch)
+                if not crops:
+                    start += len(chunk)
                     continue
                 all_emb.append(emb)
                 all_labels.extend([cat_idx] * emb.shape[0])

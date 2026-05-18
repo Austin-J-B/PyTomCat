@@ -43,10 +43,9 @@ from UserInterface.feeding_schedule_linker import handle_feeding_schedule_link
 from UserInterface.sub_request_linker import handle_sub_request_link
 from .services.cat_query import infer_query_from_text, looks_like_cat_query_text
 
-#---- Aliases and local parser ------------------------------------------------
+#---- Aliases and fuzzy matching ----------------------------------------------
 from .aliases import resolve_station_or_cat, alias_vocab
 from .utils.fuzzy import fuzzy_ratio, levenshtein_distance
-from .nlp.local_parser import LocalLLMParser
 
 #---- Time zone handling (America/Chicago) -----------------------------------
 try:
@@ -336,11 +335,10 @@ class ClarifyView(discord.ui.View):
 #------------------------------------------------------------------------------
 
 class IntentRouter:
-    """Route Discord messages through alias rules and the local parser."""
+    """Route Discord messages through deterministic rules and fuzzy matching."""
     def __init__(self):
         #ring buffer: per (channel_id, user_id) last ~100 rows
         self._buf: Dict[Tuple[int,int], Deque[MachineRow]] = defaultdict(lambda: deque(maxlen=100))
-        self._local_llm: Optional[LocalLLMParser] = LocalLLMParser.maybe_load(settings)
         self._alias_vocab = alias_vocab()  #{"stations":[names...], "cats":[names...], "all":[...]}
         #ephemeral memory for clarify actions: msg_id -> payload
         self._pending_clarify: Dict[int, Dict[str, Any]] = {}
@@ -352,14 +350,8 @@ class IntentRouter:
         self._traces: Dict[int, List[str]] = {}
 
     def shutdown(self, *, wait: bool = False) -> None:
-        """Release optional local parser runtimes during process shutdown."""
-        parser = self._local_llm
-        self._local_llm = None
-        if parser is not None:
-            try:
-                parser.shutdown(wait=wait)
-            except Exception:
-                pass
+        """No-op stub kept for back-compat; the local LLM was removed."""
+        return
 
     #---------- public entry ----------
     async def handle_message(self, message: Any, ctx: Dict[str, Any]) -> None:
@@ -823,36 +815,19 @@ class IntentRouter:
             #Deterministic cat-query parser for catabase questions.
             q_direct = infer_query_from_text(text_wo)
             if q_direct:
-                # Check if the deterministic parser actually extracted meaningful filters.
-                # If not and the LLM is available, skip claiming the query so the LLM
-                # can try to understand the user's intent with its full NLU capability.
-                _has_filters = (
-                    q_direct.get("location")
-                    or q_direct.get("tnrd") is not None
-                    or q_direct.get("color_family")
-                    or q_direct.get("birth_year") is not None
-                    or q_direct.get("photo_count_min") is not None
-                    or q_direct.get("photo_count_max") is not None
-                    or q_direct.get("photo_count_extreme")
-                    or q_direct.get("recent_scope")
-                    or q_direct.get("op") in {"count_all_cats", "count_by_filters"}
+                q_conf = _deterministic_cat_query_confidence(text_wo, q_direct)
+                trace.append("intent:cat_query(deterministic)")
+                self._traces[row["message_id"]] = trace
+                return IntentEvent(
+                    type="cat_query", confidence=q_conf,
+                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
+                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                    trigger_phrase="deterministic_parser",
+                    query={**q_direct, "source_text": text_wo},
                 )
-                if _has_filters or not self._local_llm:
-                    q_conf = _deterministic_cat_query_confidence(text_wo, q_direct)
-                    trace.append("intent:cat_query(deterministic)")
-                    self._traces[row["message_id"]] = trace
-                    return IntentEvent(
-                        type="cat_query", confidence=q_conf,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        trigger_phrase="deterministic_parser",
-                        query={**q_direct, "source_text": text_wo},
-                    )
-                else:
-                    trace.append("deterministic:no_filters,deferring_to_llm")
             # If we can tell it's a catabase question but slot extraction is unclear,
-            # and no LLM is available, route with source_text for the generic CSV plan.
-            if looks_like_cat_query_text(text_wo) and not self._local_llm:
+            # route with source_text for the generic CSV plan.
+            if looks_like_cat_query_text(text_wo):
                 trace.append("intent:cat_query(source_text_fallback)")
                 self._traces[row["message_id"]] = trace
                 return IntentEvent(
@@ -1037,110 +1012,6 @@ class IntentRouter:
                 self._traces[row["message_id"]] = trace
                 return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
                                    message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
-
-        # Addressed messages get a local-LLM fallback here so feeding-channel
-        # heuristics do not claim them first.
-        if addressed and self._local_llm and len(text) >= 3:
-            text_wo = self._strip_wake_tokens(raw_text, message)
-            if text_wo:
-                parsed = await self._local_llm.parse(text_wo)
-                trace.append(f"llm:route={parsed.route};conf={parsed.confidence:.2f}")
-                log_action(
-                    "local_llm_route",
-                    f"msg={row['message_id']}; user={row['user_id']}",
-                    f"route={parsed.route}; conf={parsed.confidence:.2f}; reason={parsed.reason or ''}",
-                )
-                conf_min = float(getattr(settings, "local_llm_conf_min", 0.80) or 0.80)
-                if parsed.route != "none" and parsed.confidence >= conf_min:
-                    if parsed.route == "dispatch_existing":
-                        cat_hint = parsed.cat_name or text_wo
-                        cat = self._extract_best_entity(cat_hint, want="cat")
-                        if cat and parsed.intent == "show_photo":
-                            trace.append(f"slot:cat={cat}")
-                            trace.append("intent:show_photo(local_llm)")
-                            self._traces[row["message_id"]] = trace
-                            return IntentEvent(
-                                type="show_photo", confidence=parsed.confidence,
-                                channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                                text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                                cat_name=cat, trigger_phrase=parsed.reason or "local_llm_dispatch",
-                            )
-                        if cat and parsed.intent == "who_is":
-                            trace.append(f"slot:cat={cat}")
-                            trace.append("intent:who_is(local_llm)")
-                            self._traces[row["message_id"]] = trace
-                            return IntentEvent(
-                                type="who_is", confidence=parsed.confidence,
-                                channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                                text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                                cat_name=cat, trigger_phrase=parsed.reason or "local_llm_dispatch",
-                            )
-                    if parsed.route == "cat_query":
-                        q = dict(parsed.query or {})
-                        has_plan_filters = bool(q.get("filters"))
-                        #Merge local-LLM output with deterministic text inference so slot/op errors
-                        #from the model don't degrade obvious filter queries.
-                        q_hint = infer_query_from_text(text_wo) or {}
-
-                        llm_location = q.get("location")
-                        if llm_location:
-                            q["location"] = resolve_station_or_cat(
-                                str(llm_location),
-                                want="station",
-                                include_stopword_aliases=True,
-                            ) or str(llm_location)
-
-                        #When deterministic parsing extracted meaningful filters, trust those
-                        #over the LLM to avoid hallucinated slots. But only overwrite if
-                        #the deterministic parser actually found something useful.
-                        _hint_has_slots = (
-                            q_hint.get("location")
-                            or q_hint.get("tnrd") is not None
-                            or q_hint.get("color_family")
-                            or q_hint.get("birth_year") is not None
-                            or q_hint.get("photo_count_min") is not None
-                            or q_hint.get("photo_count_max") is not None
-                            or q_hint.get("photo_count_extreme")
-                            or q_hint.get("recent_scope")
-                        )
-                        if q_hint and not has_plan_filters and _hint_has_slots:
-                            q["location"] = q_hint.get("location")
-                            q["tnrd"] = q_hint.get("tnrd")
-                            q["color_family"] = q_hint.get("color_family")
-                            q["recent_scope"] = q_hint.get("recent_scope")
-                            q["birth_year"] = q_hint.get("birth_year")
-                            q["photo_count_min"] = q_hint.get("photo_count_min")
-                            q["photo_count_max"] = q_hint.get("photo_count_max")
-                            q["photo_count_extreme"] = q_hint.get("photo_count_extreme")
-
-                        #Prefer deterministic inferred op when available; it better captures
-                        #question form like "which cats..." vs "how many cats...".
-                        hint_op = str(q_hint.get("op") or "").strip().lower()
-                        if (not has_plan_filters) and hint_op in {"count_all_cats", "count_by_filters", "list_names_by_filters"}:
-                            q["op"] = hint_op
-
-                        q["source_text"] = text_wo
-                        trace.append("intent:cat_query(local_llm)")
-                        self._traces[row["message_id"]] = trace
-                        return IntentEvent(
-                            type="cat_query", confidence=parsed.confidence,
-                            channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                            text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                            trigger_phrase=parsed.reason or "local_llm_query",
-                            query=q,
-                        )
-                #Deterministic backup parser when local LLM times out/abstains.
-                q2 = infer_query_from_text(text_wo)
-                if q2:
-                    trace.append("intent:cat_query(heuristic_backup)")
-                    self._traces[row["message_id"]] = trace
-                    return IntentEvent(
-                        type="cat_query", confidence=0.70,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        trigger_phrase="heuristic_backup",
-                        query={**q2, "source_text": text_wo},
-                    )
 
         #3) Feeding-team flows (high traffic). Feed updates only; subs are UI-only.
         #Case A: feed verb with possibly multiple stations

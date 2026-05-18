@@ -1515,62 +1515,22 @@ async def start_web_server(bot):
             except Exception: # Catch JSON parsing errors for malformed lines
                 continue
 
-        #Resolve display names for any requester IDs that were missing names in the log.
+        #Resolve display names via the process-wide username cache so repeat
+        #lookups across boot sync / catabase sync don't burn through the
+        #Discord per-route rate limit. See tomcat/utils/username_cache.py.
+        from .utils.username_cache import get_display_name as _get_display_name
+
         name_cache: Dict[int, str] = {}
-        if missing_requester_ids:
-            guild = bot.get_guild(YOUR_GUILD_ID) if "bot" in globals() else None
+        if missing_requester_ids and "bot" in globals():
             for uid in list(missing_requester_ids):
-                display = ""
-                try:
-                    if guild:
-                        member = guild.get_member(uid)
-                        if not member:
-                            try:
-                                member = await guild.fetch_member(uid)
-                            except Exception:
-                                member = None
-                        if member:
-                            display = getattr(member, "display_name", None) or getattr(member, "global_name", None) or member.name
-                    if not display and "bot" in globals():
-                        user = bot.get_user(uid)  #type: ignore[name-defined]
-                        if not user and hasattr(bot, "fetch_user"):
-                            try:
-                                user = await bot.fetch_user(uid)  #type: ignore[attr-defined]
-                            except Exception:
-                                user = None
-                        if user:
-                            display = getattr(user, "global_name", None) or getattr(user, "name", None) or ""
-                except Exception:
-                    display = ""
+                display = await _get_display_name(uid, bot, guild_id=YOUR_GUILD_ID)
                 if display:
                     name_cache[uid] = display
 
         assignee_name_cache: Dict[int, str] = {}
-        if missing_assignee_ids:
-            guild = bot.get_guild(YOUR_GUILD_ID) if "bot" in globals() else None
+        if missing_assignee_ids and "bot" in globals():
             for uid in list(missing_assignee_ids):
-                display = ""
-                try:
-                    if guild:
-                        member = guild.get_member(uid)
-                        if not member:
-                            try:
-                                member = await guild.fetch_member(uid)
-                            except Exception:
-                                member = None
-                        if member:
-                            display = getattr(member, "display_name", None) or getattr(member, "global_name", None) or member.name
-                    if not display and "bot" in globals():
-                        user = bot.get_user(uid)  #type: ignore[name-defined]
-                        if not user and hasattr(bot, "fetch_user"):
-                            try:
-                                user = await bot.fetch_user(uid)  #type: ignore[attr-defined]
-                            except Exception:
-                                user = None
-                        if user:
-                            display = getattr(user, "global_name", None) or getattr(user, "name", None) or ""
-                except Exception:
-                    display = ""
+                display = await _get_display_name(uid, bot, guild_id=YOUR_GUILD_ID)
                 if display:
                     assignee_name_cache[uid] = display
 
@@ -1878,23 +1838,36 @@ async def on_ready():
         _start_background_task("catabase_photo_sync", lambda: start_catabase_photo_sync_scheduler())
     except Exception:
         pass
-    # Pre-warm CV models so the first user request doesn't timeout
-    # while loading weights from disk.
+    # Pre-warm CV state appropriate for the active backend:
+    # - LocalBackend: load detector + encoder + gallery on disk.
+    # - ModalBackend: load gallery locally, warm a Modal container via ping.
     async def _preload_cv_models():
         try:
-            from .vision import vision as _V
-            await asyncio.to_thread(_V._ensure_detector)
-            log_event({"event": "health", "component": "cv_detector", "status": "preloaded"})
+            from .vision.backend import get_backend
+            backend = get_backend()
+            await asyncio.to_thread(backend.preload)
+            log_event({
+                "event": "health",
+                "component": "cv_backend",
+                "status": "preloaded",
+                "backend": type(backend).__name__,
+            })
         except Exception as e:
-            log_event({"event": "health", "component": "cv_detector", "status": "error", "error": str(e)})
-        try:
-            from .vision import vision as _V
-            await asyncio.to_thread(_V._ensure_classifier)
-            log_event({"event": "health", "component": "cv_classifier", "status": "preloaded"})
-        except Exception as e:
-            log_event({"event": "health", "component": "cv_classifier", "status": "error", "error": str(e)})
+            log_event({
+                "event": "health",
+                "component": "cv_backend",
+                "status": "error",
+                "error": str(e),
+            })
 
     _start_background_task("cv_model_preload", lambda: _preload_cv_models())
+
+    # Modal keep-warm runs in activity-window mode by default: the pinger is
+    # spawned on-demand by handlers/vision.py after each user request and
+    # exits after settings.cv_modal_activity_window_sec of idle time.
+    # If you set CV_MODAL_ACTIVITY_WINDOW_SEC=0, the pinger becomes
+    # always-on once any CV request happens (or once a user runs identify
+    # at startup). No background task is needed here for either mode.
 
     #Wire gallery retrain notifications into CH_LOGGING.
     async def _notify_gallery_retrain(msg: str) -> None:

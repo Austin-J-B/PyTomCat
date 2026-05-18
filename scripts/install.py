@@ -23,14 +23,6 @@ from typing import Iterable, List
 ROOT = Path(__file__).resolve().parent.parent
 VENV_DIR = ROOT / ".venv"
 WEIGHTS_DIR = ROOT / "weights"
-LOCAL_LLM_GGUF_NAME = "SmolLM2-1.7B-Instruct-Q6_K.gguf"
-LOCAL_LLM_GGUF_PATH = WEIGHTS_DIR / LOCAL_LLM_GGUF_NAME
-LOCAL_LLM_GGUF_URL = (
-    "https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/"
-    "SmolLM2-1.7B-Instruct-Q6_K.gguf?download=true"
-)
-LLAMA_CPP_WHEEL_INDEX_CPU = "https://abetlen.github.io/llama-cpp-python/whl/cpu"
-LLAMA_CPP_WHEEL_INDEX_CUDA = "https://abetlen.github.io/llama-cpp-python/whl/cu121"
 CONFIG_PATH = ROOT / "config.yml"
 
 REQUIRED_WEIGHTS = ["R4_cat_DINOv3_encoder.pth", "sam2_s.pt"]
@@ -80,14 +72,6 @@ SHEET_MEGASHEET_ID=                   # Members/finance megasheet (used for dues
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
 # ===== ML Model Paths =====
-LOCAL_LLM_ENABLED=true
-LOCAL_LLM_RUNTIME=llama_cpp
-LOCAL_LLM_GGUF_PATH=weights/SmolLM2-1.7B-Instruct-Q6_K.gguf
-LOCAL_LLM_CONF_MIN=0.80
-LOCAL_LLM_MAX_TOKENS=128
-LOCAL_LLM_CTX=1024
-LOCAL_LLM_N_GPU_LAYERS=-1
-LOCAL_LLM_TIMEOUT_SEC=12.0
 CV_DETECT_WEIGHTS=weights/984_917_yolo12s.pt
 CV_ENCODER_WEIGHTS=weights/R4_cat_DINOv3_encoder.pth
 CV_GALLERY_PATH=auto
@@ -187,19 +171,6 @@ def _bootstrap_python_windows() -> None:
         sys.exit(0)
     except Exception as e:
         raise InstallError(f"Bootstrapper failed: {e}")
-
-def _clean_hf_cache() -> None:
-    targets = [
-        Path(os.path.expanduser("~")) / ".cache" / "huggingface",
-        Path(os.path.expanduser("~")) / ".huggingface",
-    ]
-    for path in targets:
-        try:
-            if path.exists():
-                shutil.rmtree(path, ignore_errors=True)
-                print(f"Cleared {path}")
-        except Exception as exc:
-            print(f"Warning: failed to remove {path}: {exc}")
 
 def _ensure_repo() -> None:
     if not (ROOT / "requirements.txt").exists():
@@ -399,61 +370,6 @@ def _install_torch(force: str | None = None) -> None:
             return
         raise
 
-def _llama_cpp_has_gpu() -> bool:
-    """Check if the currently installed llama-cpp-python supports GPU offload."""
-    try:
-        result = subprocess.run(
-            [str(_venv_python()), "-c",
-             "from llama_cpp import llama_cpp; print(bool(llama_cpp.llama_supports_gpu_offload()))"],
-            capture_output=True, text=True, timeout=15,
-        )
-        return result.stdout.strip() == "True"
-    except Exception:
-        return False
-
-def _ensure_llama_cpp_runtime(wants_gpu: bool = False) -> None:
-    """Install llama.cpp Python bindings used by local structured fallback parsing."""
-    label = "GPU/CUDA 12.1" if wants_gpu else "CPU"
-    _print_header(f"Installing local LLM runtime (llama-cpp-python, {label})")
-    wheel_index = LLAMA_CPP_WHEEL_INDEX_CUDA if wants_gpu else LLAMA_CPP_WHEEL_INDEX_CPU
-
-    # If switching between CPU and GPU builds, force-reinstall since pip won't
-    # replace a satisfied version with a different build variant on its own.
-    needs_force = False
-    if wants_gpu and not _llama_cpp_has_gpu():
-        print("Existing install is CPU-only; forcing reinstall for CUDA build...")
-        needs_force = True
-
-    force_flags = ["--force-reinstall", "--no-deps"] if needs_force else []
-    try:
-        #Prefer prebuilt wheels to avoid requiring local MSVC/CMake toolchains.
-        _pip([
-            "--prefer-binary",
-            *force_flags,
-            "--extra-index-url", wheel_index,
-            "llama-cpp-python>=0.3.0,<0.4",
-        ])
-    except subprocess.CalledProcessError:
-        if wants_gpu:
-            print("GPU llama-cpp-python install failed; falling back to CPU...")
-            try:
-                _pip([
-                    "--prefer-binary",
-                    "--extra-index-url", LLAMA_CPP_WHEEL_INDEX_CPU,
-                    "llama-cpp-python>=0.3.0,<0.4",
-                ])
-                return
-            except subprocess.CalledProcessError:
-                pass
-        #Fallback to default index in case prebuilt wheel index is unavailable.
-        try:
-            _pip(["--prefer-binary", "llama-cpp-python>=0.3.0,<0.4"])
-        except subprocess.CalledProcessError:
-            print("Warning: llama-cpp-python install failed.")
-            print("Local LLM fallback will stay disabled until this package is installed.")
-            print("Tip: install Build Tools OR use prebuilt wheels from:")
-            print(f"  {LLAMA_CPP_WHEEL_INDEX_CPU}")
-
 def _download_large_file(url: str, dest: Path) -> None:
     """Stream a large file download with simple MB progress logging."""
     tmp = dest.with_suffix(dest.suffix + ".tmp")
@@ -491,22 +407,6 @@ def _download_large_file(url: str, dest: Path) -> None:
         except Exception:
             pass
 
-def _ensure_local_llm_model() -> None:
-    """Download the default GGUF model for local fallback parsing when missing."""
-    WEIGHTS_DIR.mkdir(exist_ok=True)
-    if LOCAL_LLM_GGUF_PATH.exists():
-        print(f"Local LLM model is present: {LOCAL_LLM_GGUF_PATH.name}")
-        return
-    _print_header("Downloading local fallback model (SmolLM2-1.7B Q6_K)")
-    print(f"Target: {LOCAL_LLM_GGUF_PATH}")
-    try:
-        _download_large_file(LOCAL_LLM_GGUF_URL, LOCAL_LLM_GGUF_PATH)
-        size_mb = int(LOCAL_LLM_GGUF_PATH.stat().st_size / (1024 * 1024))
-        print(f"Downloaded {LOCAL_LLM_GGUF_PATH.name} ({size_mb} MB)")
-    except Exception as e:
-        print(f"Warning: failed to download local LLM GGUF: {e}")
-        print("You can add the model manually to weights/ and set LOCAL_LLM_GGUF_PATH in .env.")
-
 def _check_yolo_weights() -> None:
     missing = []
     for w in REQUIRED_WEIGHTS:
@@ -542,9 +442,6 @@ def _parse_args() -> argparse.Namespace:
     group.add_argument("--gpu", action="store_true", help="force GPU wheels")
     parser.add_argument("--python", type=Path, help="specific Python path")
     parser.add_argument("--reinstall", action="store_true", help="force full reinstall")
-    parser.add_argument("--resume-model", action="store_true", help="resume model steps")
-    parser.add_argument("--skip-model", action="store_true", help="skip model steps")
-    parser.add_argument("--clean-hf-cache", action="store_true", help="clear HF caches")
     parser.add_argument("--tunnel-credentials", type=Path, help="path to CF credentials")
     parser.add_argument("--tunnel-name", help="name for new CF tunnel")
     parser.add_argument("--update-cloudflared", action="store_true", help="force update cloudflared binary")
@@ -557,7 +454,6 @@ def main() -> None:
     _print_header("TomCat Installer")
     print(f"Root: {ROOT}")
     print(f"Python: {python_exe}")
-    print(f"Local LLM model path: {LOCAL_LLM_GGUF_PATH}")
 
     #Check if we are running from within the .venv we are trying to manage
     if str(VENV_DIR) in str(python_exe):
@@ -583,45 +479,28 @@ def main() -> None:
 
     has_gpu = args.gpu or (not args.cpu and _detect_cuda())
 
-    if args.resume_model:
-        if not _venv_python().exists():
-            raise InstallError(".venv not found.")
-        _ensure_llama_cpp_runtime(wants_gpu=has_gpu)
-        if args.clean_hf_cache:
-            _clean_hf_cache()
-        _ensure_local_llm_model()
-        _check_yolo_weights()
-        _maybe_create_env_template()
-    else:
+    _create_or_reuse_venv(python_exe)
+    torch_force = "gpu" if args.gpu else "cpu" if args.cpu else None
+    _install_torch(torch_force)
+
+    try:
+        _install_base_dependencies(force_reinstall=args.reinstall)
+    except subprocess.CalledProcessError:
+        print("\nDependency install failed. Recreating .venv...")
+        if VENV_DIR.exists():
+            try:
+                shutil.rmtree(VENV_DIR)
+            except PermissionError:
+                print(f"\n[!] ERROR: Access Denied to {VENV_DIR}")
+                print("Ensure no other terminals or processes are using the virtual environment (e.g., the bot or a VS Code terminal).")
+                print("Close them and run this script again.")
+                sys.exit(1)
         _create_or_reuse_venv(python_exe)
-        torch_force = "gpu" if args.gpu else "cpu" if args.cpu else None
         _install_torch(torch_force)
+        _install_base_dependencies(force_reinstall=True)
 
-        try:
-            _install_base_dependencies(force_reinstall=args.reinstall)
-        except subprocess.CalledProcessError:
-            print("\nDependency install failed. Recreating .venv...")
-            if VENV_DIR.exists():
-                try:
-                    shutil.rmtree(VENV_DIR)
-                except PermissionError:
-                    print(f"\n[!] ERROR: Access Denied to {VENV_DIR}")
-                    print("Ensure no other terminals or processes are using the virtual environment (e.g., the bot or a VS Code terminal).")
-                    print("Close them and run this script again.")
-                    sys.exit(1)
-            _create_or_reuse_venv(python_exe)
-            _install_torch(torch_force)
-            _install_base_dependencies(force_reinstall=True)
-
-        _ensure_llama_cpp_runtime(wants_gpu=has_gpu)
-
-        if not args.skip_model:
-            if args.clean_hf_cache:
-                _clean_hf_cache()
-            _ensure_local_llm_model()
-
-        _check_yolo_weights()
-        _maybe_create_env_template()
+    _check_yolo_weights()
+    _maybe_create_env_template()
 
     print("\nInstallation Complete!")
     print("1. Fill in DISCORD_TOKEN and DISCORD_CLIENT_SECRET in '.env'.")

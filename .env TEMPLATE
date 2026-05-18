@@ -33,15 +33,6 @@ SHEET_MEGASHEET_ID=                   # Members/finance megasheet (used for dues
 MEMBERSHIP_WS_TITLE="Membership Application List"
 
 # ===== ML Model Paths =====
-LOCAL_LLM_ENABLED=true
-LOCAL_LLM_RUNTIME=llama_cpp
-LOCAL_LLM_GGUF_PATH=weights/SmolLM2-1.7B-Instruct-Q6_K.gguf
-LOCAL_LLM_CONF_MIN=0.80
-LOCAL_LLM_MAX_TOKENS=220
-LOCAL_LLM_CTX=2048
-LOCAL_LLM_N_GPU_LAYERS=0
-LOCAL_LLM_TIMEOUT_SEC=12.0
-LOCAL_LLM_TIMEOUT_CAP_SEC=1.2
 CV_DETECT_WEIGHTS=weights/NanoModel.pt
 CV_CLASSIFY_WEIGHTS=weights/NanoClassifier.pt
 CV_MAX_DOWNLOAD_MB=0                  # Set to 0 to lift the max file size limit

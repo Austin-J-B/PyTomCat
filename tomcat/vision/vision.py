@@ -659,27 +659,48 @@ def _ensure_sam() -> None:
             log_action("viz_sam_load_error", "error", str(e))
             _sam = None
 
-def _ensure_classifier() -> None:
-    """Load the DINOv3 encoder and the .pt gallery."""
-    global _clf, _gallery_emb, _gallery_names, _gallery_paths, _gallery_records
-    _ensure_device_only()
-    if _clf is not None and _gallery_emb is not None: return
-    with _clf_lock:
-        if _clf is not None and _gallery_emb is not None: return
+def _ensure_encoder() -> None:
+    """Load the DINOv3 encoder (.pth) into the host process.
 
+    Used by LocalBackend. ModalBackend has no encoder locally — the host
+    process only needs the gallery in that case.
+    """
+    global _clf
+    _ensure_device_only()
+    if _clf is not None:
+        return
+    with _clf_lock:
+        if _clf is not None:
+            return
         try:
-            #1. Load Encoder (.pth brain)
             encoder = DINOv3Wrapper()
             try:
                 state = torch.load(settings.cv_encoder_weights, map_location=_device, weights_only=True)
-            except:
+            except Exception:
                 state = torch.load(settings.cv_encoder_weights, map_location=_device)
-
             encoder.load_state_dict(state, strict=True)
             encoder.to(_device).eval()
             _clf = encoder
+            log_action("viz_encoder_load_info", "encoder_ready", str(settings.cv_encoder_weights))
+        except Exception as e:
+            log_action("viz_encoder_load_error", f"type={type(e).__name__}", str(e))
+            _clf = None
 
-            #2. Load Gallery (.pt memories)
+
+def _ensure_gallery() -> None:
+    """Load the DINOv3 gallery (.pt) into the host process.
+
+    Always local regardless of CV backend. The matmul against this gallery is
+    cheap CPU work and the data is what gets re-published by gallery retrain.
+    """
+    global _gallery_emb, _gallery_names, _gallery_paths, _gallery_records
+    _ensure_device_only()
+    if _gallery_emb is not None:
+        return
+    with _clf_lock:
+        if _gallery_emb is not None:
+            return
+        try:
             gallery_target = str(settings.cv_gallery_path or "").strip()
             gallery_path = Path(gallery_target)
             if gallery_target and (not gallery_path.exists() or gallery_path.stat().st_size == 0):
@@ -708,10 +729,15 @@ def _ensure_classifier() -> None:
                 raw_records,
             )
             _rebuild_gallery_cat_indices()
-            log_action("viz_clf_load_info", "reid_ready", f"cats={len(set(_gallery_names))}; gallery={gallery_target}")
+            log_action("viz_gallery_load_info", "gallery_ready", f"cats={len(set(_gallery_names))}; gallery={gallery_target}")
         except Exception as e:
-            log_action("viz_clf_load_error", f"type={type(e).__name__}", str(e))
-            _clf = None
+            log_action("viz_gallery_load_error", f"type={type(e).__name__}", str(e))
+
+
+def _ensure_classifier() -> None:
+    """Load encoder + gallery. Back-compat composite for existing callers."""
+    _ensure_encoder()
+    _ensure_gallery()
 
 #---------- Image Processing Helpers ----------
 def _enforce_max_dim(img: Image.Image) -> None:
@@ -746,9 +772,13 @@ def _prep_tensor(pil: Image.Image) -> Tensor:
     return cast(Tensor, tfm(pil))
 
 
-def _rerank_variant_tensors(crop: Image.Image) -> List[Tensor]:
-    """Build rotation variants, with optional mirroring, for rerank embedding."""
-    variants: List[Tensor] = []
+def _rerank_variant_crops(crop: Image.Image) -> List[Image.Image]:
+    """Build rotation + optional mirror variants of a crop as PIL images.
+
+    Returning PIL (not tensors) lets the backend own preprocessing — required
+    so ModalBackend can ship JPEG bytes rather than raw normalized tensors.
+    """
+    variants: List[Image.Image] = []
     for angle in _RERANK_ANGLES:
         if abs(float(angle)) < 1e-6:
             rotated = crop
@@ -762,10 +792,9 @@ def _rerank_variant_tensors(crop: Image.Image) -> List[Tensor]:
                 )
             except Exception:
                 rotated = crop.rotate(float(angle), expand=False)
-        base = _prep_tensor(rotated)
-        variants.append(base)
+        variants.append(rotated)
         if _RERANK_HFLIP:
-            variants.append(torch.flip(base, dims=[2]))
+            variants.append(ImageOps.mirror(rotated))
     return variants
 
 
@@ -773,17 +802,17 @@ def _rerank_scores_for_crop(crop: Image.Image, candidate_names: List[str]) -> di
     """Return max similarity per candidate cat across rotation variants."""
     if not candidate_names:
         return {}
-    if _clf is None or _gallery_emb is None:
+    if _gallery_emb is None:
         return {}
 
-    variants = _rerank_variant_tensors(crop)
+    variants = _rerank_variant_crops(crop)
     if not variants:
         return {}
 
-    batch = torch.stack(variants).to(_device)
-    with torch.inference_mode():
-        with _clf_lock:
-            q = _clf(batch)
+    from .backend import get_backend
+    q = get_backend().embed_crops(variants)
+    if q.device != _gallery_emb.device:
+        q = q.to(_gallery_emb.device)
 
     out: dict[str, float] = {}
     for name in candidate_names:
@@ -1095,16 +1124,14 @@ def _make_collage(crops: List[Image.Image]) -> Image.Image:
 
 #---------- Core Logic ----------
 def _run_yolo(img: Image.Image) -> List[Det]:
-    _ensure_detector()
-    with _yolo_lock:
-        res = _yolo.predict(img, conf=settings.cv_conf or _DEFAULT_CONF, imgsz=settings.cv_detect_imgsz, verbose=False)
-    dets = []
-    for r in res:
-        boxes = r.boxes.xyxy.detach().cpu().numpy()
-        confs = r.boxes.conf.detach().cpu().numpy()
-        for b, c in zip(boxes, confs):
-            dets.append(Det((float(b[0]), float(b[1]), float(b[2]), float(b[3])), float(c)))
-    return dets
+    from .backend import get_backend
+    return get_backend().detect(img)
+
+
+def _embed_batch(batch: Tensor) -> Tensor:
+    """Run DINOv3 encoder forward on a preprocessed batch via the active backend."""
+    from .backend import get_backend
+    return get_backend().embed_tensors(batch)
 
 def detect(image_bytes: bytes, *, include_boxed_image: bool = True) -> IdentifyResult:
     """Run detection only and return the boxed image."""
@@ -1150,70 +1177,89 @@ def crop(image_bytes: bytes) -> IdentifyResult:
 
 def identify(image_bytes: bytes) -> IdentifyResult:
     """Run detection then 512D similarity search for identification."""
+    from .backend import get_backend
+    backend = get_backend()
+
     img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
-    
-    _ensure_classifier()
-    
-    dets = _run_yolo(img)
+
+    # Gallery always stays local; encoder loads in LocalBackend.detect_and_embed.
+    _ensure_gallery()
+    _ensure_device_only()
+
+    # Re-encode the (possibly resized) image so the backend boundary is bytes,
+    # not a PIL handle. JPEG quality 92 keeps detection/embedding fidelity high.
+    enc_buf = io.BytesIO()
+    img.save(enc_buf, format="JPEG", quality=92)
+    backend_image_bytes = enc_buf.getvalue()
+
+    backend_result = backend.detect_and_embed(
+        backend_image_bytes,
+        conf=float(settings.cv_conf or _DEFAULT_CONF),
+        detect_imgsz=int(settings.cv_detect_imgsz),
+        pad_pct=float(settings.cv_pad_pct),
+    )
+    detections = list(backend_result.get("detections") or [])
+
+    # Reconstruct Det objects for annotation drawing.
+    dets = [Det(tuple(d["box"]), float(d["conf"])) for d in detections]
     annotated = _draw_boxes(img.copy(), dets)
     results = []
 
-    if _clf is not None and _gallery_emb is not None and dets:
-        tiles: List[Tensor] = []
+    if _gallery_emb is not None and detections:
         tile_crops: List[Image.Image] = []
         boxes: List[Tuple[int, int, int, int]] = []
-        for d in dets:
-            x1, y1, x2, y2 = d.xyxy
-            cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, *img.size)
-            crop = img.crop((cx1, cy1, cx2, cy2))
-            tiles.append(_prep_tensor(crop))
-            tile_crops.append(crop)
+        emb_list: List[List[float]] = []
+        for d in detections:
+            cx1, cy1, cx2, cy2 = d["crop_box"]
+            tile_crops.append(img.crop((cx1, cy1, cx2, cy2)))
             boxes.append((int(cx1), int(cy1), int(cx2), int(cy2)))
+            emb_list.append(d["embedding"])
 
-        if tiles:
-            batch = torch.stack(tiles).to(_device)
-            with torch.inference_mode():
-                with _clf_lock:
-                    query_embs = _clf(batch)
-                similarities = query_embs @ _gallery_emb.T
-            candidate_rows_by_crop = [
-                _rank_unique_candidates_for_similarity(
-                    similarities[i],
-                    crop=tile_crops[i] if i < len(tile_crops) else None,
-                    rerank=True,
-                )
-                for i in range(len(dets))
+        query_embs = torch.tensor(emb_list, dtype=torch.float32).to(_device)
+        with torch.inference_mode():
+            similarities = query_embs @ _gallery_emb.T
+
+        # Rerank now goes through backend.embed_crops which works on both
+        # LocalBackend and ModalBackend (Phase 3a). On Modal it costs one
+        # extra round-trip per detected cat — acceptable for the quality gain.
+        candidate_rows_by_crop = [
+            _rank_unique_candidates_for_similarity(
+                similarities[i],
+                crop=tile_crops[i] if i < len(tile_crops) else None,
+                rerank=True,
+            )
+            for i in range(len(detections))
+        ]
+        candidate_rows_by_crop = _apply_identify_station_prior(candidate_rows_by_crop)
+        assigned_names = _assign_unique_cat_names(candidate_rows_by_crop)
+
+        for i in range(len(detections)):
+            taken_elsewhere = {
+                str(name).strip()
+                for idx, name in enumerate(assigned_names)
+                if idx != i and str(name or "").strip()
+            }
+            visible_rows = _visible_unique_candidate_rows(
+                candidate_rows_by_crop[i],
+                assigned_name=assigned_names[i] if i < len(assigned_names) else None,
+                taken_elsewhere=taken_elsewhere,
+            )
+            top_candidates = [
+                (name, _clamp_confidence_score(score))
+                for name, score, _ in visible_rows[:5]
+                if str(name or "").strip()
             ]
-            candidate_rows_by_crop = _apply_identify_station_prior(candidate_rows_by_crop)
-            assigned_names = _assign_unique_cat_names(candidate_rows_by_crop)
-
-            for i in range(len(dets)):
-                taken_elsewhere = {
-                    str(name).strip()
-                    for idx, name in enumerate(assigned_names)
-                    if idx != i and str(name or "").strip()
-                }
-                visible_rows = _visible_unique_candidate_rows(
-                    candidate_rows_by_crop[i],
-                    assigned_name=assigned_names[i] if i < len(assigned_names) else None,
-                    taken_elsewhere=taken_elsewhere,
-                )
-                top_candidates = [
-                    (name, _clamp_confidence_score(score))
-                    for name, score, _ in visible_rows[:5]
-                    if str(name or "").strip()
-                ]
-                if not top_candidates:
-                    continue
-                best_name, best_conf = top_candidates[0]
-                results.append({
-                    "index": i + 1,
-                    "name": best_name,
-                    "conf": best_conf,
-                    "box": boxes[i],
-                    "top5": top_candidates,
-                })
+            if not top_candidates:
+                continue
+            best_name, best_conf = top_candidates[0]
+            results.append({
+                "index": i + 1,
+                "name": best_name,
+                "conf": best_conf,
+                "box": boxes[i],
+                "top5": top_candidates,
+            })
 
     buf = io.BytesIO()
     annotated.save(buf, format="JPEG")
@@ -1375,14 +1421,14 @@ def identify_boxes(
     t0_total = time.perf_counter()
     img = _open_rgb_image(io.BytesIO(image_bytes))
     _enforce_max_dim(img)
-    _ensure_classifier()
+    _ensure_gallery()
+    _ensure_device_only()
     preprocess_ms = (time.perf_counter() - t0_total) * 1000.0
 
-    if _clf is None or _gallery_emb is None or not boxes:
+    if _gallery_emb is None or not boxes:
         return IdentifyResult(boxed_jpeg=b"", results=[])
 
     img_w, img_h = img.size
-    tiles: List[Tensor] = []
     tile_crops: List[Image.Image] = []
     valid_boxes: List[Tuple[int, int, int, int]] = []
     tile_prep_t0 = time.perf_counter()
@@ -1399,20 +1445,17 @@ def identify_boxes(
         x2 = (cx + w / 2) * img_w
         y2 = (cy + h / 2) * img_h
         cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
-        crop = img.crop((cx1, cy1, cx2, cy2))
-        tiles.append(_prep_tensor(crop))
-        tile_crops.append(crop)
+        tile_crops.append(img.crop((cx1, cy1, cx2, cy2)))
         valid_boxes.append((int(cx1), int(cy1), int(cx2), int(cy2)))
     tile_prep_ms = (time.perf_counter() - tile_prep_t0) * 1000.0
 
-    if not tiles:
+    if not tile_crops:
         return IdentifyResult(boxed_jpeg=b"", results=[])
 
     embed_t0 = time.perf_counter()
-    batch = torch.stack(tiles).to(_device)
+    from .backend import get_backend
+    query_embs = get_backend().embed_crops(tile_crops).to(_device)
     with torch.inference_mode():
-        with _clf_lock:
-            query_embs = _clf(batch)
         similarities = query_embs @ _gallery_emb.T
     # Move to CPU once so the per-cat ranking loop avoids repeated GPU→CPU
     # sync stalls (each .item() call blocks until all pending GPU work
@@ -1561,20 +1604,22 @@ def _parse_yolo_box_str(box_str: str) -> Optional[Tuple[float, float, float, flo
     return parts[0], parts[1], parts[2], parts[3]
 
 def _embed_crops(crops: List[Image.Image]) -> Tensor:
-    _ensure_classifier()
-    if _clf is None:
+    """Batch-embed PIL crops via the active backend.
+
+    Chunks at LABELER_REF_EMBED_BATCH_SIZE; on local OOM falls back to 1-at-a-
+    time. ModalBackend handles its own concurrency, so OOM is unlikely there.
+    """
+    from .backend import get_backend
+
+    if not crops:
         return torch.empty((0, 512))
-    tensors = [_prep_tensor(c) for c in crops]
-    if not tensors:
-        return torch.empty((0, 512))
+    backend = get_backend()
     batch_size = max(1, int(os.getenv("LABELER_REF_EMBED_BATCH_SIZE", "8") or "8"))
-    out = []
-    for i in range(0, len(tensors), batch_size):
-        batch = torch.stack(tensors[i:i + batch_size]).to(_device)
+    out: List[Tensor] = []
+    for i in range(0, len(crops), batch_size):
+        chunk = crops[i:i + batch_size]
         try:
-            with torch.inference_mode():
-                with _clf_lock:
-                    emb = _clf(batch)
+            emb = backend.embed_crops(chunk)
             out.append(emb.detach().cpu())
         except RuntimeError as e:
             if "out of memory" not in str(e).lower():
@@ -1584,12 +1629,8 @@ def _embed_crops(crops: List[Image.Image]) -> Tensor:
                     torch.cuda.empty_cache()
                 except Exception:
                     pass
-            # Fallback: process one crop at a time to minimize peak VRAM.
-            for t in tensors[i:i + batch_size]:
-                single = t.unsqueeze(0).to(_device)
-                with torch.inference_mode():
-                    with _clf_lock:
-                        emb1 = _clf(single)
+            for c in chunk:
+                emb1 = backend.embed_crops([c])
                 out.append(emb1.detach().cpu())
     return torch.cat(out, dim=0) if out else torch.empty((0, 512))
 
@@ -2000,8 +2041,9 @@ def manual_review_candidates(
     rerank: bool = False,
 ) -> List[dict]:
     """Return one ranked candidate row per gallery cat for manual review."""
-    _ensure_classifier()
-    if _clf is None or _gallery_emb is None:
+    _ensure_gallery()
+    _ensure_device_only()
+    if _gallery_emb is None:
         return []
     query = _embed_query_from_box(image_bytes, box)
     if query is None:
@@ -2602,8 +2644,14 @@ def _sam_refine_one_box(
     rel_detector = _clip_box_xyxy(rel_detector, crop_w, crop_h)
 
     try:
-        with torch.inference_mode():
-            results = _sam(crop, bboxes=[list(rel_prompt)], verbose=False)
+        from .backend import get_backend
+        # Encode the numpy crop as JPEG bytes for the backend boundary. SAM is
+        # robust to JPEG q=92; bandwidth savings vs PNG matter on ModalBackend.
+        from PIL import Image as _PILImage
+        crop_pil = _PILImage.fromarray(crop)
+        _buf = io.BytesIO()
+        crop_pil.save(_buf, format="JPEG", quality=92)
+        masks_data = get_backend().sam_refine_crop(_buf.getvalue(), list(rel_prompt))
     except Exception as e:
         log_action("viz_sam_box_error", "error", str(e))
         return detector_box, {
@@ -2619,7 +2667,6 @@ def _sam_refine_one_box(
             "area_ratio": 1.0,
         }
 
-    masks_data = _extract_sam_masks(results)
     if getattr(masks_data, "size", 0) == 0:
         return detector_box, {
             "candidate_masks": 0,

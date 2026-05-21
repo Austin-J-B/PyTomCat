@@ -148,4 +148,8 @@
 {"date":"2026-05-11","status":{"West Hall":true,"Business":true,"Lot 50":true,"Microwave":true,"The Greens":true,"HOP":true,"Snickers":true,"Maintenance":true}}
 {"date":"2026-05-12","status":{"Microwave":true,"Snickers":true,"Business":true,"Maintenance":true,"The Greens":true,"West Hall":true}}
 {"date":"2026-05-17","status":{"Arbor Oaks":false,"Business":true,"Fine Arts":false,"HOP":true,"Lot 50":false,"Maintenance":true,"Microwave":true,"Snickers":true,"The Greens":true,"West Hall":true}}
-{"meta":{"updated_at":"2026-05-17T18:56:28.216369-05:00"}}
+{"date":"2026-05-18","status":{"Lot 50":true,"The Greens":true,"HOP":true,"Business":true,"Snickers":true,"Microwave":true,"Maintenance":true,"West Hall":true}}
+{"date":"2026-05-19","status":{"Maintenance":true,"Bookstore":true,"West Hall":true,"The Greens":true,"Lot 50":true,"HOP":true,"Microwave":true,"Snickers":true,"Business":true}}
+{"date":"2026-05-20","status":{"Business":true,"Snickers":true,"Maintenance":true,"Microwave":true,"The Greens":true,"HOP":true,"Lot 50":true}}
+{"date":"2026-05-21","status":{"Maintenance":true}}
+{"meta":{"updated_at":"2026-05-21T12:12:25.069454-05:00"}}

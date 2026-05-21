@@ -29,3 +29,6 @@ torchvision==0.19.1+cu121
 
 #HTTP utilities
 requests==2.32.4
+
+#Modal cloud (CV inference offload)
+modal==1.4.2

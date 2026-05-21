@@ -1,0 +1,31 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Core Discord bot stack
+discord.py==2.4.0
+python-dotenv==1.0.1
+aiohttp==3.13.3
+
+# Google Sheets + OAuth
+gspread==6.1.3
+google-api-python-client==2.146.0
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
+httplib2==0.22.0
+
+# Data processing / parsing
+numpy==1.26.4
+Pillow==12.2.0
+rapidfuzz==3.10.1
+beautifulsoup4==4.12.3
+
+# Computer vision helpers (still imported by local code paths)
+opencv-python-headless==4.10.0.84
+ultralytics>=8.3.200
+
+# PyTorch CPU-only (CV is on Modal; local needs torch for gallery tensor ops)
+torch==2.8.0
+torchvision==0.23.0
+
+# HTTP utilities
+requests==2.32.4

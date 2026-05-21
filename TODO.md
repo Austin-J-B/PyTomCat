@@ -31,6 +31,18 @@ Running list of follow-ups deferred from active sessions. Add as we go, check of
 - Overnight log: `[03:00:27] discord.gateway: Shard ID None heartbeat blocked for more than 10 seconds` from `_sync_dues_roles` calling `_edit_distance` synchronously on the event loop.
 - **Fix**: wrap the CPU-bound section in `tomcat/handlers/dues.py` `_sync_dues_roles` with `await asyncio.to_thread(...)` so heartbeats keep firing.
 
+## Droplet polish (post-cutover, low priority)
+
+### cloudflared "package manager" warning at boot
+- `scripts/start.py` calls `cloudflared update` at boot. The dpkg-installed binary at `/usr/bin/cloudflared` refuses to self-update and logs `ERR cloudflared was installed by a package manager. Please update using the same method.`
+- Harmless — tunnel still runs. Just log noise.
+- **Fix**: in `start.py`, check whether the cloudflared binary path is under `/usr/` (or `/snap/`, `/opt/`) before calling `cloudflared update`; skip the update call if so.
+
+### Dependency drift audit (Windows vs requirements.txt)
+- `modal==1.4.2` was pip-installed manually on Windows and never added to `requirements.txt` — caught on droplet cutover when the bot failed with `ModuleNotFoundError`.
+- Likely other manually-installed packages exist on the laptop venv that aren't in either requirements file.
+- **Fix**: run `pip list --format=freeze` in the Windows venv, diff against `requirements.txt`, add anything the bot actually imports (skip transitive deps and dev-only tools).
+
 ## Manual cleanup on the laptop (whenever)
 
 - Delete `weights/SmolLM2-1.7B-Instruct-Q6_K.gguf` (1.4 GB)

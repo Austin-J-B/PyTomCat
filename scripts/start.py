@@ -248,11 +248,22 @@ def main() -> None:
 
     tunnel_cmd = None
     if cloudflared_path.exists() and tunnel_uuid:
-        # Refresh cloudflared, then start the tunnel.
+        # Refresh cloudflared, then start the tunnel. Skip the self-update when
+        # the binary was installed by a package manager — it refuses to update
+        # itself in that case and just logs noise.
         try:
-            subprocess.run([str(cloudflared_path), "update"], check=False)
-        except Exception as exc:
-            print(f"[Tunnel] Update check failed: {exc}")
+            real_path = str(cloudflared_path.resolve()).replace(os.sep, "/")
+            pkg_managed = any(
+                real_path.startswith(prefix)
+                for prefix in ("/usr/", "/snap/", "/opt/")
+            )
+        except Exception:
+            pkg_managed = False
+        if not pkg_managed:
+            try:
+                subprocess.run([str(cloudflared_path), "update"], check=False)
+            except Exception as exc:
+                print(f"[Tunnel] Update check failed: {exc}")
         tunnel_cmd = [
             str(cloudflared_path), "tunnel", 
             "--config", str(CONFIG_PATH), 

@@ -22,21 +22,11 @@ Running list of follow-ups deferred from active sessions. Add as we go, check of
 
 ## Deferred fixes from earlier sessions
 
-### Message-edit 429s in `CH_CATS_ON_CAMPUS` (channel `941094752697344031`)
-- Overnight log showed 6× `discord.http: We are being rate limited. PATCH /channels/941094752697344031/messages/<id>` at 02:10 UTC.
-- Likely a progress-bar-style edit loop hammering one channel.
-- **Fix**: find the loop, add throttling (e.g., 1.5s between edits) or batch edits.
-
-### Dues sync heartbeat block
-- Overnight log: `[03:00:27] discord.gateway: Shard ID None heartbeat blocked for more than 10 seconds` from `_sync_dues_roles` calling `_edit_distance` synchronously on the event loop.
-- **Fix**: wrap the CPU-bound section in `tomcat/handlers/dues.py` `_sync_dues_roles` with `await asyncio.to_thread(...)` so heartbeats keep firing.
+### Droplet `.env` profile edit interval
+- Local `.env` was updated to `PROFILE_UPDATE_EDIT_MIN_INTERVAL_SEC=4.5` (was `PROFILE_UPDATE_EDIT_DELAY_SEC=1.0`, which caused the 429s in `CH_CATS_ON_CAMPUS`).
+- **Still to do**: confirm the droplet's `.env` is updated too (it was likely copied from the old laptop value).
 
 ## Droplet polish (post-cutover, low priority)
-
-### cloudflared "package manager" warning at boot
-- `scripts/start.py` calls `cloudflared update` at boot. The dpkg-installed binary at `/usr/bin/cloudflared` refuses to self-update and logs `ERR cloudflared was installed by a package manager. Please update using the same method.`
-- Harmless — tunnel still runs. Just log noise.
-- **Fix**: in `start.py`, check whether the cloudflared binary path is under `/usr/` (or `/snap/`, `/opt/`) before calling `cloudflared update`; skip the update call if so.
 
 ### Dependency drift audit (Windows vs requirements.txt)
 - `modal==1.4.2` was pip-installed manually on Windows and never added to `requirements.txt` — caught on droplet cutover when the bot failed with `ModuleNotFoundError`.

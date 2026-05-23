@@ -3237,41 +3237,46 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
                     keys.add(k)
         return keys
 
-    role_holder_count = 0
-    valid_role_holder_count = 0
-
-    #Iterate guild members
-    for member in members_list:
-        has_role = role_obj in member.roles
-        member_keys = _member_keys(member)
-        member_has_valid_dues = bool(member_keys & valid_handle_keys)
-        if not member_has_valid_dues and member_keys and valid_handle_keys:
-            #Allow very small handle drift (1 edit) for reasonably long keys
-            for mk in member_keys:
-                if len(mk) < 6:
-                    continue
-                for vk in valid_handle_keys:
-                    if len(vk) < 6:
+    #=== CLASSIFY (CPU-bound) ===
+    # The nested _edit_distance fallback is O(members * member_keys * valid_keys)
+    # and was blocking the gateway heartbeat. Run the whole pass in a worker
+    # thread so the event loop keeps servicing heartbeats.
+    def _classify_all() -> tuple[list[tuple[Any, bool, bool]], int, int]:
+        out: list[tuple[Any, bool, bool]] = []
+        long_valid_keys = [vk for vk in valid_handle_keys if len(vk) >= 6]
+        rh = 0
+        vrh = 0
+        for member in members_list:
+            has_role = role_obj in member.roles
+            member_keys = _member_keys(member)
+            member_has_valid_dues = bool(member_keys & valid_handle_keys)
+            if not member_has_valid_dues and member_keys and long_valid_keys:
+                for mk in member_keys:
+                    if len(mk) < 6:
                         continue
-                    if _edit_distance(mk, vk) <= 1:
-                        member_has_valid_dues = True
+                    for vk in long_valid_keys:
+                        if _edit_distance(mk, vk) <= 1:
+                            member_has_valid_dues = True
+                            break
+                    if member_has_valid_dues:
                         break
+            if has_role:
+                rh += 1
                 if member_has_valid_dues:
-                    break
-        if has_role:
-            role_holder_count += 1
-            if member_has_valid_dues:
-                valid_role_holder_count += 1
-        
-        #=== ROLE ADDITION ===
+                    vrh += 1
+            out.append((member, has_role, member_has_valid_dues))
+        return out, rh, vrh
+
+    classifications, role_holder_count, valid_role_holder_count = await asyncio.to_thread(_classify_all)
+
+    #=== APPLY (I/O-bound) ===
+    for member, has_role, member_has_valid_dues in classifications:
         if member_has_valid_dues and not has_role:
             try:
                 await member.add_roles(role_obj, reason="TomCat: verified dues for current semester")
                 added.append(member)
             except Exception as e:
                 log_action('dues_role_add_error', f'uid={member.id}', str(e))
-        
-        #=== ROLE REMOVAL ===
         elif has_role and not member_has_valid_dues:
             if not allow_removals:
                 continue

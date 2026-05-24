@@ -1727,7 +1727,11 @@ async def _build_ref_cache(
     progress_hook: Optional[Callable[[int, int], None]] = None,
 ) -> dict[str, dict[str, Any]]:
     """Build a per-cat embedding+thumbnail cache from labeled local metadata rows."""
-    await asyncio.to_thread(_ensure_classifier)
+    # Gallery only — embeddings route through backend.embed_crops, so the
+    # local DINOv3 encoder is unnecessary on CV_BACKEND=modal (it'd add
+    # ~600-900 MiB resident for nothing). LocalBackend lazy-loads its own
+    # encoder on first embed call.
+    await asyncio.to_thread(_ensure_gallery)
     cat_list = await asyncio.to_thread(get_all_cats)
     cat_map = {c.lower(): c for c in cat_list}
 
@@ -1942,7 +1946,10 @@ async def warm_labeler_manual_refs(force: bool = False) -> dict:
             total = len(known)
             _manual_ref_progress_total = int(total)
             _manual_ref_progress_built = 0
-            await asyncio.to_thread(_ensure_classifier)
+            # Manual-ref state only needs the gallery; no encoder forward
+            # passes happen here. Skipping _ensure_classifier avoids loading
+            # the DINOv3 encoder into the host process on CV_BACKEND=modal.
+            await asyncio.to_thread(_ensure_gallery)
             _manual_ref_cache = {}
             _manual_ref_progress_built = int(total)
             _manual_ref_per_cat = target_per_cat
@@ -2986,7 +2993,7 @@ def warm_labeler_detector() -> dict:
 
 def get_all_cats() -> List[str]:
     """Return sorted list of all unique cat names from the gallery."""
-    _ensure_classifier()
+    _ensure_gallery()
     if not _gallery_names:
         return []
     return sorted(set(_gallery_names))

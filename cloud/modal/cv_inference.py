@@ -40,7 +40,7 @@ if modal.is_local():
 
     _REPO_ROOT = Path(__file__).resolve().parents[2]
     _DEFAULT_LOCAL_YOLO = _REPO_ROOT / "weights" / "984_917_yolo12s.pt"
-    _DEFAULT_LOCAL_ENCODER = _REPO_ROOT / "weights" / "R5_cat_DINOv3_encoder.pth"
+    _DEFAULT_LOCAL_ENCODER = _REPO_ROOT / "weights" / "R6_cat_DINOv3_encoder.pth"
     _DEFAULT_LOCAL_SAM = _REPO_ROOT / "weights" / "sam2_s.pt"
 
     def _local_weight(env_name: str, default: Path) -> str:
@@ -112,11 +112,12 @@ def _build_encoder():
     class DINOv3Wrapper(torch.nn.Module):
         def __init__(self):
             super().__init__()
+            # R6 ViT-L (was R5 ViT-B). Architecture must match tomcat/vision/vision.py:DINOv3Wrapper.
             self.backbone = timm.create_model(
-                "vit_base_patch16_dinov3", pretrained=False, num_classes=0
+                "vit_large_patch16_dinov3", pretrained=False, num_classes=0
             )
             self.head = torch.nn.Sequential(
-                torch.nn.Linear(768, 512, bias=True),
+                torch.nn.Linear(1024, 512, bias=True),
                 torch.nn.BatchNorm1d(512),
                 torch.nn.PReLU(),
             )

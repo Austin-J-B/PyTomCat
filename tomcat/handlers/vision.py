@@ -256,17 +256,36 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
 
     tmp = []
     reply_msg: Optional[discord.Message] = None
+    heads_up: Optional[asyncio.Task] = None
     try:
         timeout = _identify_timeout_sec()
         reply_msg = await ch.send("Processing image...")
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
 
+        # If the call takes longer than ~3s, the Modal container is almost
+        # certainly cold-starting (warm calls return in ~1-2s). Edit the
+        # placeholder so the user knows the wait is normal, not a hang.
+        async def _cold_start_notice():
+            try:
+                await asyncio.sleep(3.0)
+                await reply_msg.edit(
+                    content="Booting up CV models (~15-20s on the first request after a quiet period)..."
+                )
+            except (asyncio.CancelledError, Exception):
+                pass
+        heads_up = asyncio.create_task(_cold_start_notice())
+
         async with _CV_SEM:
             out = await asyncio.wait_for(
                 asyncio.to_thread(V.identify, data),
                 timeout=timeout,
             )
+
+        # Cancel the cold-start notice immediately on success so it can't
+        # race with the embed edit below. The finally block handles error paths.
+        if heads_up is not None and not heads_up.done():
+            heads_up.cancel()
 
         # Build initial Description
         lines = []
@@ -354,4 +373,8 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         else:
             await ch.send("Sorry, identify failed.")
     finally:
+        # Cancel the cold-start notice if still pending so it doesn't race
+        # with the success/error edit and overwrite the user-visible result.
+        if heads_up is not None and not heads_up.done():
+            heads_up.cancel()
         await _cleanup(tmp)

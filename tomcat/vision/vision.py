@@ -583,20 +583,25 @@ class Det:
 
 #---------- Architecture Wrapper ----------
 class DINOv3Wrapper(torch.nn.Module):
-    """Matches the exact structure from your R4.5 notebook checkpoint."""
+    """Matches the R6 encoder checkpoint: ViT-L/16 backbone (1024 features) → 512 emb head.
+
+    Earlier checkpoints (R4.5, R5) used vit_base_patch16_dinov3 (768 features) with
+    Linear(768, 512). R6 upgraded to ViT-L for ~2 pp R@1. Loading an older checkpoint
+    will fail at load_state_dict with shape mismatch on backbone.* and head.0.weight.
+    """
     def __init__(self):
         super().__init__()
         import timm
-        # 1. Base Model (768 features)
+        # 1. Base Model (1024 features for ViT-L)
         self.backbone = timm.create_model(
-            'vit_base_patch16_dinov3', 
+            'vit_large_patch16_dinov3',
             pretrained=True,
             num_classes=0
         )
-        
-        # 2. Corrected Head Structure (Linear -> BN -> PReLU)
+
+        # 2. Head Structure (Linear -> BN -> PReLU); input dim matches backbone.num_features
         self.head = torch.nn.Sequential(
-            torch.nn.Linear(768, 512, bias=True),
+            torch.nn.Linear(1024, 512, bias=True),
             torch.nn.BatchNorm1d(512),
             torch.nn.PReLU()
         )

@@ -6,7 +6,7 @@ from email.utils import parseaddr
 from typing import Optional
 
 
-def _extract_domain(from_addr: str) -> str:
+def extract_email_domain(from_addr: str) -> str:
     """Parse From header and extract lowercase domain from the email address."""
     _, email_part = parseaddr(from_addr or "")
     email_lower = (email_part or "").strip().lower()
@@ -15,11 +15,12 @@ def _extract_domain(from_addr: str) -> str:
     return ""
 
 
-def _domain_matches(domain: str, targets: tuple[str, ...]) -> bool:
+def domain_matches(domain: str, targets: tuple[str, ...]) -> bool:
     """Check if domain equals or is a subdomain of any target.
 
     Uses equality or safe .endswith() with leading dot to prevent partial matches.
-    For example, domain "evilsquare.com" won't match target "square.com".
+    For example, domain "evilsquare.com" won't match target "square.com", and
+    "cash.app.attacker.com" won't match target "cash.app".
     """
     if not domain:
         return False
@@ -30,6 +31,11 @@ def _domain_matches(domain: str, targets: tuple[str, ...]) -> bool:
         if domain.endswith("." + target):
             return True
     return False
+
+
+# Backward-compat aliases. New callers should use the names above.
+_extract_domain = extract_email_domain
+_domain_matches = domain_matches
 
 
 def detect_provider(from_addr: str, subject: str = "", body: str = "") -> Optional[str]:

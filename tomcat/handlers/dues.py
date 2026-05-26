@@ -19,7 +19,7 @@ from typing import Any, Dict, Optional, List, Tuple
 from ..logger import log_event, log_action
 from ..config import settings
 from ..utils.permissions import is_officer, officer_role_ids
-from ..utils.payments import detect_provider
+from ..utils.payments import detect_provider, domain_matches, extract_email_domain
 from . import finance
 
 try:
@@ -2511,16 +2511,29 @@ def _load_email_logs_between(start_dt: datetime, end_dt: datetime) -> List[dict]
 #--- Provider & payer extraction from emails ---
 
 def _provider_from_email(frm: str, subj: str, body: str) -> Optional[str]:
-    f = (frm or '').lower(); s = (subj or '').lower(); b = (body or '').lower()
-    if 'venmo.com' in f:
+    """Identify the payment provider for an INCOMING payment notification.
+
+    Narrower than utils.payments.detect_provider on purpose: dues processing
+    needs to distinguish "someone paid us" (income) from "we paid someone"
+    (refund / expense). Only incoming-direction markers are checked here.
+
+    Domain matching goes through `domain_matches` rather than substring `in`
+    so a hostile sender like `notifications@cash.app.attacker.com` cannot
+    impersonate Cash App by spoofing the From header (CodeQL alert
+    py/incomplete-url-substring-sanitization).
+    """
+    domain = extract_email_domain(frm)
+    s = (subj or '').lower()
+    b = (body or '').lower()
+    if domain_matches(domain, ("venmo.com",)):
         if ('paid you' in s) or ('sent you' in s) or ('paid you' in b):
             return 'venmo'
-    if 'cash.app' in f or 'squareup.com' in f or 'square.com' in f:
+    if domain_matches(domain, ("cash.app", "squareup.com", "square.com")):
         # Cash App notices often use "Payment received" in the subject and a
         # sender-name pattern in the body.
         if ('paid you' in s) or ('sent you' in s) or ('paid you' in b) or ('payment received' in s) or ('you were sent' in b):
             return 'cashapp'
-    if 'paypal.com' in f:
+    if domain_matches(domain, ("paypal.com",)):
         if ("you've got money" in s) or ("sent you" in s) or ('payment received' in s) or ('paid you' in b):
             return 'paypal'
     return None

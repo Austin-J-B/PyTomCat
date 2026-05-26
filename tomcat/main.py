@@ -2081,6 +2081,16 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
             return
     except Exception as e:
         log_action("viz_feedback_reaction_error", f"msg={payload.message_id}", str(e))
+    # ❓ reaction expands the embed to show top-5 candidates per detected cat.
+    # Dispatched via raw_reaction_add (not client.wait_for) so message-cache
+    # eviction doesn't silently drop the response.
+    if str(payload.emoji) == "❓":
+        try:
+            from .handlers.vision import handle_top5_reaction
+            if await handle_top5_reaction(int(payload.message_id)):
+                return
+        except Exception as e:
+            log_action("viz_top5_dispatch_error", f"msg={payload.message_id}", str(e))
     data = SPAM_ALERTS.get(payload.message_id)
     if not data:
         return

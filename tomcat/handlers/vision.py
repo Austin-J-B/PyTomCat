@@ -4,10 +4,12 @@ from __future__ import annotations
 import os
 import io
 import asyncio
+import concurrent.futures
+import time
 import aiohttp
 import discord
 from datetime import timezone
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 from ..config import settings
 from ..logger import log_action
@@ -22,12 +24,28 @@ from ..services.vision_feedback import register_identify_feedback
 # concurrent asyncio.to_thread(V.*) calls on the shared module-level models
 # causes deadlocks that permanently freeze the handler coroutine.
 _CV_SEM = asyncio.Semaphore(1)
+
+# Dedicated single-worker executor for V.detect/V.crop/V.identify. Using the
+# default asyncio executor lets an orphaned CV thread (e.g. Modal RPC stuck
+# past wait_for's timeout — the underlying thread has no asyncio-aware cancel)
+# steal a worker from sheet sync, Gmail polling, and the labeler. With
+# max_workers=1, a second CV call queues here instead, and wait_for still
+# times out cleanly — so the fallout from one stuck call is bounded.
+_CV_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="tc-cv"
+)
 _CV_TIMEOUT_SEC = max(6.0, float(getattr(settings, "cv_timeout_ms", 6000)) / 1000.0)
 _CV_MODAL_TIMEOUT_SEC = max(
     _CV_TIMEOUT_SEC,
-    float(getattr(settings, "cv_modal_timeout_ms", 30000)) / 1000.0,
+    float(getattr(settings, "cv_modal_timeout_ms", 60000)) / 1000.0,
 )
 _CV_COLD_TIMEOUT_SEC = 120.0  # generous timeout for first-time model loading
+
+
+async def _run_cv(fn, *args):
+    """Run a blocking CV function on the dedicated single-worker executor."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_CV_EXECUTOR, fn, *args)
 
 
 def _identify_timeout_sec() -> float:
@@ -102,24 +120,42 @@ def _format_confidence_pct(score: Any) -> str:
     value = max(0.0, min(1.0, value))
     return f"{value * 100:.1f}%"
 
-#---------- background reaction listener ----------
-async def _wait_for_top5_reaction(
-    client: Any,
-    reply_msg: discord.Message,
-    embed: discord.Embed,
-    results: list,
-) -> None:
-    """Wait (in the background) for a user to click '?' then expand the embed."""
+#---------- top-5 reaction registry ----------
+# When handle_cv_identify produces results, it registers the embed + results
+# here keyed on the reply message id. on_raw_reaction_add dispatches the \u2753
+# emoji to handle_top5_reaction below, which expands the embed.
+#
+# This replaces the older client.wait_for("reaction_add", ...) approach,
+# which silently no-op'd whenever the reply message had aged out of
+# discord.py's in-memory message cache (default 1000 entries). raw_reaction_add
+# fires for any reaction regardless of cache state.
+_TOP5_TTL_SEC = 1800  # 30 min \u2014 gallery retrain pending TTL is much longer
+_top5_listeners: Dict[int, Tuple[float, discord.Embed, list, discord.Message]] = {}
+
+
+def _gc_top5_listeners(now: float) -> None:
+    expired = [mid for mid, entry in _top5_listeners.items() if now - entry[0] > _TOP5_TTL_SEC]
+    for mid in expired:
+        _top5_listeners.pop(mid, None)
+
+
+def _register_top5_listener(reply_msg: discord.Message, embed: discord.Embed, results: list) -> None:
+    """Remember an identify reply so a later \u2753 react can expand the top-5."""
+    now = time.monotonic()
+    _gc_top5_listeners(now)
+    _top5_listeners[int(reply_msg.id)] = (now, embed, list(results), reply_msg)
+
+
+async def handle_top5_reaction(reply_message_id: int) -> bool:
+    """Expand the embed for a registered identify reply. Returns True if handled.
+
+    Called from main.on_raw_reaction_add when a \u2753 reaction is observed.
+    """
+    entry = _top5_listeners.pop(int(reply_message_id), None)
+    if not entry:
+        return False
+    _, embed, results, reply_msg = entry
     try:
-        def check(reaction, user):
-            return (
-                str(reaction.emoji) == "\u2753"
-                and reaction.message.id == reply_msg.id
-                and not user.bot
-            )
-
-        reaction, user = await client.wait_for("reaction_add", timeout=120.0, check=check)
-
         expanded_lines = []
         for r in results:
             idx = r["index"]
@@ -128,15 +164,12 @@ async def _wait_for_top5_reaction(
             for rank, (c_name, c_conf) in enumerate(top5):
                 expanded_lines.append(f"`{rank+1}.` {c_name} ({_format_confidence_pct(c_conf)})")
             expanded_lines.append("")
-
         embed.description = "\n".join(expanded_lines)
         embed.set_footer(text="Showing Top 5 Candidates")
         await reply_msg.edit(embed=embed)
-
-    except asyncio.TimeoutError:
-        pass
     except Exception as e:
-        log_action("viz_reaction_wait_error", f"err={type(e).__name__}", str(e))
+        log_action("viz_top5_edit_error", f"err={type(e).__name__}", str(e))
+    return True
 
 
 #---------- public handlers ----------
@@ -160,7 +193,7 @@ async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
 
         async with _CV_SEM:
             out = await asyncio.wait_for(
-                asyncio.to_thread(V.detect, data),
+                _run_cv(V.detect, data),
                 timeout=timeout,
             )
         file = discord.File(io.BytesIO(out.boxed_jpeg), filename="detected.jpg")
@@ -200,7 +233,7 @@ async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
 
         async with _CV_SEM:
             out = await asyncio.wait_for(
-                asyncio.to_thread(V.crop, data),
+                _run_cv(V.crop, data),
                 timeout=timeout,
             )
         crop_bytes = list(getattr(out, "crops", []) or [])
@@ -278,7 +311,7 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
 
         async with _CV_SEM:
             out = await asyncio.wait_for(
-                asyncio.to_thread(V.identify, data),
+                _run_cv(V.identify, data),
                 timeout=timeout,
             )
 
@@ -343,17 +376,10 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         if not out.results:
             return
 
-        # ACTIVE LISTENER FOR '?' REACTION
-        # Spawn as a background task so the handler returns immediately and
-        # doesn't hold the dispatch chain alive for up to 2 minutes.
-        client = ctx.get("client")
-        if not client and message.guild:
-            client = message.guild.me._state._get_client()
-
-        if client:
-            asyncio.create_task(
-                _wait_for_top5_reaction(client, reply_msg, embed, out.results)
-            )
+        # Register for '?' reaction dispatch (see _register_top5_listener).
+        # Replaces an earlier client.wait_for() background task that silently
+        # no-op'd whenever reply_msg had aged out of discord.py's message cache.
+        _register_top5_listener(reply_msg, embed, out.results)
 
     except asyncio.TimeoutError:
         log_action("viz_identify_error", "err=TimeoutError", f"cap={timeout:.1f}s")

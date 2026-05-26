@@ -341,9 +341,11 @@ class Settings:
     #Hard budget for auto-crop work in handlers (ms). If exceeded, show original image.
     cv_timeout_ms: int = int(os.getenv("CV_TIMEOUT_MS", "6000"))
     #Timeout floor when CV_BACKEND=modal. Cold paths can include snapshot
-    #restore + GPU move + first inference; 30s leaves headroom without
-    #stranding users. Warm paths still complete in well under 1s.
-    cv_modal_timeout_ms: int = int(os.getenv("CV_MODAL_TIMEOUT_MS", "30000"))
+    #restore + GPU move + first inference plus N rerank round-trips (one per
+    #detected cat). R6 ViT-L cold runs ~15-23s for detect_and_embed alone,
+    #so 60s leaves headroom for a 2-3 cat image on a fully cold container.
+    #Warm paths still complete in well under 1s.
+    cv_modal_timeout_ms: int = int(os.getenv("CV_MODAL_TIMEOUT_MS", "60000"))
     #Interval in seconds for the optional Modal keep-warm pinger. 0 disables
     #(default). Only useful if you want to extend warm time BEYOND the Modal
     #app's scaledown_window (currently 900s = 15 min) — for example, set to

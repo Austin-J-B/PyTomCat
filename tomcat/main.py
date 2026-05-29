@@ -720,6 +720,12 @@ intent_router = IntentRouter()
 SPAM_ALERTS: Dict[int, Dict[str, Any]] = {}
 _SPAM_ALERT_TTL_SEC = 86400
 
+# Emoji that trigger CV identify feedback persistence. Must stay a superset of
+# the symbols accepted by vision_feedback._canonical_feedback_symbol so the
+# emoji gate in on_raw_reaction_add never drops a real ✅/❌ vote. Gating here
+# keeps the ~90% of non-feedback reactions off the thread pool.
+_CV_FEEDBACK_EMOJIS = {"✅", "✔", "✔️", "❌", "❎", "✖", "✖️"}
+
 
 def _evict_stale_spam_alerts() -> None:
     """Remove spam alert entries that moderators never acted on within the TTL."""
@@ -1862,6 +1868,17 @@ async def on_ready():
 
     _start_background_task("cv_model_preload", lambda: _preload_cv_models())
 
+    # Start the event-loop responsiveness monitor at boot (not lazily on first
+    # labeler request, which is how it used to start — meaning it was usually
+    # NOT running). It logs `labeler_event_loop_lag` when asyncio.sleep overshoots,
+    # which is the early-warning signal for the single-core starvation that makes
+    # the bot go silent-but-online. Logs only; never user-visible.
+    try:
+        from .handlers.labeler import _ensure_loop_lag_monitor
+        _ensure_loop_lag_monitor()
+    except Exception as e:
+        log_action("loop_lag_monitor_start_error", f"type={type(e).__name__}", str(e))
+
     # Modal keep-warm runs in activity-window mode by default: the pinger is
     # spawned on-demand by handlers/vision.py after each user request and
     # exits after settings.cv_modal_activity_window_sec of idle time.
@@ -2014,7 +2031,9 @@ async def on_message(message: discord.Message):
     try:
         await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)
     except Exception as e:
-        log_action("handle_misc_error", f"ch={getattr(message.channel, 'id', '?')}", str(e))
+        # Include the exception TYPE: a bare TimeoutError has an empty str(), which
+        # previously made these logs read as "" and hid Discord send timeouts.
+        log_action("handle_misc_error", f"ch={getattr(message.channel, 'id', '?')}", f"{type(e).__name__}: {e}")
 
     #Build ctx once
     ctx: Dict[str, Any] = {
@@ -2041,61 +2060,71 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     """Handle reaction-based workflows (feeding + spam ban)."""
     if payload.user_id == getattr(bot.user, 'id', None):
         return
+    emoji_str = str(payload.emoji)
     # Log reactions for audit trails and moderator tooling.
+    #
+    # IMPORTANT: do NOT fetch_message here. on_raw_reaction_add fires for every
+    # reaction in the server (300+/day). A REST fetch_message per reaction was
+    # starving the single-core event loop during reaction bursts and tipping
+    # Discord sends past discord.py's 30s request timeout — the bot went silent
+    # while staying online (gateway is a separate socket). Use the in-memory
+    # message cache only (zero REST). Preview/author are best-effort: blank when
+    # the message has aged out of the cache, which is acceptable for an audit log.
     try:
         ch = bot.get_channel(int(payload.channel_id))
-        msg = None
         preview = ""
         author_name = ""
-        if ch and hasattr(ch, 'fetch_message'):
-            try:
-                msg = await ch.fetch_message(int(payload.message_id))
-                content = msg.clean_content if isinstance(getattr(msg, 'content', None), str) else ""
-                preview = content[:40] + ("..." if len(content) > 40 else "")
-                author_name = _user_label(getattr(msg, 'author', None))
-            except Exception:
-                pass
+        try:
+            cached = bot._connection._get_message(int(payload.message_id))
+        except Exception:
+            cached = None
+        if cached is not None:
+            content = cached.clean_content if isinstance(getattr(cached, 'content', None), str) else ""
+            preview = content[:40] + ("..." if len(content) > 40 else "")
+            author_name = _user_label(getattr(cached, 'author', None))
         log_event({
             "event": "reaction_add",
             "user": _user_label(getattr(payload, 'member', None)) or str(payload.user_id),
             "channel": _channel_label(ch) if ch else str(payload.channel_id),
             "message_id": int(payload.message_id),
-            "emoji": str(payload.emoji),
+            "emoji": emoji_str,
             "message_preview": preview,
             "message_author": author_name,
         })
     except Exception:
         pass
     #CV identify feedback reactions (✅/❌) are persisted for gallery retrain + manual dispute queue.
-    try:
-        from .services.vision_feedback import process_identify_reaction
-        reactor_name = _user_label(getattr(payload, "member", None)) or str(payload.user_id)
-        handled_cv_feedback = await asyncio.to_thread(
-            process_identify_reaction,
-            reply_message_id=int(payload.message_id),
-            emoji=str(payload.emoji),
-            reactor_user_id=int(payload.user_id),
-            reactor_name=reactor_name,
-        )
-        if handled_cv_feedback:
-            return
-    except Exception as e:
-        log_action("viz_feedback_reaction_error", f"msg={payload.message_id}", str(e))
+    # Gate on the emoji BEFORE spawning a thread so the ~90% of reactions that
+    # are ❤️/😭/etc. never touch the thread pool (more single-core headroom).
+    if emoji_str in _CV_FEEDBACK_EMOJIS:
+        try:
+            from .services.vision_feedback import process_identify_reaction
+            reactor_name = _user_label(getattr(payload, "member", None)) or str(payload.user_id)
+            handled_cv_feedback = await asyncio.to_thread(
+                process_identify_reaction,
+                reply_message_id=int(payload.message_id),
+                emoji=emoji_str,
+                reactor_user_id=int(payload.user_id),
+                reactor_name=reactor_name,
+            )
+            if handled_cv_feedback:
+                return
+        except Exception as e:
+            log_action("viz_feedback_reaction_error", f"msg={payload.message_id}", f"{type(e).__name__}: {e}")
     # ❓ reaction expands the embed to show top-5 candidates per detected cat.
     # Dispatched via raw_reaction_add (not client.wait_for) so message-cache
     # eviction doesn't silently drop the response.
-    if str(payload.emoji) == "❓":
+    if emoji_str == "❓":
         try:
             from .handlers.vision import handle_top5_reaction
             if await handle_top5_reaction(int(payload.message_id)):
                 return
         except Exception as e:
-            log_action("viz_top5_dispatch_error", f"msg={payload.message_id}", str(e))
+            log_action("viz_top5_dispatch_error", f"msg={payload.message_id}", f"{type(e).__name__}: {e}")
     data = SPAM_ALERTS.get(payload.message_id)
     if not data:
         return
-    emoji_str = str(payload.emoji)
-    
+
     #Handle checkmark = "not spam" - remove the hammer react so no one accidentally clicks it
     if emoji_str in {'✅', '✔', '✔️'}:
         try:

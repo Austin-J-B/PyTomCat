@@ -338,10 +338,16 @@ async def start_gmail_logging_scheduler(bot) -> None:
     """Independent Gmail Poller."""
     while True:
         try:
-            #Try acquire lock; if busy (manual run), skip
-            try:
-                await asyncio.wait_for(_EMAIL_LOG_LOCK.acquire(), timeout=0.5)
-                try:
+            # Skip this cycle if a manual run holds the lock. Do NOT use
+            # `wait_for(lock.acquire(), ...)`: if the acquire completes at the
+            # same moment the timeout fires, wait_for cancels it *after* the lock
+            # was taken, the TimeoutError skips the release, and the lock leaks —
+            # permanently disabling the poller until restart. `locked()` + a plain
+            # `async with` has no such race.
+            if _EMAIL_LOG_LOCK.locked():
+                pass  #Lock busy (manual run in progress) — skip this cycle
+            else:
+                async with _EMAIL_LOG_LOCK:
                     #Check for auth config but don't crash if missing
                     if os.getenv("GMAIL_CREDENTIALS_PATH") or os.path.exists("credentials/gmail_oauth_client.json"):
                         svc = await _build_gmail_service(getattr(bot, "user", None)) #Silent auth check
@@ -353,10 +359,6 @@ async def start_gmail_logging_scheduler(bot) -> None:
                             if n > 0:
                                 log_action("gmail_poller", "new_emails", f"count={n}")
                                 await finance.process_financial_emails(bot)
-                finally:
-                    _EMAIL_LOG_LOCK.release()
-            except asyncio.TimeoutError:
-                pass #Lock busy
         except Exception as e:
             log_action("gmail_poller_error", "", str(e))
         

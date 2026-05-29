@@ -1437,7 +1437,7 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> bool:
                 )
                 return True
             except Exception as e:
-                log_action("feeding_8pm_error", f"assigned_unfed=0; total_unfed={len(unfed)}", str(e))
+                log_action("feeding_8pm_error", f"assigned_unfed=0; total_unfed={len(unfed)}", f"{type(e).__name__}: {e}")
                 return False
 
         #Build a message that pings the right people
@@ -1450,7 +1450,7 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> bool:
             log_action("feeding_8pm", f"date={today_key}; unfed={len(unfed)}", "sent")
             return True
         except Exception as e:
-            log_action("feeding_8pm_error", f"unfed={len(unfed)}", str(e))
+            log_action("feeding_8pm_error", f"unfed={len(unfed)}", f"{type(e).__name__}: {e}")
             return False
 
 def _build_request_map(subs: List[dict]) -> Dict[str, int | str]:

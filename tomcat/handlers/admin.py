@@ -206,7 +206,9 @@ async def handle_recache_catabase(args: Dict[str, Any], ctx: Dict[str, Any]) -> 
     try:
         count = await PC.refresh_async()
         try:
-            ALIAS.refresh_aliases_now()
+            # Off-loop: refresh_aliases_now() does a synchronous gspread fetch;
+            # running it inline here would block the event loop.
+            await asyncio.to_thread(ALIAS.refresh_aliases_now)
         except Exception:
             pass
         try:

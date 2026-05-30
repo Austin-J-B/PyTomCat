@@ -71,7 +71,26 @@ def _clean_stations(stations: List[Dict]) -> List[Dict]:
     return cleaned
 
 
+_VERSIONS_CACHE: Optional[List[Dict]] = None
+_VERSIONS_CACHE_MTIME: Optional[float] = None
+
+
 def _load_versions() -> List[Dict]:
+    # Cache parsed versions keyed on the stations file mtime. This function is
+    # reached from the hot path (_canonical_station -> station_alias_table ->
+    # _resolve_version, called per-station in loops like build_morning_message
+    # and on every message that resolves a station name). Re-reading + JSON-
+    # parsing the file on every call was hundreds of synchronous reads on the
+    # event loop — cheap normally, but seconds of stall when the host is
+    # swapping. Now we only re-parse when the file actually changes.
+    global _VERSIONS_CACHE, _VERSIONS_CACHE_MTIME
+    try:
+        _mtime = STATIONS_PATH.stat().st_mtime if STATIONS_PATH.exists() else None
+    except OSError:
+        _mtime = None
+    if _VERSIONS_CACHE is not None and _VERSIONS_CACHE_MTIME == _mtime:
+        return _VERSIONS_CACHE
+
     def _read_ndjson(path: Path) -> List[Dict]:
         out: List[Dict] = []
         if not path.exists():
@@ -122,6 +141,9 @@ def _load_versions() -> List[Dict]:
     for v in versions:
         v["effective_from"] = v.get("effective_from") or _DEFAULT_EFFECTIVE
         v["stations"] = _clean_stations(v.get("stations") or [])
+
+    _VERSIONS_CACHE = versions
+    _VERSIONS_CACHE_MTIME = _mtime
     return versions
 
 

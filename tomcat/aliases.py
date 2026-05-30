@@ -6,6 +6,7 @@ import csv
 import os
 import re
 import time
+import threading
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 from .stations import station_alias_table, station_display_for
@@ -114,11 +115,58 @@ def _parse_full_name_to_display(full: str) -> Optional[str]:
         return m.group(1).strip()
     return str(full).strip()
 
+_DYN_REFRESH_LOCK = threading.Lock()
+_DYN_REFRESH_INFLIGHT = False
+
+
 def _refresh_dyn_aliases(force: bool = False) -> None:
-    global _DYN_CAT_ALIASES, _DYN_DISPLAY, _DYN_LAST_TS
+    """Refresh dynamic cat aliases without ever blocking the event loop.
+
+    The real work (_do_dyn_alias_refresh) does a synchronous gspread
+    get_all_values() over the network — on a slow / RAM-pressured host that can
+    take several seconds. This is reached from the hot message path via
+    resolve_station_or_cat(), so running it inline on the asyncio loop stalled
+    the loop long enough to miss heartbeats and drop the Discord gateway
+    (the recurring "online but silent" freeze). On TTL expiry we now kick a
+    single background thread and return immediately; callers keep serving the
+    existing in-memory cache + the local-CSV fallback in resolve_* until the
+    refresh lands. force=True (admin recache) runs inline and MUST be called
+    off-loop (see handlers/admin.py, which wraps it in asyncio.to_thread).
+    """
+    global _DYN_REFRESH_INFLIGHT, _DYN_LAST_TS
     now = time.monotonic()
     if not force and (now - _DYN_LAST_TS) < _DYN_TTL_SEC:
         return
+    if force:
+        _do_dyn_alias_refresh()
+        return
+    with _DYN_REFRESH_LOCK:
+        if _DYN_REFRESH_INFLIGHT:
+            return
+        _DYN_REFRESH_INFLIGHT = True
+        # Optimistically bump the timestamp so we don't re-kick a thread on
+        # every message while the fetch is in flight.
+        _DYN_LAST_TS = now
+
+    def _runner() -> None:
+        global _DYN_REFRESH_INFLIGHT
+        try:
+            _do_dyn_alias_refresh()
+        finally:
+            with _DYN_REFRESH_LOCK:
+                _DYN_REFRESH_INFLIGHT = False
+
+    threading.Thread(target=_runner, name="dyn-alias-refresh", daemon=True).start()
+
+
+def _do_dyn_alias_refresh() -> None:
+    """Blocking refresh of dynamic cat aliases from Sheets (CSV fallback).
+
+    MUST run off the event loop — either on the background thread started by
+    _refresh_dyn_aliases, or from a non-async caller.
+    """
+    global _DYN_CAT_ALIASES, _DYN_DISPLAY, _DYN_LAST_TS
+    now = time.monotonic()
     new_aliases: Dict[str, List[str]] = {}
     new_display: Dict[str, str] = {}
     #Try Sheets first

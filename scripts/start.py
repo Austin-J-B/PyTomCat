@@ -223,7 +223,17 @@ def main() -> None:
             print(f"[YOLO] Failed to migrate legacy cache: {exc}")
     yolo_dir.mkdir(parents=True, exist_ok=True)
     os.environ["YOLO_CONFIG_DIR"] = str(yolo_dir)
-    
+
+    # matplotlib (pulled in transitively by ultralytics) defaults to writing its
+    # cache under ~/.config/matplotlib, which is read-only under the systemd
+    # service hardening (ProtectHome=read-only). It then warns and falls back to
+    # a throwaway /tmp dir on every boot. Point it at a writable, persistent dir
+    # inside the repo (ROOT is on ReadWritePaths) to silence the warning and keep
+    # the font cache between restarts. The bot subprocess inherits this env.
+    mpl_dir = ROOT / ".mplcache"
+    mpl_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["MPLCONFIGDIR"] = str(mpl_dir)
+
     python_path = _venv_python()
     if not python_path.exists():
         print("Virtual environment not found.")

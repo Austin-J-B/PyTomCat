@@ -72,6 +72,38 @@ def _cv_timeout_sec() -> float:
 _identify_timeout_sec = _cv_timeout_sec
 
 
+# --- "is this CV call likely a cold start?" tracking ---
+#
+# The cold-start notice can't be armed on a fixed latency threshold: warm
+# identify calls run ~5s (rerank does an extra Modal round-trip per detected
+# cat), which is slower than a small fixed delay but is NOT a cold start. So we
+# instead track when CV last succeeded: if it was recently, the Modal container
+# is still warm (its scaledown window is 900s) and we must NOT show the booting
+# notice no matter how slow the call is. Only a first call after a real quiet
+# period (or right after boot) arms it. Window kept comfortably under Modal's
+# 900s scaledown so a "warm" verdict is reliable.
+_CV_WARM_WINDOW_SEC = 600.0
+_last_cv_success_mono: float = 0.0
+
+
+def _cv_recently_warm() -> bool:
+    """True if a CV op succeeded recently — i.e. the backend is still warm."""
+    return (time.monotonic() - _last_cv_success_mono) < _CV_WARM_WINDOW_SEC
+
+
+def _mark_cv_success() -> None:
+    """Record a successful CV call so follow-ups are treated as warm."""
+    global _last_cv_success_mono
+    _last_cv_success_mono = time.monotonic()
+
+
+def _maybe_cold_start_notice(reply_msg: "discord.Message") -> "Optional[asyncio.Task]":
+    """Arm the booting-CV notice only when a cold start is actually likely."""
+    if _cv_recently_warm():
+        return None
+    return _spawn_cold_start_notice(reply_msg)
+
+
 def _spawn_cold_start_notice(reply_msg: "discord.Message") -> "asyncio.Task":
     """Edit a placeholder reply to a friendly 'booting CV' note if the call
     runs longer than ~3s.
@@ -253,13 +285,14 @@ async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         reply_msg = await ch.send("Processing image...")
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
-        heads_up = _spawn_cold_start_notice(reply_msg)
+        heads_up = _maybe_cold_start_notice(reply_msg)
 
         async with _CV_SEM:
             out = await asyncio.wait_for(
                 _run_cv(V.detect, data),
                 timeout=timeout,
             )
+        _mark_cv_success()
         if heads_up is not None and not heads_up.done():
             heads_up.cancel()
 
@@ -303,13 +336,14 @@ async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         reply_msg = await ch.send("Processing image...")
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
-        heads_up = _spawn_cold_start_notice(reply_msg)
+        heads_up = _maybe_cold_start_notice(reply_msg)
 
         async with _CV_SEM:
             out = await asyncio.wait_for(
                 _run_cv(V.crop, data),
                 timeout=timeout,
             )
+        _mark_cv_success()
         if heads_up is not None and not heads_up.done():
             heads_up.cancel()
 
@@ -365,13 +399,14 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
         reply_msg = await ch.send("Processing image...")
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
-        heads_up = _spawn_cold_start_notice(reply_msg)
+        heads_up = _maybe_cold_start_notice(reply_msg)
 
         async with _CV_SEM:
             out = await asyncio.wait_for(
                 _run_cv(V.identify, data),
                 timeout=timeout,
             )
+        _mark_cv_success()
 
         # Cancel the cold-start notice immediately on success so it can't
         # race with the embed edit below. The finally block handles error paths.

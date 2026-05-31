@@ -48,8 +48,9 @@ async def _run_cv(fn, *args):
     return await loop.run_in_executor(_CV_EXECUTOR, fn, *args)
 
 
-def _identify_timeout_sec() -> float:
-    """Pick a per-call timeout based on the active backend.
+def _cv_timeout_sec() -> float:
+    """Pick a per-call timeout based on the active backend. Shared by
+    identify / detect / crop so all three handle cold starts the same way.
 
     Local: warm path is sub-second; 6s is generous.
     Modal: cold path (snapshot restore + GPU move + first inference) can take
@@ -65,6 +66,61 @@ def _identify_timeout_sec() -> float:
     if V._yolo is None or V._clf is None:
         return _CV_COLD_TIMEOUT_SEC
     return _CV_TIMEOUT_SEC
+
+
+# Backwards-compatible alias.
+_identify_timeout_sec = _cv_timeout_sec
+
+
+def _spawn_cold_start_notice(reply_msg: "discord.Message") -> "asyncio.Task":
+    """Edit a placeholder reply to a friendly 'booting CV' note if the call
+    runs longer than ~3s.
+
+    Warm CV calls return in ~1-2s and this task is cancelled before it fires,
+    so warm users never see it. On a cold Modal container (or first-ever local
+    load) the wait is normal, not a hang — this tells the user that. Used by
+    identify, detect, and crop so cold starts look the same across all three
+    instead of crop/detect sitting silent. Edit failures are swallowed (UX
+    polish, not load-bearing).
+    """
+    async def _notice() -> None:
+        try:
+            await asyncio.sleep(3.0)
+            await reply_msg.edit(
+                content="Booting up CV models (~15-20s on the first request after a quiet period)..."
+            )
+        except (asyncio.CancelledError, Exception):
+            pass
+    return asyncio.create_task(_notice())
+
+
+async def _notify_modal_activity_safe() -> None:
+    """Bump the Modal keep-warm window. No-op on local backend / keep-warm off."""
+    try:
+        from ..vision.backend import notify_modal_activity
+        await notify_modal_activity()
+    except Exception as e:
+        log_action("modal_keep_warm_notify_error", f"err={type(e).__name__}", str(e))
+
+
+async def _edit_or_send(
+    reply_msg: Optional["discord.Message"],
+    ch: Any,
+    content: str,
+) -> None:
+    """Land a result/error on the placeholder reply if we have one (clearing any
+    attachments/embed), else send a fresh message. Falls back to a plain send if
+    the edit fails (e.g. message deleted)."""
+    try:
+        if reply_msg is not None:
+            await reply_msg.edit(content=content, attachments=[], embed=None)
+            return
+    except Exception:
+        pass
+    try:
+        await ch.send(content)
+    except Exception:
+        pass
 
 #---------- helpers ----------
 async def _download_attachment(att: discord.Attachment) -> str:
@@ -184,33 +240,45 @@ async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
             await ch.send("Attach an image or reply to one, then say `TomCat, detect`.")
         return
 
-    tmp = []
-    try:
-        timeout = _CV_COLD_TIMEOUT_SEC if V._yolo is None else _CV_TIMEOUT_SEC
+    # detect/crop also hit the GPU — keep the Modal container warm like identify.
+    await _notify_modal_activity_safe()
 
+    tmp = []
+    reply_msg: Optional[discord.Message] = None
+    heads_up: Optional[asyncio.Task] = None
+    try:
+        timeout = _cv_timeout_sec()
+        # Send a placeholder immediately so the request is visibly acknowledged
+        # even while an earlier CV op is still holding the semaphore / cold-loading.
+        reply_msg = await ch.send("Processing image...")
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
+        heads_up = _spawn_cold_start_notice(reply_msg)
 
         async with _CV_SEM:
             out = await asyncio.wait_for(
                 _run_cv(V.detect, data),
                 timeout=timeout,
             )
-        file = discord.File(io.BytesIO(out.boxed_jpeg), filename="detected.jpg")
+        if heads_up is not None and not heads_up.done():
+            heads_up.cancel()
 
+        file = discord.File(io.BytesIO(out.boxed_jpeg), filename="detected.jpg")
         count = len(out.results)
         msg = f"Found {count} object{'s' if count != 1 else ''}."
-        await ch.send(content=msg, file=file)
+        await reply_msg.edit(content=msg, attachments=[file])
 
     except asyncio.TimeoutError:
         log_action("viz_detect_error", "err=TimeoutError", f"cap={timeout:.1f}s")
-        await ch.send("Sorry, detection timed out. Try again in a moment.")
+        await _edit_or_send(reply_msg, ch, "Sorry, detection timed out. Try again in a moment.")
     except ValueError as ve:
-        await ch.send(str(ve))
+        await _edit_or_send(reply_msg, ch, str(ve))
     except Exception as e:
         log_action("viz_detect_error", f"err={type(e).__name__}", str(e))
-        await ch.send("Sorry, detection failed.")
+        await _edit_or_send(reply_msg, ch, "Sorry, detection failed.")
     finally:
+        if heads_up is not None and not heads_up.done():
+            heads_up.cancel()
         await _cleanup(tmp)
 
 async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
@@ -224,48 +292,54 @@ async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
             await ch.send("Attach an image or reply to one, then say `TomCat, crop`.")
         return
 
-    tmp = []
-    try:
-        timeout = _CV_COLD_TIMEOUT_SEC if V._yolo is None else _CV_TIMEOUT_SEC
+    # detect/crop also hit the GPU — keep the Modal container warm like identify.
+    await _notify_modal_activity_safe()
 
+    tmp = []
+    reply_msg: Optional[discord.Message] = None
+    heads_up: Optional[asyncio.Task] = None
+    try:
+        timeout = _cv_timeout_sec()
+        reply_msg = await ch.send("Processing image...")
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
+        heads_up = _spawn_cold_start_notice(reply_msg)
 
         async with _CV_SEM:
             out = await asyncio.wait_for(
                 _run_cv(V.crop, data),
                 timeout=timeout,
             )
+        if heads_up is not None and not heads_up.done():
+            heads_up.cancel()
+
         crop_bytes = list(getattr(out, "crops", []) or [])
         if crop_bytes:
             files = [
                 discord.File(io.BytesIO(crop_bytes[i]), filename=f"crop_{i + 1}.jpg")
                 for i in range(len(crop_bytes))
             ]
-            if len(files) <= 10:
-                content = "Cropped view:" if len(files) == 1 else f"Cropped views ({len(files)} cats):"
-                await ch.send(content=content, files=files)
-            else:
-                for start in range(0, len(files), 10):
-                    batch = files[start:start + 10]
-                    if start == 0:
-                        content = f"Cropped views ({len(files)} cats):"
-                    else:
-                        content = None
-                    await ch.send(content=content, files=batch)
+            content = "Cropped view:" if len(files) == 1 else f"Cropped views ({len(files)} cats):"
+            # Discord allows <=10 attachments per message: put the first batch on
+            # the placeholder, send any overflow as follow-up messages.
+            await reply_msg.edit(content=content, attachments=files[:10])
+            for start in range(10, len(files), 10):
+                await ch.send(files=files[start:start + 10])
         else:
             file = discord.File(io.BytesIO(out.boxed_jpeg), filename="crop.jpg")
-            await ch.send(content="Cropped view:", file=file)
+            await reply_msg.edit(content="Cropped view:", attachments=[file])
 
     except asyncio.TimeoutError:
         log_action("viz_crop_error", "err=TimeoutError", f"cap={timeout:.1f}s")
-        await ch.send("Sorry, crop timed out. Try again in a moment.")
+        await _edit_or_send(reply_msg, ch, "Sorry, crop timed out. Try again in a moment.")
     except ValueError as ve:
-        await ch.send(str(ve))
+        await _edit_or_send(reply_msg, ch, str(ve))
     except Exception as e:
         log_action("viz_crop_error", f"err={type(e).__name__}", str(e))
-        await ch.send("Sorry, crop failed.")
+        await _edit_or_send(reply_msg, ch, "Sorry, crop failed.")
     finally:
+        if heads_up is not None and not heads_up.done():
+            heads_up.cancel()
         await _cleanup(tmp)
 
 async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
@@ -281,33 +355,17 @@ async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
 
     # Bump the Modal keep-warm window on every identify request. No-op when
     # CV_BACKEND=local or when keep-warm is disabled in settings.
-    try:
-        from ..vision.backend import notify_modal_activity
-        await notify_modal_activity()
-    except Exception as e:
-        log_action("modal_keep_warm_notify_error", f"err={type(e).__name__}", str(e))
+    await _notify_modal_activity_safe()
 
     tmp = []
     reply_msg: Optional[discord.Message] = None
     heads_up: Optional[asyncio.Task] = None
     try:
-        timeout = _identify_timeout_sec()
+        timeout = _cv_timeout_sec()
         reply_msg = await ch.send("Processing image...")
         path = await _download_attachment(att); tmp.append(path)
         data = await _read_bytes(path)
-
-        # If the call takes longer than ~3s, the Modal container is almost
-        # certainly cold-starting (warm calls return in ~1-2s). Edit the
-        # placeholder so the user knows the wait is normal, not a hang.
-        async def _cold_start_notice():
-            try:
-                await asyncio.sleep(3.0)
-                await reply_msg.edit(
-                    content="Booting up CV models (~15-20s on the first request after a quiet period)..."
-                )
-            except (asyncio.CancelledError, Exception):
-                pass
-        heads_up = asyncio.create_task(_cold_start_notice())
+        heads_up = _spawn_cold_start_notice(reply_msg)
 
         async with _CV_SEM:
             out = await asyncio.wait_for(

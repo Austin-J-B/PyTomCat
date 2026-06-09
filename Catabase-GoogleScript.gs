@@ -86,13 +86,15 @@ function optimizeImage(imageBlob) {
     return imageBlob;
   }
 
-  // your four Tinify API keys
-  var apiKeys = [
-    "wZfgtRrSRBHLmH9gpR1SLt3gd7cPZsG5",
-    "dVpBXYqHgMPxdcvzHFDp5nTZKTSPKKCK",
-    "1V7gPHtlG8mkXJBFtrv6qWSrKYhQ71pk",
-    "1KmYZq2xLMs1bJdfPYqdjJ3Qlfth7cNG"
-  ];
+  // Tinify API keys live in Script Properties (File > Project properties >
+  // Script properties in the Apps Script editor), comma-separated under
+  // TINIFY_API_KEYS. Never hardcode keys here: this file is in a public repo.
+  var apiKeys = String(
+    PropertiesService.getScriptProperties().getProperty("TINIFY_API_KEYS") || ""
+  ).split(",").map(function (k) { return k.trim(); }).filter(String);
+  if (!apiKeys.length) {
+    throw new Error("TINIFY_API_KEYS script property is not set; skipping compression.");
+  }
   var keys = apiKeys.slice();  // work on a copy
   var lastError;
 

@@ -1,5 +1,9 @@
 ## Runtime log output captured per subsystem.
 #logs/*
+## Member PII: feeding-sub schedules and moderation records stay out of the
+## public repo (real Discord IDs/usernames + dates/locations).
+logs/subs/
+logs/moderation/
 ## Secrets and OAuth material live outside of version control.
 .env
 credentials/*

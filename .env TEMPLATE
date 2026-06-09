@@ -4,6 +4,7 @@ DISCORD_CLIENT_SECRET=
 UI_SESSION_SECRET=                    # Required: secret for signing UI session cookies
 UI_ALLOWED_ORIGINS=                   # Should match the Discord OAuth2 dev portal
 UI_AUTH_DEBUG=false                   # Enable verbose auth/CORS logging when true
+AUTH_RATE_LIMIT_MAX_REQUESTS=20       # POST /api/auth/* requests allowed per IP per minute
 UI_GUILD_ID=                          # Optional: override guild ID to validate membership for UI auth
 UI_COOKIE_SECURE=true                 # Use secure cookies (SameSite=None) so cross-site pages send session
 COMMAND_PREFIX=!                      # Command prefix used by commands.Bot
@@ -102,6 +103,7 @@ DUES_SCAN_LIMIT=500                   # Cap rows reviewed per pass to limit Shee
 DUES_MEMBERSHIP_TTL_SEC=300           # Cache TTL for dues membership lookups (seconds)
 DUES_FAST_MAP=1                       # Use fast user map resolver (set 0 to force slower fallback)
 DUES_AUTO_VERIFY_THRESHOLD=0.90       # Auto-verify members with score >= this threshold
+DUES_EMAIL_NAME_MATCH_MIN=0.80        # Min payer-name overlap for email-only verification (no portal message)
 
 # ===== Bot Identity =====
 BOT_USER_ID=                          # Bot user ID for mention detection + wake word shortcuts

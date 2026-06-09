@@ -1,4 +1,7 @@
---extra-index-url https://download.pytorch.org/whl/cu121
+#cu126 is the oldest CUDA index that ships torch 2.8.0 wheels; any NVIDIA
+#driver new enough for CUDA 12.1 also runs 12.6 builds (CUDA 12.x minor
+#version compatibility).
+--extra-index-url https://download.pytorch.org/whl/cu126
 
 #Core Discord bot stack
 discord.py==2.4.0
@@ -23,9 +26,11 @@ beautifulsoup4==4.12.3
 opencv-python-headless==4.10.0.84
 ultralytics>=8.3.200
 
-#PyTorch (+cu121 for Windows/Nvidia)
+#PyTorch (+cu126 for Windows/Nvidia). torchvision must match torch's minor
+#version: 0.23.x pairs with torch 2.8.x (the old 0.19.1 pin paired with
+#torch 2.4 and made this file unresolvable next to torch==2.8.0).
 torch==2.8.0
-torchvision==0.19.1+cu121
+torchvision==0.23.0
 
 #HTTP utilities
 requests==2.34.2

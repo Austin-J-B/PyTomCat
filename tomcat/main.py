@@ -75,6 +75,9 @@ def _week_start_iso(dt: datetime | None = None) -> str:
 #Rate limiting constants for the web API
 RATE_LIMIT_MAX_REQUESTS = 200
 RATE_LIMIT_WINDOW_SECONDS = 60
+#Auth endpoints get a much tighter budget: token exchange hits Discord's API
+#and a loose limit invites OAuth-code brute forcing.
+AUTH_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("AUTH_RATE_LIMIT_MAX_REQUESTS", "20") or "20")
 LABELER_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_RATE_LIMIT_MAX_REQUESTS", "700") or "700")
 LABELER_IMAGE_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_IMAGE_RATE_LIMIT_MAX_REQUESTS", "1800") or "1800")
 LABELER_CLAIM_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_CLAIM_RATE_LIMIT_MAX_REQUESTS", "2600") or "2600")
@@ -103,6 +106,28 @@ def _start_background_task(name: str, coro_factory: Callable[[], Any]) -> None:
     if existing and not existing.done():
         return
     _background_tasks[name] = asyncio.create_task(coro_factory())
+
+
+#Strong references for fire-and-forget tasks: asyncio only keeps a weak ref to
+#running tasks, so an unreferenced task can be garbage-collected mid-flight.
+_ephemeral_tasks: set = set()
+
+
+def _spawn_task(coro, label: str) -> None:
+    """Run a coroutine in the background, keeping a reference and logging
+    any exception that escapes it (otherwise failures vanish silently)."""
+    task = asyncio.create_task(coro)
+    _ephemeral_tasks.add(task)
+
+    def _done(t: "asyncio.Task") -> None:
+        _ephemeral_tasks.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            log_action("background_task_error", label, f"{type(exc).__name__}: {exc}")
+
+    task.add_done_callback(_done)
 
 
 def _arm_forced_exit(delay_sec: Optional[float] = None, *, exit_code: int = _FORCED_EXIT_CODE) -> None:
@@ -533,11 +558,26 @@ async def auth_token_exchange(request):
         return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
     code = data.get("code")
-    redirect_uri = data.get("redirect_uri") 
+    redirect_uri = data.get("redirect_uri")
     _debug(f"payload redirect_uri={redirect_uri} code_present={bool(code)}")
 
     if not code:
         return _with_cors(web.Response(status=400, text="Missing authorization code"), request)
+    #Only forward redirect_uri values rooted at an origin we serve the UI
+    #from. Discord verifies it against the registered list too, but pinning
+    #it here keeps a mis-registered Discord app from becoming an open
+    #redirect / code-leak vector.
+    if redirect_uri:
+        try:
+            from urllib.parse import urlsplit
+            parts = urlsplit(str(redirect_uri))
+            req_origin = f"{parts.scheme}://{parts.netloc}".lower()
+        except Exception:
+            req_origin = ""
+        allowed = {o.strip().lower() for o in _ALLOWED_ORIGINS if o.strip() and o.strip() != "*"}
+        if req_origin not in allowed:
+            _debug(f"rejected redirect_uri origin={req_origin!r}")
+            return _with_cors(web.Response(status=400, text="redirect_uri not allowed"), request)
     if not CLIENT_SECRET or not CLIENT_ID:
         return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)
 
@@ -623,6 +663,15 @@ async def get_session(request: web.Request):
     }
 
     return _issue_session_response(user_info, permissions, request)
+
+async def auth_logout(request: web.Request):
+    """Clear the session cookie. Tokens are stateless HMAC payloads, so the
+    old token stays cryptographically valid until its exp (<= 1h by default);
+    this endpoint removes it from the browser so shared machines log out."""
+    resp = web.json_response({"status": "logged_out"})
+    resp.del_cookie("tc_session")
+    return _with_cors(resp, request)
+
 
 #--- The Secure Save Endpoint ---
 async def save_schedule(request):
@@ -1008,6 +1057,9 @@ async def rate_limit_middleware(request: web.Request, handler):
             client_ip = peername
     client_id = client_ip or "unknown"
     max_requests = RATE_LIMIT_MAX_REQUESTS
+    if request.path.startswith("/api/auth") and request.method == "POST":
+        client_id = f"auth:{client_id}"
+        max_requests = AUTH_RATE_LIMIT_MAX_REQUESTS
     if is_labeler_api:
         user_id = str((labeler_session or {}).get("user_id") or "").strip() or client_id
         bucket_suffix = "general"
@@ -1728,8 +1780,10 @@ async def start_web_server(bot):
         web.options('/api/members', _options_preflight),
         web.post('/api/auth/token', auth_token_exchange),
         web.get('/api/auth/session', get_session),
+        web.post('/api/auth/logout', auth_logout),
         web.options('/api/auth/token', _options_preflight),
         web.options('/api/auth/session', _options_preflight),
+        web.options('/api/auth/logout', _options_preflight),
         web.post('/api/schedule/save', save_schedule),
         web.get('/api/schedule', get_schedule),
         web.options('/api/schedule', _options_preflight),
@@ -2025,7 +2079,7 @@ async def on_message(message: discord.Message):
 
         # Intake can be expensive on cold start because duplicate indexing scans the local photo corpus.
         # Keep it off the command-response path so CV requests still route immediately.
-        asyncio.create_task(_run_image_intake(message))
+        _spawn_task(_run_image_intake(message), "image_intake")
 
     #Lightweight fun triggers (e.g., "meow") anywhere; safe_send respects silent mode
     try:

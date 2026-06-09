@@ -41,6 +41,31 @@ _ALLOWED_ORIGINS = {
     if origin.strip()
 }
 
+
+def _normalized_allowed_origins() -> set[str]:
+    """Reduce UI_ALLOWED_ORIGINS entries to scheme://host[:port] form.
+
+    Entries may be written as full OAuth redirect URLs (with paths or trailing
+    slashes) to mirror the Discord dev portal; CORS Origin headers and
+    redirect_uri pinning both compare on the origin alone.
+    """
+    from urllib.parse import urlsplit
+
+    out: set[str] = set()
+    for entry in _ALLOWED_ORIGINS:
+        if entry == "*":
+            continue
+        try:
+            parts = urlsplit(entry if "://" in entry else f"https://{entry}")
+            if parts.netloc:
+                out.add(f"{parts.scheme}://{parts.netloc}".lower())
+        except Exception:
+            continue
+    return out
+
+
+_ALLOWED_ORIGIN_HOSTS = _normalized_allowed_origins()
+
 _AUTH_DEBUG = os.getenv("UI_AUTH_DEBUG", "false").lower() == "true"
 
 #Officer/guild/role IDs are configured via settings/env only (no code defaults).
@@ -566,17 +591,19 @@ async def auth_token_exchange(request):
     #Only forward redirect_uri values rooted at an origin we serve the UI
     #from. Discord verifies it against the registered list too, but pinning
     #it here keeps a mis-registered Discord app from becoming an open
-    #redirect / code-leak vector.
-    if redirect_uri:
+    #redirect / code-leak vector. When UI_ALLOWED_ORIGINS is just "*" there
+    #is nothing to pin against, so enforcement is skipped (matching the
+    #equally permissive CORS behavior of that config) rather than breaking
+    #every web login.
+    if redirect_uri and _ALLOWED_ORIGIN_HOSTS and "*" not in _ALLOWED_ORIGINS:
         try:
             from urllib.parse import urlsplit
             parts = urlsplit(str(redirect_uri))
             req_origin = f"{parts.scheme}://{parts.netloc}".lower()
         except Exception:
             req_origin = ""
-        allowed = {o.strip().lower() for o in _ALLOWED_ORIGINS if o.strip() and o.strip() != "*"}
-        if req_origin not in allowed:
-            _debug(f"rejected redirect_uri origin={req_origin!r}")
+        if req_origin not in _ALLOWED_ORIGIN_HOSTS:
+            _debug(f"rejected redirect_uri origin={req_origin!r} allowed={sorted(_ALLOWED_ORIGIN_HOSTS)}")
             return _with_cors(web.Response(status=400, text="redirect_uri not allowed"), request)
     if not CLIENT_SECRET or not CLIENT_ID:
         return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)

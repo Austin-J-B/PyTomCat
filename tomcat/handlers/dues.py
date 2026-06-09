@@ -1191,6 +1191,11 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
                             log_action('mavorgs_verify_update_error', f"r={cell.row} c={cell.col}", str(e3))
                             break
             await asyncio.sleep(0.8)
+        #Invalidate the membership TTL cache here, in the function that did
+        #the write: callers that read rows next (cleanup, role sync) must see
+        #the new Verified marks instead of a stale cache entry.
+        global _MEMBERSHIP_ROWS_CACHE
+        _MEMBERSHIP_ROWS_CACHE = None
         return True, f"Marked Verified for {done} row(s)."
     except Exception as e:
         try:

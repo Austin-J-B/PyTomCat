@@ -1311,17 +1311,21 @@ def sync_metadata_csv_to_sheet(force: bool = False) -> dict[str, Any]:
         worksheet.clear()
         worksheet.resize(rows=max(len(table), 1), cols=len(CSV_HEADERS))
         last_col = _sheet_col_name(len(CSV_HEADERS))
+        #One values.batchUpdate call instead of one update() per chunk: at
+        #10k+ rows the per-chunk loop burned ~20 write-quota units per sync.
+        batch_payload = []
         for start in range(0, len(table), chunk_rows):
             chunk = table[start:start + chunk_rows]
             if not chunk:
                 continue
             row_start = start + 1
             row_end = row_start + len(chunk) - 1
-            worksheet.update(
-                f"A{row_start}:{last_col}{row_end}",
-                chunk,
-                value_input_option="RAW",
-            )
+            batch_payload.append({
+                "range": f"A{row_start}:{last_col}{row_end}",
+                "values": chunk,
+            })
+        if batch_payload:
+            worksheet.batch_update(batch_payload, value_input_option="RAW")
 
         _LAST_METADATA_SHEET_SYNC_SIG = signature
         log_action(

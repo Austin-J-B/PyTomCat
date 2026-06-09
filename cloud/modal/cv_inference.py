@@ -181,10 +181,9 @@ class CVInference:
 
         # DINOv3 encoder.
         encoder = _build_encoder()
-        try:
-            state = torch.load(ENCODER_PATH, map_location="cpu", weights_only=True)
-        except Exception:
-            state = torch.load(ENCODER_PATH, map_location="cpu")
+        #weights_only=True only: a state_dict never needs full unpickling, and
+        #the fallback would execute arbitrary code from a tampered weights file.
+        state = torch.load(ENCODER_PATH, map_location="cpu", weights_only=True)
         encoder.load_state_dict(state, strict=True)
         encoder.eval()
         self._encoder = encoder

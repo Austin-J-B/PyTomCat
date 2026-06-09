@@ -680,10 +680,10 @@ def _ensure_encoder() -> None:
             return
         try:
             encoder = DINOv3Wrapper()
-            try:
-                state = torch.load(settings.cv_encoder_weights, map_location=_device, weights_only=True)
-            except Exception:
-                state = torch.load(settings.cv_encoder_weights, map_location=_device)
+            #weights_only=True only: a state_dict is tensors in an OrderedDict,
+            #so anything that fails this load is corrupt or malicious. Never
+            #fall back to full unpickling (arbitrary code execution).
+            state = torch.load(settings.cv_encoder_weights, map_location=_device, weights_only=True)
             encoder.load_state_dict(state, strict=True)
             encoder.to(_device).eval()
             _clf = encoder
@@ -717,10 +717,11 @@ def _ensure_gallery() -> None:
                     gallery_path = Path(gallery_target)
             if not gallery_path.exists() or gallery_path.stat().st_size == 0:
                 raise RuntimeError(f"Gallery file is missing or empty: {gallery_target}. Please run a gallery retrain.")
-            try:
-                gal_data = torch.load(gallery_target, map_location=_device, weights_only=True)
-            except Exception:
-                gal_data = torch.load(gallery_target, map_location=_device, weights_only=False)
+            #weights_only=True only: galleries are tensors + plain dicts/lists
+            #(verified for both retrain output and the shipped R5.x files).
+            #A fallback to full unpickling would let a swapped gallery file
+            #execute arbitrary code on load.
+            gal_data = torch.load(gallery_target, map_location=_device, weights_only=True)
 
             _gallery_emb = (gal_data['emb'] if 'emb' in gal_data else gal_data['embeddings']).to(_device)
             _gallery_emb = torch.nn.functional.normalize(_gallery_emb, p=2, dim=1)
@@ -3025,10 +3026,8 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
                 target_path = Path(target)
         if not target_path.exists() or target_path.stat().st_size == 0:
             raise RuntimeError(f"Gallery file is missing or empty: {target}. Please run a gallery retrain.")
-        try:
-            gal_data = torch.load(target, map_location=_device, weights_only=True)
-        except Exception:
-            gal_data = torch.load(target, map_location=_device, weights_only=False)
+        #weights_only=True only; see _ensure_gallery for rationale.
+        gal_data = torch.load(target, map_location=_device, weights_only=True)
 
         emb = (gal_data["emb"] if "emb" in gal_data else gal_data["embeddings"]).to(_device)
         emb = torch.nn.functional.normalize(emb, p=2, dim=1)

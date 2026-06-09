@@ -431,6 +431,10 @@ class Settings:
     #Max retries when Discord still responds with 429.
     profile_update_edit_max_retries: int = int(os.getenv("PROFILE_UPDATE_EDIT_MAX_RETRIES", "3") or "3")
     dues_member_max_candidates: int = int(os.getenv("DUES_MEMBER_MAX_CANDIDATES", "300"))
+    #Minimum payer-name token overlap for email-only dues verification (no
+    #portal message corroborating). Keep strict: these emails are the weakest
+    #evidence in the pipeline.
+    dues_email_name_match_min: float = float(os.getenv("DUES_EMAIL_NAME_MATCH_MIN", "0.80") or "0.80")
 
     #Roles & Guilds
     role_officer: int = int(os.getenv("ROLE_OFFICER", "0"))

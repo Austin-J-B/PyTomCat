@@ -16,7 +16,7 @@ from ..config import settings
 from ..logger import log_action
 from ..services.sheets_client import sheets_client
 from ..utils.datetime_utils import format_mmddyyyy
-from ..utils.payments import detect_provider
+from ..utils.payments import detect_provider, email_authenticated
 from ..utils.sender import safe_send
 
 FINANCE_DIR = os.path.join("logs", "finance")
@@ -1048,6 +1048,19 @@ def _categorize_expense(counterparty: str, text: str) -> str:
     return _EXPENSE_TYPES["misc"]
 
 
+def _escape_sheet_text(value: str) -> str:
+    """Neutralize spreadsheet formula injection in untrusted text cells.
+
+    Rows are appended with USER_ENTERED, so a counterparty/note starting with
+    '=' (or '+', '-', '@') would execute as a formula for anyone viewing the
+    sheet. A leading apostrophe forces Sheets to treat it as plain text.
+    """
+    v = str(value or "")
+    if v and v[0] in "=+-@\t":
+        return "'" + v
+    return v
+
+
 def _build_income_row(event: FinanceEvent) -> List[str]:
     """Translate a FinanceEvent into the Income sheet row schema."""
     #Schema: Timestamp, Month, Year, Email Address, Name, Income type, Amount, Payment Type
@@ -1066,6 +1079,7 @@ def _build_income_row(event: FinanceEvent) -> List[str]:
     else:
         name_field += " (Message: none)"
     name_field += " [Recorded by the TomCat bot]"
+    name_field = _escape_sheet_text(name_field)
     
     return [
         timestamp,
@@ -1094,6 +1108,7 @@ def _build_expense_row(event: FinanceEvent) -> List[str]:
     else:
         name_field += " (Message: none)"
     name_field += " [Recorded by the TomCat bot]"
+    name_field = _escape_sheet_text(name_field)
     
     return [
         timestamp,
@@ -1843,6 +1858,12 @@ def _classify_email(email: dict) -> Tuple[Optional[FinanceEvent], str]:
     )
     if not provider:
         return None, "unsupported"
+    #Reject emails whose DKIM/DMARC verdict contradicts the From header so a
+    #forged provider notification can't create ledger rows. Emails logged
+    #before auth_results was captured return None and pass through.
+    if email_authenticated(email.get("auth_results"), provider) is False:
+        log_action('finance_email_auth_fail', email.get('id', ''), f'provider={provider}')
+        return None, "auth_fail"
     if provider == 'venmo':
         return _classify_venmo(email)
     if provider == 'cashapp':

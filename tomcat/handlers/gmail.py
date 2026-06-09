@@ -235,6 +235,12 @@ async def _log_emails_batch(svc, messages: List[Dict[str, Any]], delay_sec: floa
                 "event": "email_received", "id": mid,
                 "subject": _sanitize_for_ndjson(headers.get("subject", "")),
                 "from": _sanitize_for_ndjson(headers.get("from", "")),
+                #Gmail's DKIM/DMARC verdict; dues/finance use it to reject
+                #payment notifications with a forged From header.
+                "auth_results": _sanitize_for_ndjson(
+                    headers.get("authentication-results", "")
+                    or headers.get("arc-authentication-results", "")
+                ),
                 "message_id": _sanitize_for_ndjson(headers.get("message-id", "")),
                 "thread_id": _sanitize_for_ndjson(full.get("threadId", "")),
                 "ts_received": ts_rec, "ts_logged": _now_iso(),

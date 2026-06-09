@@ -19,7 +19,7 @@ from typing import Any, Dict, Optional, List, Tuple
 from ..logger import log_event, log_action
 from ..config import settings
 from ..utils.permissions import is_officer, officer_role_ids
-from ..utils.payments import detect_provider, domain_matches, extract_email_domain
+from ..utils.payments import detect_provider, domain_matches, email_authenticated, extract_email_domain
 from . import finance
 
 try:
@@ -689,6 +689,12 @@ def _prep_emails_between(start_dt: datetime, end_dt: datetime) -> list[dict]:
     for e in raw_emails:
         subj, body, frm = (e.get('subject','') or ''), (e.get('content','') or ''), (e.get('from','') or '')
         provider = _provider_from_email(frm, subj, body) or ''
+        #Drop providers whose DKIM/DMARC verdict contradicts the From header:
+        #a forged "Venmo" email must not count as payment evidence. Rows
+        #logged before auth_results was captured return None and pass through.
+        if provider and email_authenticated(e.get('auth_results'), provider) is False:
+            log_action('dues_email_auth_fail', str(e.get('id') or ''), f'provider={provider} from={frm}')
+            provider = ''
         text = subj + ' ' + body
         amount = _extract_amount(text)
         payer_name = _payment_username_from_email({'subject': subj, 'content': body, 'from': frm}) or ''
@@ -713,6 +719,9 @@ def _email_only_candidates(rows: list[dict], cur_sem: str) -> list[tuple[str, st
     base_due = float(getattr(settings, 'dues_base_amount', 15.0) or 15.0)
     tol = float(getattr(settings, 'dues_amount_tolerance', 0.01) or 0.01)
     backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
+    #Email-only verification has no Discord portal message backing it, so the
+    #payer-name match must be strict; 0.60 let "Alex J" match "Alex Johnson".
+    name_match_min = float(getattr(settings, 'dues_email_name_match_min', 0.80) or 0.80)
     now = _dues_now()
     def _align_dt(dt: Optional[datetime]) -> Optional[datetime]:
         if dt is None:
@@ -769,7 +778,7 @@ def _email_only_candidates(rows: list[dict], cur_sem: str) -> list[tuple[str, st
             if not name_pool or not E.get('payer_name'):
                 continue
             overlap = max(_jaccard_tokens(E['payer_name'], n) for n in name_pool)
-            if overlap < 0.60:
+            if overlap < name_match_min:
                 continue
             if overlap > best_score:
                 best_score = overlap
@@ -2145,10 +2154,11 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
             continue
         if id(rec['row']) in matched_rows:
             continue
-        #Promote if reasonably strong
+        #Promote if reasonably strong. Handle floor stays >= 80: these matches
+        #grant the dues role, and 72 let short handles match the wrong member.
         sc = int(rec.get('score') or 0)
         mode = rec.get('mode') or ''
-        if (mode.startswith('handle') and sc >= 72) or (mode == 'name_fuzzy' and sc >= 85) or sc >= 88:
+        if (mode.startswith('handle') and sc >= 80) or (mode == 'name_fuzzy' and sc >= 85) or sc >= 88:
             matched_unique.append(rec)
             used_uids.add(uid)
             matched_rows.add(id(rec['row']))
@@ -2168,7 +2178,7 @@ def _match_membership_rows_to_members(rows: list[dict], members: list) -> tuple[
             if m2:
                 uid2 = int(getattr(m2, 'id', 0) or 0)
                 if uid2 and uid2 not in used_uids:
-                    if (str(mode2).startswith('handle') and sc2 >= 68) or (mode2 == 'name_fuzzy' and sc2 >= 82) or sc2 >= 86:
+                    if (str(mode2).startswith('handle') and sc2 >= 80) or (mode2 == 'name_fuzzy' and sc2 >= 85) or sc2 >= 88:
                         matched_unique.append({'row': r, 'member': m2, 'score': sc2, 'mode': mode2})
                         used_uids.add(uid2)
                         continue
@@ -2802,6 +2812,10 @@ async def _analyze_dues(bot) -> List[dict]:
     for e in raw_emails:
         subj, body, frm = (e.get('subject','') or ''), (e.get('content','') or ''), (e.get('from','') or '')
         provider = _provider_from_email(frm, subj, body) or ''
+        #Same DKIM/DMARC gate as _prep_emails_between.
+        if provider and email_authenticated(e.get('auth_results'), provider) is False:
+            log_action('dues_email_auth_fail', str(e.get('id') or ''), f'provider={provider} from={frm}')
+            provider = ''
         text = subj + ' ' + body
         amount = _extract_amount(text)
         payer_name = _payment_username_from_email({'subject': subj, 'content': body, 'from': frm}) or ''

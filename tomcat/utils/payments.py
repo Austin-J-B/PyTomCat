@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from email.utils import parseaddr
 from typing import Optional
 
@@ -30,6 +31,39 @@ def domain_matches(domain: str, targets: tuple[str, ...]) -> bool:
         #Subdomain check: domain ends with ".target"
         if domain.endswith("." + target):
             return True
+    return False
+
+
+#Domains each provider is allowed to send payment notifications from.
+PROVIDER_DOMAINS: dict[str, tuple[str, ...]] = {
+    "venmo": ("venmo.com",),
+    "cashapp": ("cash.app", "squareup.com", "square.com"),
+    "paypal": ("paypal.com",),
+}
+
+_DKIM_PASS_RE = re.compile(r"dkim=pass[^;]*?header\.(?:i=@|d=)([a-z0-9.\-]+)")
+_DMARC_PASS_RE = re.compile(r"dmarc=pass[^;]*?header\.from=([a-z0-9.\-]+)")
+
+
+def email_authenticated(auth_results: Optional[str], provider: str) -> Optional[bool]:
+    """Check Gmail's Authentication-Results header against a provider's domains.
+
+    The From header alone is trivially forgeable; DKIM/DMARC results recorded
+    by Gmail are not. Returns True when the header shows dkim=pass or
+    dmarc=pass for a domain belonging to the provider, False when the header
+    is present but shows no such pass (a spoofed sender), and None when the
+    header is unavailable (emails logged before this field was captured).
+    """
+    targets = PROVIDER_DOMAINS.get(provider or "")
+    if not targets:
+        return None
+    raw = (auth_results or "").strip().lower()
+    if not raw:
+        return None
+    for pattern in (_DKIM_PASS_RE, _DMARC_PASS_RE):
+        for dom in pattern.findall(raw):
+            if domain_matches(dom, targets):
+                return True
     return False
 
 

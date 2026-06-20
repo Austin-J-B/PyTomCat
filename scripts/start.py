@@ -3,7 +3,14 @@
 
 Starts:
   1. The Discord Bot (API Server) on port 8080
-  2. The Cloudflare Tunnel pointing to localhost:8080
+  2. (Windows dev only) The Cloudflare Tunnel pointing to localhost:8080
+
+On Linux (production), the tunnel is owned by a dedicated, supervised
+``cloudflared.service`` systemd unit (see deploy/cloudflared.service) rather
+than being spawned here. This script still regenerates config.yml so that
+unit always runs against the current ingress mapping. Spawning the tunnel as
+an unsupervised child here meant a tunnel crash left the bot running while the
+public site went dark (Cloudflare 1033) with nothing to restart it.
 """
 
 from __future__ import annotations
@@ -256,8 +263,11 @@ def main() -> None:
     #--- 2. Commands ---
     bot_cmd = [str(python_path), "-m", "tomcat.main"]
 
+    # On Linux/production the tunnel is run by cloudflared.service (systemd),
+    # which supervises and restarts it independently of the bot. Only launch it
+    # here as a child on Windows dev machines, where there is no systemd.
     tunnel_cmd = None
-    if cloudflared_path.exists() and tunnel_uuid:
+    if os.name == "nt" and cloudflared_path.exists() and tunnel_uuid:
         # Refresh cloudflared, then start the tunnel. Skip the self-update when
         # the binary was installed by a package manager — it refuses to update
         # itself in that case and just logs noise.

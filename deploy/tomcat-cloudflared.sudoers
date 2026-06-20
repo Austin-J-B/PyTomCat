@@ -1,0 +1,6 @@
+# Allow the unprivileged `tomcat` user to manage the tunnel unit so deploy.sh
+# can pick up config.yml changes without full root. Install as:
+#   sudo install -m440 -o root -g root deploy/tomcat-cloudflared.sudoers \
+#       /etc/sudoers.d/tomcat-cloudflared
+#   sudo visudo -cf /etc/sudoers.d/tomcat-cloudflared   # validate
+tomcat ALL=(ALL) NOPASSWD: /usr/bin/systemctl start cloudflared, /usr/bin/systemctl stop cloudflared, /usr/bin/systemctl restart cloudflared

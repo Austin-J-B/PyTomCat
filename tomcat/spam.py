@@ -24,7 +24,24 @@ SUSPICIOUS_TERMS = [
     ("season_tickets", 1, re.compile(r"\bseason\s+tickets?\b", re.I)),
     ("selling_tickets", 1, re.compile(r"\bsell(?:ing)?\s+(?:my\s+)?tickets?\b", re.I)),
     ("whatsapp", 1, re.compile(r"\bwhats?app\b", re.I)),
+    #"Moving abroad, giving away my furniture for free, DM me" giveaway scam.
+    ("relocating_pretext", 2, re.compile(r"\b(?:relocat\w*|moving|leaving)\b.{0,40}\b(?:new\s+(?:country|state|city|place)|abroad|overseas|out\s+of\s+(?:the\s+)?(?:country|state|town)|to\s+a\s+new)\b", re.I)),
+    ("giving_away_items", 2, re.compile(r"\b(?:give\s+(?:out|away)|giving\s+(?:out|away|them\s+out)|giv(?:e|ing)\s+them\s+(?:out|away))\b.{0,40}\b(?:item|items|belongings|stuff|everything|furniture|free)\b", re.I)),
+    ("free_of_charge", 1, re.compile(r"\bfree\s+of\s+charge\b|\bcompletely\s+free\b|\bfor\s+free\b", re.I)),
+    ("dm_me_for_details", 1, re.compile(r"\b(?:dm|pm|message|text|inbox)\s+me\s+for\s+(?:more\s+)?(?:detail|details|info|information|pic|pics|picture|pictures)\b", re.I)),
+    ("send_me_a_message", 1, re.compile(r"\bsend\s+me\s+a\s+(?:message|dm|text|note)\b", re.I)),
 ]
+
+#Household goods / appliances frequently dumped in the giveaway-scam item list.
+HOUSEHOLD_ITEM_RE = re.compile(
+    r"\b(?:trampoline|treadmill|freezer|fridge|refrigerator|washer|dryer|dishwasher|"
+    r"microwave|mattress|dresser|couch|sofa|sectional|bunk\s*bed|kennel|"
+    r"water\s+dispenser|kitchen\s*aid|stand\s*mixer|smart\s*tv|x\s*box|xbox|"
+    r"ps\s*[45]|playstation|wardrobe|recliner|loveseat|ottoman|bookshelf|nightstand)\b",
+    re.I,
+)
+#Distinct household items needed before the long-list density signal fires.
+HOUSEHOLD_ITEM_THRESHOLD = 5
 
 MIN_SPAM_SCORE = 3
 
@@ -150,11 +167,18 @@ def check_spam(message, settings) -> tuple[bool, str]:
         if rx.search(text):
             score += 2
             matched_rules.append(rx.pattern)
+    #Long list of household goods is the tell for the "moving abroad" giveaway scam.
+    item_hits = {m.group(0).lower() for m in HOUSEHOLD_ITEM_RE.finditer(text)}
+    item_count = len(item_hits)
+    if item_count >= HOUSEHOLD_ITEM_THRESHOLD:
+        score += 2
     #fuzzy phrases
     fuzzy_phrases = [
         "tickets available", "4 tickets", "american airlines center",
         "dm me if interested", "message me if interested", "first come first serve",
         "free macbook", "giving out my macbook", "free iphone","at&t stadium", "ps5 charger",
+        "relocating to a new country", "give out my items", "free of charge",
+        "moving abroad", "everything must go", "excellent condition",
     ]
     fuzzy_hits = []
     for ph in fuzzy_phrases:
@@ -172,6 +196,8 @@ def check_spam(message, settings) -> tuple[bool, str]:
             details_parts.append(f"phrases={','.join(suspicion_hits)}")
         if matched_rules:
             details_parts.append(f"regex={'|'.join(matched_rules)}")
+        if item_count >= HOUSEHOLD_ITEM_THRESHOLD:
+            details_parts.append(f"items={item_count}")
         if fuzzy_hits:
             details_parts.append(f"fuzzy={len(fuzzy_hits)}")
         if details_parts:

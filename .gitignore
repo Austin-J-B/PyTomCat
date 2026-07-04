@@ -71,6 +71,8 @@ logs/finance/
 logs/human/
 logs/machine/
 logs/dues/
+logs/invite_flags.json
+logs/invite_flags.json.tmp
 
 tests/
 temp_images/

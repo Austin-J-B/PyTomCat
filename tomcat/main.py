@@ -952,6 +952,61 @@ def _lookup_join_invite_code(user_id: int) -> Optional[str]:
             return found
     return None
 
+
+#Persistent tally of officer-confirmed bot bans per invite code. A high count means
+#that invite is being scraped/leaked, so future spam alerts can surface "joined via an
+#invite that's already produced N bots" without adding any friction for real members.
+INVITE_FLAGS_PATH = Path("logs/invite_flags.json")
+#At/above this many confirmed bots, nudge officers to revoke the invite.
+INVITE_FLAG_REVOKE_HINT = 3
+invite_flags: dict[str, dict] = {}
+
+
+def _load_invite_flags() -> None:
+    """Load the invite-flag tally from disk (best-effort; survives daily restart)."""
+    global invite_flags
+    try:
+        if INVITE_FLAGS_PATH.exists():
+            invite_flags = json.loads(INVITE_FLAGS_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        invite_flags = {}
+
+
+def _save_invite_flags() -> None:
+    """Persist the tally atomically so a crash mid-write can't corrupt it."""
+    try:
+        INVITE_FLAGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = INVITE_FLAGS_PATH.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(invite_flags, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(INVITE_FLAGS_PATH)
+    except Exception:
+        pass
+
+
+def _invite_bot_ban_count(code: Optional[str]) -> int:
+    """Return how many confirmed bots have previously come through this invite."""
+    if not code:
+        return 0
+    return int((invite_flags.get(code) or {}).get("bot_bans", 0))
+
+
+def _flag_invite_bot_ban(code: Optional[str], inviter_id: Optional[int] = None) -> int:
+    """Record one officer-confirmed bot ban against an invite; return the new total."""
+    if not code:
+        return 0
+    rec = invite_flags.get(code) or {"bot_bans": 0}
+    rec["bot_bans"] = int(rec.get("bot_bans", 0)) + 1
+    rec["last_ts"] = time.time()
+    if inviter_id:
+        rec["inviter_id"] = int(inviter_id)
+    invite_flags[code] = rec
+    _save_invite_flags()
+    return rec["bot_bans"]
+
+
+_load_invite_flags()
+
+
 async def _fetch_invites(guild: discord.Guild, *, force: bool = False) -> Optional[list[discord.Invite]]:
     """Fetch invites with a per-guild cooldown to avoid rate limits."""
     if not guild.me.guild_permissions.manage_guild:
@@ -2012,10 +2067,19 @@ async def on_message(message: discord.Message):
                     mention = f"<@&{int(officer_role_id)}>" if officer_role_id else ""
                     uname = f"@{getattr(message.author,'name','unknown-user')}"
                     join_code = _lookup_join_invite_code(int(getattr(message.author, 'id', 0) or 0))
-                    invite_line = (
-                        f"discord.gg/{join_code} ({join_code})"
-                        if join_code else "unknown (no join record found)"
-                    )
+                    if join_code:
+                        prior_bots = _invite_bot_ban_count(join_code)
+                        if prior_bots:
+                            invite_line = (
+                                f"discord.gg/{join_code} ({join_code}) — "
+                                f"⚠️ {prior_bots} prior bot account(s) banned from this invite"
+                            )
+                            if prior_bots >= INVITE_FLAG_REVOKE_HINT:
+                                invite_line += " (likely scraped — consider revoking it)"
+                        else:
+                            invite_line = f"discord.gg/{join_code} ({join_code}) — no prior bot bans"
+                    else:
+                        invite_line = "unknown (no join record found)"
                     body = (
                         "Spam Message Detected\n"
                         f"User: {uname} ({getattr(message.author,'id','')})\n"
@@ -2041,6 +2105,7 @@ async def on_message(message: discord.Message):
                                 "user_id": int(getattr(message.author, 'id', 0) or 0),
                                 "guild_id": int(getattr(message.guild, 'id', 0) or 0),
                                 "timestamp": time.time(), # Add timestamp for TTL
+                                "invite_code": join_code, # tally against this invite on ban
                             }
                             await alert_msg.add_reaction('🔨')
                             await alert_msg.add_reaction('✅')
@@ -2219,6 +2284,12 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         else:
             await guild.ban(discord.Object(id=target_id), reason="Spam reaction ban")
         log_action('spam_ban', f"guild={guild_id}", f"user={target_id}")
+        #Officer-confirmed bot: tally it against the invite it came through so repeat
+        #offenders on the same (scraped) link stand out in future alerts.
+        code = data.get('invite_code') or _lookup_join_invite_code(target_id)
+        if code:
+            new_count = _flag_invite_bot_ban(code)
+            log_action('invite_flag', f"code={code}", f"bot_bans={new_count}")
         SPAM_ALERTS.pop(payload.message_id, None)
     except Exception as ban_exc:
         log_action('spam_ban_error', f"guild={guild_id}", str(ban_exc))

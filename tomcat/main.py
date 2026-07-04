@@ -957,8 +957,6 @@ def _lookup_join_invite_code(user_id: int) -> Optional[str]:
 #that invite is being scraped/leaked, so future spam alerts can surface "joined via an
 #invite that's already produced N bots" without adding any friction for real members.
 INVITE_FLAGS_PATH = Path("logs/invite_flags.json")
-#At/above this many confirmed bots, nudge officers to revoke the invite.
-INVITE_FLAG_REVOKE_HINT = 3
 invite_flags: dict[str, dict] = {}
 
 
@@ -2033,18 +2031,30 @@ async def on_message(message: discord.Message):
     })
 
     # Run spam checks before routing normal commands.
-    from .spam import check_spam
-    spam_flag, reason = check_spam(message, settings)
+    from .spam import check_spam, HIGH_CONFIDENCE_SPAM_SCORE
+    spam_flag, reason, score = check_spam(message, settings)
     if spam_flag:
-        #Log and notify in logging channel, then delete the message
+        #Log and notify in logging channel; delete only when confident.
         try:
-            #Delete spam message (best-effort)
-            try:
-                await message.delete()
-                decision = "deleted"
-            except Exception as delete_exc:
-                decision = "kept"
-                log_action("spam_delete_error", f"ch={_channel_label(message.channel)}", str(delete_exc))
+            #Confidence gate: a high score is unambiguous, and an invite that has
+            #already produced confirmed bots upgrades a borderline hit. Low-confidence
+            #hits are alerted but NOT deleted, so a false positive never removes a real
+            #member's message.
+            author_id = int(getattr(message.author, 'id', 0) or 0)
+            join_code = _lookup_join_invite_code(author_id)
+            prior_bots = _invite_bot_ban_count(join_code)
+            high_confidence = score >= HIGH_CONFIDENCE_SPAM_SCORE or prior_bots > 0
+
+            #Delete only high-confidence spam (best-effort).
+            if high_confidence:
+                try:
+                    await message.delete()
+                    decision = "deleted"
+                except Exception as delete_exc:
+                    decision = "kept"
+                    log_action("spam_delete_error", f"ch={_channel_label(message.channel)}", str(delete_exc))
+            else:
+                decision = "kept_low_confidence"
 
             #Write log line
             log_event({
@@ -2054,6 +2064,8 @@ async def on_message(message: discord.Message):
                 "content": message.clean_content if isinstance(message.content, str) else "",
                 "decision": decision,
                 "reason": reason,
+                "score": score,
+                "confidence": "high" if high_confidence else "low",
             })
 
             #Notify moderators in CH_LOGGING
@@ -2066,26 +2078,17 @@ async def on_message(message: discord.Message):
                     officer_role_id = OFFICER_ROLE_ID
                     mention = f"<@&{int(officer_role_id)}>" if officer_role_id else ""
                     uname = f"@{getattr(message.author,'name','unknown-user')}"
-                    join_code = _lookup_join_invite_code(int(getattr(message.author, 'id', 0) or 0))
                     if join_code:
-                        prior_bots = _invite_bot_ban_count(join_code)
-                        if prior_bots:
-                            invite_line = (
-                                f"discord.gg/{join_code} ({join_code}) — "
-                                f"⚠️ {prior_bots} prior bot account(s) banned from this invite"
-                            )
-                            if prior_bots >= INVITE_FLAG_REVOKE_HINT:
-                                invite_line += " (likely scraped — consider revoking it)"
-                        else:
-                            invite_line = f"discord.gg/{join_code} ({join_code}) — no prior bot bans"
+                        plural = "" if prior_bots == 1 else "s"
+                        invite_line = f"Joined via discord.gg/{join_code}, which has {prior_bots} prior ban{plural}"
                     else:
-                        invite_line = "unknown (no join record found)"
+                        invite_line = "Joined via: unknown (no join record found)"
                     body = (
                         "Spam Message Detected\n"
                         f"User: {uname} ({getattr(message.author,'id','')})\n"
                         "Message:\n"
                         f"{message.content or ''}\n"
-                        f"Invite code used by user: {invite_line}\n\n"
+                        f"{invite_line}\n\n"
                         f"{mention}\n"
                         "🔨 to ban user\n"
                         "✅ to mark as no threat"
@@ -2106,6 +2109,10 @@ async def on_message(message: discord.Message):
                                 "guild_id": int(getattr(message.guild, 'id', 0) or 0),
                                 "timestamp": time.time(), # Add timestamp for TTL
                                 "invite_code": join_code, # tally against this invite on ban
+                                # Original message refs so a ban can remove a low-confidence
+                                # spam post that wasn't auto-deleted.
+                                "spam_channel_id": int(getattr(message.channel, 'id', 0) or 0),
+                                "spam_message_id": int(getattr(message, 'id', 0) or 0),
                             }
                             await alert_msg.add_reaction('🔨')
                             await alert_msg.add_reaction('✅')
@@ -2290,6 +2297,18 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         if code:
             new_count = _flag_invite_bot_ban(code)
             log_action('invite_flag', f"code={code}", f"bot_bans={new_count}")
+        #Remove the original spam message if it's still up (low-confidence hits aren't
+        #auto-deleted; a high-confidence one is already gone and this is a harmless no-op).
+        spam_ch_id = data.get('spam_channel_id')
+        spam_msg_id = data.get('spam_message_id')
+        if spam_ch_id and spam_msg_id:
+            try:
+                spam_ch = bot.get_channel(spam_ch_id)
+                if spam_ch:
+                    orig = await spam_ch.fetch_message(spam_msg_id)
+                    await orig.delete()
+            except Exception:
+                pass
         SPAM_ALERTS.pop(payload.message_id, None)
     except Exception as ban_exc:
         log_action('spam_ban_error', f"guild={guild_id}", str(ban_exc))

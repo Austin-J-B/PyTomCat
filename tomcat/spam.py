@@ -44,6 +44,11 @@ HOUSEHOLD_ITEM_RE = re.compile(
 HOUSEHOLD_ITEM_THRESHOLD = 5
 
 MIN_SPAM_SCORE = 3
+#At/above this score the message is unambiguous spam and safe to auto-delete.
+#Between MIN_SPAM_SCORE and here it's borderline: alert officers but leave the
+#message up (unless other signals raise confidence) so a false positive never
+#removes a real member's post.
+HIGH_CONFIDENCE_SPAM_SCORE = 5
 
 EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
 PHONE_RE = re.compile(r"\+?1?\s*(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}")
@@ -133,19 +138,23 @@ def _is_trusted_member(message, settings, *, prior_count: int = 0) -> Optional[s
     except Exception:  #trust evaluation failed; do not trust
         return None
 
-def check_spam(message, settings) -> tuple[bool, str]:
-    """Main spam check: returns (is_spam, reason)."""
+def check_spam(message, settings) -> tuple[bool, str, int]:
+    """Main spam check: returns (is_spam, reason, score).
+
+    ``score`` is the accumulated suspicion weight; callers use it to gauge
+    confidence (e.g. delete only above a higher bar, alert-only below it).
+    """
     _evict_stale_message_counts()
     text = (getattr(message, 'content', None) or '').strip()
     if not text:
-        return (False, "empty")
+        return (False, "empty", 0)
     key = _message_count_key(message)
     prior_count = _MESSAGE_COUNTS.get(key, 0)
     _MESSAGE_COUNTS[key] = prior_count + 1
     _MESSAGE_COUNTS_TS[key] = time.monotonic()
     trust = _is_trusted_member(message, settings, prior_count=prior_count)
     if trust:
-        return (False, trust)
+        return (False, trust, 0)
     #Strong indicators
     contact_hits = []
     score = 0
@@ -210,6 +219,6 @@ def check_spam(message, settings) -> tuple[bool, str]:
         pass
 
     if score >= MIN_SPAM_SCORE:
-        return (True, "rules")
-    return (False, "none")
+        return (True, "rules", score)
+    return (False, "none", score)
 

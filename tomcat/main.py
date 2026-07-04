@@ -910,6 +910,48 @@ _invite_refresh_locks: dict[int, asyncio.Lock] = {}
 _invite_refresh_ts: dict[int, float] = {}
 INVITE_REFRESH_COOLDOWN_SEC = int(os.getenv("INVITE_REFRESH_COOLDOWN_SEC", "10") or "10")
 
+#Maps user_id -> invite code they joined with, populated on member join. Used to
+#annotate spam alerts so officers can spot a compromised invite. Cleared on restart,
+#so _lookup_join_invite_code falls back to scanning the ndjson join logs on disk.
+member_invite_codes: dict[int, str] = {}
+
+
+def _lookup_join_invite_code(user_id: int) -> Optional[str]:
+    """Return the invite code a user joined with, from memory or the ndjson logs."""
+    uid = int(user_id or 0)
+    if not uid:
+        return None
+    cached = member_invite_codes.get(uid)
+    if cached:
+        return cached
+    #Fall back to disk: scan newest join logs first (the bot restarts daily).
+    try:
+        from .logger import LOG_DIR_MACHINE
+        files = sorted(Path(LOG_DIR_MACHINE).glob("*/*.ndjson"), reverse=True)
+    except Exception:
+        return None
+    for path in files[:120]:
+        found = None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or '"member_join"' not in line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        continue
+                    if rec.get("event") == "member_join" and int(rec.get("user_id", 0) or 0) == uid:
+                        code = rec.get("invite_code")
+                        if code:
+                            found = code  #keep last (most recent) match in this day's file
+        except Exception:
+            continue
+        if found:
+            return found
+    return None
+
 async def _fetch_invites(guild: discord.Guild, *, force: bool = False) -> Optional[list[discord.Invite]]:
     """Fetch invites with a per-guild cooldown to avoid rate limits."""
     if not guild.me.guild_permissions.manage_guild:
@@ -1969,11 +2011,17 @@ async def on_message(message: discord.Message):
                     officer_role_id = OFFICER_ROLE_ID
                     mention = f"<@&{int(officer_role_id)}>" if officer_role_id else ""
                     uname = f"@{getattr(message.author,'name','unknown-user')}"
+                    join_code = _lookup_join_invite_code(int(getattr(message.author, 'id', 0) or 0))
+                    invite_line = (
+                        f"discord.gg/{join_code} ({join_code})"
+                        if join_code else "unknown (no join record found)"
+                    )
                     body = (
                         "Spam Message Detected\n"
                         f"User: {uname} ({getattr(message.author,'id','')})\n"
                         "Message:\n"
-                        f"{message.content or ''}\n\n"
+                        f"{message.content or ''}\n"
+                        f"Invite code used by user: {invite_line}\n\n"
                         f"{mention}\n"
                         "🔨 to ban user\n"
                         "✅ to mark as no threat"
@@ -2244,6 +2292,9 @@ async def on_member_join(member: discord.Member):
                 invites_cache[guild.id] = after
         except Exception:
             pass
+
+        if code_used:
+            member_invite_codes[int(getattr(member, 'id', 0) or 0)] = code_used
 
         log_event({
             "event": "member_join",

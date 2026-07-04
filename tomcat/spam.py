@@ -19,14 +19,14 @@ SPAM_PATTERNS = [
 SUSPICIOUS_TERMS = [
     ("dm_if_interested", 2, re.compile(r"\b(?:dm|message|text)\s+me\s+if\s+(?:(?:you'?re|you\s+are)\s+)?interested\b", re.I)),
     ("interested_should_dm", 2, re.compile(r"\b(?:any\s*one|anyone)\b.*\binterested\b.*\b(?:should|can|pls|please)?\s*(?:dm|pm|message|text)\b(?:\s+me)?\b", re.I)),
-    ("gifting_device", 2, re.compile(r"\b(?:gift(?:ing)?(?:\s+out)?|giv(?:e|ing)\s+away)\b.*\b(?:mac\s*book|macbook|iphone|ps\s*5|playstation|laptop)\b", re.I)),
+    ("gifting_device", 2, re.compile(r"\b(?:gift(?:ing)?(?:\s+out)?|giv(?:e|ing)\s+away|offer(?:ing)?(?:\s+it)?\s+(?:out|up)|pass(?:ing)?\s+(?:on|along))\b.*\b(?:mac\s*book|macbook|iphone|ps\s*5|playstation|laptop|camera|canon|nikon|eos|dslr|mirror\s*less|gopro|go\s*pro|drone|gimbal|lens(?:es)?|\d{2,3}\s*-\s*\d{2,3}\s*mm|\d{2,3}\s*mm|f/\d)\b", re.I)),
     ("sell_my", 1, re.compile(r"\bsell(?:ing)?\s+my\b", re.I)),
     ("season_tickets", 1, re.compile(r"\bseason\s+tickets?\b", re.I)),
     ("selling_tickets", 1, re.compile(r"\bsell(?:ing)?\s+(?:my\s+)?tickets?\b", re.I)),
     ("whatsapp", 1, re.compile(r"\bwhats?app\b", re.I)),
     #"Moving abroad, giving away my furniture for free, DM me" giveaway scam.
     ("relocating_pretext", 2, re.compile(r"\b(?:relocat\w*|moving|leaving)\b.{0,40}\b(?:new\s+(?:country|state|city|place)|abroad|overseas|out\s+of\s+(?:the\s+)?(?:country|state|town)|to\s+a\s+new)\b", re.I)),
-    ("giving_away_items", 2, re.compile(r"\b(?:give\s+(?:out|away)|giving\s+(?:out|away|them\s+out)|giv(?:e|ing)\s+them\s+(?:out|away))\b.{0,40}\b(?:item|items|belongings|stuff|everything|furniture|free)\b", re.I)),
+    ("giving_away_items", 2, re.compile(r"\b(?:give\s+(?:out|away)|giving\s+(?:out|away|them\s+out)|giv(?:e|ing)\s+them\s+(?:out|away)|offer(?:ing)?(?:\s+it)?\s+(?:out|up)|pass(?:ing)?\s+(?:on|along))\b.{0,40}\b(?:item|items|belongings|stuff|everything|furniture|free)\b", re.I)),
     ("free_of_charge", 1, re.compile(r"\bfree\s+of\s+charge\b|\bcompletely\s+free\b|\bfor\s+free\b", re.I)),
     ("dm_me_for_details", 1, re.compile(r"\b(?:dm|pm|message|text|inbox)\s+me\s+for\s+(?:more\s+)?(?:detail|details|info|information|pic|pics|picture|pictures)\b", re.I)),
     ("send_me_a_message", 1, re.compile(r"\bsend\s+me\s+a\s+(?:message|dm|text|note)\b", re.I)),

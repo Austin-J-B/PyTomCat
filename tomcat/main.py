@@ -2080,7 +2080,8 @@ async def on_message(message: discord.Message):
                     uname = f"@{getattr(message.author,'name','unknown-user')}"
                     if join_code:
                         plural = "" if prior_bots == 1 else "s"
-                        invite_line = f"Joined via discord.gg/{join_code}, which has {prior_bots} prior ban{plural}"
+                        #Bare code (no discord.gg/) so Discord doesn't unfurl an invite embed.
+                        invite_line = f"Joined via {join_code}, which has {prior_bots} prior ban{plural}"
                     else:
                         invite_line = "Joined via: unknown (no join record found)"
                     body = (

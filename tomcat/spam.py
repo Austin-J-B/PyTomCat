@@ -2,6 +2,7 @@
 
 import re
 import time
+from datetime import datetime, timezone
 from collections import defaultdict
 from typing import Optional, Tuple
 
@@ -52,6 +53,26 @@ HIGH_CONFIDENCE_SPAM_SCORE = 5
 
 EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
 PHONE_RE = re.compile(r"\+?1?\s*(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}")
+
+#"Move this to my DMs" solicitation — the structural constant across scam families
+#(giveaway, streaming, crypto, romance): the bait is public, the con happens in DMs.
+DM_SOLICITATION_RE = re.compile(
+    r"\b(?:dm|pm|inbox|msg)\s+me\b"
+    r"|\b(?:message|text)\s+me\b"
+    r"|\bsend\s+me\s+a\s+(?:dm|pm|message|msg|text|note)\b"
+    r"|\bshoot\s+me\s+a\s+(?:dm|pm|message|text)\b"
+    r"|\bslide\s+into\s+my\s+dms?\b"
+    r"|\bhit\s+me\s+up\b",
+    re.I,
+)
+#Any link. Untrusted brand-new accounts dropping a URL is a weak-but-useful signal.
+URL_RE = re.compile(r"https?://\S+|\bdiscord\.gg/\S+|\bt\.me/\S+|\bwww\.\S+", re.I)
+
+#A recently-joined, still-untrusted member already soliciting DMs/links matches the
+#shape of every scam regardless of bait wording. Additive so it stacks with content
+#rules rather than replacing them; +2 alone can't cross MIN_SPAM_SCORE by itself.
+NEW_JOIN_WINDOW_DAYS = 14
+NEW_JOIN_SOLICITATION_WEIGHT = 2
 
 try:
     from rapidfuzz import fuzz as rf_fuzz
@@ -117,6 +138,17 @@ def _has_privileged_role(member, settings) -> Optional[str]:
     except Exception:  #role access failed; assume no bypass
         pass
     return None
+
+
+def _joined_within_days(member, days: int) -> bool:
+    """True if the member joined this server within the last ``days`` days."""
+    try:
+        joined = getattr(member, 'joined_at', None)
+        if not joined:
+            return False
+        return (datetime.now(timezone.utc) - joined).days <= days
+    except Exception:  #missing/naive timestamp; treat as not-recent
+        return False
 
 
 def _is_trusted_member(message, settings, *, prior_count: int = 0) -> Optional[str]:
@@ -194,6 +226,14 @@ def check_spam(message, settings) -> tuple[bool, str, int]:
         if _fuzzy_hit(text, ph, 86):
             score += 1
             fuzzy_hits.append(ph)
+    #Behavioral signal: we're already past the trust gate (so this member is
+    #untrusted). If they also joined recently and are soliciting DMs/links, that's the
+    #shape shared by every scam family — bait wording aside. Additive, not decisive.
+    behavioral_hits = []
+    if _joined_within_days(getattr(message, 'author', None), NEW_JOIN_WINDOW_DAYS):
+        if DM_SOLICITATION_RE.search(text) or URL_RE.search(text):
+            score += NEW_JOIN_SOLICITATION_WEIGHT
+            behavioral_hits.append("new_join_solicitation")
     #Logging for visibility
     try:
         author_id = getattr(getattr(message, 'author', None), 'id', 'unknown')
@@ -209,6 +249,8 @@ def check_spam(message, settings) -> tuple[bool, str, int]:
             details_parts.append(f"items={item_count}")
         if fuzzy_hits:
             details_parts.append(f"fuzzy={len(fuzzy_hits)}")
+        if behavioral_hits:
+            details_parts.append(f"behavior={','.join(behavioral_hits)}")
         if details_parts:
             detail_msg = "; ".join(details_parts)
             if score >= MIN_SPAM_SCORE:

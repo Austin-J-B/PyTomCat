@@ -20,7 +20,7 @@ SPAM_PATTERNS = [
 SUSPICIOUS_TERMS = [
     ("dm_if_interested", 2, re.compile(r"\b(?:dm|message|text)\s+me\s+if\s+(?:(?:you'?re|you\s+are)\s+)?interested\b", re.I)),
     ("interested_should_dm", 2, re.compile(r"\b(?:any\s*one|anyone)\b.*\binterested\b.*\b(?:should|can|pls|please)?\s*(?:dm|pm|message|text)\b(?:\s+me)?\b", re.I)),
-    ("gifting_device", 2, re.compile(r"\b(?:gift(?:ing)?(?:\s+out)?|giv(?:e|ing)\s+away|offer(?:ing)?(?:\s+it)?\s+(?:out|up)|pass(?:ing)?\s+(?:on|along))\b.*\b(?:mac\s*book|macbook|iphone|ps\s*5|playstation|laptop|camera|canon|nikon|eos|dslr|mirror\s*less|gopro|go\s*pro|drone|gimbal|lens(?:es)?|\d{2,3}\s*-\s*\d{2,3}\s*mm|\d{2,3}\s*mm|f/\d)\b", re.I)),
+    ("gifting_device", 2, re.compile(r"\b(?:gift(?:ing)?(?:\s+out)?|giv(?:e|ing)\s+(?:away|out)|offer(?:ing)?(?:\s+it)?\s+(?:out|up)|pass(?:ing)?\s+(?:on|along))\b.*\b(?:mac\s*book|macbook|iphone|ps\s*5|playstation|laptop|camera|canon|nikon|eos|dslr|mirror\s*less|gopro|go\s*pro|drone|gimbal|lens(?:es)?|\d{2,3}\s*-\s*\d{2,3}\s*mm|\d{2,3}\s*mm|f/\d)\b", re.I)),
     ("sell_my", 1, re.compile(r"\bsell(?:ing)?\s+my\b", re.I)),
     ("season_tickets", 1, re.compile(r"\bseason\s+tickets?\b", re.I)),
     ("selling_tickets", 1, re.compile(r"\bsell(?:ing)?\s+(?:my\s+)?tickets?\b", re.I)),

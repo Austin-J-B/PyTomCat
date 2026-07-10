@@ -75,6 +75,22 @@ URL_RE = re.compile(r"https?://\S+|\bdiscord\.gg/\S+|\bt\.me/\S+|\bwww\.\S+", re
 NEW_JOIN_WINDOW_DAYS = 14
 NEW_JOIN_SOLICITATION_WEIGHT = 2
 
+#@everyone/@here in the text of an untrusted member's message. Regular members can't
+#actually ping these (permission is admin-only), so an untrusted account *attempting*
+#it is near-definitionally a bot blasting the server. Wording-independent.
+MASS_PING_RE = re.compile(r"@everyone\b|@here\b")
+MASS_PING_WEIGHT = 2
+
+#Handoff to an off-platform encrypted messenger ("DM me via signal 302...") is a
+#near-universal scam tell: it moves the mark somewhere mods can't see or ban.
+#"signal" alone is too ambiguous, so require possessive/prepositional context.
+OFFPLATFORM_HANDOFF_RE = re.compile(
+    r"\b(?:via|on|through|add\s+me\s+on|reach\s+me\s+on|my)\s+(?:signal|whats?app|telegram)\b"
+    r"|\b(?:signal|whats?app|telegram)\s+(?:number|me|nu?mber)\b",
+    re.I,
+)
+OFFPLATFORM_HANDOFF_WEIGHT = 2
+
 try:
     from rapidfuzz import fuzz as rf_fuzz
     def _fuzzy_hit(text: str, phrase: str, thresh: int=88) -> bool:
@@ -198,8 +214,14 @@ def check_spam(message, settings) -> tuple[bool, str, int]:
         score += 2
         contact_hits.append("phone")
 
+    #Precompute so the standalone "whatsapp" term can defer to the stronger,
+    #contextual handoff signal instead of double-counting the same mention.
+    offplatform_hit = bool(OFFPLATFORM_HANDOFF_RE.search(text))
+
     suspicion_hits = []
     for name, weight, rx in SUSPICIOUS_TERMS:
+        if name == "whatsapp" and offplatform_hit:
+            continue
         if rx.search(text):
             score += weight
             suspicion_hits.append(name)
@@ -235,6 +257,15 @@ def check_spam(message, settings) -> tuple[bool, str, int]:
         if DM_SOLICITATION_RE.search(text) or URL_RE.search(text):
             score += NEW_JOIN_SOLICITATION_WEIGHT
             behavioral_hits.append("new_join_solicitation")
+    #Untrusted account attempting a mass ping: permission-gated to admins, so the
+    #attempt itself is the signal regardless of what the message sells.
+    if MASS_PING_RE.search(text):
+        score += MASS_PING_WEIGHT
+        behavioral_hits.append("mass_ping_attempt")
+    #Off-platform messenger handoff (signal/whatsapp/telegram).
+    if offplatform_hit:
+        score += OFFPLATFORM_HANDOFF_WEIGHT
+        behavioral_hits.append("offplatform_handoff")
     #Logging for visibility
     try:
         author_id = getattr(getattr(message, 'author', None), 'id', 'unknown')

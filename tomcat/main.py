@@ -55,6 +55,14 @@ if _OFFICER_ROLE_ID_FALLBACK and _OFFICER_ROLE_ID_FALLBACK not in OFFICER_ROLE_I
 OFFICER_ROLE_IDS_SET = set(OFFICER_ROLE_IDS)
 OFFICER_ROLE_ID = OFFICER_ROLE_IDS[0] if OFFICER_ROLE_IDS else 0
 
+# Honeypot channels: an admin's pinned "post here = ban" trap already handles these,
+# so the bot skips spam detection/alerting there to avoid redundant officer pings.
+# Defaults to the known honeypot; override via env (comma-separated) without a code change.
+HONEYPOT_CHANNEL_IDS = {
+    int(c) for c in os.getenv("HONEYPOT_CHANNEL_IDS", "1523843738915442738").split(",")
+    if c.strip().isdigit()
+}
+
 
 def _debug(msg: str) -> None:
     """Print lightweight auth/debug traces when enabled."""
@@ -2029,6 +2037,10 @@ async def on_message(message: discord.Message):
         "content": message.clean_content if isinstance(message.content, str) else "",
         "attachments": len(getattr(message, "attachments", []) or []),
     })
+
+    # Honeypot channels self-handle bans; skip spam detection/alerting there.
+    if int(getattr(message.channel, 'id', 0) or 0) in HONEYPOT_CHANNEL_IDS:
+        return
 
     # Run spam checks before routing normal commands.
     from .spam import check_spam, HIGH_CONFIDENCE_SPAM_SCORE

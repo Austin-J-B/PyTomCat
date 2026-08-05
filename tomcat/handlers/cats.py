@@ -500,8 +500,16 @@ async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
     e.description = "\n".join(lines)
     img_bytes, filename = await _build_latest_profile_image_payload(str(actual))
     if img_bytes and filename:
-        file = discord.File(io.BytesIO(img_bytes), filename=filename)
-        e.set_image(url=f"attachment://{filename}")
-        await ch.send(embed=e, file=file)
-        return
+        try:
+            file = discord.File(io.BytesIO(img_bytes), filename=filename)
+            e.set_image(url=f"attachment://{filename}")
+            await ch.send(embed=e, file=file)
+            return
+        except Exception as exc:
+            #A photo that can't be uploaded (too large, unsupported, network error)
+            #must not swallow the whole profile response. Fall back to text-only so
+            #"who is <cat>" always replies. This notably affects heavily photographed
+            #cats like Microwave, whose latest image can exceed Discord's upload limit.
+            log_action("cat_profile_image_send_failed", str(actual), f"{type(exc).__name__}: {exc}")
+            e.set_image(url=None)
     await ch.send(embed=e)

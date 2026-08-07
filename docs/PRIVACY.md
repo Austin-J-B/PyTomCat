@@ -1,11 +1,11 @@
-# Privacy Policy — TomCat
+# Privacy Policy — TomCatBot
 
 **Effective date:** August 7, 2026
-**Applies to:** the TomCat Discord bot and the membership tools operated by Campus Cat Coalition
+**Applies to:** the TomCatBot Discord bot and the membership tools operated by Campus Cat Coalition
 **Contact:** utacampuscats@gmail.com
 
 Campus Cat Coalition is a student organization at the University of Texas at
-Arlington that cares for the campus cat population. "TomCat" is the Discord bot
+Arlington that cares for the campus cat population. "TomCatBot" is the Discord bot
 we run to handle club membership, dues reconciliation, feeding logs, and cat
 photo records. This policy explains what the bot collects, why, and what you can
 ask us to do about it.
@@ -14,7 +14,7 @@ ask us to do about it.
 
 ## Google account data
 
-TomCat connects to **one Google account: the club's own mailbox**
+TomCatBot connects to **one Google account: the club's own mailbox**
 (`utacampuscats@gmail.com`). It does **not** connect to, request access to, or
 read the Google account of any member, visitor, or other user.
 
@@ -42,7 +42,7 @@ to store the club's membership roster and financial records.
 
 ### Limited Use disclosure
 
-TomCat's use and transfer of information received from Google APIs adheres to the
+TomCatBot's use and transfer of information received from Google APIs adheres to the
 [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
 including the Limited Use requirements.
 
@@ -56,7 +56,7 @@ you have asked us to, or where required by law.
 
 ## Discord and membership data
 
-To run the club, TomCat also handles:
+To run the club, TomCatBot also handles:
 
 - **Discord account information** — your user ID, username, display name, and
   the roles you hold in the club server.
@@ -111,7 +111,7 @@ removed too.
 
 ## Children
 
-The club serves university students. TomCat is not directed at children under 13,
+The club serves university students. TomCatBot is not directed at children under 13,
 and we do not knowingly collect their information. If you believe a child under
 13 has given us information, contact us and we will delete it.
 
@@ -122,4 +122,4 @@ in the club Discord server.
 
 ---
 
-*Questions about this policy, or about anything TomCat stores: utacampuscats@gmail.com*
+*Questions about this policy, or about anything TomCatBot stores: utacampuscats@gmail.com*

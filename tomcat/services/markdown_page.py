@@ -156,7 +156,12 @@ def render_markdown_file(path: str, title: str) -> str:
                             body=markdown_to_html(f.read()))
 
 
-def privacy_policy_path() -> str:
-    """Absolute path to docs/PRIVACY.md, resolved from this file."""
+def docs_path(name: str) -> str:
+    """Absolute path to a file in docs/, resolved from this file."""
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.normpath(os.path.join(here, "..", "..", "docs", "PRIVACY.md"))
+    return os.path.normpath(os.path.join(here, "..", "..", "docs", name))
+
+
+def privacy_policy_path() -> str:
+    """Absolute path to docs/PRIVACY.md."""
+    return docs_path("PRIVACY.md")

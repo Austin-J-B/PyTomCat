@@ -1934,6 +1934,12 @@ async def on_ready():
             _start_background_task("dues_scheduler", lambda: start_dues_scheduler(bot))
     except Exception:
         pass
+    #Enforce the log retention window published in docs/PRIVACY.md.
+    try:
+        from .services.log_retention import start_log_retention_scheduler
+        _start_background_task("log_retention", lambda: start_log_retention_scheduler())
+    except Exception:
+        pass
     #Restore finance dedup ids from the sheets before any email processing runs.
     #index.jsonl is a cache and was lost in the host migration; without this the
     #first bulk email scan after a move re-appends already-logged payments.

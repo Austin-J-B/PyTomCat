@@ -98,6 +98,38 @@ SUPPLIES_KEYWORDS = {
 _CURRENCY_RE = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]{2})?)")
 _RECENT_ROWS_LIMIT = 1000
 
+#Sheet rows carry the Gmail id that produced them. The local index (index.jsonl)
+#is only a cache: it was lost in the Hetzner migration, which blinded every
+#id-based dedup check and let a bulk re-log append ~400 duplicate rows. The
+#sheet is the one store that survives a host move, so identity lives there too.
+_BOT_MARKER = "[Recorded by the TomCat bot"
+_BOT_TAG_RE = re.compile(r"\btc:([A-Za-z0-9_\-]{4,})")
+
+#Expense categories billed by a single recurring vendor. For these the category
+#already identifies the payee, so an officer naming the service ("storage unit
+#fee") and the bot naming the merchant ("Py Store Here Pantego") are the same
+#payment even though the text never matches.
+_SINGLE_VENDOR_TYPES = {"storage unit fee", "website fee"}
+
+#Vendor bills post on a statement date but often get logged by hand a day or two
+#later. These charges recur monthly, so a few days of slack cannot collide with
+#the next bill.
+_VENDOR_DAY_WINDOW = 3
+
+
+def _bot_marker(email_id: str) -> str:
+    """Build the sheet suffix that marks a row as bot-written."""
+    eid = (email_id or "").strip()
+    if not eid:
+        return f" {_BOT_MARKER}]"
+    return f" {_BOT_MARKER} | tc:{eid}]"
+
+
+def _sheet_email_id(name_field: str) -> str:
+    """Recover the Gmail id embedded in a bot-written sheet row, if present."""
+    m = _BOT_TAG_RE.search(name_field or "")
+    return m.group(1) if m else ""
+
 _TXN_PATTERNS = [
     re.compile(p, re.I)
     for p in (
@@ -264,6 +296,65 @@ def _append_index(record: dict) -> None:
             f.write(json.dumps(compact, ensure_ascii=False) + "\n")
     except Exception as e:
         log_action("finance_index_write_error", f"email_id={compact.get('email_id')}", str(e))
+
+
+def reconcile_index_from_sheets() -> Tuple[int, int]:
+    """Rebuild missing index entries from tc: ids already present in the sheets.
+
+    index.jsonl is a cache; the sheets are the durable record. After a host
+    migration or a fresh deploy the index can be far smaller than the number of
+    bot-written rows, which silently disables every id-based dedup check. This
+    restores the email_id set from the sheets so that gap cannot reopen.
+
+    Rows written before the tc: tag shipped carry no id and cannot be recovered
+    here — those stay covered by the sheet-snapshot check in _looks_duplicate.
+
+    Returns (scanned_tagged_rows, restored_records).
+    """
+    sid = getattr(settings, 'sheet_megasheet_id', None)
+    if not sid:
+        return (0, 0)
+    known = set(_load_index().keys())
+    scanned = 0
+    restored = 0
+    try:
+        book = sheets_client().open_by_key(sid)
+    except Exception as e:
+        log_action('finance_index_rebuild_error', 'open', str(e))
+        return (0, 0)
+
+    targets = (
+        ('income', getattr(settings, 'income_ws_title', 'Income')),
+        ('expense', getattr(settings, 'expense_ws_title', 'Expenses')),
+    )
+    for kind, ws_name in targets:
+        try:
+            vals = book.worksheet(ws_name).get_all_values()
+        except Exception as e:
+            log_action('finance_index_rebuild_error', f'{kind}_fetch', str(e))
+            continue
+        for rec in _parse_sheet_records(vals, 'income' if kind == 'income' else 'expense'):
+            eid = rec.get('sheet_email_id')
+            if not eid:
+                continue
+            scanned += 1
+            if eid in known:
+                continue
+            #The row's own fingerprint is unrecoverable from the sheet, so we
+            #synthesize a stable one. Only the email_id check relies on this
+            #record, and that check runs first.
+            _append_index({
+                "email_id": eid,
+                "status": kind,
+                "fingerprint_hash": _fingerprint_hash_from_value(f"sheet|{kind}|{eid}"),
+                "ts": _now_iso(),
+            })
+            known.add(eid)
+            restored += 1
+
+    if restored:
+        log_action('finance_index_rebuilt', f'scanned={scanned}', f'restored={restored}')
+    return (scanned, restored)
 
 
 def _load_fingerprints() -> Set[str]:
@@ -1065,8 +1156,8 @@ def _build_income_row(event: FinanceEvent) -> List[str]:
         name_field += f" (Message: {note})"
     else:
         name_field += " (Message: none)"
-    name_field += " [Recorded by the TomCat bot]"
-    
+    name_field += _bot_marker(event.email_id)
+
     return [
         timestamp,
         month,
@@ -1093,8 +1184,8 @@ def _build_expense_row(event: FinanceEvent) -> List[str]:
         name_field += f" (Message: {note})"
     else:
         name_field += " (Message: none)"
-    name_field += " [Recorded by the TomCat bot]"
-    
+    name_field += _bot_marker(event.email_id)
+
     return [
         timestamp,
         month,
@@ -1200,6 +1291,7 @@ def _parse_sheet_records(rows: List[List[str]], kind: str) -> List[dict]:
                 date_s = (r[0] if len(r) > 0 else '').strip()
                 name_field = (r[4] if len(r) > 4 else '').strip()
                 income_type = (r[5] if len(r) > 5 else '').strip()
+                row_type = income_type
                 amount_s = (r[6] if len(r) > 6 else '').strip().replace('$', '')
                 provider = (r[7] if len(r) > 7 else '').strip()
             else:
@@ -1207,6 +1299,9 @@ def _parse_sheet_records(rows: List[List[str]], kind: str) -> List[dict]:
                 date_s = (r[0] if len(r) > 0 else '').strip()
                 name_field = (r[3] if len(r) > 3 else '').strip()
                 income_type = ''
+                #Expense category, kept separate from income_type so the income
+                #category-inference pass at _infer_income_category is unaffected.
+                row_type = (r[4] if len(r) > 4 else '').strip()
                 amount_s = (r[5] if len(r) > 5 else '').strip().replace('$', '')
                 provider = ''
 
@@ -1232,7 +1327,10 @@ def _parse_sheet_records(rows: List[List[str]], kind: str) -> List[dict]:
                 'counterparty': counterparty,
                 'note': note,
                 'income_type': income_type,
-                'recorded_by_bot': '[Recorded by the TomCat bot]' in name_field,
+                'row_type': row_type,
+                #Substring, not equality: the marker now also carries the tc: id.
+                'recorded_by_bot': _BOT_MARKER in name_field,
+                'sheet_email_id': _sheet_email_id(name_field),
             })
         except Exception:
             continue
@@ -1262,7 +1360,9 @@ def _event_as_sheet_record(ev: "FinanceEvent") -> dict:
         'provider': ev.payment_type if ev.direction == 'income' else '',
         'counterparty': ev.counterparty or '',
         'note': ev.note or '',
+        'row_type': ev.category or '',
         'recorded_by_bot': True,
+        'sheet_email_id': ev.email_id or '',
     }
 
 
@@ -1316,7 +1416,11 @@ def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
         if not r_date:
             continue
         day_gap = abs((r_date - ev_date).days)
-        if day_gap > 1:
+        row_type = (r.get('row_type') or '').strip().lower()
+        ev_type = (getattr(ev, 'category', '') or '').strip().lower()
+        vendor_pair = bool(row_type and row_type == ev_type
+                           and row_type in _SINGLE_VENDOR_TYPES)
+        if day_gap > (_VENDOR_DAY_WINDOW if vendor_pair else 1):
             continue
         amt = r.get('amount')
         if amt is None:
@@ -1331,11 +1435,22 @@ def _looks_duplicate(ev: "FinanceEvent", recs: List[dict]) -> bool:
         counterparty = r.get('counterparty') or ''
         note = r.get('note') or ''
         counterparty_match = _similar_enough(counterparty, ev_counterparty)
-        note_match = False
-        if (note or '').strip() or (ev_note or '').strip():
-            note_match = _similar_enough(note, ev_note)
-        else:
-            note_match = True
+
+        #A single-vendor recurring charge is identified by its category, not its
+        #text: officers write the service ("storage unit fee"), the bot writes
+        #the merchant ("Py Store Here Pantego"). Same amount, same category,
+        #within the monthly window is the same payment.
+        if vendor_pair:
+            return True
+
+        #An absent note is missing information, not evidence of a different
+        #payment. Compare on the normalized form so that notes which carry no
+        #comparable text (an emoji-only note normalizes to "") also count as
+        #absent rather than as a mismatch -- _similar_enough returns False for a
+        #blank string, which previously vetoed otherwise-identical rows.
+        n_sheet = _norm_text(note)
+        n_event = _norm_text(ev_note)
+        note_match = _similar_enough(n_sheet, n_event) if (n_sheet and n_event) else True
 
         if counterparty_match and note_match:
             return True
@@ -1383,7 +1498,12 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
     seen_fp = _load_fingerprints()
     seen_txn = _load_txn_ids()
     seen_msg = _load_message_ids()
+    #Union the local index with ids recovered from the sheet itself, so a lost
+    #or truncated index.jsonl can no longer resurrect already-logged payments.
     seen_email_ids = set(_load_index().keys())
+    seen_email_ids.update(
+        r['sheet_email_id'] for r in existing if r.get('sheet_email_id')
+    )
 
     results: Dict[str, Tuple[bool, str]] = {}
     rows: List[List[str]] = []
@@ -1487,7 +1607,12 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
     seen_fp = _load_fingerprints()
     seen_txn = _load_txn_ids()
     seen_msg = _load_message_ids()
+    #Union the local index with ids recovered from the sheet itself, so a lost
+    #or truncated index.jsonl can no longer resurrect already-logged payments.
     seen_email_ids = set(_load_index().keys())
+    seen_email_ids.update(
+        r['sheet_email_id'] for r in existing if r.get('sheet_email_id')
+    )
 
     results: Dict[str, Tuple[bool, str]] = {}
     rows: List[List[str]] = []

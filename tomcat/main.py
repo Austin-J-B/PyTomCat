@@ -1934,6 +1934,17 @@ async def on_ready():
             _start_background_task("dues_scheduler", lambda: start_dues_scheduler(bot))
     except Exception:
         pass
+    #Restore finance dedup ids from the sheets before any email processing runs.
+    #index.jsonl is a cache and was lost in the host migration; without this the
+    #first bulk email scan after a move re-appends already-logged payments.
+    try:
+        from .handlers import finance as _finance
+        _start_background_task(
+            "finance_index_rebuild",
+            lambda: asyncio.to_thread(_finance.reconcile_index_from_sheets),
+        )
+    except Exception:
+        pass
     #Start catabase profile cache scheduler
     try:
         _start_background_task("profile_cache_scheduler", lambda: start_profile_cache_scheduler())

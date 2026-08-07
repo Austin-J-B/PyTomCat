@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -1222,6 +1223,28 @@ async def _throttle_sheet_call() -> None:
         await asyncio.sleep(delay)
 
 
+def _open_worksheet_with_retry(sid: str, ws_name: str, label: str, attempts: int = 3):
+    """Open a worksheet, retrying transient Sheets failures.
+
+    The Sheets API returns a bare 500 often enough that a single failure used to
+    fail an entire batch, and because a failed batch is never indexed the same
+    emails were reprocessed and re-announced on every later run.
+    """
+    delay = 1.0
+    last: Optional[Exception] = None
+    for i in range(max(1, attempts)):
+        try:
+            return sheets_client().open_by_key(sid).worksheet(ws_name)
+        except Exception as e:
+            last = e
+            if i < attempts - 1:
+                time.sleep(delay)
+                delay *= 2
+    log_action('finance_sheet_error', f'{label}_open',
+               f'{type(last).__name__}: {last} (after {attempts} attempts)')
+    raise last if last else RuntimeError("worksheet open failed")
+
+
 def _sheet_row_key(row: List[str]) -> Tuple[str, ...]:
     return tuple((str(cell) if cell is not None else "").strip() for cell in row)
 
@@ -1496,10 +1519,12 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
         return {event.email_id: (False, 'missing_sheet_id') for event in events}
     try:
         ws_name = getattr(settings, 'income_ws_title', 'Income')
-        ws = sheets_client().open_by_key(sid).worksheet(ws_name)
-    except Exception as e:
-        log_action('finance_sheet_error', 'income_open', str(e))
-        return {event.email_id: (False, str(e)) for event in events}
+        ws = _open_worksheet_with_retry(sid, ws_name, 'income')
+    except Exception:
+        #Distinct reason, not the raw exception text: nothing was written, so
+        #the notifier must stay quiet rather than announce a row per payment.
+        #The batch is not indexed, so it retries on the next run.
+        return {event.email_id: (False, 'sheet_open_failed') for event in events}
 
     snapshot = _fetch_recent_sheet_snapshot(ws, 'income')
     #If fetch failed (None), we MUST abort to prevent duplicate logging
@@ -1605,10 +1630,9 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
         return {event.email_id: (False, 'missing_sheet_id') for event in events}
     try:
         ws_name = getattr(settings, 'expense_ws_title', 'Expenses')
-        ws = sheets_client().open_by_key(sid).worksheet(ws_name)
-    except Exception as e:
-        log_action('finance_sheet_error', 'expense_open', str(e))
-        return {event.email_id: (False, str(e)) for event in events}
+        ws = _open_worksheet_with_retry(sid, ws_name, 'expense')
+    except Exception:
+        return {event.email_id: (False, 'sheet_open_failed') for event in events}
 
     snapshot = _fetch_recent_sheet_snapshot(ws, 'expense')
     #If fetch failed (None), we MUST abort to prevent duplicate logging
@@ -1755,30 +1779,59 @@ async def _process_finance_events(
 
     results: List[Tuple[FinanceEvent, Tuple[bool, str], bool]] = []
 
-    for event, inferred in income_events:
-        sheet_res = income_result_map.get(event.email_id, (False, 'not_logged'))
+    #Announce only what actually reached the sheet.
+    #
+    #This used to enumerate the reasons worth silencing, which meant any new
+    #failure mode announced itself by default. A transient Sheets 500 on the
+    #worksheet open therefore posted a full "Logged Income" notice for every
+    #payment in the batch -- for rows that were never written. And because a
+    #failed batch is never indexed, the same emails came back on the next run
+    #and announced themselves again, without end.
+    #
+    #Successes are reported per payment. Failures are counted and reported once,
+    #because a sheet outage is one event, not one event per payment.
+    write_failures: List[str] = []
+
+    def _record(event: FinanceEvent, sheet_res: Tuple[bool, str], inferred: bool) -> bool:
         if sheet_res[0]:
             processed[event.email_id] = True
-        skip_reason = str(sheet_res[1])
-        #Only notify if successful OR if it failed for a reason other than duplicates/sheet-read-failure
-        should_notify = sheet_res[0] or (not skip_reason.startswith('dup_') and skip_reason != 'dues_skip' and skip_reason != 'sheet_read_failed')
-
-        if notify and should_notify:
-            blank = event.note.strip() == ""
-            await _notify_logging_channel(bot, event, event.direction, sheet_res, inferred, blank)
+        else:
+            reason = str(sheet_res[1])
+            #Deliberate skips are not failures and need no report.
+            if not reason.startswith('dup_') and reason not in ('dues_skip',):
+                write_failures.append(reason)
         results.append((event, sheet_res, inferred))
+        return bool(sheet_res[0])
+
+    for event, inferred in income_events:
+        ok = _record(event, income_result_map.get(event.email_id, (False, 'not_logged')), inferred)
+        if notify and ok:
+            await _notify_logging_channel(
+                bot, event, event.direction,
+                income_result_map.get(event.email_id, (False, 'not_logged')),
+                inferred, event.note.strip() == "")
 
     for event, inferred in expense_events:
-        sheet_res = expense_result_map.get(event.email_id, (False, 'not_logged'))
-        if sheet_res[0]:
-            processed[event.email_id] = True
-        skip_reason = str(sheet_res[1])
-        should_notify = sheet_res[0] or (not skip_reason.startswith('dup_') and skip_reason != 'sheet_read_failed')
-        
-        if notify and should_notify:
-            blank = event.note.strip() == ""
-            await _notify_logging_channel(bot, event, event.direction, sheet_res, inferred, blank)
-        results.append((event, sheet_res, inferred))
+        ok = _record(event, expense_result_map.get(event.email_id, (False, 'not_logged')), inferred)
+        if notify and ok:
+            await _notify_logging_channel(
+                bot, event, event.direction,
+                expense_result_map.get(event.email_id, (False, 'not_logged')),
+                inferred, event.note.strip() == "")
+
+    if notify and write_failures:
+        top = Counter(write_failures).most_common(1)[0][0]
+        try:
+            log_action('finance_write_failed', f'count={len(write_failures)}', top)
+        except Exception:
+            pass
+        await _notify_channel_text(
+            bot,
+            f"[Finance] {len(write_failures)} entr"
+            f"{'y' if len(write_failures) == 1 else 'ies'} could not be written to "
+            f"the sheet ({top}). Nothing was recorded and nothing was lost - they "
+            f"will be retried on the next scan."
+        )
 
     results.extend(buffer_results)
     return results
@@ -1819,6 +1872,34 @@ def _collect_recent_finance_events(limit: int) -> Tuple[List[FinanceEvent], int,
             break
     events.sort(key=lambda ev: ev.ts)
     return events, scanned, skipped_dues
+
+
+async def _resolve_logging_channel(bot):
+    """Return the finance logging channel, or None."""
+    ch_id = getattr(settings, 'ch_logging', None) or getattr(settings, 'ch_sandbox', None)
+    if not ch_id or not bot:
+        return None
+    try:
+        channel = bot.get_channel(int(ch_id))
+    except Exception:
+        channel = None
+    if not channel:
+        try:
+            channel = await bot.fetch_channel(int(ch_id))
+        except Exception:
+            channel = None
+    return channel
+
+
+async def _notify_channel_text(bot, text: str) -> None:
+    """Post a single plain message to the finance logging channel."""
+    channel = await _resolve_logging_channel(bot)
+    if not channel:
+        return
+    try:
+        await safe_send(channel, text)
+    except Exception:
+        pass
 
 
 async def _notify_logging_channel(

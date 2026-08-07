@@ -48,6 +48,11 @@ _EXPENSE_TYPES = {
 _DUES_AMOUNT = 15.0
 _DUES_TOL = 0.75
 _PENDING_DUES_FILE = os.path.join(FINANCE_DIR, "pending_dues.jsonl")
+
+#How long a pending payment gets once the roster becomes readable again. The
+#clock is pushed out rather than reset so a long outage does not translate into
+#a proportionally long wait afterwards.
+_PENDING_CLOCK_GRACE_HOURS = 12
 _PENDING_DUES_HOLD_DAYS = 3
 
 FOODS_GOODS_KEYWORDS = {
@@ -2333,7 +2338,38 @@ async def _process_pending_dues(bot) -> None:
     processed = _load_index()
     income_events: List[FinanceEvent] = []
     to_remove: List[str] = []
-    
+
+    #Expiry means "we looked for corroboration and found none". If the roster
+    #could not actually be read, we did not look, and a payment must not be
+    #reclassified as a donation on the strength of a failed lookup.
+    #
+    #Twenty-two $15 dues payments were dumped into Income this way over spring
+    #2026: Gmail auth was expiring weekly, the dues matcher was blind, and the
+    #pending clock kept counting down against a source that could not answer.
+    from . import dues as _dues_mod
+    try:
+        _dues_mod._load_membership_rows()
+        corroboration_ok, corroboration_detail = _dues_mod.membership_data_is_authoritative()
+    except Exception as e:
+        corroboration_ok, corroboration_detail = False, f'{type(e).__name__}: {e}'
+
+    if not corroboration_ok:
+        held = len(records)
+        log_action('pending_dues_clock_paused', f'held={held}', str(corroboration_detail)[:160])
+        #Push every expiry out so the wait resumes rather than restarts once the
+        #roster is readable again.
+        extended = []
+        for rec in records:
+            try:
+                exp = datetime.fromisoformat(str(rec.get('expires', '')).replace('Z', '+00:00'))
+            except Exception:
+                exp = now + timedelta(days=1)
+            if exp <= now + timedelta(hours=_PENDING_CLOCK_GRACE_HOURS):
+                rec['expires'] = (now + timedelta(hours=_PENDING_CLOCK_GRACE_HOURS)).isoformat()
+            extended.append(rec)
+        _save_pending_dues(extended)
+        return
+
     for rec in records:
         email_id = rec.get("email_id")
         if not email_id:

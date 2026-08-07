@@ -19,7 +19,12 @@ from typing import Any, Dict, Optional, List, Tuple
 from ..logger import log_event, log_action
 from ..config import settings
 from ..utils.permissions import is_officer, officer_role_ids
-from ..utils.payments import detect_provider, domain_matches, extract_email_domain
+from ..utils.payments import (
+    detect_provider,
+    domain_matches,
+    extract_email_domain,
+    extract_paypal_payer,
+)
 from . import finance
 
 try:
@@ -371,6 +376,19 @@ _MEMBERSHIP_ROWS_TS: float = 0.0
 _MEMBERSHIP_ROWS_LAST_SOURCE: str = 'uninitialized'
 _MEMBERSHIP_ROWS_LAST_ERROR: str = ''
 _MEMBERSHIP_ROWS_LAST_AUTHORITATIVE: bool = False
+
+def membership_data_is_authoritative() -> tuple[bool, str]:
+    """Report whether the last membership load came from the live sheet.
+
+    Corroboration of a pending dues payment is only meaningful when the
+    membership roster was actually readable. A cached or failed load makes
+    "no match found" indistinguishable from "could not look", and the finance
+    pipeline must not expire a payment on the strength of that.
+    """
+    return _MEMBERSHIP_ROWS_LAST_AUTHORITATIVE, (
+        _MEMBERSHIP_ROWS_LAST_ERROR or _MEMBERSHIP_ROWS_LAST_SOURCE
+    )
+
 
 def _set_membership_load_state(source: str, *, error: str = '', authoritative: bool = False) -> None:
     global _MEMBERSHIP_ROWS_LAST_SOURCE, _MEMBERSHIP_ROWS_LAST_ERROR, _MEMBERSHIP_ROWS_LAST_AUTHORITATIVE
@@ -2575,12 +2593,11 @@ def _payment_username_from_email(em: dict) -> str | None:
         if m3:
             return m3.group(1).strip()
     if prov == 'paypal':
-        m = re.search(r"Note from\s+([^\n<]+)", body)
-        if m:
-            return m.group(1)
-        m2 = re.search(r"([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,2})", subj)
-        if m2:
-            return m2.group(1)
+        #Shared with finance so the two cannot drift. The old fallback read the
+        #subject, which is always "You've got money", and returned "You've".
+        payer = extract_paypal_payer(subj, body)
+        if payer:
+            return payer
     #Generic fallbacks when provider-specific patterns fail
     m = re.search(r"\b([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})\b\s+sent\s+you\s+\$?\d", subj, re.I)
     if m:

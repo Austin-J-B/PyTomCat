@@ -6026,7 +6026,11 @@ async def post_save(request: web.Request) -> web.Response:
             "unblacklisted_ref_serials": sorted(list(dict.fromkeys(cleared_ref_blacklist_serials))),
         }), request)
     except ValueError as e:
-        return _with_cors(web.Response(status=400, text=str(e)), request)
+        #No code path here raises ValueError deliberately, so anything caught
+        #comes from library internals (json/int parsing) and str(e) can carry
+        #stack detail. Log it; hand the caller a generic message.
+        log_action("labeler_save_error", "bad_request", str(e))
+        return _with_cors(web.Response(status=400, text="Invalid request"), request)
     except Exception as e:
         log_action("labeler_save_error", "error", str(e))
         return _internal_error_response(request)

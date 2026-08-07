@@ -1195,6 +1195,24 @@ async def start_web_server(bot):
         except FileNotFoundError:
             return web.Response(text="index.html not found. Please upload it to the bot root.", status=404)
 
+    async def get_privacy(request):
+        """Serve docs/PRIVACY.md as HTML.
+
+        Rendered from the Markdown at request time so the published policy can
+        never drift from the copy that is reviewed alongside code changes.
+        """
+        try:
+            from .services.markdown_page import privacy_policy_path, render_markdown_file
+            page = render_markdown_file(privacy_policy_path(), "Privacy Policy — TomCat")
+            resp = web.Response(text=page, content_type="text/html")
+            resp.headers["Cache-Control"] = "public, max-age=3600"
+            return _with_cors(resp, request)
+        except FileNotFoundError:
+            return web.Response(text="Privacy policy not found.", status=404)
+        except Exception as e:
+            log_action("privacy_page_error", "render", str(e))
+            return web.Response(text="Privacy policy temporarily unavailable.", status=500)
+
     async def get_labeler_js(request):
         """Serve the labeler.js file."""
         try:
@@ -1826,6 +1844,7 @@ async def start_web_server(bot):
 
     app.add_routes([
         web.get('/', get_index),
+        web.get('/privacy', get_privacy),
         web.get('/labeler.js', get_labeler_js),
         web.get('/api/members', get_members),
         web.options('/api/members', _options_preflight),

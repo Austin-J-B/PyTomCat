@@ -370,6 +370,30 @@ def reconcile_index_from_sheets() -> Tuple[int, int]:
     return (scanned, restored)
 
 
+def _index_settled(ev: "FinanceEvent", reason: str) -> None:
+    """Record an email as settled so it is never re-evaluated.
+
+    Confirmed duplicates were previously left out of the index, which meant
+    every scan re-classified them and re-read both worksheets to prove the same
+    thing again. After the migration wiped the index that was 130 events on
+    every run, forever. A payment already present in the sheet is as finished as
+    one we just wrote.
+    """
+    try:
+        _append_index({
+            "email_id": ev.email_id,
+            "status": ev.direction,
+            "provider": ev.provider,
+            "fingerprint_hash": _fingerprint_hash_for_event(ev),
+            "message_id": ev.message_id,
+            "txn_id": ev.txn_id,
+            "provider_ts": (ev.provider_ts or ev.ts).isoformat(),
+            "settled_as": reason,
+        })
+    except Exception as e:
+        log_action("finance_index_write_error", f"settled={ev.email_id}", str(e))
+
+
 def _load_fingerprints() -> Set[str]:
     """Return set of hashed fingerprints for previously logged transactions."""
     fps: Set[str] = set()
@@ -1584,6 +1608,8 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
                 log_action('finance_skip_duplicate', 'kind=income', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
             except Exception:
                 pass
+            #Already in the sheet: settle it so later scans skip it outright.
+            _index_settled(ev, 'duplicate')
             results[ev.email_id] = (False, 'dup_skipped')
             continue
 
@@ -1683,6 +1709,8 @@ async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bo
                 log_action('finance_skip_duplicate', f'kind=expense', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
             except Exception:
                 pass
+            #Already in the sheet: settle it so later scans skip it outright.
+            _index_settled(ev, 'duplicate')
             results[ev.email_id] = (False, 'dup_skipped')
             continue
 

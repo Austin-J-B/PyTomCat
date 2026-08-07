@@ -1185,8 +1185,22 @@ async def start_web_server(bot):
     app.on_startup.append(_startup_labeler_cache_warm)
     app.on_cleanup.append(_cleanup_labeler_cache_http)
 
+    #Hostnames whose ROOT serves the app description instead of the labeler UI.
+    #Google's branding review judges the whole site behind a home page URL, and
+    #ui.catsofuta.org/ is the Discord-gated feeding schedule app -- which reads
+    #as "your home page is behind a login page" no matter how public /about is.
+    #A dedicated hostname gives reviewers a site with no login anywhere near it.
+    _APP_INFO_HOSTS = {
+        h.strip().lower()
+        for h in (os.getenv("APP_INFO_HOSTS", "tomcatbot.catsofuta.org") or "").split(",")
+        if h.strip()
+    }
+
     async def get_index(request):
-        """Serve the index.html file."""
+        """Serve the labeler UI, or the app description on an info hostname."""
+        host = (request.headers.get("Host") or "").split(":")[0].strip().lower()
+        if host in _APP_INFO_HOSTS:
+            return _render_doc(request, "ABOUT.md", "TomCatBot", "About page")
         try:
             with open("index.html", "r", encoding="utf-8") as f:
                 resp = web.Response(text=f.read(), content_type="text/html")

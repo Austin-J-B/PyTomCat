@@ -1195,23 +1195,33 @@ async def start_web_server(bot):
         except FileNotFoundError:
             return web.Response(text="index.html not found. Please upload it to the bot root.", status=404)
 
-    async def get_privacy(request):
-        """Serve docs/PRIVACY.md as HTML.
+    def _render_doc(request, filename: str, title: str, label: str):
+        """Serve a docs/*.md file as HTML.
 
-        Rendered from the Markdown at request time so the published policy can
-        never drift from the copy that is reviewed alongside code changes.
+        Rendered from the Markdown at request time so the published pages can
+        never drift from the copies reviewed alongside code changes.
         """
         try:
-            from .services.markdown_page import privacy_policy_path, render_markdown_file
-            page = render_markdown_file(privacy_policy_path(), "Privacy Policy — TomCat")
+            from .services.markdown_page import docs_path, render_markdown_file
+            page = render_markdown_file(docs_path(filename), title)
             resp = web.Response(text=page, content_type="text/html")
             resp.headers["Cache-Control"] = "public, max-age=3600"
             return _with_cors(resp, request)
         except FileNotFoundError:
-            return web.Response(text="Privacy policy not found.", status=404)
+            return web.Response(text=f"{label} not found.", status=404)
         except Exception as e:
-            log_action("privacy_page_error", "render", str(e))
-            return web.Response(text="Privacy policy temporarily unavailable.", status=500)
+            log_action("doc_page_error", filename, str(e))
+            return web.Response(text=f"{label} temporarily unavailable.", status=500)
+
+    async def get_privacy(request):
+        """Privacy policy, linked from the OAuth consent screen."""
+        return _render_doc(request, "PRIVACY.md", "Privacy Policy — TomCatBot",
+                           "Privacy policy")
+
+    async def get_about(request):
+        """App home page. Google's branding review requires a page that names
+        the app exactly as the consent screen does and states its purpose."""
+        return _render_doc(request, "ABOUT.md", "TomCatBot", "About page")
 
     async def get_labeler_js(request):
         """Serve the labeler.js file."""
@@ -1845,6 +1855,7 @@ async def start_web_server(bot):
     app.add_routes([
         web.get('/', get_index),
         web.get('/privacy', get_privacy),
+        web.get('/about', get_about),
         web.get('/labeler.js', get_labeler_js),
         web.get('/api/members', get_members),
         web.options('/api/members', _options_preflight),

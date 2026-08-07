@@ -1116,6 +1116,41 @@
             font-family: 'Merriweather', serif;
             font-size: 1.5rem;
         }
+
+        #app-info,
+        .app-info {
+            max-width: 34rem;
+            margin: 28px auto 0;
+            padding: 0 20px;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            text-align: center;
+            opacity: 0.78;
+        }
+
+        #app-info h1,
+        .app-info h1 {
+            font-family: 'Merriweather', serif;
+            font-size: 1.35rem;
+            margin: 0 0 10px;
+        }
+
+        #app-info p,
+        .app-info p {
+            margin: 0 0 10px;
+        }
+
+        #app-info a,
+        .app-info a {
+            color: inherit;
+        }
+
+        #app-info .app-info-links,
+        .app-info .app-info-links {
+            margin-top: 14px;
+            font-weight: 600;
+        }
     </style>
 </head>
 
@@ -1123,6 +1158,26 @@
 
     <div id="loading">
         <div>Loading Schedule...</div>
+        <!-- Static so it is present without JavaScript, and reused inside the
+             Discord login overlay below. Google's OAuth branding review requires
+             the app name, purpose and privacy policy to be readable on the home
+             page without signing in. -->
+        <div id="app-info">
+            <h1>TomCatBot</h1>
+            <p><strong>TomCatBot</strong> is the Discord bot run by Campus Cat Coalition,
+                a nonprofit student organization at the University of Texas at Arlington
+                that cares for the cats living on campus. It verifies club membership and
+                dues payments, keeps the club's financial records, coordinates volunteer
+                feeding shifts, and maintains photo records of the campus cats.</p>
+            <p>It signs in to the club's own Google account with read-only Gmail access,
+                purely to read the payment notification emails that confirm a member has
+                paid their dues. It never reads any other person's Google account.</p>
+            <p class="app-info-links">
+                <a href="/about">About TomCatBot</a> &middot;
+                <a href="/privacy">Privacy Policy</a> &middot;
+                <a href="https://github.com/Austin-J-B/PyTomCat" target="_blank" rel="noopener">Source</a>
+            </p>
+        </div>
     </div>
 
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMenu()"></div>
@@ -4324,17 +4379,31 @@
 
             const div = document.createElement('div');
             div.id = 'web-login-overlay';
-            div.style.cssText = "position:fixed; inset:0; background:var(--site-bg); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:9999; text-align:center;";
+            div.style.cssText = "position:fixed; inset:0; background:var(--site-bg); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:9999; text-align:center; overflow-y:auto; padding:32px 0;";
+
+            //Reuse the static #app-info block rather than restating it here, so
+            //the description a Google reviewer reads cannot drift from the one
+            //served to a crawler that never runs this script.
+            const infoEl = document.getElementById('app-info');
+            let infoHtml = '';
+            if (infoEl) {
+                const clone = infoEl.cloneNode(true);
+                clone.removeAttribute('id');   //avoid a duplicate id in the DOM
+                clone.className = 'app-info';
+                const dupeHeading = clone.querySelector('h1');
+                if (dupeHeading) dupeHeading.remove();  //overlay already shows the name
+                infoHtml = clone.outerHTML;
+            }
 
             div.innerHTML = `
             <h3 style="font-family:'Montserrat', sans-serif; font-weight:500; font-size:1rem; margin:0; color:var(--site-text); opacity:0.8; text-transform: uppercase; letter-spacing: 1px;">
                 Campus Cat Coalition
             </h3>
-            
+
             <h1 style="font-family:'Merriweather', serif; font-weight:900; font-size:3rem; margin: 10px 0 40px 0; color:var(--site-text);">
-                TomCat-VI UI
+                TomCatBot
             </h1>
-            
+
             <a href="${loginUrl}" style="
                 background: #5865F2;
                 color: white;
@@ -4355,6 +4424,7 @@
                 </svg>
                 Log in with Discord
             </a>
+            ${infoHtml}
         `;
             document.body.appendChild(div);
         }

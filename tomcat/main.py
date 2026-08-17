@@ -89,6 +89,12 @@ LABELER_CLAIM_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_CLAIM_RATE_LIMIT_
 LABELER_SAVE_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_SAVE_RATE_LIMIT_MAX_REQUESTS", "1500") or "1500")
 LABELER_UI_DIAG_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_UI_DIAG_RATE_LIMIT_MAX_REQUESTS", "8000") or "8000")
 LABELER_RATE_LIMIT_SPLIT = os.getenv("LABELER_RATE_LIMIT_SPLIT", "1").strip().lower() in {"1", "true", "yes", "on"}
+#Every request the UI makes has to finish well inside Cloudflare's 100s origin
+#timeout, or the browser gets a 524 with an HTML error page instead of JSON.
+#These bound the two external dependencies on the login path (Discord's OAuth
+#API and the gateway connection) so a slow upstream fails fast and legibly.
+_DISCORD_OAUTH_TIMEOUT_SEC = float(os.getenv("UI_DISCORD_OAUTH_TIMEOUT_SEC", "10") or "10")
+_BOT_READY_WAIT_TIMEOUT_SEC = float(os.getenv("UI_BOT_READY_WAIT_TIMEOUT_SEC", "5") or "5")
 LABELER_PREFETCH_RETRY_FIX = os.getenv("LABELER_PREFETCH_RETRY_FIX", "1").strip().lower() in {"1", "true", "yes", "on"}
 LABELER_CLASSIFY_READY_RELAX = os.getenv("LABELER_CLASSIFY_READY_RELAX", "1").strip().lower() in {"1", "true", "yes", "on"}
 _rate_limit_counters: dict[str, deque] = {}
@@ -454,7 +460,13 @@ async def _resolve_member(user_id: int) -> tuple[Optional[discord.Guild], Option
         if "bot" in globals():
             try:
                 if hasattr(bot, "is_ready") and not bot.is_ready():
-                    await bot.wait_until_ready()
+                    #Bounded wait: every authenticated endpoint funnels through here,
+                    #so an unbounded wait_until_ready() turns a gateway reconnect into
+                    #a site-wide hang (and a Cloudflare 524 at the 100s edge timeout).
+                    await asyncio.wait_for(
+                        bot.wait_until_ready(),
+                        timeout=_BOT_READY_WAIT_TIMEOUT_SEC,
+                    )
             except Exception:
                 pass
         guild, member = await _resolve_member_once(user_id)
@@ -549,7 +561,11 @@ async def auth_token_exchange(request):
     if not CLIENT_SECRET or not CLIENT_ID:
         return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)
 
-    async with aiohttp.ClientSession() as session:
+    #Without an explicit timeout aiohttp allows 5 minutes per request, so a
+    #stalled call to Discord outlives Cloudflare's 100s origin timeout and the
+    #user sees a 524 HTML page rather than a real error.
+    oauth_timeout = aiohttp.ClientTimeout(total=_DISCORD_OAUTH_TIMEOUT_SEC)
+    async with aiohttp.ClientSession(timeout=oauth_timeout) as session:
         token_payload = {
             'client_id': CLIENT_ID,
             'client_secret': CLIENT_SECRET,
@@ -579,6 +595,12 @@ async def auth_token_exchange(request):
                 token_data = await resp.json()
                 access_token = token_data.get('access_token')
                 _debug(f"discord token ok scopes={token_data.get('scope')} expires_in={token_data.get('expires_in')}")
+        except asyncio.TimeoutError:
+            _debug(f"discord token timeout after {_DISCORD_OAUTH_TIMEOUT_SEC}s")
+            return _with_cors(
+                web.Response(status=504, text="Discord took too long to respond. Try again."),
+                request,
+            )
         except Exception as exc:
             _debug(f"discord token exception={exc}")
             return _with_cors(web.Response(status=502, text="Token exchange request failed"), request)
@@ -591,6 +613,12 @@ async def auth_token_exchange(request):
                 user_info = await user_resp.json()
                 user_id = int(user_info['id'])
                 _debug(f"discord /users/@me status={user_resp.status} user_id={user_id}")
+        except asyncio.TimeoutError:
+            _debug(f"/users/@me timeout after {_DISCORD_OAUTH_TIMEOUT_SEC}s")
+            return _with_cors(
+                web.Response(status=504, text="Discord took too long to respond. Try again."),
+                request,
+            )
         except Exception as exc:
             _debug(f"/users/@me exception={exc}")
             return _with_cors(web.Response(status=502, text="Failed to fetch user profile"), request)

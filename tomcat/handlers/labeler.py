@@ -563,9 +563,19 @@ _manual_metadata_ref_built_mono: float = 0.0
 _photo_crop_index_lock = asyncio.Lock()
 _photo_crop_index_cache: Dict[Tuple[int, int], Dict[str, Any]] = {}
 _photo_crop_index_built_mono: float = 0.0
+#Floor on how often a cache miss may force a full crop-index rebuild.
+_PHOTO_CROP_INDEX_MISS_REBUILD_INTERVAL_SEC = max(
+    1.0,
+    float(os.getenv("LABELER_PHOTO_CROP_INDEX_MISS_REBUILD_INTERVAL_SEC", "15") or "15"),
+)
+_photo_crop_index_miss_rebuild_next_mono: float = 0.0
 _ref_crop_result_cache: Dict[str, Tuple[float, bytes]] = {}
+#serial -> rendered ref-crop cache keys, so a save can drop just the crops it
+#touched instead of throwing away every rendered thumbnail in the process.
+_ref_crop_cache_keys_by_serial: Dict[int, Set[str]] = {}
 _ref_crop_negative_cache: Dict[Tuple[int, int], float] = {}
 _REF_CROP_RESULT_CACHE_MAX = max(200, int(os.getenv("LABELER_REF_CROP_RESULT_CACHE_MAX", "3000") or "3000"))
+_REF_CROP_SERIAL_INDEX_MAX = max(500, int(_REF_CROP_RESULT_CACHE_MAX))
 _REF_CROP_MISS_LOG_COOLDOWN_SEC = max(
     5.0,
     float(os.getenv("LABELER_REF_CROP_MISS_LOG_COOLDOWN_SEC", "90") or "90"),
@@ -705,6 +715,12 @@ _photo_item_context_cache_lock = asyncio.Lock()
 _discord_member_display_cache: Dict[Tuple[int, int], Tuple[float, str]] = {}
 _discord_user_display_cache: Dict[int, Tuple[float, str]] = {}
 _discord_channel_name_cache: Dict[int, Tuple[float, str]] = {}
+#Cache key -> monotonic expiry for lookups Discord could not resolve at all.
+_discord_context_unresolved: Dict[Any, float] = {}
+_DISCORD_CONTEXT_NEGATIVE_TTL_SEC = max(
+    60.0,
+    float(os.getenv("LABELER_DISCORD_CONTEXT_NEGATIVE_TTL_SEC", "900") or "900"),
+)
 
 
 def _parse_serial(val: str) -> Optional[int]:
@@ -817,7 +833,13 @@ def _invalidate_labeler_caches_after_label_clears(serials: Optional[List[int]] =
     _manual_metadata_ref_built_mono = 0.0
     _photo_crop_index_cache = {}
     _photo_crop_index_built_mono = 0.0
-    _ref_crop_result_cache.clear()
+    #Only the flagged serials' renders are stale; keeping the rest avoids
+    #re-rendering the whole reference gallery from disk on every label change.
+    if serials:
+        _drop_ref_crop_renders_for_serials(list(serials))
+    else:
+        _ref_crop_result_cache.clear()
+        _ref_crop_cache_keys_by_serial.clear()
 
 
 def _ensure_flag_incorrect_queue_loaded() -> None:
@@ -1373,6 +1395,33 @@ def _ttl_cache_set_text(
         cache.pop(old_key, None)
 
 
+def _context_lookup_failed(key: Any) -> bool:
+    """True while a Discord author/channel lookup is in negative-cache backoff."""
+    until = _discord_context_unresolved.get(key)
+    if until is None:
+        return False
+    if time.monotonic() >= float(until):
+        _discord_context_unresolved.pop(key, None)
+        return False
+    return True
+
+
+def _mark_context_lookup_failed(key: Any) -> None:
+    """Remember an unresolvable author/channel so it is not re-fetched every pass.
+
+    Deleted accounts and users who left the guild never resolve. Without this
+    every queue load re-issued a REST fetch for each of them, and those fetches
+    share the bot's rate limiter with the guild member lookup that gates login.
+    """
+    _discord_context_unresolved[key] = time.monotonic() + float(_DISCORD_CONTEXT_NEGATIVE_TTL_SEC)
+    if len(_discord_context_unresolved) <= int(_CONTEXT_CACHE_MAX_ITEMS):
+        return
+    now = time.monotonic()
+    for cached_key, until in list(_discord_context_unresolved.items()):
+        if now >= float(until):
+            _discord_context_unresolved.pop(cached_key, None)
+
+
 def _get_labeler_bot_client() -> Any:
     for mod_name in ("tomcat.main", "__main__", "main"):
         mod = sys.modules.get(mod_name)
@@ -1494,6 +1543,8 @@ async def _resolve_author_display_name(
         return cached_user
     if not allow_fetch:
         return cached_user
+    if _context_lookup_failed(("author", int(gid), int(uid))):
+        return cached_user
 
     client = await _ensure_labeler_bot_ready()
     if client is None:
@@ -1538,6 +1589,10 @@ async def _resolve_author_display_name(
             return display
     if cached_user and gid > 0:
         _ttl_cache_set_text(_discord_member_display_cache, (int(gid), int(uid)), cached_user)
+        return cached_user
+    #Nothing resolved: back off so the next queue load does not re-fetch this
+    #author from Discord all over again.
+    _mark_context_lookup_failed(("author", int(gid), int(uid)))
     return cached_user
 
 
@@ -1552,6 +1607,8 @@ async def _resolve_channel_name(channel_id: Any, *, allow_fetch: bool = True) ->
     )
     if cached or not allow_fetch:
         return cached
+    if _context_lookup_failed(("channel", int(cid))):
+        return ""
 
     client = await _ensure_labeler_bot_ready()
     if client is None:
@@ -1564,10 +1621,13 @@ async def _resolve_channel_name(channel_id: Any, *, allow_fetch: bool = True) ->
         except Exception:
             channel = None
     if channel is None:
+        _mark_context_lookup_failed(("channel", int(cid)))
         return ""
     name = str(getattr(channel, "name", None) or "").strip() or str(channel).strip()
     if name:
         _ttl_cache_set_text(_discord_channel_name_cache, int(cid), name)
+    else:
+        _mark_context_lookup_failed(("channel", int(cid)))
     return name
 
 
@@ -1722,6 +1782,8 @@ async def _warm_item_context_cache_for_items(
             int(uid),
             _DISCORD_CONTEXT_CACHE_TTL_SEC,
         )
+        if _context_lookup_failed(("author", int(gid), int(uid))):
+            continue
         if not user_cached or gid > 0:
             tasks.append(asyncio.create_task(_warm_author(int(gid), int(uid))))
     for cid in channel_targets:
@@ -1731,6 +1793,8 @@ async def _warm_item_context_cache_for_items(
             _DISCORD_CONTEXT_CACHE_TTL_SEC,
         )
         if cached:
+            continue
+        if _context_lookup_failed(("channel", int(cid))):
             continue
         tasks.append(asyncio.create_task(_warm_channel(int(cid))))
     if tasks:
@@ -2218,6 +2282,10 @@ async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
         and (now - float(_photo_crop_index_built_mono)) < _MANUAL_METADATA_REF_TTL_SEC
     ):
         return
+    #A forced rebuild scans the whole photo metadata table, and the UI fetches
+    #ref crops a dozen at a time, so a single batch of misses used to queue a
+    #dozen full rebuilds back to back.
+    requested_mono = now
     async with _photo_crop_index_lock:
         now2 = time.monotonic()
         if (
@@ -2226,8 +2294,28 @@ async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
             and (now2 - float(_photo_crop_index_built_mono)) < _MANUAL_METADATA_REF_TTL_SEC
         ):
             return
+        if force and float(_photo_crop_index_built_mono) > requested_mono:
+            #Somebody else rebuilt while this caller waited for the lock, so the
+            #index is already newer than the miss that triggered this call.
+            return
         _photo_crop_index_cache = await asyncio.to_thread(_build_photo_crop_index_cache)
         _photo_crop_index_built_mono = time.monotonic()
+
+
+async def _refresh_photo_crop_index_after_miss() -> None:
+    """Rebuild the crop index for a cache miss, at most once per interval.
+
+    A crop that is genuinely absent from the metadata misses forever, so
+    rebuilding on every miss meant a steady stream of full table scans for
+    serials that were never going to appear. Explicit warm requests still
+    force unconditionally.
+    """
+    global _photo_crop_index_miss_rebuild_next_mono
+    now = time.monotonic()
+    if now < float(_photo_crop_index_miss_rebuild_next_mono):
+        return
+    _photo_crop_index_miss_rebuild_next_mono = now + float(_PHOTO_CROP_INDEX_MISS_REBUILD_INTERVAL_SEC)
+    await _ensure_photo_crop_index_cache(force=True)
 
 
 def _photo_ref_crop_url(serial: int, crop: int) -> str:
@@ -2550,6 +2638,41 @@ def _ref_crop_cache_key(serial: int, crop_num: int, thumb_size: int) -> str:
     return _hash_cache_key("ref_crop", int(serial), int(crop_num), int(thumb_size))
 
 
+def _remember_ref_crop_cache_key(serial: int, key: str) -> None:
+    """Track which rendered ref crops belong to a serial, for targeted eviction."""
+    try:
+        sn = int(serial)
+    except Exception:
+        return
+    if sn <= 0:
+        return
+    _ref_crop_cache_keys_by_serial.setdefault(sn, set()).add(str(key))
+    if len(_ref_crop_cache_keys_by_serial) <= _REF_CROP_SERIAL_INDEX_MAX:
+        return
+    #Drop bookkeeping for serials whose renders have already aged out of the
+    #byte cache; the index is only a hint, so losing entries is harmless.
+    for tracked_sn, keys in list(_ref_crop_cache_keys_by_serial.items()):
+        live = {k for k in keys if k in _ref_crop_result_cache}
+        if live:
+            _ref_crop_cache_keys_by_serial[tracked_sn] = live
+        else:
+            _ref_crop_cache_keys_by_serial.pop(tracked_sn, None)
+
+
+def _drop_ref_crop_renders_for_serials(serials: Optional[List[int]] = None) -> int:
+    """Evict rendered ref crops for specific serials, leaving the rest cached."""
+    dropped = 0
+    for item in serials or []:
+        try:
+            sn = int(item)
+        except Exception:
+            continue
+        for key in _ref_crop_cache_keys_by_serial.pop(sn, set()):
+            if _ref_crop_result_cache.pop(key, None) is not None:
+                dropped += 1
+    return dropped
+
+
 def _append_ref_crop_pair(
     out: List[Tuple[int, int]],
     seen: Set[Tuple[int, int]],
@@ -2724,6 +2847,7 @@ async def _warm_single_ref_crop(
         max_items=_REF_CROP_RESULT_CACHE_MAX,
         ttl_sec=_REF_CROP_RESULT_TTL_SEC,
     )
+    _remember_ref_crop_cache_key(int(serial), cache_key)
     return "rendered"
 
 
@@ -4588,8 +4712,10 @@ async def get_cached_image(request: web.Request) -> web.Response:
         if sn is None:
             return _with_cors(web.Response(status=400, text="Invalid serial"), request)
 
-        # Local source of truth first.
-        local_path = local_photos.get_local_photo_path(int(sn))
+        # Local source of truth first. Resolving a path can rescan the photo
+        # library, so it has to stay off the event loop -- this endpoint is hit
+        # once per queue item and the UI prefetches several at a time.
+        local_path = await asyncio.to_thread(local_photos.get_local_photo_path, int(sn))
         if local_path is not None:
             try:
                 local_data = await asyncio.to_thread(local_path.read_bytes)
@@ -4677,7 +4803,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
         await _ensure_photo_crop_index_cache(force=False)
         entry = _photo_crop_index_cache.get((int(sn), int(crop_num)))
         if not entry:
-            await _ensure_photo_crop_index_cache(force=True)
+            await _refresh_photo_crop_index_after_miss()
             entry = _photo_crop_index_cache.get((int(sn), int(crop_num)))
         if not entry:
             _log_ref_crop_miss(int(sn), int(crop_num), "photo_entry_missing")
@@ -4746,6 +4872,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
             max_items=_REF_CROP_RESULT_CACHE_MAX,
             ttl_sec=_REF_CROP_RESULT_TTL_SEC,
         )
+        _remember_ref_crop_cache_key(int(sn), cache_key)
         return _with_cors(web.Response(body=payload, content_type="image/jpeg"), request)
     except Exception as e:
         log_action("labeler_ref_crop_error", "error", f"{type(e).__name__}: {e!r}")
@@ -6017,7 +6144,18 @@ async def post_save(request: web.Request) -> web.Response:
         _manual_metadata_ref_built_mono = 0.0
         _photo_crop_index_cache = {}
         _photo_crop_index_built_mono = 0.0
-        _ref_crop_result_cache.clear()
+        #Saving happens constantly while labeling. Clearing every rendered ref
+        #crop each time forced the UI (which fetches ref crops 12 at a time) to
+        #re-render the whole gallery from disk after every save, so evict only
+        #the serials this save actually touched.
+        saved_serials: List[int] = []
+        for update in updates:
+            if not isinstance(update, dict):
+                continue
+            saved_sn = _parse_serial(str(update.get("serial") or ""))
+            if saved_sn:
+                saved_serials.append(int(saved_sn))
+        _drop_ref_crop_renders_for_serials(saved_serials)
 
         log_action("labeler_save", "saved", f"{len(updates)} annotations by {actor_name}")
         return _with_cors(web.json_response({

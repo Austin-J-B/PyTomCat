@@ -35,6 +35,11 @@ _INDEX_REFRESH_SEC = max(
     1.0,
     float(getattr(settings, "labeler_local_index_refresh_sec", 60.0) or 60.0),
 )
+_INDEX_MISS_RESCAN_INTERVAL_SEC = max(
+    1.0,
+    float(getattr(settings, "labeler_local_index_miss_rescan_sec", 30.0) or 30.0),
+)
+_INDEX_MISS_RESCAN_NEXT_MONO: float = 0.0
 _INDEX_ROOT_SIG: Tuple[str, int, int] = ("", 0, 0)
 _INDEX_VERSION: int = 0
 _HASH_INDEX_LOCK = threading.Lock()
@@ -242,6 +247,17 @@ def _ensure_index(force: bool = False) -> None:
         _INDEX_NEXT_REFRESH_MONO = now + float(_INDEX_REFRESH_SEC)
 
 
+def _claim_miss_rescan() -> bool:
+    """Rate-limit the full rescan a lookup miss is allowed to trigger."""
+    global _INDEX_MISS_RESCAN_NEXT_MONO
+    with _INDEX_LOCK:
+        now = time.monotonic()
+        if now < float(_INDEX_MISS_RESCAN_NEXT_MONO):
+            return False
+        _INDEX_MISS_RESCAN_NEXT_MONO = now + float(_INDEX_MISS_RESCAN_INTERVAL_SEC)
+        return True
+
+
 def has_local_photo(serial: int, *, force_refresh: bool = False) -> bool:
     """True if local bytes are present for serial."""
     try:
@@ -267,6 +283,11 @@ def get_local_photo_path(serial: int, *, force_refresh: bool = False) -> Optiona
     if p is not None and p.is_file():
         return p
     if force_refresh:
+        return None
+    #A miss used to force a full recursive rescan of the photo library every
+    #time. Serials that are simply absent never stop missing, so a caller
+    #looping over them (the labeler queue) turned every lookup into a full walk.
+    if not _claim_miss_rescan():
         return None
     _ensure_index(force=True)
     p = _INDEX_PATHS.get(sn)

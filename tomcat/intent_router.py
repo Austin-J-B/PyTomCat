@@ -153,6 +153,26 @@ def _strip_wake_word(text: str) -> str:
     return text
 
 
+class _BoundedTraceMap(Dict[int, List[str]]):
+    """message_id -> decision trace, capped so stranded entries cannot accumulate.
+
+    Evicts oldest-first once full. Traces are read once, moments after they are
+    written, so anything old enough to evict is already unreachable.
+    """
+
+    def __init__(self, maxlen: int = 1024) -> None:
+        super().__init__()
+        self._maxlen = max(1, int(maxlen))
+
+    def __setitem__(self, key: int, value: List[str]) -> None:
+        super().__setitem__(key, value)
+        while len(self) > self._maxlen:
+            try:
+                super().__delitem__(next(iter(self)))
+            except (StopIteration, KeyError):  # pragma: no cover - empty map
+                break
+
+
 def _fuzzy_command_present(text: str, targets: List[str], threshold: int = 82) -> bool:
     """Light fuzzy check for command phrases (e.g., 'show me' typos)."""
     norm = re.sub(r"[^a-z0-9]+", "", (text or "").lower())
@@ -228,10 +248,17 @@ AUTH_CODE_RE = re.compile(r"\bauth\s+(?:code|url)\s+(.+)$", re.I)
 LOG_PAST_EMAILS_RE = re.compile(r"\blog(?:\s+the)?\s+past\s+(\d+)\s+emails\b", re.I)
 CHECK_EMAILS_RE = re.compile(r"\b(?:check|log|scan|process|read)\s+(?:the\s+)?(?:our\s+)?(?:new\s+)?emails?\b",re.I)
 LOG_LAST_FINANCES_RE = re.compile(r"\blog(?:\s+the)?\s+last\s+(\d+)\s+finances\b", re.I)
-DUE_CHECK_RE = re.compile(r"\bcheck\s+due\s+payments\b", re.I)
-DUES_PERKS_RE = re.compile(r"\brun\s+dues\s+perks\b", re.I)
-RUN_DUES_JOB_RE = re.compile(r"\brun\s+dues\s+job\b", re.I)
-DUES_UPDATE_RE = re.compile(r"\bupdate\s+due[-\s]?pay(?:ing)?\s+members\b", re.I)
+#Dues commands are officer-only and change real state, so they match by explicit
+#alternation rather than the fuzzy helper who_is uses. _fuzzy_command_present
+#also scores a message's first two tokens against each target, and "check due
+#date" scored ~94 against the short target "check dues" -- high enough to fire
+#the dues check, and not fixable by raising the threshold. The alternations below
+#accept the natural rewordings that previously fell through to silence
+#("check dues", "check due paying members") without that risk.
+DUE_CHECK_RE = re.compile(r"\bcheck\s+(?:dues(?:\s+(?:payments?|paying\s+members|members))?|due\s+(?:payments?|paying\s+members))\b", re.I)
+DUES_PERKS_RE = re.compile(r"\brun\s+(?:the\s+)?dues?\s+perks\b", re.I)
+RUN_DUES_JOB_RE = re.compile(r"\brun\s+(?:the\s+)?dues?\s+job\b", re.I)
+DUES_UPDATE_RE = re.compile(r"\bupdate\s+dues?[-\s]?(?:pay(?:ing)?\s+)?members\b", re.I)
 RECACHE_CATABASE_RE = re.compile(r"\brecache\s+(?:catabase|cat\s*database|names)\b", re.I)
 REMOVE_ROLE_RE = re.compile(r"\b(?:remove|clear|strip)\s+(?:the\s+)?role\s+(\d{5,20})(?:\s+from\s+(?:everyone|all))?\b", re.I)
 FEEDING_SCHEDULE_LINK_RE = re.compile(r"(feeding\s*schedule|feed\s*schedule|what[â€™'`]?\s*(?:is|s)?\s*(?:the\s+)?feeding\s*schedule|whats\s+the\s+feeding\s*schedule)",re.I,)
@@ -347,7 +374,13 @@ class IntentRouter:
         #pending FEED follow-ups: station mention ? image pairing
         self._pending_feed: Dict[Tuple[int,int], Dict[str, Any]] = {}
         #decision traces for logging: message_id -> [steps]
-        self._traces: Dict[int, List[str]] = {}
+        #Bounded on purpose. Roughly thirty places record a trace here and only
+        #handle_message removes one, so any message that does not end in a
+        #dispatched intent used to leave its entry behind for the life of the
+        #process. That is the overwhelming majority of traffic: August saw 29,861
+        #messages against 488 intents. handle_message now pops unconditionally,
+        #and this cap is the backstop for any path that never reaches it.
+        self._traces: _BoundedTraceMap = _BoundedTraceMap(maxlen=1024)
 
     def shutdown(self, *, wait: bool = False) -> None:
         """No-op stub kept for back-compat; the local LLM was removed."""
@@ -438,11 +471,26 @@ class IntentRouter:
 
             #------- Phase 2: Analyze (addressing + intent + slots + policy) -------
             event = await self._analyze_with_context(row, message)
-            if not event or event.type == "none":
-                return
 
             #------- Phase 3: Log decision trace -------
+            #Pop before the "none" check, not after. This is the only place a
+            #trace is ever removed, so returning early on a none verdict stranded
+            #the entry permanently -- and none is the common case.
             trace = self._traces.pop(row["message_id"], [])
+
+            if not event or event.type == "none":
+                #Officer-gated commands answer a denial with silence, which is
+                #deliberate: it keeps them undiscoverable. Record it anyway,
+                #otherwise a denial is indistinguishable from a bot failure when
+                #reading the logs, and the deny step in the trace is thrown away.
+                if any(str(step).startswith("deny:") for step in trace):
+                    log_action(
+                        "intent_denied",
+                        f"user={row['user_id']}; ch={row['channel_id']}",
+                        "; ".join(str(step) for step in trace),
+                    )
+                return
+
             log_intent(event.type, event.confidence,
                        channel_id=event.channel_id, user_id=event.user_id,
                        message_id=event.message_id, has_image=event.has_image,

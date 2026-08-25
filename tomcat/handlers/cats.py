@@ -506,7 +506,11 @@ async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
     if prof.get("last_seen_time"): last_bits.append(str(prof["last_seen_time"]))
     if prof.get("last_seen_by"):   last_bits.append(f"by {prof['last_seen_by']}")
     if last_bits:
-        lines.append("**Last Reported:** " + " ".join(last_bits))
+        #Sourced from CatDatabase "Last Seen By", which sync_catabase_photo_columns
+        #sets to the author of the most recent photo. Labelling that "Reported"
+        #collided with the actual report flow and read as though posting a photo
+        #had filed a report on the poster's behalf.
+        lines.append("**Last Seen:** " + " ".join(last_bits))
     nicks = prof.get("nicknames")
     if nicks:
         lines.append(f"**Common Nicknames:** {nicks}")

@@ -894,10 +894,31 @@ def missing_local_photo_rows(*, limit: int = 0, recent_days: int = 0) -> list[di
     if int(recent_days or 0) > 0:
         threshold = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=int(recent_days))
 
+    all_rows = read_metadata_rows()
+
+    #A handful of URLs appear on more than one row, because the same attachment
+    #was ingested twice under two serials. Only one of those serials has a file,
+    #and the other can never be restored: upsert_photo_bytes matches the shared
+    #URL, resolves to the serial that already has its file, writes nothing, and
+    #the caller books it as an error. The photo is present -- just under the
+    #other serial -- so there is nothing to fetch. Skip those rows instead of
+    #re-downloading them on every boot forever.
+    covered_urls: set[str] = set()
+    for row in all_rows:
+        serial = _parse_serial_like((row or {}).get("Serial Number"))
+        if serial is None or int(serial) not in existing:
+            continue
+        identity = _discord_url_identity(str((row or {}).get("Discord URL", "") or ""))
+        if identity:
+            covered_urls.add(identity)
+
     ranked: list[tuple[dt.datetime, int, dict[str, str]]] = []
-    for row in read_metadata_rows():
+    for row in all_rows:
         serial = _parse_serial_like((row or {}).get("Serial Number"))
         if serial is None or serial <= 0 or int(serial) in existing:
+            continue
+        identity = _discord_url_identity(str((row or {}).get("Discord URL", "") or ""))
+        if identity and identity in covered_urls:
             continue
         timestamp = _parse_metadata_timestamp((row or {}).get("Timestamp", ""))
         if threshold is not None:
@@ -914,6 +935,36 @@ def missing_local_photo_rows(*, limit: int = 0, recent_days: int = 0) -> list[di
     if int(limit or 0) > 0:
         return rows[: int(limit)]
     return rows
+
+
+_RESTORE_ATTEMPTS_PATH = Path("cache") / "photo_restore_attempts.json"
+
+
+def _load_restore_attempts() -> dict[int, int]:
+    """Read the per-serial failed-restore counter."""
+    try:
+        import json as _json
+
+        raw = _json.loads(_RESTORE_ATTEMPTS_PATH.read_text(encoding="utf-8"))
+        return {int(k): int(v) for k, v in (raw or {}).items()}
+    except Exception:
+        return {}
+
+
+def _save_restore_attempts(attempts: dict[int, int]) -> None:
+    """Persist the failed-restore counter, pruning serials that succeeded."""
+    try:
+        import json as _json
+
+        _RESTORE_ATTEMPTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _RESTORE_ATTEMPTS_PATH.with_name(_RESTORE_ATTEMPTS_PATH.name + ".tmp")
+        tmp.write_text(
+            _json.dumps({str(k): int(v) for k, v in sorted(attempts.items())}),
+            encoding="utf-8",
+        )
+        tmp.replace(_RESTORE_ATTEMPTS_PATH)
+    except Exception:
+        pass
 
 
 def _discord_url_identity(url: str) -> str:
@@ -978,9 +1029,29 @@ async def sync_missing_local_photos(
         limit=limit_value,
         recent_days=recent_days_value,
     )
+
+    #A photo whose message was deleted and whose CDN link has expired is gone for
+    #good, but it stays a candidate forever, so every boot re-spent a message
+    #fetch and an HTTP GET on it and then logged the failure as an error. Give up
+    #after a few attempts and let the counter decide, rather than retrying
+    #permanently unreachable rows for the life of the metadata row.
+    max_attempts = max(0, int(getattr(settings, "photo_sync_missing_max_attempts", 3) or 0))
+    attempts = await asyncio.to_thread(_load_restore_attempts) if max_attempts else {}
+    skipped_unrecoverable = 0
+    if max_attempts:
+        kept: list[dict[str, str]] = []
+        for row in candidates:
+            serial = _parse_serial_like((row or {}).get("Serial Number"))
+            if serial is not None and int(attempts.get(int(serial), 0)) >= max_attempts:
+                skipped_unrecoverable += 1
+                continue
+            kept.append(row)
+        candidates = kept
+
     result: dict[str, Any] = {
         "status": "ok",
         "requested": int(len(candidates)),
+        "skipped_unrecoverable": int(skipped_unrecoverable),
         "restored": 0,
         "restored_from_message": 0,
         "restored_from_csv_url": 0,
@@ -1081,6 +1152,8 @@ async def sync_missing_local_photos(
                         result["csv_url_failures"] += 1
 
             if not image_bytes:
+                if max_attempts:
+                    attempts[int(serial)] = int(attempts.get(int(serial), 0)) + 1
                 if len(result["sample_failures"]) < 8:
                     result["sample_failures"].append(str((row or {}).get("Serial Number", "") or serial))
                 continue
@@ -1107,15 +1180,24 @@ async def sync_missing_local_photos(
 
             if upsert_result.get("wrote_file") or upsert_result.get("duplicate"):
                 result["restored"] += 1
+                attempts.pop(int(serial), None)
                 if source == "csv_url":
                     result["restored_from_csv_url"] += 1
                 else:
                     result["restored_from_message"] += 1
             else:
+                #We fetched the bytes but upsert wrote nothing, which means it
+                #matched an existing row that already has its file -- the photo
+                #is present under a different serial. Nothing failed, so count
+                #the attempt rather than calling it an error.
+                if max_attempts:
+                    attempts[int(serial)] = int(attempts.get(int(serial), 0)) + 1
                 result["errors"] += 1
                 if len(result["sample_failures"]) < 8:
                     result["sample_failures"].append(str((row or {}).get("Serial Number", "") or serial))
     finally:
+        if max_attempts:
+            await asyncio.to_thread(_save_restore_attempts, attempts)
         if session is not None:
             try:
                 await session.close()

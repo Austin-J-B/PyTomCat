@@ -364,6 +364,51 @@ def _aspect_ratio_close(width_a: int, height_a: int, width_b: int, height_b: int
     return abs(ratio_a - ratio_b) <= _DEDUP_ASPECT_RATIO_TOLERANCE
 
 
+def fit_attachment_bytes(image_bytes: bytes, ext: str, max_bytes: int) -> tuple[bytes, str]:
+    """Shrink image bytes until they fit an upload limit. Returns (bytes, ext).
+
+    _normalized_storage_bytes bounds stored photos by pixel count, not file
+    size, so a 20MP photo saved at quality 95 can still land well over Discord's
+    per-attachment limit. Sending one raises 413 (error code 40005), which
+    propagated out of the photo handlers as intent_router_error and left the
+    request unanswered -- the user asked for a photo and got nothing back.
+
+    Re-encodes as JPEG, stepping down resolution then quality until it fits.
+    Returns the input untouched when it already fits or cannot be decoded.
+    """
+    if not image_bytes or max_bytes <= 0 or len(image_bytes) <= max_bytes:
+        return image_bytes, ext
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(image_bytes)) as img:
+                img = ImageOps.exif_transpose(img)
+                if img.mode not in {"RGB", "L"}:
+                    img = img.convert("RGB")
+                smallest = image_bytes
+                for scale in (1.0, 0.75, 0.5, 0.35, 0.25, 0.15):
+                    if scale == 1.0:
+                        frame = img
+                    else:
+                        frame = img.resize(
+                            (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
+                            Image.Resampling.LANCZOS,
+                        )
+                    for quality in (88, 75, 60):
+                        out = io.BytesIO()
+                        frame.save(out, format="JPEG", quality=quality, optimize=True)
+                        data = out.getvalue()
+                        if len(data) <= max_bytes:
+                            return data, ".jpg"
+                        if len(data) < len(smallest):
+                            smallest = data
+                #Nothing fit; hand back the smallest we managed so the caller can
+                #still decide, rather than the original which certainly will not.
+                return smallest, ".jpg"
+    except Exception:
+        return image_bytes, ext
+
+
 def _normalized_storage_bytes(image_bytes: bytes, ext: str) -> bytes:
     max_pixels = int(getattr(settings, "photo_max_pixels", 20_000_000) or 20_000_000)
     if not image_bytes or max_pixels <= 0:

@@ -31,11 +31,41 @@ Then restart the bot so `start.py` stops spawning its own (Linux) tunnel child:
 sudo systemctl restart tomcat
 ```
 
+## Deploys and runtime state
+
+`deploy.sh` in this directory is the daily 5am deploy, fired by
+`tomcat-deploy.timer`. Install it with:
+
+```bash
+cp deploy/deploy.sh /home/tomcat/deploy.sh && chmod +x /home/tomcat/deploy.sh
+```
+
+It updates with `git merge --ff-only`, which **refuses** when the working tree
+cannot cleanly fast-forward. It must never go back to `git reset --hard`: the
+host holds live runtime state in the working tree, and a hard reset silently
+restores whatever was last committed over it.
+
+Files the bot writes continuously are gitignored and must stay that way:
+
+| Path | Backed up by |
+| --- | --- |
+| `TomCatBot Pics.csv` | `TomCatBot Pics` worksheet, mirrored every ~5 min |
+| `cache/catabase/Catabase - CatDatabase.csv` | snapshot of the CatDatabase sheet, rebuilt on boot |
+| `cache/catabase/profiles.json` | derived from the catabase CSV, rebuilt on boot |
+| `cache/feeding_checklist.ndjson` | pre-update tarball in `deploy.sh` |
+| `cache/feeding_schedule.ndjson` | pre-update tarball in `deploy.sh` |
+
+Tarballs land in `/home/tomcat/backups/runtime/`, last 14 kept.
+
+The worksheet mirror is destructive (clear + rewrite), so `sync_metadata_csv_to_sheet`
+refuses to shrink the sheet by more than `PHOTO_METADATA_SHEET_SYNC_MAX_SHRINK`
+(default 5%). Without that, a truncated local CSV would be copied over the only
+backup on the next sync.
+
 ## Notes
 
 - `config.yml` and the `cloudflared` binary are gitignored and persist across
-  `git reset --hard` deploys, so the unit always has them.
+  deploys, so the unit always has them.
 - After changing `UI_ALLOWED_ORIGINS` (which changes `config.yml`), restart the
   tunnel to pick it up: `sudo systemctl restart cloudflared`.
-- `/home/tomcat/deploy.sh` (the daily 5am deploy, not in this repo) restarts
-  `cloudflared` after pulling so config changes take effect.
+- `deploy.sh` restarts `cloudflared` after pulling so config changes take effect.

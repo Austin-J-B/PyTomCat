@@ -381,9 +381,27 @@ async def start_catabase_photo_sync_scheduler() -> None:
         30,
         int(getattr(settings, "catabase_photo_sync_interval_sec", 300) or 300),
     )
+    #Sheets returns 503 (backend unavailable) and 409 (concurrent edit) as
+    #ordinary transient conditions. Without a retry a single blip skipped the
+    #whole cycle, leaving the derived columns stale for a full interval and
+    #logging it as an error. Retry those two briefly before giving up; anything
+    #else is a real fault and still fails fast.
+    transient_markers = ("[503]", "[409]")
     while True:
-        try:
-            await asyncio.to_thread(sync_catabase_photo_columns)
-        except Exception as e:
-            log_action("catabase_photo_sync_error", "scheduler", str(e))
+        for attempt in range(3):
+            try:
+                await asyncio.to_thread(sync_catabase_photo_columns)
+                break
+            except Exception as e:
+                message = str(e)
+                is_transient = any(marker in message for marker in transient_markers)
+                if is_transient and attempt < 2:
+                    await asyncio.sleep(2.0 * (attempt + 1))
+                    continue
+                log_action(
+                    "catabase_photo_sync_error",
+                    f"scheduler; attempt={attempt + 1}",
+                    message,
+                )
+                break
         await asyncio.sleep(float(interval_sec))

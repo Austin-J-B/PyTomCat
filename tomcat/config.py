@@ -319,6 +319,10 @@ class Settings:
     photo_sync_missing_max_rows: int = int(os.getenv("PHOTO_SYNC_MISSING_MAX_ROWS", "200") or "200")
     photo_sync_missing_recent_days: int = int(os.getenv("PHOTO_SYNC_MISSING_RECENT_DAYS", "90") or "90")
     photo_sync_missing_use_csv_url_fallback: bool = _get_env_bool("PHOTO_SYNC_MISSING_USE_CSV_URL_FALLBACK", True)
+    #Give up restoring a photo after this many failed attempts. A deleted
+    #message with an expired CDN link never comes back, and retrying it every
+    #boot spends Discord API calls to relearn that. 0 disables the cap.
+    photo_sync_missing_max_attempts: int = int(os.getenv("PHOTO_SYNC_MISSING_MAX_ATTEMPTS", "3") or "3")
     labeler_local_only: bool = _get_env_bool("LABELER_LOCAL_ONLY", True)
     labeler_local_allowed_exts: list[str] = field(
         default_factory=lambda: _parse_allowed_image_exts("LABELER_LOCAL_ALLOWED_EXTS")

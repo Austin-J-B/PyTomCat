@@ -153,6 +153,36 @@ def _strip_wake_word(text: str) -> str:
     return text
 
 
+#Phone keyboards substitute typographic punctuation as you type, so "who's"
+#arrives as "who’s". Six command patterns here spell the apostrophe as ASCII
+#("who\\s*'s", "who(?:'s|\\s+is)", the feeding variants), and none of them match
+#the curly form, so those commands failed silently from any mobile client.
+#"Tomcat who's thefreaker" was logged twice, months apart, and answered with
+#nothing both times. Folding here fixes every pattern at once instead of
+#teaching each regex about Unicode.
+_SMART_PUNCTUATION = {
+    "‘": "'",   # left single quote
+    "’": "'",   # right single quote / apostrophe, the common one
+    "ʼ": "'",   # modifier letter apostrophe
+    "´": "'",   # acute accent used as an apostrophe
+    "′": "'",   # prime
+    "“": '"',   # left double quote
+    "”": '"',   # right double quote
+    "″": '"',   # double prime
+    "–": "-",   # en dash
+    "—": "-",   # em dash
+    "−": "-",   # minus sign
+    "…": "...", # ellipsis
+    " ": " ",   # non-breaking space
+}
+_SMART_PUNCTUATION_TABLE = str.maketrans(_SMART_PUNCTUATION)
+
+
+def _fold_smart_punctuation(text: str) -> str:
+    """Map typographic quotes, dashes and ellipses onto their ASCII equivalents."""
+    return str(text or "").translate(_SMART_PUNCTUATION_TABLE)
+
+
 class _BoundedTraceMap(Dict[int, List[str]]):
     """message_id -> decision trace, capped so stranded entries cannot accumulate.
 
@@ -1439,7 +1469,7 @@ class IntentRouter:
 
     #---------- helpers: entity, context, dates ----------
     def _normalize_text(self, s: str) -> str:
-        return re.sub(r"\s+", " ", (s or "").strip().lower())
+        return re.sub(r"\s+", " ", _fold_smart_punctuation(s or "").strip().lower())
 
     def _extract_best_entity(
         self,
@@ -1892,7 +1922,11 @@ class IntentRouter:
         return False
 
     def _strip_wake_tokens(self, text_raw: str, message: discord.Message) -> str:
-        s = _strip_wake_word(text_raw or "")
+        #Fold here, not only in _normalize_text: every command pattern runs
+        #against text_wo, and text_wo is built from the raw message content
+        #rather than from text_norm, so normalizing there alone never reached
+        #the matching.
+        s = _strip_wake_word(_fold_smart_punctuation(text_raw or ""))
         if _BOT_ID_INT:
             try:
                 s = re.sub(rf"\s*<@!?{_BOT_ID_INT}>\s*[:,\-]*\s*", " ", s).strip()

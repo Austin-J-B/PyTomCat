@@ -42,6 +42,19 @@ cache/gallery_retrain
 !cache/feeding_schedule.json
 !cache/.gitkeep
 
+## Live runtime state - never commit.
+## These change constantly on the host, so a committed copy goes stale within
+## days and then overwrites good data the next time the working tree is reset.
+## Backups live elsewhere: the photo metadata CSV is mirrored to the
+## "TomCatBot Pics" worksheet every few minutes, the catabase CSV and
+## profiles.json are rebuilt from the CatDatabase sheet on boot, and the
+## feeding files are captured by the pre-update tarball in deploy/deploy.sh.
+TomCatBot Pics.csv
+cache/catabase/Catabase - CatDatabase.csv
+cache/catabase/profiles.json
+cache/feeding_checklist.ndjson
+cache/feeding_schedule.ndjson
+
 ## Python virtual environments (machine-local)
 .venv/
 .venv_*/

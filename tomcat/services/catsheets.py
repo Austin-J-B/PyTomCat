@@ -34,6 +34,9 @@ _LABEL_SPLIT_RE = re.compile(r"[|,;/]+")
 
 _PHOTO_METADATA_ROWS_CACHE: list[list[str]] | None = None
 _PHOTO_METADATA_ROWS_TS: float = 0.0  # monotonic for in-memory cache
+#(mtime_ns, size) of the metadata CSV the cached rows were built from, or None
+#when the rows came from the on-disk snapshot and the source state is unknown.
+_PHOTO_METADATA_ROWS_SIG: tuple[int, int] | None = None
 _PHOTO_METADATA_SNAPSHOT = Path("cache") / "sheets" / "photo_metadata_rows.json"
 _PHOTO_METADATA_INDEX_CACHE: dict[str, list[list[str]]] | None = None
 _PHOTO_METADATA_INDEX_TS: float = 0.0
@@ -121,8 +124,23 @@ def _parse_serial_number(value: str) -> int:
         return 0
 
 
+def _metadata_csv_signature() -> tuple[int, int] | None:
+    """Return (mtime_ns, size) for the metadata CSV, or None if it is unreadable."""
+    try:
+        stat = local_photos.metadata_csv_path().stat()
+        return (int(stat.st_mtime_ns), int(stat.st_size))
+    except Exception:
+        return None
+
+
 def _fetch_photo_metadata_rows_live() -> list[list[str]]:
-    """Build labeler-compatible photo metadata rows from the local metadata CSV."""
+    """Build labeler-compatible photo metadata rows from the local metadata CSV.
+
+    Reads the CSV without taking local_photos._METADATA_FILE_LOCK. Writers there
+    rewrite via a temp file plus os.replace, so a torn read is not possible, but
+    a write landing mid-read can leave this cache one revision behind; the
+    signature check in force_refresh_photo_rows_cache picks it up on the next call.
+    """
     path = local_photos.metadata_csv_path()
     if not path.is_file():
         return []
@@ -248,13 +266,30 @@ def _matched_photo_entries(full_name: str, ttl_sec: int | None = None) -> list[d
     return entries
 
 def force_refresh_photo_rows_cache() -> list[list[str]]:
-    """Force refresh the local photo metadata row cache, bypassing TTL."""
-    global _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS
+    """Force refresh the local photo metadata row cache, bypassing TTL.
+
+    Skips the work when the metadata CSV has not changed since the cached rows
+    were built. Callers that refresh after writing the CSV always see a changed
+    signature and still get a full rebuild; the no-op path exists for lookups
+    that refresh-and-retry on a miss (a cat with no photos), which would
+    otherwise re-read the CSV, rebuild the label index and rewrite the multi-MB
+    snapshot on every single request while never finding anything new.
+    """
+    global _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS, _PHOTO_METADATA_ROWS_SIG
+    signature = _metadata_csv_signature()
+    if (
+        _PHOTO_METADATA_ROWS_CACHE is not None
+        and _PHOTO_METADATA_ROWS_SIG is not None
+        and signature is not None
+        and signature == _PHOTO_METADATA_ROWS_SIG
+    ):
+        return _PHOTO_METADATA_ROWS_CACHE
     try:
         rows = _fetch_photo_metadata_rows_live()
         if not rows:
             return _PHOTO_METADATA_ROWS_CACHE or []
         _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = rows, time.monotonic()
+        _PHOTO_METADATA_ROWS_SIG = signature
         _reset_photo_metadata_index()
         _write_photo_metadata_snapshot(rows)
         return rows
@@ -263,7 +298,7 @@ def force_refresh_photo_rows_cache() -> list[list[str]]:
 
 def get_photo_metadata_rows(ttl_sec: int | None = None) -> list[list[str]]:
     """Fetch local photo metadata rows with in-memory + on-disk caching."""
-    global _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS
+    global _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS, _PHOTO_METADATA_ROWS_SIG
     ttl = int(
         ttl_sec
         if ttl_sec is not None
@@ -279,14 +314,17 @@ def get_photo_metadata_rows(ttl_sec: int | None = None) -> list[list[str]]:
     snap_rows, snap_ts = _load_photo_metadata_snapshot()
     if snap_rows is not None and (now_unix - snap_ts) < ttl:
         _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = snap_rows, now_mono
+        _PHOTO_METADATA_ROWS_SIG = None
         _reset_photo_metadata_index()
         return snap_rows
     # Fetch live photo metadata
+    signature = _metadata_csv_signature()
     try:
         rows = _fetch_photo_metadata_rows_live()
         if not rows:
             return snap_rows or _PHOTO_METADATA_ROWS_CACHE or []
         _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = rows, now_mono
+        _PHOTO_METADATA_ROWS_SIG = signature
         _reset_photo_metadata_index()
         _write_photo_metadata_snapshot(rows)
         return rows
@@ -294,6 +332,7 @@ def get_photo_metadata_rows(ttl_sec: int | None = None) -> list[list[str]]:
         # Fallback to whatever snapshot we have
         if snap_rows is not None:
             _PHOTO_METADATA_ROWS_CACHE, _PHOTO_METADATA_ROWS_TS = snap_rows, now_mono
+            _PHOTO_METADATA_ROWS_SIG = None
             _reset_photo_metadata_index()
             return snap_rows
         return []
@@ -326,7 +365,7 @@ async def get_most_recent_photo(full_name: str, _retried: bool = False) -> dict 
         if not _retried:
             force_refresh_photo_rows_cache()
             return await get_most_recent_photo(full_name, _retried=True)
-        return f"No photos found for {full_name}."
+        return f"No photos found for {display_name}."
 
     #Sort by Serial Number (descending)
     def parse_serial(entry):
@@ -373,7 +412,7 @@ async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str
         if not _retried:
             force_refresh_photo_rows_cache()
             return await get_recent_photo(full_name, _retried=True)
-        return f"No recent photos for '{full_name}'."
+        return f"No recent photos for '{display_name}'."
 
     import random
     

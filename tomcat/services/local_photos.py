@@ -318,7 +318,14 @@ def refresh_local_index() -> None:
     global _HASH_INDEX_BUILT_FOR_VERSION
     _ensure_index(force=True)
     with _HASH_INDEX_LOCK:
-        _HASH_CACHE.clear()
+        #_HASH_CACHE is deliberately preserved. It is keyed by resolved path and
+        #each entry is revalidated against st_mtime_ns/st_size in
+        #_ensure_hash_index, so stale entries can never be trusted, and entries
+        #for vanished paths are pruned there against the fresh index. Clearing it
+        #here forced every ingest to re-read and re-hash the whole photo store
+        #(~13k files / 18GB, minutes) while holding _METADATA_FILE_LOCK, which
+        #froze every cat query behind it. Keeping it makes the rebuild a stat()
+        #sweep instead.
         _EXACT_HASH_SERIALS.clear()
         _DHASH_ENTRIES.clear()
         _HASH_INDEX_BUILT_FOR_VERSION = -1
@@ -1168,6 +1175,13 @@ def upsert_photo_bytes(
     photo_path: Optional[Path] = None
     serial = 0
     serial_token = ""
+
+    #Build the dedup hash index BEFORE taking either lock. This is the only
+    #unbounded work in the ingest path (it walks every photo in the store), and
+    #_find_duplicate_photo below calls it internally while _METADATA_FILE_LOCK is
+    #held. Warming it here means the call inside the lock is a version check plus
+    #a dict lookup, so readers of the metadata CSV never queue behind the scan.
+    _ensure_hash_index(force=False)
 
     with _SERIAL_ALLOC_LOCK:
         with _METADATA_FILE_LOCK:

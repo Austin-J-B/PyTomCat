@@ -1104,7 +1104,11 @@ class IntentRouter:
 
         if event.type == "cat_query":
             from .services.cat_query import run_cat_query
-            result = run_cat_query(event.query or {})
+            #run_cat_query does blocking disk reads and contends for
+            #_METADATA_FILE_LOCK, so it must not run on the event loop: any
+            #ingest holding that lock would otherwise stall the gateway
+            #heartbeat for the whole hold and get the shard disconnected.
+            result = await asyncio.to_thread(run_cat_query, event.query or {})
             msg = str(result.get("message") or "").strip()
             if msg:
                 if _safe_send:

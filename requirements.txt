@@ -1,4 +1,4 @@
---extra-index-url https://download.pytorch.org/whl/cu121
+--extra-index-url https://download.pytorch.org/whl/cu128
 
 #Core Discord bot stack
 discord.py==2.4.0
@@ -23,9 +23,11 @@ beautifulsoup4==4.12.3
 opencv-python-headless==4.10.0.84
 ultralytics>=8.3.200
 
-#PyTorch (+cu121 for Windows/Nvidia)
-torch==2.4.1+cu121
-torchvision==0.19.1+cu121
+#PyTorch (+cu128 for Windows/Nvidia). Matches the 2.8.0 that
+#requirements-droplet.txt and the Modal image already pin, so the gallery
+#tensors written here load unchanged everywhere else.
+torch==2.8.0+cu128
+torchvision==0.23.0+cu128
 
 #HTTP utilities
 requests==2.34.2

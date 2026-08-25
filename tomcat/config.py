@@ -309,6 +309,10 @@ class Settings:
     #Largest fraction of rows the backup worksheet may lose in one sync before
     #it is refused as a likely local truncation. 0 disables the guard.
     photo_metadata_sheet_sync_max_shrink: float = float(os.getenv("PHOTO_METADATA_SHEET_SYNC_MAX_SHRINK", "0.05") or "0.05")
+    #Ceiling for bytes we attach to a Discord message. Deliberately under the
+    #10MiB floor Discord applies to unboosted guilds, so the same value is safe
+    #at every boost tier without asking the guild for its limit.
+    discord_attachment_max_bytes: int = int(os.getenv("DISCORD_ATTACHMENT_MAX_BYTES", str(8 * 1024 * 1024)) or (8 * 1024 * 1024))
     catabase_photo_sync_enabled: bool = _get_env_bool("CATABASE_PHOTO_SYNC_ENABLED", True)
     catabase_photo_sync_interval_sec: int = int(os.getenv("CATABASE_PHOTO_SYNC_INTERVAL_SEC", "300") or "300")
     photo_sync_missing_on_boot: bool = _get_env_bool("PHOTO_SYNC_MISSING_ON_BOOT", True)

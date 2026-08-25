@@ -336,6 +336,12 @@ async def handle_log_recent_emails(intent, ctx) -> None:
 
 async def start_gmail_logging_scheduler(bot) -> None:
     """Independent Gmail Poller."""
+    #"gmail_auth_pending" means nobody has finished the OAuth handshake yet, not
+    #that anything broke -- the interactive paths above already special-case it.
+    #The poller used to record it as gmail_poller_error on every cycle, which
+    #made an idle integration look like a recurring failure and was the single
+    #most common "error" in the logs. Report it once per transition instead.
+    auth_pending_logged = False
     while True:
         try:
             # Skip this cycle if a manual run holds the lock. Do NOT use
@@ -359,7 +365,17 @@ async def start_gmail_logging_scheduler(bot) -> None:
                             if n > 0:
                                 log_action("gmail_poller", "new_emails", f"count={n}")
                                 await finance.process_financial_emails(bot)
+                        auth_pending_logged = False
         except Exception as e:
-            log_action("gmail_poller_error", "", str(e))
+            if str(e) == "gmail_auth_pending":
+                if not auth_pending_logged:
+                    log_action(
+                        "gmail_poller_idle",
+                        "auth_pending",
+                        "no authorized Gmail token; polling stays idle until someone completes OAuth",
+                    )
+                    auth_pending_logged = True
+            else:
+                log_action("gmail_poller_error", "", str(e))
         
         await asyncio.sleep(4 * 60 * 60) #4 hours

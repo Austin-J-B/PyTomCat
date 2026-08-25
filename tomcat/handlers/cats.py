@@ -18,6 +18,7 @@ import io, asyncio
 from datetime import datetime, timezone
 from typing import Optional
 from ..services import profile_cache as PC, local_photos
+from ..config import settings
 from discord.errors import NotFound
 
 
@@ -72,6 +73,21 @@ async def _read_local_photo_bytes(serial: Any) -> tuple[Optional[bytes], str]:
         data = await asyncio.to_thread(path.read_bytes)
     except Exception:
         return None, suffix
+    #Every photo attachment in this module funnels through here, so bounding the
+    #size once covers all of them. Oversized bytes previously reached ch.send()
+    #and raised 413 (code 40005), which escaped as intent_router_error and left
+    #the user's request silently unanswered.
+    limit = int(getattr(settings, "discord_attachment_max_bytes", 8 * 1024 * 1024) or 0)
+    if limit > 0 and len(data) > limit:
+        original = len(data)
+        data, suffix = await asyncio.to_thread(
+            local_photos.fit_attachment_bytes, data, suffix, limit
+        )
+        log_action(
+            "photo_attachment_downscaled",
+            f"serial={sn}",
+            f"{original} -> {len(data)} bytes (limit {limit})",
+        )
     return data, suffix
 
 

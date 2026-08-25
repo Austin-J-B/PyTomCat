@@ -381,12 +381,17 @@ async def start_catabase_photo_sync_scheduler() -> None:
         30,
         int(getattr(settings, "catabase_photo_sync_interval_sec", 300) or 300),
     )
-    #Sheets returns 503 (backend unavailable) and 409 (concurrent edit) as
-    #ordinary transient conditions. Without a retry a single blip skipped the
-    #whole cycle, leaving the derived columns stale for a full interval and
-    #logging it as an error. Retry those two briefly before giving up; anything
-    #else is a real fault and still fails fast.
-    transient_markers = ("[503]", "[409]")
+    #Sheets fails transiently in more ways than an APIError status. Three months
+    #of logs show 23 [503], 10 dropped connections and 4 [500] against zero
+    #permanent faults, so matching only [503] and [409] left well over a third of
+    #the blips unretried. Each unretried blip skips the whole cycle and leaves
+    #the derived columns stale for a full interval. Anything not listed here is
+    #treated as a real fault and still fails fast.
+    transient_markers = (
+        "[500]", "[502]", "[503]", "[504]", "[409]",
+        "RemoteDisconnected", "Connection aborted", "ConnectionResetError",
+        "Read timed out", "ServerNotFoundError",
+    )
     while True:
         for attempt in range(3):
             try:

@@ -306,6 +306,9 @@ class Settings:
     photo_metadata_sheet_sync_enabled: bool = _get_env_bool("PHOTO_METADATA_SHEET_SYNC_ENABLED", True)
     photo_metadata_sheet_sync_interval_sec: int = int(os.getenv("PHOTO_METADATA_SHEET_SYNC_INTERVAL_SEC", "300") or "300")
     photo_metadata_sheet_sync_chunk_rows: int = int(os.getenv("PHOTO_METADATA_SHEET_SYNC_CHUNK_ROWS", "500") or "500")
+    #Largest fraction of rows the backup worksheet may lose in one sync before
+    #it is refused as a likely local truncation. 0 disables the guard.
+    photo_metadata_sheet_sync_max_shrink: float = float(os.getenv("PHOTO_METADATA_SHEET_SYNC_MAX_SHRINK", "0.05") or "0.05")
     catabase_photo_sync_enabled: bool = _get_env_bool("CATABASE_PHOTO_SYNC_ENABLED", True)
     catabase_photo_sync_interval_sec: int = int(os.getenv("CATABASE_PHOTO_SYNC_INTERVAL_SEC", "300") or "300")
     photo_sync_missing_on_boot: bool = _get_env_bool("PHOTO_SYNC_MISSING_ON_BOOT", True)

@@ -1334,6 +1334,7 @@ def sync_metadata_csv_to_sheet(force: bool = False) -> dict[str, Any]:
         sheet_title = str(getattr(settings, "photo_metadata_sheet_title", "TomCatBot Pics") or "TomCatBot Pics").strip() or "TomCatBot Pics"
         chunk_rows = max(50, int(getattr(settings, "photo_metadata_sheet_sync_chunk_rows", 500) or 500))
         spreadsheet = sheets_client().open_by_key(sheet_id)
+        created_worksheet = False
         try:
             worksheet = spreadsheet.worksheet(sheet_title)
         except WorksheetNotFound:
@@ -1342,6 +1343,35 @@ def sync_metadata_csv_to_sheet(force: bool = False) -> dict[str, Any]:
                 rows=max(len(table), 1000),
                 cols=len(CSV_HEADERS),
             )
+            created_worksheet = True
+
+        #This worksheet is the only backup of the photo metadata CSV, and the sync
+        #below is destructive (clear + rewrite) and unconditional after a restart,
+        #since _LAST_METADATA_SHEET_SYNC_SIG starts as None. So a CSV that got
+        #truncated or rolled back locally would be copied over the backup within
+        #one interval, losing both copies. Refuse to shrink the sheet by more than
+        #the configured fraction and make the operator look at it instead.
+        #row_count reflects the resize() below from our last sync, so this costs
+        #no extra API call. Skipped for a worksheet we just created, whose row
+        #count is a placeholder rather than a record of previous data.
+        previous_rows = 0 if created_worksheet else int(getattr(worksheet, "row_count", 0) or 0)
+        max_shrink = float(getattr(settings, "photo_metadata_sheet_sync_max_shrink", 0.05) or 0.05)
+        if not force and previous_rows > 1 and len(table) < previous_rows * (1.0 - max_shrink):
+            log_action(
+                "photo_metadata_sheet_sync_refused",
+                f"sheet={sheet_title}",
+                (
+                    f"would shrink {previous_rows} -> {len(table)} rows "
+                    f"(limit {max_shrink:.0%}); local CSV may be truncated or rolled back. "
+                    f"Sheet left untouched; call with force=True to override."
+                ),
+            )
+            return {
+                "status": "refused_shrink",
+                "rows": max(0, len(table) - 1),
+                "previous_rows": previous_rows,
+                "sheet_title": sheet_title,
+            }
 
         worksheet.clear()
         worksheet.resize(rows=max(len(table), 1), cols=len(CSV_HEADERS))

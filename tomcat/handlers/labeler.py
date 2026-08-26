@@ -563,6 +563,12 @@ _manual_metadata_ref_built_mono: float = 0.0
 _photo_crop_index_lock = asyncio.Lock()
 _photo_crop_index_cache: Dict[Tuple[int, int], Dict[str, Any]] = {}
 _photo_crop_index_built_mono: float = 0.0
+#Bumped once per completed rebuild. Callers that queued behind the lock compare
+#against the value they captured on the way in, which is exact; the previous
+#check compared time.monotonic() readings, so on a coarse clock (Windows ticks
+#at ~15ms) a rebuild that landed inside the same tick as the request did not
+#count as newer and every waiter rebuilt anyway.
+_photo_crop_index_generation: int = 0
 #Floor on how often a cache miss may force a full crop-index rebuild.
 _PHOTO_CROP_INDEX_MISS_REBUILD_INTERVAL_SEC = max(
     1.0,
@@ -2275,6 +2281,7 @@ def _build_photo_crop_index_cache() -> Dict[Tuple[int, int], Dict[str, Any]]:
 
 async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
     global _photo_crop_index_cache, _photo_crop_index_built_mono
+    global _photo_crop_index_generation
     now = time.monotonic()
     if (
         not force
@@ -2285,7 +2292,7 @@ async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
     #A forced rebuild scans the whole photo metadata table, and the UI fetches
     #ref crops a dozen at a time, so a single batch of misses used to queue a
     #dozen full rebuilds back to back.
-    requested_mono = now
+    requested_generation = _photo_crop_index_generation
     async with _photo_crop_index_lock:
         now2 = time.monotonic()
         if (
@@ -2294,12 +2301,13 @@ async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
             and (now2 - float(_photo_crop_index_built_mono)) < _MANUAL_METADATA_REF_TTL_SEC
         ):
             return
-        if force and float(_photo_crop_index_built_mono) > requested_mono:
+        if force and _photo_crop_index_generation != requested_generation:
             #Somebody else rebuilt while this caller waited for the lock, so the
             #index is already newer than the miss that triggered this call.
             return
         _photo_crop_index_cache = await asyncio.to_thread(_build_photo_crop_index_cache)
         _photo_crop_index_built_mono = time.monotonic()
+        _photo_crop_index_generation += 1
 
 
 async def _refresh_photo_crop_index_after_miss() -> None:
@@ -4901,6 +4909,10 @@ async def post_ui_diag(request: web.Request) -> web.Response:
             "detect_ready_refine_error",
             "classify_item_ready_done",
             "classify_item_ready_timeout",
+            #TEMPORARY: sidebar render-cost measurement. Allowlisted so the
+            #summaries land in the log without turning on verbose UI diag for
+            #everything else. Drop this line when the instrumentation comes out.
+            "render_perf",
         }
         if _UI_DIAG_VERBOSE or event in always_log_events:
             mode = str(data.get("mode") or "").strip().lower()[:24]

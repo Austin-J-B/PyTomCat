@@ -109,8 +109,19 @@
     const MANUAL_DISPLAY_PREFETCH_MAX_CANDIDATES = 18;
     const MANUAL_DISPLAY_PREFETCH_MAX_REFS = 3;
     const UI_DIAG_MIN_INTERVAL_MS = 1500;
-    const REF_IMAGE_PREFETCH_MAX = 12000;
-    const IMAGE_PREFETCH_MAX = 2000;
+    //Retained-Image caps. These bound resident decoded-bitmap memory, which is
+    //what actually kills the tab: a full photo is multiple MB decoded and a ref
+    //crop is ~480x480. The old caps (12000 / 2000) were far past the point where
+    //the renderer OOMs, so eviction never ran and a long session grew without
+    //bound. Evicting a 'ready' entry only drops our Image handle - the bytes stay
+    //in the browser's HTTP cache, so a re-render is cheap.
+    const REF_IMAGE_PREFETCH_MAX = 2400;
+    const REF_IMAGE_STATE_MAX = 20000;
+    const IMAGE_PREFETCH_MAX = 64;
+    //Hard ceiling on how long a single <img> load may sit in a concurrency slot.
+    //Without it a socket that never completes pins the slot forever and the whole
+    //ref queue stalls, which presents as a permanently frozen sidebar.
+    const REF_IMAGE_LOAD_TIMEOUT_MS = 30000;
     const REF_IMAGE_RETRY_BASE_MS = 1500;
     const REF_IMAGE_RETRY_MAX_MS = 60000;
     const REF_IMAGE_RETRY_MAX_ATTEMPTS = 6;
@@ -138,6 +149,10 @@
     const FLAG_PREFETCH_RETRY_FIX = _flagEnabled('prefetchRetryFix', true);
     const FLAG_CLASSIFY_READY_RELAX = _flagEnabled('classifyReadyRelax', true);
     const FLAG_CACHED_IMAGE_PATH_PROBE = _flagEnabled('cachedImagePathProbe', false);
+    //TEMPORARY: on by default so the next real labeling session produces numbers
+    //without anyone having to remember to switch it on. Turn off at runtime with
+    //  window.__LABELER_FEATURES = { ...window.__LABELER_FEATURES, renderPerf: false };
+    const FLAG_RENDER_PERF = _flagEnabled('renderPerf', true);
 
     function getApiBase() {
         let base = '';
@@ -386,6 +401,11 @@
     let refImagePrefetchRetry = new Map();
     let refImageRetryTimers = new Map();
     let refRenderRefreshTimer = null;
+    //Sources for every ref frame currently in the DOM, keyed by data-ref-key.
+    //Lets an image finishing its load patch just that one <img> instead of
+    //re-rendering the entire sidebar.
+    let renderedRefSources = new Map();
+    let renderedRefListKind = '';
     let detectPrefetch = new Map();
     let samMaskImageCache = new Map();
     let detectWarmFailures = new Map();
@@ -1977,7 +1997,7 @@
                 prefetch: key ? prefetchInFlight.has(key) : false,
                 ref_refresh: key ? classifyRefRefreshInFlight.has(key) : false,
                 ref_images_loading: Number(refImagesLoadingCount || 0),
-                ref_queue: Number(refImageFetchQueue.length || 0),
+                ref_queue: Number(_refQueuePending() || 0),
                 ref_queued: Number(refImageFetchQueued.size || 0),
             },
         };
@@ -2160,7 +2180,7 @@
             queued,
             error,
             active_loads: Number(refImagesLoadingCount || 0),
-            queue_depth: Number(refImageFetchQueue.length || 0),
+            queue_depth: Number(_refQueuePending() || 0),
             concurrency: Number(REF_IMAGE_CONCURRENCY || 0),
         };
     }
@@ -3178,8 +3198,7 @@
         refImagePrefetch.clear();
         refImagePrefetchState.clear();
         refImagePrefetchRetry.clear();
-        refImageFetchQueue.length = 0;
-        refImageFetchQueued.clear();
+        _refQueueReset();
         refImagesLoadingCount = 0;
         refImageLoadingOrder.length = 0;
         refImageLoadingPriority.clear();
@@ -3194,6 +3213,8 @@
             clearTimeout(refRenderRefreshTimer);
             refRenderRefreshTimer = null;
         }
+        renderedRefSources = new Map();
+        renderedRefListKind = '';
         detectPrefetchEpoch += 1;
         detectPrefetch.clear();
         detectWarmFailures.clear();
@@ -3759,16 +3780,35 @@
         };
 
         img.src = url;
-        if (imagePrefetch.size > IMAGE_PREFETCH_MAX) {
-            const overflow = imagePrefetch.size - IMAGE_PREFETCH_MAX;
-            const keys = imagePrefetch.keys();
-            for (let i = 0; i < overflow; i++) {
-                const evictKey = keys.next().value;
-                if (!evictKey) continue;
-                imagePrefetch.delete(evictKey);
-                imagePrefetchState.delete(evictKey);
-                _clearImagePrefetchRetryTimer(evictKey);
+        _evictImagePrefetchOverflow();
+    }
+
+    //Drop the oldest retained full-size photos once we are over budget. Only
+    //settled entries are evicted, and never the one on screen; dropping our
+    //Image handle releases the decoded bitmap while the encoded bytes stay in
+    //the browser cache, so a re-display is a cache hit rather than a refetch.
+    function _evictImagePrefetchOverflow() {
+        if (imagePrefetch.size <= IMAGE_PREFETCH_MAX) return;
+        const keepKey = _imagePrefetchKey(currentItem?.serial);
+        //Trim past the cap, not to it, so a full cache does not re-enter this scan
+        //on every single prefetch. Deleting the entry the Map iterator is sitting
+        //on is well defined, so iterate the live keys rather than a copy.
+        let overflow = imagePrefetch.size - Math.floor(IMAGE_PREFETCH_MAX * 0.85);
+        for (const evictKey of imagePrefetch.keys()) {
+            if (overflow <= 0) break;
+            if (evictKey === keepKey) continue;
+            const state = String(imagePrefetchState.get(evictKey)?.state || '');
+            if (state === 'loading') continue;
+            const entry = imagePrefetch.get(evictKey);
+            if (entry && entry.img) {
+                entry.img.onload = null;
+                entry.img.onerror = null;
+                try { entry.img.src = ''; } catch (e) { /* ignore */ }
             }
+            imagePrefetch.delete(evictKey);
+            imagePrefetchState.delete(evictKey);
+            _clearImagePrefetchRetryTimer(evictKey);
+            overflow -= 1;
         }
     }
 
@@ -3926,6 +3966,49 @@
         };
     }
 
+    //True when the ref has at least one source we could ever display.
+    function _refHasAnySource(srcs) {
+        if (!srcs) return false;
+        return !!(srcs.hqSrc || srcs.fastSrc || srcs.inlineSrc || srcs.baseSrc || srcs.fallbackUrlSrc);
+    }
+
+    //Single source of truth for "which variant of this ref do we show right now".
+    //Shared by the classifier list, the manual list, and the incremental patcher
+    //so all three always agree; returns '' when every variant has failed.
+    function _chooseRefDisplaySrc(srcs) {
+        if (!srcs) return '';
+        const { baseSrc, inlineSrc, fastSrc, hqSrc, fallbackUrlSrc } = srcs;
+        let src = '';
+        if (hqSrc && isRefImageReady(hqSrc)) {
+            src = hqSrc;
+        } else if (fastSrc && isRefImageReady(fastSrc)) {
+            src = fastSrc;
+        } else if (inlineSrc) {
+            src = inlineSrc;
+        } else if (fastSrc) {
+            src = fastSrc;
+        } else if (hqSrc) {
+            src = hqSrc;
+        } else if (baseSrc && isRefImageReady(baseSrc)) {
+            src = baseSrc;
+        } else if (baseSrc) {
+            src = baseSrc;
+        } else if (fallbackUrlSrc) {
+            src = fallbackUrlSrc;
+        }
+        if (!src) return '';
+        if (String(refImagePrefetchState.get(src) || '') !== 'error') return src;
+        const backups = [
+            (src === hqSrc ? fastSrc : ''),
+            (src === hqSrc || src === fastSrc ? baseSrc : ''),
+            inlineSrc,
+            fallbackUrlSrc,
+        ].filter(Boolean);
+        return backups.find((candidateSrc) => (
+            String(refImagePrefetchState.get(candidateSrc) || '') !== 'error'
+        )) || '';
+    }
+
     function _clearRefRetryTimer(src) {
         const key = String(src || '').trim();
         if (!key) return;
@@ -3954,10 +4037,15 @@
         return rec;
     }
 
-    function _scheduleRefImageRetry(src, delayMs) {
+    function _scheduleRefImageRetry(src, delayMs, attempts = 0) {
         const key = String(src || '').trim();
         if (!key) return;
         if (refImageRetryTimers.has(key)) return;
+        //REF_IMAGE_RETRY_MAX_ATTEMPTS only clamped the backoff exponent, so a ref
+        //that is permanently gone (deleted photo, bad crop row) retried forever at
+        //the 60s ceiling - and every one of those failures scheduled a sidebar
+        //re-render. Stop once the source has had its attempts.
+        if (Number(attempts || 0) >= REF_IMAGE_RETRY_MAX_ATTEMPTS) return;
         const delay = Math.max(250, Number(delayMs) || 250);
         const timer = setTimeout(() => {
             refImageRetryTimers.delete(key);
@@ -3968,8 +4056,63 @@
         refImageRetryTimers.set(key, timer);
     }
 
-    const refImageFetchQueue = [];
+    //Two FIFOs with head pointers instead of one array driven by
+    //shift()/indexOf()/unshift()/splice(). Rendering a manual list enqueues
+    //hundreds of sources and each high-priority enqueue used to linear-scan the
+    //whole pending queue, so the enqueue pass alone was quadratic.
+    const refImageFetchQueueHigh = [];
+    const refImageFetchQueueNormal = [];
+    let refImageFetchHeadHigh = 0;
+    let refImageFetchHeadNormal = 0;
     const refImageFetchQueued = new Set();
+
+    function _refQueuePush(key, isHighPriority) {
+        if (isHighPriority) {
+            refImageFetchQueueHigh.push(key);
+        } else {
+            refImageFetchQueueNormal.push(key);
+        }
+        refImageFetchQueued.add(key);
+    }
+
+    //Consumed entries are left in place and skipped via the head pointer; compact
+    //once the dead prefix dominates so the arrays cannot grow without bound.
+    function _refQueueShift() {
+        while (refImageFetchHeadHigh < refImageFetchQueueHigh.length) {
+            const key = refImageFetchQueueHigh[refImageFetchHeadHigh++];
+            if (key) return key;
+        }
+        if (refImageFetchHeadHigh && refImageFetchHeadHigh >= refImageFetchQueueHigh.length) {
+            refImageFetchQueueHigh.length = 0;
+            refImageFetchHeadHigh = 0;
+        }
+        while (refImageFetchHeadNormal < refImageFetchQueueNormal.length) {
+            const key = refImageFetchQueueNormal[refImageFetchHeadNormal++];
+            if (refImageFetchHeadNormal > 512 && refImageFetchHeadNormal * 2 >= refImageFetchQueueNormal.length) {
+                refImageFetchQueueNormal.splice(0, refImageFetchHeadNormal);
+                refImageFetchHeadNormal = 0;
+            }
+            if (key) return key;
+        }
+        if (refImageFetchHeadNormal && refImageFetchHeadNormal >= refImageFetchQueueNormal.length) {
+            refImageFetchQueueNormal.length = 0;
+            refImageFetchHeadNormal = 0;
+        }
+        return '';
+    }
+
+    function _refQueuePending() {
+        return (refImageFetchQueueHigh.length - refImageFetchHeadHigh)
+            + (refImageFetchQueueNormal.length - refImageFetchHeadNormal);
+    }
+
+    function _refQueueReset() {
+        refImageFetchQueueHigh.length = 0;
+        refImageFetchQueueNormal.length = 0;
+        refImageFetchHeadHigh = 0;
+        refImageFetchHeadNormal = 0;
+        refImageFetchQueued.clear();
+    }
     let refImagesLoadingCount = 0;
     const REF_IMAGE_CONCURRENCY = 12;
     // Keys currently being loaded, in start order, with their priority.
@@ -3997,8 +4140,8 @@
 
     function processRefImageQueue() {
         if (!labelerActive) return;
-        while (refImagesLoadingCount < REF_IMAGE_CONCURRENCY && refImageFetchQueue.length > 0) {
-            const key = refImageFetchQueue.shift();
+        while (refImagesLoadingCount < REF_IMAGE_CONCURRENCY && _refQueuePending() > 0) {
+            const key = _refQueueShift();
             if (!key) continue;
             refImageFetchQueued.delete(key);
 
@@ -4016,15 +4159,40 @@
             img.loading = 'eager';
 
             let finished = false;
+            let watchdog = null;
             const _onFinish = () => {
                 if (finished) return;
                 finished = true;
+                if (watchdog) {
+                    clearTimeout(watchdog);
+                    watchdog = null;
+                }
                 refImagesLoadingCount--;
                 const idx = refImageLoadingOrder.indexOf(key);
                 if (idx !== -1) refImageLoadingOrder.splice(idx, 1);
                 refImageLoadingPriority.delete(key);
                 setTimeout(processRefImageQueue, 10);
             };
+
+            //A request that never resolves would otherwise hold its concurrency
+            //slot forever; enough of those and the ref queue stops draining and
+            //the sidebar never finishes loading.
+            watchdog = setTimeout(() => {
+                if (finished) return;
+                img.onload = null;
+                img.onerror = null;
+                try { img.src = ''; } catch (e) { /* ignore */ }
+                refImagePreempted.delete(key);
+                refImagePrefetchState.set(key, 'error');
+                refImagePrefetch.delete(key);
+                const retry = _recordRefImageError(key);
+                _scheduleRefImageRetry(
+                    key,
+                    Number(retry.delayMs || REF_IMAGE_RETRY_BASE_MS),
+                    Number(retry.attempts || 0),
+                );
+                _onFinish();
+            }, REF_IMAGE_LOAD_TIMEOUT_MS);
 
             img.onload = () => {
                 refImagePreempted.delete(key);
@@ -4041,12 +4209,7 @@
                     refImagePreempted.delete(key);
                     refImagePrefetch.delete(key);
                     refImagePrefetchState.set(key, 'queued');
-                    if (loadPriority === 'high') {
-                        refImageFetchQueue.unshift(key);
-                    } else {
-                        refImageFetchQueue.push(key);
-                    }
-                    refImageFetchQueued.add(key);
+                    _refQueuePush(key, loadPriority === 'high');
                     scheduleRefRenderRefresh();
                     _onFinish();
                     return;
@@ -4054,7 +4217,11 @@
                 refImagePrefetchState.set(key, 'error');
                 refImagePrefetch.delete(key);
                 const retry = _recordRefImageError(key);
-                _scheduleRefImageRetry(key, Number(retry.delayMs || REF_IMAGE_RETRY_BASE_MS));
+                _scheduleRefImageRetry(
+                    key,
+                    Number(retry.delayMs || REF_IMAGE_RETRY_BASE_MS),
+                    Number(retry.attempts || 0),
+                );
                 scheduleRefRenderRefresh();
                 _onFinish();
             };
@@ -4071,11 +4238,11 @@
         const isHighPriority = priority === 'high';
 
         //Data URIs are already embedded; mark ready immediately without queuing.
+        //Deliberately no Image() here - there is nothing to prefetch, and decoding
+        //one only to hold it in the cache pins a full bitmap per inline ref on top
+        //of the base64 string we are already carrying. isRefImageReady() reads the
+        //state before the handle, so 'ready' is all this path needs to record.
         if (key.startsWith('data:')) {
-            if (refImagePrefetchState.get(key) === 'ready') return;
-            const img = new Image();
-            img.src = key;
-            refImagePrefetch.set(key, img);
             refImagePrefetchState.set(key, 'ready');
             return;
         }
@@ -4084,10 +4251,12 @@
         const state = String(refImagePrefetchState.get(key) || '');
         if (state === 'ready') return;
         if (state === 'queued' && isHighPriority && refImageFetchQueued.has(key)) {
-            const idx = refImageFetchQueue.indexOf(key);
-            if (idx > 0) {
-                refImageFetchQueue.splice(idx, 1);
-                refImageFetchQueue.unshift(key);
+            //Promote by re-queueing on the high lane. The stale normal-lane copy is
+            //harmless: whichever copy is dequeued first flips the state off 'queued'
+            //and the other is skipped.
+            if (refImageLoadingPriority.get(key) !== 'high') {
+                refImageLoadingPriority.set(key, 'high');
+                refImageFetchQueueHigh.push(key);
             }
         }
         if ((state === 'loading' || state === 'queued') && refImagePrefetch.has(key)) return;
@@ -4107,12 +4276,7 @@
         const loadPri = isHighPriority ? 'high' : 'normal';
         refImageLoadingPriority.set(key, loadPri);
         if (!refImageFetchQueued.has(key)) {
-            if (isHighPriority) {
-                refImageFetchQueue.unshift(key);
-            } else {
-                refImageFetchQueue.push(key);
-            }
-            refImageFetchQueued.add(key);
+            _refQueuePush(key, isHighPriority);
         }
         // If all slots are occupied by normal-priority loads, preempt one so this
         // high-priority item can start immediately rather than waiting for a slot to
@@ -4122,17 +4286,47 @@
         }
         processRefImageQueue();
 
+        _evictRefImageOverflow();
+    }
+
+    //Release the oldest retained ref crops. Unlike the previous version this only
+    //touches entries that have finished loading and it keeps their 'ready' state,
+    //so isRefImageReady() stays truthful and the sidebar does not downgrade to a
+    //lower-quality variant just because we let go of the Image object.
+    function _evictRefImageOverflow() {
         if (refImagePrefetch.size > REF_IMAGE_PREFETCH_MAX) {
-            const overflow = refImagePrefetch.size - REF_IMAGE_PREFETCH_MAX;
-            const keys = refImagePrefetch.keys();
-            for (let i = 0; i < overflow; i++) {
-                const oldKey = keys.next().value;
-                if (!oldKey) break;
+            //Same hysteresis as the photo cache: trim below the cap so this scan is
+            //amortised over many prefetches instead of running on each one.
+            let overflow = refImagePrefetch.size - Math.floor(REF_IMAGE_PREFETCH_MAX * 0.85);
+            for (const oldKey of refImagePrefetch.keys()) {
+                if (overflow <= 0) break;
+                const state = String(refImagePrefetchState.get(oldKey) || '');
+                if (state === 'loading' || state === 'queued') continue;
+                const img = refImagePrefetch.get(oldKey);
+                if (img instanceof Image) {
+                    img.onload = null;
+                    img.onerror = null;
+                }
                 refImagePrefetch.delete(oldKey);
+                if (state !== 'ready') {
+                    refImagePrefetchState.delete(oldKey);
+                    refImagePrefetchRetry.delete(oldKey);
+                    _clearRefRetryTimer(oldKey);
+                    refImageFetchQueued.delete(oldKey);
+                }
+                overflow -= 1;
+            }
+        }
+        //The state map outlives the Image handles, so bound it too.
+        if (refImagePrefetchState.size > REF_IMAGE_STATE_MAX) {
+            let stateOverflow = refImagePrefetchState.size - Math.floor(REF_IMAGE_STATE_MAX * 0.85);
+            for (const oldKey of refImagePrefetchState.keys()) {
+                if (stateOverflow <= 0) break;
+                if (refImagePrefetch.has(oldKey)) continue;
                 refImagePrefetchState.delete(oldKey);
                 refImagePrefetchRetry.delete(oldKey);
                 _clearRefRetryTimer(oldKey);
-                refImageFetchQueued.delete(oldKey);
+                stateOverflow -= 1;
             }
         }
     }
@@ -4147,11 +4341,200 @@
         return !!(img && img.complete && img.naturalWidth > 0);
     }
 
+    //---------- TEMPORARY: sidebar render cost instrumentation ----------
+    //
+    //Measures what a full sidebar rebuild actually costs on real hardware with
+    //real data, and what the incremental patcher costs instead. Before the
+    //patcher existed, every coalesced "a ref image finished" event ran a full
+    //rebuild, so counting those events gives a like-for-like before/after
+    //rather than an estimate pulled out of the air.
+    //
+    //To remove: delete this block, the FLAG_RENDER_PERF constant, and the five
+    //_perf*/renderPerf call sites (two render wrappers, the patcher, the
+    //refresh scheduler, and teardownLabeler).
+    const RENDER_PERF_REPORT_MS = 60000;
+
+    function _perfBucket() {
+        return { n: 0, totalMs: 0, maxMs: 0, units: 0 };
+    }
+
+    const renderPerf = {
+        startedAt: 0,
+        lastReportAt: 0,
+        //One per coalesced ref-image-finished event == one full rebuild under
+        //the old code.
+        refreshRequests: 0,
+        fallbackRenders: 0,
+        full: _perfBucket(),
+        patch: _perfBucket(),
+        heapPeakMb: 0,
+    };
+
+    function _perfNow() {
+        return (typeof performance !== 'undefined' && performance.now)
+            ? performance.now()
+            : Date.now();
+    }
+
+    function _perfTouch() {
+        if (renderPerf.startedAt) return;
+        renderPerf.startedAt = Date.now();
+        renderPerf.lastReportAt = Date.now();
+    }
+
+    function _perfRecordMs(bucket, ms, units) {
+        if (!FLAG_RENDER_PERF || !bucket) return;
+        _perfTouch();
+        bucket.n += 1;
+        bucket.totalMs += Number(ms || 0);
+        bucket.units += Number(units || 0);
+        if (ms > bucket.maxMs) bucket.maxMs = Number(ms || 0);
+    }
+
+    function _perfCountRefFrames() {
+        try {
+            const listEl = document.getElementById('predictions-list');
+            return listEl ? listEl.querySelectorAll('.ref-frame').length : 0;
+        } catch (e) {
+            return 0;
+        }
+    }
+
+    function _perfHeapMb() {
+        try {
+            const used = performance && performance.memory
+                ? performance.memory.usedJSHeapSize
+                : 0;
+            return Number.isFinite(used) ? Math.round(Number(used) / 1048576) : 0;
+        } catch (e) {
+            return 0;
+        }
+    }
+
+    function renderPerfSummary() {
+        const avg = (b) => (b.n ? b.totalMs / b.n : 0);
+        const fullAvgMs = avg(renderPerf.full);
+        const nowMs = renderPerf.full.totalMs + renderPerf.patch.totalMs;
+        //Upper bound: the old code ran one full rebuild per coalesced refresh.
+        //It is an upper bound rather than exact because a slower render swallows
+        //more image-load events into each 80ms coalescing window, so the old
+        //code would have run somewhat fewer rebuilds than we counted here.
+        const beforeMs = (renderPerf.refreshRequests * fullAvgMs) + renderPerf.full.totalMs;
+        const round1 = (v) => Number(Number(v || 0).toFixed(1));
+        return {
+            session_s: renderPerf.startedAt
+                ? Math.round((Date.now() - renderPerf.startedAt) / 1000)
+                : 0,
+            mode: labelerMode,
+            full_renders: renderPerf.full.n,
+            full_avg_ms: round1(fullAvgMs),
+            full_max_ms: round1(renderPerf.full.maxMs),
+            full_avg_ref_frames: renderPerf.full.n
+                ? Math.round(renderPerf.full.units / renderPerf.full.n)
+                : 0,
+            patches: renderPerf.patch.n,
+            patch_avg_ms: Number(avg(renderPerf.patch).toFixed(3)),
+            patch_max_ms: round1(renderPerf.patch.maxMs),
+            ref_load_events: renderPerf.refreshRequests,
+            fallback_renders: renderPerf.fallbackRenders,
+            main_thread_ms_now: Math.round(nowMs),
+            main_thread_ms_before_est: Math.round(beforeMs),
+            speedup_x: nowMs > 0 ? round1(beforeMs / nowMs) : 0,
+            heap_mb: _perfHeapMb(),
+            heap_peak_mb: renderPerf.heapPeakMb,
+        };
+    }
+
+    function _maybeReportRenderPerf(force = false) {
+        if (!FLAG_RENDER_PERF) return;
+        const heap = _perfHeapMb();
+        if (heap > renderPerf.heapPeakMb) renderPerf.heapPeakMb = heap;
+        if (!renderPerf.full.n && !renderPerf.patch.n) return;
+        const now = Date.now();
+        if (!force && (now - renderPerf.lastReportAt) < RENDER_PERF_REPORT_MS) return;
+        renderPerf.lastReportAt = now;
+        const summary = renderPerfSummary();
+        console.log('[Labeler] render perf', summary);
+        //Ship it too, so the numbers survive a session where nobody had devtools open.
+        void postUiDiag('render_perf', summary);
+    }
+
+    function _resetRenderPerf() {
+        renderPerf.startedAt = 0;
+        renderPerf.lastReportAt = 0;
+        renderPerf.refreshRequests = 0;
+        renderPerf.fallbackRenders = 0;
+        renderPerf.full = _perfBucket();
+        renderPerf.patch = _perfBucket();
+        renderPerf.heapPeakMb = 0;
+    }
+
+    //Upgrade the already-rendered ref frames in place.
+    //
+    //Every ref image that finishes loading used to schedule a full re-render of
+    //the sidebar. In manual mode that is ~164 cards and ~820 <img> nodes torn
+    //down and rebuilt through innerHTML, once per completed load - O(n^2) DOM
+    //churn that locks the main thread and drops the search highlight, the scroll
+    //position, and every in-flight <img> decode along with it. A finished load
+    //can only ever change one attribute, so patch that attribute instead.
+    //
+    //Returns false when the DOM does not match what we last rendered, in which
+    //case the caller falls back to a full render.
+    function refreshRenderedRefImages() {
+        const listEl = document.getElementById('predictions-list');
+        if (!listEl) return false;
+        if (!renderedRefSources.size) return false;
+        if (renderedRefListKind !== labelerMode) return false;
+        const frames = listEl.querySelectorAll('.ref-frame[data-ref-key]');
+        if (!frames.length) return false;
+        const perfStartedAt = _perfNow();
+        let patched = 0;
+        frames.forEach((frame) => {
+            const key = frame.getAttribute('data-ref-key') || '';
+            const srcs = renderedRefSources.get(key);
+            if (!srcs) return;
+            const img = frame.querySelector('img');
+            if (!img) return;
+            const next = _chooseRefDisplaySrc(srcs);
+            if (!next) {
+                //Every variant is currently failing; hide rather than remove so a
+                //later retry can bring the frame back without a structural render.
+                if (!frame.classList.contains('ref-unavailable')) {
+                    frame.classList.add('ref-unavailable');
+                    frame.style.display = 'none';
+                    patched += 1;
+                }
+                return;
+            }
+            if (frame.classList.contains('ref-unavailable')) {
+                frame.classList.remove('ref-unavailable');
+                frame.style.display = '';
+                patched += 1;
+            }
+            //Compare against the attribute, not img.src: the property is resolved
+            //to an absolute URL and would never match a relative source.
+            if (img.getAttribute('src') !== next) {
+                img.setAttribute('src', next);
+                _applyRefAspectClampToImg(img);
+                patched += 1;
+            }
+        });
+        _perfRecordMs(renderPerf.patch, _perfNow() - perfStartedAt, patched);
+        return true;
+    }
+
     function scheduleRefRenderRefresh() {
         if (refRenderRefreshTimer) return;
         refRenderRefreshTimer = setTimeout(() => {
             refRenderRefreshTimer = null;
             if (!labelerActive) return;
+            if (labelerMode !== 'classify' && labelerMode !== 'manual') return;
+            //Every one of these was a full sidebar rebuild before the patcher.
+            renderPerf.refreshRequests += 1;
+            _perfTouch();
+            _maybeReportRenderPerf();
+            if (refreshRenderedRefImages()) return;
+            renderPerf.fallbackRenders += 1;
             if (labelerMode === 'classify') {
                 renderPredictions();
             } else if (labelerMode === 'manual') {
@@ -4537,6 +4920,7 @@
 
     function teardownLabeler() {
         labelerActive = false;
+        _maybeReportRenderPerf(true);
         void releaseCurrentClaim();
         stopRetrainStatusPoll();
         stopWarmLoop();
@@ -6162,8 +6546,20 @@
     }
 
     function renderPredictions() {
+        if (!FLAG_RENDER_PERF) return _renderPredictionsInner();
+        const startedAt = _perfNow();
+        const out = _renderPredictionsInner();
+        const ms = _perfNow() - startedAt;
+        _perfRecordMs(renderPerf.full, ms, _perfCountRefFrames());
+        return out;
+    }
+
+    function _renderPredictionsInner() {
         const listEl = document.getElementById('predictions-list');
         if (!listEl) return;
+        //A full render replaces the frames the patcher tracks, so rebuild its index.
+        renderedRefSources = new Map();
+        renderedRefListKind = 'classify';
 
         if (!Array.isArray(currentPredictions) || !currentPredictions.length) {
             listEl.innerHTML = '<div class="no-predictions">No predictions</div>';
@@ -6198,11 +6594,7 @@
                     ? { img: ref, serial: null, crop: null }
                     : (ref || {});
                 const srcs = _getRefDisplaySources(info);
-                const baseSrc = srcs.baseSrc;
-                const inlineSrc = srcs.inlineSrc;
-                const fastSrc = srcs.fastSrc;
-                const hqSrc = srcs.hqSrc;
-                const fallbackUrlSrc = srcs.fallbackUrlSrc;
+                const { baseSrc, inlineSrc, fastSrc, hqSrc, fallbackUrlSrc } = srcs;
 
                 if (inlineSrc && inlineSrc !== baseSrc) {
                     prefetchRefImageSrc(inlineSrc, { priority: 'high' });
@@ -6213,42 +6605,11 @@
                     if (fallbackUrlSrc) prefetchRefImageSrc(fallbackUrlSrc);
                 }
 
-                let src = '';
-                if (hqSrc && isRefImageReady(hqSrc)) {
-                    src = hqSrc;
-                } else if (fastSrc && isRefImageReady(fastSrc)) {
-                    src = fastSrc;
-                } else if (inlineSrc) {
-                    src = inlineSrc;
-                } else if (fastSrc) {
-                    src = fastSrc;
-                } else if (hqSrc) {
-                    src = hqSrc;
-                } else if (baseSrc && isRefImageReady(baseSrc)) {
-                    src = baseSrc;
-                } else if (baseSrc) {
-                    src = baseSrc;
-                } else if (fallbackUrlSrc) {
-                    src = fallbackUrlSrc;
-                }
-                if (!src) continue;
-
-                const srcState = String(refImagePrefetchState.get(src) || '');
-                if (srcState === 'error') {
-                    const backups = [
-                        (src === hqSrc ? fastSrc : ''),
-                        (src === hqSrc || src === fastSrc ? baseSrc : ''),
-                        inlineSrc,
-                        fallbackUrlSrc,
-                    ].filter(Boolean);
-                    const backup = backups.find((candidateSrc) => (
-                        String(refImagePrefetchState.get(candidateSrc) || '') !== 'error'
-                    )) || '';
-                    if (!backup) {
-                        continue;
-                    }
-                    src = backup;
-                }
+                //A ref with no usable variant at all can never recover, so drop it.
+                //One whose variants are merely erroring right now is rendered hidden
+                //so a later retry can reveal it without a structural re-render.
+                if (!_refHasAnySource(srcs)) continue;
+                const src = _chooseRefDisplaySrc(srcs);
 
                 const sn = info.serial != null ? `sn${info.serial}` : '';
                 const isFlagged = isRefSerialFlagged(info.serial);
@@ -6259,9 +6620,11 @@
                 const caption = sn || cropNum ? `${sn}${cropText}`.trim() : '';
                 const serialAttr = info.serial != null ? ` data-ref-serial="${escapeHtml(String(info.serial))}"` : '';
                 const cropAttr = cropNum ? ` data-ref-crop="${escapeHtml(String(cropNum))}"` : '';
+                const refKey = `classify:${i}:${refIdx}`;
+                renderedRefSources.set(refKey, srcs);
                 refs.push(`
-                    <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}${isFlagging ? ' ref-flagging' : ''}"${serialAttr}${cropAttr}>
-                        <img loading="eager" decoding="async" src="${escapeHtml(src)}" alt="${safeName} ref ${refIdx + 1}">
+                    <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}${isFlagging ? ' ref-flagging' : ''}${src ? '' : ' ref-unavailable'}"${serialAttr}${cropAttr} data-ref-key="${refKey}"${src ? '' : ' style="display:none"'}>
+                        <img loading="eager" decoding="async"${src ? ` src="${escapeHtml(src)}"` : ''} alt="${safeName} ref ${refIdx + 1}">
                         ${caption ? `<div class="ref-overlay">${escapeHtml(caption)}</div>` : ''}
                     </div>
                 `);
@@ -6343,9 +6706,39 @@
         }
     }
 
+    //Strip a leading "<catId>." / "<catId>)" / "<catId>-" / "<catId>:" label from a
+    //display name, without compiling caller-supplied text into a pattern.
+    function _stripCatIdPrefix(rawDisplay, catId) {
+        const text = String(rawDisplay || '');
+        const id = String(catId || '');
+        if (!id) return text.trim();
+        //A single-char string trims to empty exactly when it is whitespace.
+        const isSpace = (ch) => ch.trim() === '';
+        let i = 0;
+        while (i < text.length && isSpace(text[i])) i += 1;
+        if (text.substr(i, id.length) !== id) return text.trim();
+        i += id.length;
+        while (i < text.length && isSpace(text[i])) i += 1;
+        if (i >= text.length || '.)-:'.indexOf(text[i]) === -1) return text.trim();
+        i += 1;
+        while (i < text.length && isSpace(text[i])) i += 1;
+        return text.slice(i).trim();
+    }
+
     function renderManualCandidates() {
+        if (!FLAG_RENDER_PERF) return _renderManualCandidatesInner();
+        const startedAt = _perfNow();
+        const out = _renderManualCandidatesInner();
+        const ms = _perfNow() - startedAt;
+        _perfRecordMs(renderPerf.full, ms, _perfCountRefFrames());
+        return out;
+    }
+
+    function _renderManualCandidatesInner() {
         const listEl = document.getElementById('predictions-list');
         if (!listEl) return;
+        renderedRefSources = new Map();
+        renderedRefListKind = 'manual';
         const sidebarEl = containerEl?.querySelector('.labeler-sidebar');
         const restoreTop = Number.isFinite(manualSidebarRestoreScrollTop)
             ? Number(manualSidebarRestoreScrollTop)
@@ -6362,11 +6755,12 @@
             const name = String(cand?.name || '').trim();
             const catId = cand && cand.cat_id != null ? String(cand.cat_id) : '';
             const rawDisplay = String(cand?.display_name || name || '').trim();
-            const displayName = (
-                catId
-                    ? rawDisplay.replace(new RegExp(`^\\s*${catId}\\s*[.)\\-:]\\s*`), '').trim()
-                    : rawDisplay
-            ) || name;
+            //catId was interpolated straight into a pattern: a cat id carrying a
+            //regex metacharacter throws, and that exception escapes the .map() and
+            //takes out the render for the whole list, not just this one card. The
+            //prefix is simple enough to strip without building a RegExp per
+            //candidate per render anyway.
+            const displayName = (catId ? _stripCatIdPrefix(rawDisplay, catId) : rawDisplay) || name;
             const refs = Array.isArray(cand?.refs) ? cand.refs : [];
             const safeDisplayName = escapeHtml(displayName || name);
             const safeDesc = escapeHtml(String(cand?.desc || '').trim());
@@ -6396,48 +6790,12 @@
                     ? { img: ref, serial: null, crop: null }
                     : (ref || {});
                 const srcs = _getRefDisplaySources(info);
-                const baseSrc = srcs.baseSrc;
-                const inlineSrc = srcs.inlineSrc;
-                const fastSrc = srcs.fastSrc;
-                const hqSrc = srcs.hqSrc;
-                const fallbackUrlSrc = srcs.fallbackUrlSrc;
 
-                let src = '';
-                if (hqSrc && isRefImageReady(hqSrc)) {
-                    src = hqSrc;
-                } else if (fastSrc && isRefImageReady(fastSrc)) {
-                    src = fastSrc;
-                } else if (inlineSrc) {
-                    src = inlineSrc;
-                } else if (fastSrc) {
-                    src = fastSrc;
-                } else if (hqSrc) {
-                    src = hqSrc;
-                } else if (baseSrc && isRefImageReady(baseSrc)) {
-                    src = baseSrc;
-                } else if (baseSrc) {
-                    src = baseSrc;
-                } else if (fallbackUrlSrc) {
-                    src = fallbackUrlSrc;
-                }
-                if (!src) continue;
-
-                const srcState = String(refImagePrefetchState.get(src) || '');
-                if (srcState === 'error') {
-                    const backups = [
-                        (src === hqSrc ? fastSrc : ''),
-                        (src === hqSrc || src === fastSrc ? baseSrc : ''),
-                        inlineSrc,
-                        fallbackUrlSrc,
-                    ].filter(Boolean);
-                    const backup = backups.find((candidateSrc) => (
-                        String(refImagePrefetchState.get(candidateSrc) || '') !== 'error'
-                    )) || '';
-                    if (!backup) {
-                        continue;
-                    }
-                    src = backup;
-                }
+                //A ref with no usable variant at all can never recover, so drop it.
+                //One whose variants are merely erroring right now is rendered hidden
+                //so a later retry can reveal it without a structural re-render.
+                if (!_refHasAnySource(srcs)) continue;
+                const src = _chooseRefDisplaySrc(srcs);
 
                 const sn = info.serial != null ? `sn${info.serial}` : '';
                 const isFlagged = isRefSerialFlagged(info.serial);
@@ -6448,9 +6806,11 @@
                 const caption = sn || cropNum ? `${sn}${cropText}`.trim() : '';
                 const serialAttr = info.serial != null ? ` data-ref-serial="${escapeHtml(String(info.serial))}"` : '';
                 const cropAttr = cropNum ? ` data-ref-crop="${escapeHtml(String(cropNum))}"` : '';
+                const refKey = `manual:${candIdx}:${refIdx}`;
+                renderedRefSources.set(refKey, srcs);
                 refsHtml.push(`
-                    <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}${isFlagging ? ' ref-flagging' : ''}"${serialAttr}${cropAttr}>
-                        <img loading="lazy" decoding="async" src="${escapeHtml(src)}" alt="${safeDisplayName} ref ${refIdx + 1}">
+                    <div class="ref-frame${isFlagged ? ' ref-flagged' : ''}${isFlagging ? ' ref-flagging' : ''}${src ? '' : ' ref-unavailable'}"${serialAttr}${cropAttr} data-ref-key="${refKey}"${src ? '' : ' style="display:none"'}>
+                        <img loading="lazy" decoding="async"${src ? ` src="${escapeHtml(src)}"` : ''} alt="${safeDisplayName} ref ${refIdx + 1}">
                         ${caption ? `<div class="ref-overlay">${escapeHtml(caption)}</div>` : ''}
                     </div>
                 `);
@@ -6574,32 +6934,35 @@
         });
     }
 
+    const REF_CLAMP_MAX_WIDE = 16 / 9;
+    const REF_CLAMP_MAX_TALL = 9 / 16;
+
+    function _applyRefAspectClampToImg(img) {
+        if (!img) return;
+        const frame = img.closest('.ref-frame');
+        if (!frame) return;
+        const apply = () => {
+            const w = img.naturalWidth || 0;
+            const h = img.naturalHeight || 0;
+            if (!w || !h) return;
+            const ratio = w / h;
+            frame.classList.remove('clamp-wide', 'clamp-tall');
+            if (ratio > REF_CLAMP_MAX_WIDE) {
+                frame.classList.add('clamp-wide');
+            } else if (ratio < REF_CLAMP_MAX_TALL) {
+                frame.classList.add('clamp-tall');
+            }
+        };
+        if (img.complete) {
+            apply();
+        } else {
+            img.addEventListener('load', apply, { once: true });
+        }
+    }
+
     function applyRefAspectClamp(rootEl) {
         if (!rootEl) return;
-        const maxWide = 16 / 9;
-        const maxTall = 9 / 16;
-        const imgs = rootEl.querySelectorAll('.prediction-refs img');
-        imgs.forEach(img => {
-            const frame = img.closest('.ref-frame');
-            const apply = () => {
-                if (!frame) return;
-                const w = img.naturalWidth || 0;
-                const h = img.naturalHeight || 0;
-                if (!w || !h) return;
-                const ratio = w / h;
-                frame.classList.remove('clamp-wide', 'clamp-tall');
-                if (ratio > maxWide) {
-                    frame.classList.add('clamp-wide');
-                } else if (ratio < maxTall) {
-                    frame.classList.add('clamp-tall');
-                }
-            };
-            if (img.complete) {
-                apply();
-            } else {
-                img.addEventListener('load', apply, { once: true });
-            }
-        });
+        rootEl.querySelectorAll('.prediction-refs img').forEach(_applyRefAspectClampToImg);
     }
 
     function selectPrediction(num) {
@@ -7275,6 +7638,16 @@
     }
 
     //---------- Expose to global ----------
+
+    //TEMPORARY: console handles for the render-cost measurement.
+    //  labelerRenderStats()       -> print and return the running summary
+    //  labelerRenderStats(true)   -> same, then reset the counters
+    window.labelerRenderStats = (reset = false) => {
+        const summary = renderPerfSummary();
+        console.log('[Labeler] render perf', summary);
+        if (reset) _resetRenderPerf();
+        return summary;
+    };
 
     window.initLabeler = initLabeler;
     window.teardownLabeler = teardownLabeler;

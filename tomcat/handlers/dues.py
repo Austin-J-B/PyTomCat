@@ -3351,24 +3351,38 @@ async def _run_daily_dues_job(bot) -> None:
     member_ch = bot.get_channel(member_ch_id) if member_ch_id else None
     
     cur_sem = _current_semester_label()
+    cur_sem_norm = _norm_sem_label(cur_sem)
     today_date = date.today()
-    
+
     #1. Analyze dues portal messages
     try:
         rows = await _analyze_dues(bot)
     except Exception as e:
         log_action('dues_scheduler_analyze_error', '', str(e))
         rows = []
-    
+
     #2. Auto-verify high-confidence entries (score >= 0.90)
+    # The scorer is semester-blind: it matches a portal message to a membership
+    # row on handle/name/provider alone, so a returning member's row from a past
+    # semester scores just as high as a current one. Verifying off a stale row
+    # deletes their portal message and posts them to member-names as if they had
+    # paid this semester. Require the matched row to actually be for cur_sem.
     threshold = float(getattr(settings, 'dues_auto_verify_threshold', 0.90) or 0.90)
     verified = []
     for rec in rows:
         score = float(rec.get('score_total', 0.0) or 0.0)
         if score >= threshold:
+            row_sem = _norm_sem_label((rec.get('primary_member') or {}).get('semester') or '')
+            if cur_sem_norm and row_sem != cur_sem_norm:
+                #No form entry for this semester - leave the portal message in
+                #place so officers see them in the review list instead.
+                log_action('dues_auto_verify_skip',
+                           f"user={rec.get('author','?')} score={score:.2f}",
+                           f"stale_semester row={row_sem or 'none'}; current={cur_sem_norm}")
+                continue
             verified.append(rec)
             #Log full breakdown to machine logs
-            log_action('dues_auto_verify', 
+            log_action('dues_auto_verify',
                        f"user={rec.get('author','?')} score={score:.2f}",
                        json.dumps({k: v for k, v in rec.items() if k.startswith('score_') or k in ['author', 'provider', 'semester']}))
     
@@ -3614,7 +3628,10 @@ async def _run_daily_dues_job(bot) -> None:
         for rec in verified:
             real_name = rec.get('full_name') or rec.get('primary_member', {}).get('full_name', 'Unknown')
             username = rec.get('author', 'unknown')
-            sem = rec.get('semester') or cur_sem
+            #Analysis records carry no 'semester' key, so this always fell back to
+            #cur_sem and stamped every entry with the current semester regardless
+            #of which row was matched. Report the matched row's own semester.
+            sem = (rec.get('primary_member') or {}).get('semester') or cur_sem
             line = f"{real_name}, {username}, {_norm_sem_label(sem).lower()}"
             try:
                 await safe_send(member_ch, line)

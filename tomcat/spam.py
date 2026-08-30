@@ -52,7 +52,10 @@ MIN_SPAM_SCORE = 3
 HIGH_CONFIDENCE_SPAM_SCORE = 5
 
 EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
-PHONE_RE = re.compile(r"\+?1?\s*(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}")
+#Lookaround guards keep this from matching a 10-digit window *inside* a longer digit
+#run. Without them a Discord CDN link (two 18-19 digit snowflakes in the path) read as
+#a phone number and put real members' image posts in the officer queue.
+PHONE_RE = re.compile(r"(?<![\d-])\+?1?\s*(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)")
 
 #"Move this to my DMs" solicitation — the structural constant across scam families
 #(giveaway, streaming, crypto, romance): the bait is public, the con happens in DMs.
@@ -68,6 +71,17 @@ DM_SOLICITATION_RE = re.compile(
 )
 #Any link. Untrusted brand-new accounts dropping a URL is a weak-but-useful signal.
 URL_RE = re.compile(r"https?://\S+|\bdiscord\.gg/\S+|\bt\.me/\S+|\bwww\.\S+", re.I)
+
+
+def _strip_urls(text: str) -> str:
+    """Blank out URLs so contact-info rules only see prose.
+
+    An email- or phone-shaped substring inside a link is never a real contact
+    hand-off — it's an ID, a tracking param, or a CDN path. The URL itself is
+    still scored separately by the new-join solicitation signal.
+    """
+    return URL_RE.sub(" ", text or "")
+
 
 #A recently-joined, still-untrusted member already soliciting DMs/links matches the
 #shape of every scam regardless of bait wording. Additive so it stacks with content
@@ -204,13 +218,15 @@ def check_spam(message, settings) -> tuple[bool, str, int]:
     trust = _is_trusted_member(message, settings, prior_count=prior_count)
     if trust:
         return (False, trust, 0)
-    #Strong indicators
+    #Strong indicators. Contact rules run on URL-stripped text so link internals
+    #(snowflakes, tracking params) can't impersonate an email or phone number.
+    prose = _strip_urls(text)
     contact_hits = []
     score = 0
-    if EMAIL_RE.search(text):
+    if EMAIL_RE.search(prose):
         score += 2
         contact_hits.append("email")
-    if PHONE_RE.search(text):
+    if PHONE_RE.search(prose):
         score += 2
         contact_hits.append("phone")
 

@@ -16,7 +16,7 @@ import time
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Mapping, Optional, Set, Tuple
 
 import discord
 from PIL import Image, ImageOps
@@ -84,6 +84,8 @@ _SKIP_LABEL_TOKENS = {
     "0. notacat",
 }
 _CAT_LABEL_PREFIX_RE = re.compile(r"^\s*\d+\s*[.)\-:]?\s*")
+_ANNOTATION_FIELDS = ("box_coords", "box_cat_ids", "comments")
+_MAX_ANNOTATION_FIELD_CHARS = 100_000
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,10 @@ class DuplicateImageMatch:
     kind: str
     distance: int
     path: str
+
+
+class AnnotationUpdateError(ValueError):
+    """A labeler annotation batch is malformed and must not be persisted."""
 
 
 def photo_root() -> Path:
@@ -1592,8 +1598,10 @@ def _duplicate_review_labels(box_cat_ids: Any) -> list[str]:
         label = str(raw or "").strip()
         if not label:
             continue
-        key = label.lower()
-        if key in _SKIP_LABEL_TOKENS:
+        if label.lower() in _SKIP_LABEL_TOKENS:
+            continue
+        key = _norm_cat_label(label)
+        if not key:
             continue
         display = display_by_key.get(key) or label
         display_by_key[key] = display
@@ -1605,84 +1613,144 @@ def _duplicate_review_labels(box_cat_ids: Any) -> list[str]:
     return duplicates
 
 
-def update_metadata_annotations(updates: list[dict[str, Any]], actor_name: str, *, refresh: bool = True) -> dict[str, Any]:
-    """Apply labeler annotation updates to the metadata CSV via fast streaming rewrite."""
-    _, metadata_path = ensure_storage_ready()
-    
+def _normalize_annotation_updates(updates: Any) -> dict[int, dict[str, Any]]:
+    """Validate and merge a batch into one update per serial, preserving field edits."""
+    if not isinstance(updates, list) or not updates:
+        raise AnnotationUpdateError("No updates")
+
     update_map: dict[int, dict[str, Any]] = {}
-    for upd in updates or []:
-        serial = _parse_serial_like(upd.get("serial"))
-        if serial is not None:
-            update_map[int(serial)] = upd
+    for index, raw_update in enumerate(updates, start=1):
+        if not isinstance(raw_update, dict):
+            raise AnnotationUpdateError(f"Update {index} must be an object")
+        serial = _parse_serial_like(raw_update.get("serial"))
+        if serial is None or int(serial) <= 0:
+            raise AnnotationUpdateError(f"Update {index} has an invalid serial")
 
-    if not update_map:
-        return {"saved": 0, "pending_unblacklist_ref_serials": []}
+        normalized = update_map.setdefault(int(serial), {"serial": int(serial)})
+        touched = False
+        for field in _ANNOTATION_FIELDS:
+            if field not in raw_update:
+                continue
+            value = str(raw_update.get(field) or "")
+            if len(value) > _MAX_ANNOTATION_FIELD_CHARS:
+                raise AnnotationUpdateError(f"Update {index} field {field} is too large")
+            normalized[field] = value
+            touched = True
+        if not touched:
+            raise AnnotationUpdateError(f"Update {index} has no annotation fields")
 
-    pending_unblacklist_ref_serials: list[int] = []
-    saved = 0
+        duplicates = _duplicate_review_labels(normalized.get("box_cat_ids", ""))
+        if duplicates:
+            raise AnnotationUpdateError(
+                "Duplicate cat labels are not allowed in one image: " + ", ".join(duplicates)
+            )
+    return update_map
 
+
+def _rewrite_metadata_rows(
+    metadata_path: Path,
+    mutate_row: Callable[[dict[str, str]], None],
+) -> None:
+    """Rewrite metadata under the shared lock and replace it only after success."""
     with _METADATA_FILE_LOCK:
         tmp_path = metadata_path.with_name(f"{metadata_path.name}.tmp")
-        with metadata_path.open("r", newline="", encoding="utf-8-sig") as f_in, \
-             tmp_path.open("w", newline="", encoding="utf-8") as f_out:
-            
-            reader = csv.DictReader(f_in)
-            # Ensure headers match exact CSV_HEADERS, with default fallbacks if missing
-            out_headers = list(CSV_HEADERS)
-            writer = csv.DictWriter(f_out, fieldnames=out_headers)
-            writer.writeheader()
+        try:
+            with metadata_path.open("r", newline="", encoding="utf-8-sig") as f_in, \
+                 tmp_path.open("w", newline="", encoding="utf-8") as f_out:
+                reader = csv.DictReader(f_in)
+                out_headers = list(CSV_HEADERS)
+                writer = csv.DictWriter(f_out, fieldnames=out_headers)
+                writer.writeheader()
+                for raw_row in reader:
+                    row = {header: str((raw_row or {}).get(header, "") or "") for header in out_headers}
+                    mutate_row(row)
+                    writer.writerow(row)
+            tmp_path.replace(metadata_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
-            for raw_row in reader:
-                row = {h: str((raw_row).get(h, "") or "") for h in out_headers}
-                
-                raw_sn = str(row.get("Serial Number", "") or "").strip()
-                match = _SN_RE.match(Path(raw_sn).stem if "." in raw_sn else raw_sn)
-                if not match:
-                    match = _SN_RE.match(raw_sn)
-                
-                if match:
-                    try:
-                        sn = int(match.group(1))
-                        upd = update_map.get(sn)
-                        if upd is not None:
-                            touched = False
-                            if "box_coords" in upd:
-                                row["Box Coordinates"] = str(upd.get("box_coords") or "")
-                                touched = True
-                            if "box_cat_ids" in upd:
-                                duplicates = _duplicate_review_labels(upd.get("box_cat_ids"))
-                                if duplicates:
-                                    tmp_path.unlink(missing_ok=True)
-                                    raise ValueError(
-                                        "Duplicate cat labels are not allowed in one image: "
-                                        + ", ".join(duplicates)
-                                    )
-                                row["Box Cat IDs"] = str(upd.get("box_cat_ids") or "")
-                                if _has_reviewed_label(upd.get("box_cat_ids")):
-                                    pending_unblacklist_ref_serials.append(sn)
-                                touched = True
-                            if "comments" in upd:
-                                row["Comments"] = str(upd.get("comments") or "")
-                                touched = True
-                            if touched:
-                                row["Label Author"] = _merge_label_author(row.get("Label Author", ""), actor_name)
-                                saved += 1
-                    except Exception:
-                        pass
-                
-                writer.writerow(row)
-                
-        tmp_path.replace(metadata_path)
 
-    if saved > 0 and refresh:
+def update_metadata_annotations(updates: list[dict[str, Any]], actor_name: str, *, refresh: bool = True) -> dict[str, Any]:
+    """Validate and atomically apply annotation updates to the metadata CSV."""
+    update_map = _normalize_annotation_updates(updates)
+    _, metadata_path = ensure_storage_ready()
+
+    pending_unblacklist_ref_serials: list[int] = []
+    saved_serials: list[int] = []
+
+    def apply_update(row: dict[str, str]) -> None:
+        serial = _parse_serial_like(row.get("Serial Number", ""))
+        update = update_map.get(int(serial)) if serial is not None else None
+        if update is None:
+            return
+        if "box_coords" in update:
+            row["Box Coordinates"] = update["box_coords"]
+        if "box_cat_ids" in update:
+            row["Box Cat IDs"] = update["box_cat_ids"]
+            if _has_reviewed_label(update["box_cat_ids"]):
+                pending_unblacklist_ref_serials.append(int(serial))
+        if "comments" in update:
+            row["Comments"] = update["comments"]
+        row["Label Author"] = _merge_label_author(row.get("Label Author", ""), actor_name)
+        saved_serials.append(int(serial))
+
+    _rewrite_metadata_rows(metadata_path, apply_update)
+
+    if saved_serials and refresh:
         _refresh_photo_metadata_consumers()
+    saved_set = set(saved_serials)
     return {
-        "saved": int(saved),
+        "requested": len(update_map),
+        "saved": len(saved_serials),
+        "saved_serials": saved_serials,
+        "missing_serials": [serial for serial in update_map if serial not in saved_set],
         "pending_unblacklist_ref_serials": pending_unblacklist_ref_serials,
     }
 
+
+def restore_rejected_metadata_annotations(
+    updates: list[dict[str, Any]],
+    actor_name: str,
+    *,
+    refresh: bool = True,
+) -> dict[str, Any]:
+    """Apply recovery annotations only to rows still carrying a blanket rejection.
+
+    Blank, partially labeled, and newly reviewed rows are left alone. That makes
+    a checked-in recovery safe to run on every startup without overwriting work.
+    """
+    update_map = _normalize_annotation_updates(updates)
+    _, metadata_path = ensure_storage_ready()
+    restored_serials: list[int] = []
+
+    def restore_row(row: dict[str, str]) -> None:
+        serial = _parse_serial_like(row.get("Serial Number", ""))
+        update = update_map.get(int(serial)) if serial is not None else None
+        if update is None:
+            return
+        if str(row.get("Box Coordinates", "") or "").strip().lower() != "rejected":
+            return
+        if str(row.get("Box Cat IDs", "") or "").strip():
+            return
+        row["Box Coordinates"] = update.get("box_coords", "")
+        row["Box Cat IDs"] = update.get("box_cat_ids", "")
+        row["Label Author"] = _merge_label_author(row.get("Label Author", ""), actor_name)
+        restored_serials.append(int(serial))
+
+    _rewrite_metadata_rows(metadata_path, restore_row)
+    if restored_serials and refresh:
+        _refresh_photo_metadata_consumers()
+    restored_set = set(restored_serials)
+    return {
+        "requested": len(update_map),
+        "restored": len(restored_serials),
+        "restored_serials": restored_serials,
+        "skipped_serials": [serial for serial in update_map if serial not in restored_set],
+    }
+
 def clear_metadata_annotations(serials: list[int], actor_name: str) -> dict[str, Any]:
-    """Clear label columns for the given serials in the metadata CSV via fast streaming rewrite."""
+    """Atomically clear label columns for the requested metadata serials."""
     _, metadata_path = ensure_storage_ready()
     
     target_sns = set()
@@ -1704,55 +1772,31 @@ def clear_metadata_annotations(serials: list[int], actor_name: str) -> dict[str,
             "error": "Serial not found",
         }
 
-    changed_any = False
+    changed_serials: set[int] = set()
 
-    with _METADATA_FILE_LOCK:
-        tmp_path = metadata_path.with_name(f"{metadata_path.name}.tmp")
-        with metadata_path.open("r", newline="", encoding="utf-8-sig") as f_in, \
-             tmp_path.open("w", newline="", encoding="utf-8") as f_out:
-            
-            reader = csv.DictReader(f_in)
-            out_headers = list(CSV_HEADERS)
-            writer = csv.DictWriter(f_out, fieldnames=out_headers)
-            writer.writeheader()
+    def clear_row(row: dict[str, str]) -> None:
+        serial = _parse_serial_like(row.get("Serial Number", ""))
+        if serial is None or int(serial) not in target_sns:
+            return
+        sn = int(serial)
+        changed = bool(row.get("Box Coordinates", "").strip() or row.get("Box Cat IDs", "").strip())
+        row["Box Coordinates"] = ""
+        row["Box Cat IDs"] = ""
+        row["Label Author"] = _merge_label_author(row.get("Label Author", ""), actor_name)
+        if changed:
+            changed_serials.add(sn)
+        results[sn] = {
+            "ok": True,
+            "not_found": False,
+            "changed": changed,
+            "already_unlabeled": not changed,
+        }
 
-            for raw_row in reader:
-                row = {h: str((raw_row).get(h, "") or "") for h in out_headers}
-                
-                raw_sn = str(row.get("Serial Number", "") or "").strip()
-                match = _SN_RE.match(Path(raw_sn).stem if "." in raw_sn else raw_sn)
-                if not match:
-                    match = _SN_RE.match(raw_sn)
-                
-                if match:
-                    try:
-                        sn = int(match.group(1))
-                        if sn in target_sns:
-                            prev_box_coords = str(row.get("Box Coordinates", "") or "")
-                            prev_box_cat_ids = str(row.get("Box Cat IDs", "") or "")
-                            changed = bool(prev_box_coords.strip() or prev_box_cat_ids.strip())
-                            
-                            row["Box Coordinates"] = ""
-                            row["Box Cat IDs"] = ""
-                            row["Label Author"] = _merge_label_author(row.get("Label Author", ""), actor_name)
-                            changed_any = changed_any or changed
-                            
-                            results[sn] = {
-                                "ok": True,
-                                "not_found": False,
-                                "changed": bool(changed),
-                                "already_unlabeled": not bool(changed),
-                            }
-                    except Exception:
-                        pass
-                
-                writer.writerow(row)
-                
-        tmp_path.replace(metadata_path)
+    _rewrite_metadata_rows(metadata_path, clear_row)
 
-    if changed_any:
+    if changed_serials:
         _refresh_photo_metadata_consumers()
-    return {"results": results, "updated_metadata": bool(changed_any)}
+    return {"results": results, "updated_metadata": bool(changed_serials)}
 
 
 def _parse_serial_like(value: Any) -> Optional[int]:

@@ -1285,6 +1285,36 @@ async def start_web_server(bot):
         except FileNotFoundError:
             return web.Response(text="labeler.js not found", status=404)
 
+    async def get_labeler_save_queue_js(request):
+        """Serve the labeler's standalone pending-save queue."""
+        try:
+            with open("labeler-save-queue.js", "r", encoding="utf-8") as f:
+                resp = web.Response(text=f.read(), content_type="application/javascript")
+                resp.headers["Cache-Control"] = "no-store"
+                return _with_cors(resp, request)
+        except FileNotFoundError:
+            return web.Response(text="labeler-save-queue.js not found", status=404)
+
+    async def get_labeler_api_js(request):
+        """Serve the labeler's standalone HTTP client."""
+        try:
+            with open("labeler-api.js", "r", encoding="utf-8") as f:
+                resp = web.Response(text=f.read(), content_type="application/javascript")
+                resp.headers["Cache-Control"] = "no-store"
+                return _with_cors(resp, request)
+        except FileNotFoundError:
+            return web.Response(text="labeler-api.js not found", status=404)
+
+    async def get_labeler_theme_css(request):
+        """Serve the labeler's standalone visual theme."""
+        try:
+            with open("labeler-theme.css", "r", encoding="utf-8") as f:
+                resp = web.Response(text=f.read(), content_type="text/css")
+                resp.headers["Cache-Control"] = "no-store"
+                return _with_cors(resp, request)
+        except FileNotFoundError:
+            return web.Response(text="labeler-theme.css not found", status=404)
+
     async def get_members(request):
         """Return JSON list of members allowed to be scheduled."""
         _, error = await _require_permissions(request, require_view=True)
@@ -1898,6 +1928,9 @@ async def start_web_server(bot):
         web.get('/', get_index),
         web.get('/privacy', get_privacy),
         web.get('/about', get_about),
+        web.get('/labeler-theme.css', get_labeler_theme_css),
+        web.get('/labeler-api.js', get_labeler_api_js),
+        web.get('/labeler-save-queue.js', get_labeler_save_queue_js),
         web.get('/labeler.js', get_labeler_js),
         web.get('/api/members', get_members),
         web.options('/api/members', _options_preflight),

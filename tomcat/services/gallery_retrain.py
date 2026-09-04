@@ -42,6 +42,8 @@ def _default_state() -> Dict[str, Any]:
     return {
         "enabled": False,
         "scheduled_date": None,   # YYYY-MM-DD (local timezone)
+        "gallery_version": None,
+        "required_backend": None,
         "requested_at": None,
         "requested_by": None,
         "last_run_date": None,
@@ -187,13 +189,20 @@ async def get_gallery_retrain_status() -> Dict[str, Any]:
     return st
 
 
-async def schedule_gallery_retrain(*, requested_by: str) -> Dict[str, Any]:
+async def schedule_gallery_retrain(
+    *,
+    requested_by: str,
+    gallery_version: Optional[str] = None,
+    required_backend: Optional[str] = None,
+) -> Dict[str, Any]:
     now = _tz_now()
     sched_date = _next_4am_date_iso(now)
     async with _SCHEDULER_LOCK:
         st = _load_state()
         st["enabled"] = True
         st["scheduled_date"] = sched_date
+        st["gallery_version"] = str(gallery_version or "").strip() or None
+        st["required_backend"] = str(required_backend or "").strip().lower() or None
         st["requested_at"] = now.isoformat()
         st["requested_by"] = requested_by or "unknown"
         _save_state(st)
@@ -251,16 +260,30 @@ async def _run_if_due() -> None:
     async with _RUN_LOCK:
         _LAST_RUN_KEY = run_key
         result: Dict[str, Any]
-        try:
-            result = await asyncio.to_thread(run_gallery_update, mode="full")
-        except Exception as e:
-            result = {"status": "error", "error": str(e)}
-            log_action("gallery_retrain_scheduler_error", f"date={run_key}", str(e))
+        required_backend = str(st.get("required_backend") or "").strip().lower()
+        active_backend = str(getattr(settings, "cv_backend", "") or "").strip().lower()
+        if required_backend and active_backend != required_backend:
+            reason = f"required backend {required_backend!r}, active backend is {active_backend!r}"
+            result = {"status": "error", "error": reason}
+            log_action("gallery_retrain_scheduler_error", f"date={run_key}", reason)
+            await _notify(f"CV gallery rebuild did not start: {reason}.")
+        else:
+            kwargs: Dict[str, Any] = {"mode": "full"}
+            gallery_version = str(st.get("gallery_version") or "").strip()
+            if gallery_version:
+                kwargs["gallery_version"] = gallery_version
+            try:
+                result = await asyncio.to_thread(run_gallery_update, **kwargs)
+            except Exception as e:
+                result = {"status": "error", "error": str(e)}
+                log_action("gallery_retrain_scheduler_error", f"date={run_key}", str(e))
 
         async with _SCHEDULER_LOCK:
             st3 = _load_state()
             st3["enabled"] = False
             st3["scheduled_date"] = None
+            st3["gallery_version"] = None
+            st3["required_backend"] = None
             st3["last_run_date"] = run_key
             st3["last_run_at"] = _tz_now().isoformat()
             st3["last_result"] = result
@@ -271,7 +294,6 @@ async def _run_if_due() -> None:
             f"date={run_key}",
             str(result.get("status", "ok")),
         )
-        await _notify(_build_result_message(result))
 
 
 async def start_gallery_retrain_scheduler() -> None:

@@ -82,6 +82,7 @@
     const READY_WAIT_DIAG_INTERVAL_MS = 2000;
     const API_RETRY_MAX_ATTEMPTS = 3;
     const API_RETRY_BASE_MS = 280;
+    const SAVE_BATCH_MAX = 500;
     const CLASSIFY_LOAD_TICK_MS = 250;
     const CLASSIFY_REFS_PER_CAT_TARGET = 5;
     const CLASSIFY_WARM_READY_MIN_CANDIDATES = 5;
@@ -139,6 +140,12 @@
     const FLAG_CLASSIFY_READY_RELAX = _flagEnabled('classifyReadyRelax', true);
     const FLAG_CACHED_IMAGE_PATH_PROBE = _flagEnabled('cachedImagePathProbe', false);
 
+    const PendingUpdateQueue = window.LabelerSaveQueue?.PendingUpdateQueue;
+    const createApiClient = window.LabelerApi?.createClient;
+    if (!PendingUpdateQueue || !createApiClient) {
+        throw new Error('Labeler support modules must be loaded before labeler.js');
+    }
+
     function getApiBase() {
         let base = '';
         if (typeof apiBase === 'string') {
@@ -162,6 +169,43 @@
         if (/^https?:\/\//i.test(path)) return path;
         if (!path.startsWith('/')) path = `/${path}`;
         return `${base}${path}`;
+    }
+
+    let labelerRequestController = new AbortController();
+    const apiClient = createApiClient({
+        buildUrl: buildApiUrl,
+        getCsrfToken,
+        defaultTimeoutMs: API_POST_TIMEOUT_MS,
+        defaultMaxAttempts: API_RETRY_MAX_ATTEMPTS,
+        retryBaseMs: API_RETRY_BASE_MS,
+    });
+
+    function ensureLabelerRequestController() {
+        if (labelerRequestController.signal.aborted) {
+            labelerRequestController = new AbortController();
+        }
+        return labelerRequestController;
+    }
+
+    function labelerSessionStorage() {
+        try {
+            return window.sessionStorage;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function pendingJournalKey() {
+        const userId = String(window.__TC_LABELER_USER_ID || '').trim();
+        return userId ? `tomcat.labeler.pending.v1:${userId}` : '';
+    }
+
+    function attachPendingJournal() {
+        const restored = pendingUpdates.attachStorage(labelerSessionStorage(), pendingJournalKey());
+        if (restored > 0) restoredPendingNoticeCount = restored;
+        syncPendingUnloadWarning();
+        if (infoEl) updateInfo();
+        return restored;
     }
 
     function buildCachedImageUrl(serial, opts = {}) {
@@ -279,6 +323,7 @@
                 credentials: 'include',
                 redirect: 'manual',
                 cache: 'no-store',
+                signal: labelerRequestController.signal,
             });
             _recordCachedImagePathProbe(serial, intent, {
                 path: String(resp.headers.get('X-Labeler-Image-Path') || ''),
@@ -333,7 +378,8 @@
     let currentCropIdx = 0;
     let allCats = []; //Dropdown options
     let history = []; //Undo stack
-    let pendingUpdates = []; //Batch save queue
+    const pendingUpdates = new PendingUpdateQueue({ maxStoredChars: 524288 });
+    let saveInFlight = false;
     let imageElement = null;
     let canvasEl = null;
     let ctxCanvas = null;
@@ -472,6 +518,8 @@
     let lastClaimErrorKind = '';
     let lastClaimErrorMessage = '';
     let lastResumeWarmKickTs = 0;
+    let pendingUnloadWarningAttached = false;
+    let restoredPendingNoticeCount = 0;
 
     //DOM references (set after init)
     let containerEl = null;
@@ -490,6 +538,8 @@
     //---------- Initialization ----------
 
     function initLabeler() {
+        ensureLabelerRequestController();
+        const restoredPending = attachPendingJournal();
         containerEl = document.getElementById('labeler-container');
         if (!containerEl) {
             console.warn('[Labeler] No labeler-container found');
@@ -497,6 +547,12 @@
         }
         if (labelerInitialized) {
             labelerActive = true;
+            const restoredNotice = restoredPending || restoredPendingNoticeCount;
+            if (restoredNotice > 0) {
+                setStatus(`Restored ${restoredNotice} unsaved update${restoredNotice === 1 ? '' : 's'} from this tab.`);
+                restoredPendingNoticeCount = 0;
+            }
+            updateInfo();
             startRetrainStatusPoll();
             togglePrefetchTimer(true);
             startWarmLoop();
@@ -519,13 +575,17 @@
                             <span></span>
                             <span></span>
                         </button>
+                        <div class="labeler-brand" aria-label="TomCat photo labeler">
+                            <span class="labeler-brand-kicker">TomCat</span>
+                            <span class="labeler-brand-title">Photo Labeler</span>
+                        </div>
                     </div>
-                    <div class="labeler-tabs">
-                        <button class="labeler-tab active" data-mode="detect">Detector</button>
-                        <button class="labeler-tab" data-mode="classify">Classifier</button>
-                        <button class="labeler-tab" data-mode="manual">Manual Review</button>
+                    <div class="labeler-tabs" role="tablist" aria-label="Labeling mode">
+                        <button class="labeler-tab active" data-mode="detect" role="tab" aria-selected="true">Detector</button>
+                        <button class="labeler-tab" data-mode="classify" role="tab" aria-selected="false">Classifier</button>
+                        <button class="labeler-tab" data-mode="manual" role="tab" aria-selected="false">Manual Review</button>
                     </div>
-                    <div class="labeler-status" id="labeler-status">Loading...</div>
+                    <div class="labeler-status" id="labeler-status" role="status" aria-live="polite">Loading...</div>
                     <div id="manual-search-wrap" class="manual-search-wrap" style="display:none">
                         <input id="manual-search-input" class="manual-search-input" type="text" placeholder="Search Cat">
                         <button id="manual-search-btn" class="labeler-btn labeler-btn-secondary" type="button">Search Cat</button>
@@ -642,6 +702,12 @@
         warmLabelEl = document.getElementById('labeler-warm-label');
         warmSubEl = document.getElementById('labeler-warm-sub');
         setWarmOverlay(false);
+        const restoredNotice = restoredPending || restoredPendingNoticeCount;
+        if (restoredNotice > 0) {
+            setStatus(`Restored ${restoredNotice} unsaved update${restoredNotice === 1 ? '' : 's'} from this tab.`);
+            restoredPendingNoticeCount = 0;
+        }
+        updateInfo();
         if (canvasEl) {
             canvasEl.tabIndex = 0;
             canvasEl.style.outline = 'none';
@@ -767,6 +833,8 @@
     function switchMode(mode) {
         loadCurrentItemModeToken += 1;
         void releaseCurrentClaim();
+        labelerRequestController.abort();
+        ensureLabelerRequestController();
         imageLoadToken += 1;
         activeImageLoadToken = imageLoadToken;
         imageReadyForCurrentItem = false;
@@ -789,7 +857,9 @@
         clearCanvas();
         updateInfo();
         containerEl.querySelectorAll('.labeler-tab').forEach(tab => {
-            tab.classList.toggle('active', tab.dataset.mode === mode);
+            const selected = tab.dataset.mode === mode;
+            tab.classList.toggle('active', selected);
+            tab.setAttribute('aria-selected', selected ? 'true' : 'false');
         });
 
         containerEl.classList.remove('labeler-mode-detect', 'labeler-mode-classify', 'labeler-mode-manual');
@@ -873,110 +943,21 @@
         }
     }
 
-    //---------- API Calls ----------
-
-    function isTransientStatus(status) {
-        const code = Number(status || 0);
-        return code === 408 || code === 421 || code === 425 || code === 429 || code === 502 || code === 503 || code === 504;
-    }
-
     function waitMs(ms) {
         return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
     }
 
-    async function fetchJsonWithRetry(endpoint, init = {}, opts = {}) {
-        const timeoutMs = Number(opts.timeoutMs || API_POST_TIMEOUT_MS);
-        const maxAttempts = Math.max(1, Number(opts.maxAttempts || API_RETRY_MAX_ATTEMPTS));
-        let lastError = null;
-
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), timeoutMs);
-            try {
-                const method = String((init && init.method) || 'GET').toUpperCase();
-                const requestInit = {
-                    ...init,
-                    credentials: 'include',
-                    signal: controller.signal,
-                };
-                const csrfToken = getCsrfToken();
-                if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
-                    const headers = new Headers(init.headers || {});
-                    headers.set('X-CSRF-Token', csrfToken);
-                    requestInit.headers = headers;
-                }
-                const resp = await fetch(buildApiUrl(endpoint), {
-                    ...requestInit,
-                });
-                if (resp.ok) {
-                    return resp.json();
-                }
-                if (attempt < maxAttempts && isTransientStatus(resp.status)) {
-                    const retryAfterRaw = resp.headers.get('Retry-After');
-                    const retryAfterSec = Number(retryAfterRaw);
-                    const retryAfterMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0
-                        ? retryAfterSec * 1000
-                        : 0;
-                    const jitter = Math.floor(Math.random() * 120);
-                    const backoff = retryAfterMs || (API_RETRY_BASE_MS * Math.pow(2, attempt - 1) + jitter);
-                    await waitMs(backoff);
-                    continue;
-                }
-                let detail = '';
-                try {
-                    const txt = await resp.text();
-                    detail = String(txt || '').trim();
-                } catch (e) {
-                    detail = '';
-                }
-                throw new Error(detail ? `API error: ${resp.status} - ${detail}` : `API error: ${resp.status}`);
-            } catch (e) {
-                const isAbort = e && e.name === 'AbortError';
-                const errMsg = String(e && e.message || '');
-                const errMsgLower = errMsg.toLowerCase();
-                const isNet = (
-                    (typeof TypeError !== 'undefined' && e instanceof TypeError)
-                    || errMsgLower.includes('failed to fetch')
-                    || errMsgLower.includes('networkerror')
-                    || errMsgLower.includes('network request failed')
-                    || errMsgLower.includes('load failed')
-                );
-                const retryable = isAbort || isNet;
-                lastError = isAbort ? new Error(`API timeout: ${timeoutMs}ms`) : e;
-                if (attempt < maxAttempts && retryable) {
-                    const jitter = Math.floor(Math.random() * 120);
-                    const backoff = API_RETRY_BASE_MS * Math.pow(2, attempt - 1) + jitter;
-                    await waitMs(backoff);
-                    continue;
-                }
-                throw lastError;
-            } finally {
-                clearTimeout(timer);
-            }
-        }
-        throw lastError || new Error('API request failed');
-    }
-
     async function apiGet(endpoint, opts = {}) {
-        return fetchJsonWithRetry(endpoint, {}, opts);
+        const signal = opts.sessionScoped === false ? opts.signal : (opts.signal || labelerRequestController.signal);
+        return apiClient.get(endpoint, { ...opts, signal });
     }
 
     async function apiPost(endpoint, data, opts = {}) {
         const payload = data || {};
         const prefetch = !!payload.prefetch;
         const maxAttempts = prefetch ? 1 : Number(opts.maxAttempts || API_RETRY_MAX_ATTEMPTS);
-        try {
-            return await fetchJsonWithRetry(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            }, {
-                ...opts,
-                maxAttempts,
-            });
-        } catch (e) {
-            throw e;
-        }
+        const signal = opts.sessionScoped === false ? opts.signal : (opts.signal || labelerRequestController.signal);
+        return apiClient.post(endpoint, payload, { ...opts, maxAttempts, signal });
     }
 
     function normalizeItemContext(data, fallbackSerial = null) {
@@ -1155,6 +1136,7 @@
                 credentials: 'include',
                 redirect: 'manual',
                 cache: 'no-store',
+                signal: labelerRequestController.signal,
             });
             _recordCachedImagePathProbe(serial, intent, {
                 path: String(resp.headers.get('X-Labeler-Image-Path') || ''),
@@ -1378,7 +1360,7 @@
                 action: 'release',
                 mode: claim.mode,
                 serial: claim.serial,
-            }, { timeoutMs: 6000 });
+            }, { timeoutMs: 6000, maxAttempts: 1, sessionScoped: false });
         } catch (e) {
             //Ignore release failures; server TTL will expire stale claims.
         }
@@ -1496,7 +1478,6 @@
         try {
             const data = await apiGet('/api/labeler/cats');
             allCats = data.cats || [];
-            console.log(`[Labeler] Loaded ${allCats.length} cats`);
         } catch (e) {
             console.error('[Labeler] Failed to load cats:', e);
         }
@@ -1992,12 +1973,15 @@
     // The overlay is now updated synchronously by ensureClassifyItemReady as state changes.
 
     function isTransientApiError(err) {
+        if (err && typeof err.retryable === 'boolean') return err.retryable;
         const msg = String(err && err.message || '');
         if (isNoImageApiError(err)) return true;
         return /\b(421|425|429|502|503|504)\b/.test(msg);
     }
 
     function getApiErrorStatus(err) {
+        const structuredStatus = Number(err?.status || 0);
+        if (Number.isFinite(structuredStatus) && structuredStatus > 0) return structuredStatus;
         const msg = String(err && err.message || '');
         const m = msg.match(/\bAPI error:\s*(\d{3})\b/i);
         if (!m) return 0;
@@ -2728,7 +2712,6 @@
             || modeAtStart !== labelerMode
         );
         loadCurrentItemInFlight = true;
-        console.log('[Labeler] loadCurrentItem called, queueIndex:', queueIndex, 'queue.length:', queue.length);
         prunePrefetchedClaims();
         let skippedClaims = 0;
         let claimRetryLoops = 0;
@@ -2884,7 +2867,6 @@
                     });
                     return;
                 }
-                console.log('[Labeler] Loading item:', item);
                 currentItem = item;
                 currentSerial = item.serial;
                 if (labelerMode === 'classify') {
@@ -2899,7 +2881,6 @@
                 const imageLoadChoice = resolveDisplayImageUrl(item.serial);
                 // Prefer reusing the already-prefetched URL to avoid a second network fetch.
                 currentImageUrl = imageLoadChoice.url || buildCachedImageUrl(item.serial, { intent: 'foreground' });
-                console.log('[Labeler] Built cached URL:', currentImageUrl);
                 imageReadyForCurrentItem = false;
                 imageLoadRetryCount = 0;
                 if (queueAdvanceMeta) {
@@ -3160,6 +3141,12 @@
         prefetchInFlight.clear();
         prefetchRunning = false;
         prefetchRequested = false;
+        for (const img of imagePrefetch.values()) {
+            if (!img) continue;
+            img.onload = null;
+            img.onerror = null;
+            try { img.src = ''; } catch (e) { /* best effort */ }
+        }
         imagePrefetch.clear();
         imagePrefetchState.clear();
         imagePrefetchQueue = [];
@@ -3174,6 +3161,12 @@
                 clearTimeout(timer);
             }
             imagePrefetchRetryTimers.clear();
+        }
+        for (const img of refImagePrefetch.values()) {
+            if (!img) continue;
+            img.onload = null;
+            img.onerror = null;
+            try { img.src = ''; } catch (e) { /* best effort */ }
         }
         refImagePrefetch.clear();
         refImagePrefetchState.clear();
@@ -4538,6 +4531,18 @@
     function teardownLabeler() {
         labelerActive = false;
         void releaseCurrentClaim();
+        labelerRequestController.abort();
+        loadCurrentItemModeToken += 1;
+        imageLoadToken += 1;
+        activeImageLoadToken = imageLoadToken;
+        stopMovementLoop();
+        isPanning = false;
+        panMoved = false;
+        suppressClick = false;
+        if (manualSearchDebounceTimer) {
+            clearTimeout(manualSearchDebounceTimer);
+            manualSearchDebounceTimer = null;
+        }
         stopRetrainStatusPoll();
         stopWarmLoop();
         togglePrefetchTimer(false);
@@ -4576,7 +4581,6 @@
     }
 
     function loadImage(url, opts = {}) {
-        console.log('[Labeler] loadImage called with:', url);
         const token = ++imageLoadToken;
         activeImageLoadToken = token;
         imageReadyForCurrentItem = false;
@@ -4614,11 +4618,9 @@
         }
         imageReadyForCurrentItem = true;
         resetAutoSkipStreak();
-        console.log('[Labeler] onImageLoad fired');
         //Resize canvas to match container
         const imgW = imageElement.naturalWidth;
         const imgH = imageElement.naturalHeight;
-        console.log('[Labeler] Image dimensions:', imgW, 'x', imgH);
 
         if (!imgW || !imgH) {
             console.error('[Labeler] Image has no dimensions!');
@@ -4682,7 +4684,6 @@
         resetView();
 
         if (labelerMode === 'detect' && currentBoxes.length === 0) {
-            console.log('[Labeler] Auto-detect mode, calling runDetection');
             //Draw image first so there's no blank delay, then run detection
             drawCanvas();
             const cached = detectPrefetch.get(String(currentSerial));
@@ -4695,7 +4696,6 @@
                 runDetection();
             }
         } else {
-            console.log('[Labeler] Drawing canvas directly');
             drawCanvas();
             setStatus(`Ready - sn${currentSerial}`);
             if (labelerMode === 'detect' && currentBoxes.length) {
@@ -5058,6 +5058,27 @@
         );
     }
 
+    function onPendingBeforeUnload(event) {
+        if (pendingUpdates.length === 0) return;
+        event.preventDefault();
+        event.returnValue = true;
+    }
+
+    function syncPendingUnloadWarning() {
+        const shouldAttach = pendingUpdates.length > 0;
+        if (shouldAttach === pendingUnloadWarningAttached) return;
+        pendingUnloadWarningAttached = shouldAttach;
+        if (shouldAttach) {
+            window.addEventListener('beforeunload', onPendingBeforeUnload);
+        } else {
+            window.removeEventListener('beforeunload', onPendingBeforeUnload);
+        }
+    }
+
+    function onLabelerPageHide(event) {
+        if (!event.persisted) teardownLabeler();
+    }
+
     function updateInfo() {
         document.getElementById('info-serial').textContent = currentSerial || '-';
         const total = queueTotal || queue.length;
@@ -5093,12 +5114,33 @@
         if (zoomEl) {
             zoomEl.textContent = `${Math.round(zoomLevel * 100)}%`;
         }
-        document.getElementById('pending-count').textContent = `${pendingUpdates.length} pending`;
+        const pendingCountEl = document.getElementById('pending-count');
+        pendingCountEl.textContent = `${pendingUpdates.length} pending`;
+        pendingCountEl.title = pendingUpdates.lastPersistenceError
+            ? 'Pending work is in memory, but browser session recovery is unavailable.'
+            : 'Unsaved annotations in this browser tab';
+        pendingCountEl.classList.toggle('has-pending', pendingUpdates.length > 0);
+        pendingCountEl.classList.toggle('storage-error', !!pendingUpdates.lastPersistenceError);
+        syncPendingUnloadWarning();
+        const saveButton = document.getElementById('btn-save-all');
+        if (saveButton && !saveInFlight) {
+            saveButton.disabled = pendingUpdates.length === 0;
+        }
         if (currentItem) ensureCurrentItemContext(currentItem);
     }
 
     function setStatus(msg) {
-        if (statusEl) statusEl.textContent = msg;
+        if (!statusEl) return;
+        const text = String(msg || '');
+        const lower = text.toLowerCase();
+        statusEl.textContent = text;
+        statusEl.dataset.tone = /fail|error|invalid|unavailable|blocked/.test(lower)
+            ? 'error'
+            : /load|sav|prepar|warm|switch|fetch|process|schedul/.test(lower)
+                ? 'busy'
+                : /ready|saved|done|undone|restored/.test(lower)
+                    ? 'success'
+                    : 'neutral';
     }
 
     function updateFlagButtonState() {
@@ -5293,14 +5335,7 @@
     }
 
     function queuePendingUpdate(update) {
-        if (!update || !update.serial) return;
-        const serial = String(update.serial);
-        const idx = pendingUpdates.findIndex((u) => String(u?.serial || '') === serial);
-        if (idx < 0) {
-            pendingUpdates.push({ ...update });
-            return;
-        }
-        pendingUpdates[idx] = { ...pendingUpdates[idx], ...update };
+        pendingUpdates.upsert(update);
     }
 
     function findQueueIndexBySerial(serial) {
@@ -5461,6 +5496,10 @@
     }
 
     function undoLast() {
+        if (saveInFlight) {
+            setStatus('Wait for the current save to finish before undoing.');
+            return;
+        }
         if (history.length === 0) {
             setStatus('Nothing to undo');
             return;
@@ -5511,8 +5550,7 @@
 
         const mutatesPending = last && ['detect', 'classify', 'reject'].includes(String(last.type || ''));
         if (mutatesPending) {
-            const idx = pendingUpdates.findIndex(u => String(u?.serial || '') === String(last?.serial || ''));
-            if (idx >= 0) pendingUpdates.splice(idx, 1);
+            pendingUpdates.remove(last?.serial);
         }
 
         if (!pendingUndoRestore && last) {
@@ -5554,14 +5592,25 @@
     }
 
     async function saveAllPending() {
+        if (saveInFlight) {
+            setStatus('A save is already in progress.');
+            return;
+        }
         if (pendingUpdates.length === 0) {
             setStatus('Nothing to save');
             return;
         }
 
-        setStatus(`Saving ${pendingUpdates.length} updates...`);
+        const savePayload = pendingUpdates.snapshot(SAVE_BATCH_MAX);
+        const saveButton = document.getElementById('btn-save-all');
+        saveInFlight = true;
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.setAttribute('aria-busy', 'true');
+            saveButton.textContent = 'Saving…';
+        }
+        setStatus(`Saving ${savePayload.length} updates...`);
         try {
-            const savePayload = pendingUpdates.map((u) => ({ ...u }));
             const resp = await apiPost('/api/labeler/save', { updates: savePayload });
             const cleared = Array.isArray(resp?.unblacklisted_ref_serials) ? resp.unblacklisted_ref_serials : [];
             for (const sn of cleared) {
@@ -5573,11 +5622,30 @@
                     });
                 }
             }
-            setStatus(`Saved ${pendingUpdates.length} updates!`);
-            pendingUpdates = [];
+            const hasSavedSerials = Array.isArray(resp?.saved_serials);
+            const savedSerials = hasSavedSerials ? resp.saved_serials : null;
+            pendingUpdates.acknowledge(savePayload, savedSerials);
+            const savedCount = Number.isFinite(Number(resp?.saved))
+                ? Number(resp.saved)
+                : (savedSerials ? savedSerials.length : savePayload.length);
+            const missingCount = Array.isArray(resp?.missing_serials) ? resp.missing_serials.length : 0;
+            if (missingCount > 0) {
+                setStatus(`Saved ${savedCount}; ${missingCount} missing item${missingCount === 1 ? '' : 's'} remain pending.`);
+            } else if (pendingUpdates.length > 0) {
+                setStatus(`Saved ${savedCount}; ${pendingUpdates.length} update${pendingUpdates.length === 1 ? '' : 's'} still pending.`);
+            } else {
+                setStatus(`Saved ${savedCount} update${savedCount === 1 ? '' : 's'}.`);
+            }
             updateInfo();
         } catch (e) {
             setStatus(`Save failed: ${e.message}`);
+        } finally {
+            saveInFlight = false;
+            if (saveButton) {
+                saveButton.disabled = pendingUpdates.length === 0;
+                saveButton.removeAttribute('aria-busy');
+                saveButton.textContent = 'Save All';
+            }
         }
     }
 
@@ -6741,7 +6809,12 @@
 
     function _normalizeAssignedCatKey(label) {
         const normalized = _normalizeAssignedCatLabel(label);
-        return normalized ? normalized.toLowerCase() : '';
+        return normalized
+            ? normalized
+                .replace(/^\s*\d+\s*[.)\-:]?\s*/, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '')
+            : '';
     }
 
     function _assignedCatKeysExcludingCrop(cropIdx) {
@@ -7279,7 +7352,8 @@
     window.initLabeler = initLabeler;
     window.teardownLabeler = teardownLabeler;
     window.labelerSwitchMode = switchMode;
-    window.addEventListener('beforeunload', teardownLabeler);
+    window.labelerAttachPendingJournal = attachPendingJournal;
+    window.addEventListener('pagehide', onLabelerPageHide);
 
     //Auto-init when labeler view is shown
     document.addEventListener('DOMContentLoaded', () => {

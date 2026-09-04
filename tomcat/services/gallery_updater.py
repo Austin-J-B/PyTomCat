@@ -9,6 +9,8 @@ import re
 import shutil
 import time
 import contextlib
+import urllib.error
+import urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -24,7 +26,7 @@ from ..logger import log_action
 from ..services import labeler_cache
 from ..services import local_photos
 from ..services.vision_feedback import load_verified_gallery_records
-from ..vision.backend import LocalBackend, get_backend
+from ..vision.backend import LocalBackend, ModalBackend, get_backend
 from ..vision.vision import refresh_gallery
 
 
@@ -73,6 +75,47 @@ _DEFAULT_DOWNLOAD_CHUNK_SIZE = _default_download_chunk_size(_DEFAULT_DOWNLOAD_WO
 _VERSIONED_GALLERY_RE = re.compile(r"^R(\d+(?:\.\d+)*)_cat_DINOv3_gallery\.pt$", re.IGNORECASE)
 
 
+def _send_rebuild_notification(message: str) -> bool:
+    """Send rebuild completion directly to CH_LOGGING from any entrypoint."""
+    text = str(message or "").strip()[:1900]
+    token = str(getattr(settings, "discord_token", "") or "").strip()
+    channel_id = int(getattr(settings, "ch_logging", 0) or 0)
+    if not text or not token or channel_id <= 0:
+        log_action(
+            "gallery_rebuild_notify_error",
+            "missing_config",
+            f"message={bool(text)} token={bool(token)} channel={channel_id > 0}",
+        )
+        return False
+
+    body = json.dumps({"content": text}, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        f"https://discord.com/api/v10/channels/{channel_id}/messages",
+        data=body,
+        headers={
+            "Authorization": f"Bot {token}",
+            "Content-Type": "application/json",
+            "User-Agent": "TomCatGalleryUpdater/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            sent = 200 <= int(getattr(response, "status", 0) or 0) < 300
+        if not sent:
+            log_action("gallery_rebuild_notify_error", f"channel={channel_id}", "non_2xx")
+        return sent
+    except urllib.error.HTTPError as exc:
+        log_action("gallery_rebuild_notify_error", f"channel={channel_id}", f"http={exc.code}")
+    except Exception as exc:
+        log_action(
+            "gallery_rebuild_notify_error",
+            f"channel={channel_id}",
+            f"{type(exc).__name__}: {exc}",
+        )
+    return False
+
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -108,6 +151,24 @@ def _gallery_path_for_env(path: Path) -> str:
         return path.resolve().relative_to(root.resolve()).as_posix()
     except Exception:
         return str(path.resolve()).replace("\\", "/")
+
+
+def _gallery_embedding_count(path: Path) -> Optional[int]:
+    """Read only the previous gallery's row count for build-delta reporting."""
+    try:
+        if not path.is_file():
+            return None
+        try:
+            gallery = torch.load(path, map_location="cpu", weights_only=False)
+        except TypeError:
+            gallery = torch.load(path, map_location="cpu")
+        embeddings = gallery.get("emb") if isinstance(gallery, dict) else None
+        if embeddings is None or not hasattr(embeddings, "shape"):
+            return None
+        return int(embeddings.shape[0])
+    except Exception as exc:
+        log_action("gallery_previous_count_error", str(path), f"{type(exc).__name__}: {exc}")
+        return None
 
 
 def _read_cv_gallery_path_from_env() -> Dict[str, Any]:
@@ -417,7 +478,7 @@ def _initial_embed_batch_size(device: torch.device, base_batch: int) -> int:
     return max(1, min(int(batch), int(_DEFAULT_EMBED_BATCH_MAX)))
 
 
-def run_gallery_update(
+def _run_gallery_update_impl(
     *,
     mode: str = "full",
     gallery_version: Optional[str] = None,
@@ -666,6 +727,13 @@ def run_gallery_update(
         stats["embed_batch_initial"] = int(embed_batch_size)
         stats["embed_batch_max"] = int(_DEFAULT_EMBED_BATCH_MAX)
         stats["backend"] = type(backend).__name__
+        if isinstance(backend, ModalBackend):
+            remote_info = dict(backend.ping() or {})
+            stats["backend_device"] = str(remote_info.get("device") or "")
+            stats["backend_cuda_available"] = bool(remote_info.get("cuda_available"))
+            stats["encoder_revision"] = str(remote_info.get("encoder_revision") or "R6")
+            if not stats["backend_cuda_available"]:
+                raise RuntimeError("Modal gallery rebuild refused: remote CUDA GPU is unavailable")
 
         class_to_idx = {cat: i for i, cat in enumerate(eligible_cats)}
         all_emb: List[Tensor] = []
@@ -784,6 +852,7 @@ def run_gallery_update(
         }
 
         previous_active_gallery_path = Path(settings.cv_gallery_path)
+        previous_embedding_count = _gallery_embedding_count(previous_active_gallery_path)
         weights_dir = previous_active_gallery_path.parent if previous_active_gallery_path.parent else Path("weights")
         weights_dir.mkdir(parents=True, exist_ok=True)
         overwrite_active_version = bool(_DEFAULT_OVERWRITE_ACTIVE_VERSION)
@@ -833,6 +902,12 @@ def run_gallery_update(
             "previous_active_gallery_path": str(previous_active_gallery_path),
             "versioned_gallery_path": str(version_path),
             "embeddings": int(emb_tensor.shape[0]),
+            "previous_embeddings": previous_embedding_count,
+            "embedding_delta": (
+                int(emb_tensor.shape[0]) - int(previous_embedding_count)
+                if previous_embedding_count is not None
+                else None
+            ),
             "cats": int(len(class_to_idx)),
             "reload": refresh_state,
             "stats": stats,
@@ -856,3 +931,59 @@ def run_gallery_update(
                 shutil.rmtree(work_dir, ignore_errors=True)
             except Exception:
                 pass
+
+
+def run_gallery_update(
+    *,
+    mode: str = "full",
+    gallery_version: Optional[str] = None,
+    use_local_photos: bool = _DEFAULT_USE_LOCAL_PHOTOS,
+    min_pixels: int = _DEFAULT_MIN_PIXELS,
+    min_per_cat: int = _DEFAULT_MIN_PER_CAT,
+    batch_size: int = _DEFAULT_BATCH_SIZE,
+    tta_hflip: bool = _DEFAULT_TTA_HFLIP,
+    download_workers: int = _DEFAULT_DOWNLOAD_WORKERS,
+    download_chunk_size: int = _DEFAULT_DOWNLOAD_CHUNK_SIZE,
+    progress_log_sec: float = _DEFAULT_PROGRESS_LOG_SEC,
+) -> Dict[str, Any]:
+    """Rebuild a gallery and always report success or failure to CH_LOGGING."""
+    try:
+        result = _run_gallery_update_impl(
+            mode=mode,
+            gallery_version=gallery_version,
+            use_local_photos=use_local_photos,
+            min_pixels=min_pixels,
+            min_per_cat=min_per_cat,
+            batch_size=batch_size,
+            tta_hflip=tta_hflip,
+            download_workers=download_workers,
+            download_chunk_size=download_chunk_size,
+            progress_log_sec=progress_log_sec,
+        )
+    except Exception as exc:
+        requested = f"R{str(gallery_version).strip()}" if gallery_version else "automatic version"
+        _send_rebuild_notification(
+            f"CV gallery rebuild failed for {requested}: {type(exc).__name__}: {str(exc)[:900]}"
+        )
+        raise
+
+    version = Path(str(result.get("versioned_gallery_path") or "")).name
+    result_stats = result.get("stats") or {}
+    backend = str(result_stats.get("backend") or "unknown")
+    device = str(result_stats.get("backend_device") or "").strip()
+    encoder_revision = str(result_stats.get("encoder_revision") or "").strip()
+    runtime = ", ".join(value for value in (backend, device, encoder_revision) if value)
+    previous = result.get("previous_embeddings")
+    delta = result.get("embedding_delta")
+    delta_text = ""
+    if previous is not None and delta is not None:
+        delta_text = f" ({int(delta):+d} vs previous {int(previous)})"
+    filtered_small = int(result_stats.get("crop_filtered_small") or 0)
+    missing_images = int(result_stats.get("images_missing_local") or 0)
+    _send_rebuild_notification(
+        f"CV gallery updated to {version} with {int(result.get('cats') or 0)} identities "
+        f"and {int(result.get('embeddings') or 0)} images{delta_text}. "
+        f"Filtered: {filtered_small} small crops, {missing_images} missing source images. "
+        f"Backend: {runtime or 'unknown'}."
+    )
+    return result

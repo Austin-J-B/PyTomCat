@@ -16,6 +16,7 @@ Run:  python scripts/test_labeler_hot_paths.py
 from __future__ import annotations
 
 import asyncio
+import csv
 import os
 import shutil
 import sys
@@ -190,6 +191,164 @@ def test_missing_serial_does_not_rescan_every_time() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_annotation_saves_are_validated_and_reported() -> None:
+    """Save validation is atomic and reports only rows that actually exist."""
+    from tomcat.services import local_photos
+
+    root = Path(tempfile.mkdtemp(prefix="tomcat_metadata_"))
+    metadata_path = root / "metadata.csv"
+    original_storage = local_photos.ensure_storage_ready
+    try:
+        with metadata_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=local_photos.CSV_HEADERS)
+            writer.writeheader()
+            writer.writerow({
+                "Serial Number": "sn1",
+                "Box Coordinates": "old-box",
+                "Box Cat IDs": "old-cat",
+                "Label Author": "",
+            })
+        local_photos.ensure_storage_ready = lambda: (root, metadata_path)
+
+        outcome = local_photos.update_metadata_annotations([
+            {"serial": 1, "box_coords": "new-box"},
+            {"serial": "sn1", "box_cat_ids": "1. Twix"},
+            {"serial": 999, "box_coords": "missing-box"},
+        ], "tester", refresh=False)
+        check("duplicate serial updates merge by field", outcome["requested"] == 2)
+        check("save reports only rows written", outcome["saved_serials"] == [1])
+        check("save reports missing serials", outcome["missing_serials"] == [999])
+
+        with metadata_path.open("r", newline="", encoding="utf-8-sig") as handle:
+            saved_row = next(csv.DictReader(handle))
+        check(
+            "merged fields are both persisted",
+            saved_row["Box Coordinates"] == "new-box" and saved_row["Box Cat IDs"] == "1. Twix",
+        )
+
+        before_invalid_save = metadata_path.read_bytes()
+        rejected = False
+        try:
+            local_photos.update_metadata_annotations([
+                {"serial": 1, "box_cat_ids": "1. Twix|1. twix"},
+            ], "tester", refresh=False)
+        except local_photos.AnnotationUpdateError:
+            rejected = True
+        check("duplicate cat labels reject the batch", rejected)
+        check("a rejected batch leaves metadata unchanged", metadata_path.read_bytes() == before_invalid_save)
+
+        prefixed_duplicate_rejected = False
+        try:
+            local_photos.update_metadata_annotations([
+                {"serial": 1, "box_cat_ids": "1. Twix|Twix"},
+            ], "tester", refresh=False)
+        except local_photos.AnnotationUpdateError:
+            prefixed_duplicate_rejected = True
+        check("numeric prefixes cannot hide duplicate cat labels", prefixed_duplicate_rejected)
+
+        before_failed_rewrite = metadata_path.read_bytes()
+        rewrite_failed = False
+
+        def fail_rewrite(_row):
+            raise RuntimeError("synthetic write failure")
+
+        try:
+            local_photos._rewrite_metadata_rows(metadata_path, fail_rewrite)
+        except RuntimeError:
+            rewrite_failed = True
+        check("failed metadata rewrites propagate", rewrite_failed)
+        check("failed metadata rewrites preserve the original", metadata_path.read_bytes() == before_failed_rewrite)
+        check("failed metadata rewrites clean up temp files", not metadata_path.with_name("metadata.csv.tmp").exists())
+
+        clear_outcome = local_photos.clear_metadata_annotations([1, 999], "reviewer")
+        check("clear reports the existing serial", clear_outcome["results"][1]["ok"])
+        check("clear reports a missing serial", clear_outcome["results"][999]["not_found"])
+        with metadata_path.open("r", newline="", encoding="utf-8-sig") as handle:
+            cleared_row = next(csv.DictReader(handle))
+        check(
+            "clear uses the atomic rewrite path",
+            cleared_row["Box Coordinates"] == "" and cleared_row["Box Cat IDs"] == "",
+        )
+
+        local_photos.update_metadata_annotations(
+            [{"serial": 1, "box_coords": "Rejected", "box_cat_ids": ""}],
+            "old-migration",
+            refresh=False,
+        )
+        restore_outcome = local_photos.restore_rejected_metadata_annotations(
+            [{"serial": 1, "box_coords": "0.5 0.5 0.2 0.3", "box_cat_ids": "Melvin"}],
+            "legacy-wildlife-v1",
+            refresh=False,
+        )
+        check("legacy recovery restores blanket rejections", restore_outcome["restored_serials"] == [1])
+        with metadata_path.open("r", newline="", encoding="utf-8-sig") as handle:
+            restored_row = next(csv.DictReader(handle))
+        check(
+            "legacy recovery writes the reviewed box and label",
+            restored_row["Box Coordinates"] == "0.5 0.5 0.2 0.3"
+            and restored_row["Box Cat IDs"] == "Melvin",
+        )
+        second_restore = local_photos.restore_rejected_metadata_annotations(
+            [{"serial": 1, "box_coords": "0.1 0.1 0.1 0.1", "box_cat_ids": "Stove"}],
+            "legacy-wildlife-v1",
+            refresh=False,
+        )
+        check("legacy recovery never overwrites reviewed rows", second_restore["restored"] == 0)
+    finally:
+        local_photos.ensure_storage_ready = original_storage
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_legacy_wildlife_manifest() -> None:
+    from tomcat.services.legacy_wildlife import load_legacy_wildlife_annotations
+
+    annotations = load_legacy_wildlife_annotations()
+    labels = {str(row.get("box_cat_ids") or "") for row in annotations}
+    serials = [int(row.get("serial") or 0) for row in annotations]
+    check("legacy wildlife manifest contains 49 reviewed crops", len(annotations) == 49)
+    check("legacy wildlife manifest exposes both labels", labels == {"Melvin", "Stove"})
+    check("legacy wildlife manifest serials are unique", len(serials) == len(set(serials)))
+
+
+def test_gallery_rebuild_notification_transport() -> None:
+    from tomcat.services import gallery_updater
+
+    captured: dict[str, object] = {}
+    original_urlopen = gallery_updater.urllib.request.urlopen
+    original_token = gallery_updater.settings.discord_token
+    original_channel = gallery_updater.settings.ch_logging
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def fake_urlopen(request, timeout=0):
+        captured["url"] = request.full_url
+        captured["authorization"] = request.get_header("Authorization")
+        captured["body"] = request.data
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    try:
+        gallery_updater.settings.discord_token = "test-token"
+        gallery_updater.settings.ch_logging = 12345
+        gallery_updater.urllib.request.urlopen = fake_urlopen
+        sent = gallery_updater._send_rebuild_notification("R7 finished")
+        check("gallery rebuild notifications report success", sent)
+        check("gallery rebuild notifications target CH_LOGGING", str(captured.get("url", "")).endswith("/12345/messages"))
+        check("gallery rebuild notifications authenticate as the bot", captured.get("authorization") == "Bot test-token")
+        check("gallery rebuild notifications include the result", b"R7 finished" in bytes(captured.get("body") or b""))
+    finally:
+        gallery_updater.urllib.request.urlopen = original_urlopen
+        gallery_updater.settings.discord_token = original_token
+        gallery_updater.settings.ch_logging = original_channel
+
+
 def main() -> int:
     print("labeler hot paths")
     print("=" * 70)
@@ -201,6 +360,12 @@ def main() -> int:
     test_unresolvable_author_is_not_refetched()
     print("local photo lookup")
     test_missing_serial_does_not_rescan_every_time()
+    print("annotation save validation")
+    test_annotation_saves_are_validated_and_reported()
+    print("legacy wildlife recovery")
+    test_legacy_wildlife_manifest()
+    print("gallery rebuild notifications")
+    test_gallery_rebuild_notification_transport()
 
     print("\n" + "=" * 70)
     if FAILURES:

@@ -179,6 +179,65 @@ def _snapshot_main_thread_stack(limit: int = 12) -> Dict[str, Any]:
         return {"available": False, "error": f"{type(e).__name__}: {e!r}"}
 
 
+def _heap_census() -> Dict[str, Any]:
+    """Attribute resident memory that the cache counts cannot see.
+
+    RSS climbs ~1.8GB per labeling session while every tracked cache stays under
+    50MB, so whatever holds it is not a dict we count. Torch tensors are the usual
+    answer -- their storage is invisible to sys.getsizeof -- with big dicts and
+    raw buffers the other candidates. Only runs on a watermark step, never in the
+    request path.
+    """
+    out: Dict[str, Any] = {}
+    try:
+        import gc as _gc
+        import warnings as _warnings
+
+        #Walking every live object touches lazy module attributes, and torch emits
+        #deprecation warnings when we do. They are an artifact of the walk, not of
+        #anything the bot is doing, so keep them out of the log.
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("ignore")
+            objs = _gc.get_objects()
+            out["gc_objects"] = int(len(objs))
+            counts: Dict[str, int] = {}
+            bytes_by_type: Dict[str, int] = {}
+            tensor_bytes = 0
+            tensor_count = 0
+            buffer_bytes = 0
+            torch_mod = sys.modules.get("torch")
+            tensor_cls = getattr(torch_mod, "Tensor", None) if torch_mod is not None else None
+            for o in objs:
+                try:
+                    tname = type(o).__name__
+                except Exception:
+                    continue
+                counts[tname] = counts.get(tname, 0) + 1
+                if tensor_cls is not None and isinstance(o, tensor_cls):
+                    try:
+                        tensor_bytes += int(o.nelement()) * int(o.element_size())
+                        tensor_count += 1
+                    except Exception:
+                        pass
+                elif isinstance(o, (bytes, bytearray)):
+                    n = len(o)
+                    buffer_bytes += n
+                    if n >= 1_000_000:  #only large buffers are worth attributing
+                        bytes_by_type["big_bytes"] = bytes_by_type.get("big_bytes", 0) + n
+        del objs
+        out["torch_tensor_count"] = int(tensor_count)
+        out["torch_tensor_mb"] = int(tensor_bytes / 1048576)
+        out["bytes_objects_mb"] = int(buffer_bytes / 1048576)
+        out["big_bytes_mb"] = int(bytes_by_type.get("big_bytes", 0) / 1048576)
+        out["top_types"] = [
+            {"type": str(k), "count": int(v)}
+            for k, v in sorted(counts.items(), key=lambda kv: -kv[1])[:8]
+        ]
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {e!r}"
+    return out
+
+
 def _check_memory_watermark() -> None:
     """Log a cache breakdown each time RSS climbs past a new step.
 
@@ -215,6 +274,7 @@ def _check_memory_watermark() -> None:
             "manual_metadata_ref": int(len(_manual_metadata_ref_cache)),
         },
         "threads": int(threading.active_count()),
+        "heap": _heap_census(),
     }
     log_action(
         "labeler_memory_watermark",

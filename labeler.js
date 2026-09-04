@@ -7048,8 +7048,15 @@
         const imgX = (mouseX - left) / scale;
         const imgY = (mouseY - top) / scale;
 
-        const dir = e.deltaY < 0 ? 1 : -1;
-        const factor = 1 + (ZOOM_STEP * dir);
+        //Wheel events arrive in three unit systems, and trackpads emit dozens of
+        //small pixel-mode events per gesture. Reacting to the sign alone applied a
+        //full 12% notch to every one of them, so a single flick saturated the range
+        //and zoom behaved as an on/off switch. Normalise to notches instead, and cap
+        //one event's worth so a coarse mouse still can't jump more than a notch.
+        let notches = e.deltaY / (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 100);
+        notches = Math.max(-1, Math.min(1, notches));
+        if (!notches) return;
+        const factor = Math.pow(1 + ZOOM_STEP, -notches);
         const nextZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomLevel * factor));
         if (nextZoom === zoomLevel) return;
 

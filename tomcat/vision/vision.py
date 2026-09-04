@@ -746,16 +746,30 @@ def _ensure_classifier() -> None:
     _ensure_gallery()
 
 #---------- Image Processing Helpers ----------
-def _enforce_max_dim(img: Image.Image) -> None:
-    m = settings.cv_max_image_dim
-    if not m: return
-    w, h = img.size
-    if w <= m and h <= m: return
+def _max_dim_target(w: int, h: int, m: int) -> Optional[Tuple[int, int]]:
+    """Target size for an image whose long edge exceeds m, else None."""
+    if not m or (w <= m and h <= m):
+        return None
     if w > h:
-        nw, nh = m, int(h * (m / w))
-    else:
-        nw, nh = int(w * (m / h)), m
-    img.draft(None, (nw, nh)) 
+        return (int(m), max(1, int(h * (m / w))))
+    return (max(1, int(w * (m / h))), int(m))
+
+
+def _enforce_max_dim(img: Image.Image) -> Image.Image:
+    """Scale an oversized image down to cv_max_image_dim.
+
+    This used to call img.draft() on an image _open_rgb_image had already
+    decoded, and draft() does nothing once the pixels are loaded -- so the limit
+    never applied to anything. 1433 of our photos exceed it, the largest being
+    16320x12240, which decodes to 764MB in one allocation. Resizing here is the
+    fallback that always works; _open_rgb_image drafts first so the full decode
+    never happens for JPEGs in the first place.
+    """
+    m = int(settings.cv_max_image_dim or 0)
+    target = _max_dim_target(int(img.size[0]), int(img.size[1]), m)
+    if target is None:
+        return img
+    return img.resize(target, resample=Image.Resampling.BILINEAR)
 
 def _expand_box(x1: float, y1: float, x2: float, y2: float, pad_pct: float, img_w: int, img_h: int) -> Tuple[float, float, float, float]:
     w, h = x2 - x1, y2 - y1
@@ -1093,15 +1107,28 @@ def _thumb_b64_from_pil(img: Image.Image, size: int = 96) -> Optional[str]:
 
 
 _PIL_MAX_PIXELS = 500_000_000
+#Set once, process-wide: this is a global, and mutating it per-open raced
+#every other thread that was decoding at the same time.
+Image.MAX_IMAGE_PIXELS = _PIL_MAX_PIXELS
 
 def _open_rgb_image(source: Any) -> Image.Image:
-    """Open an image and normalize EXIF orientation before RGB conversion."""
-    old_limit = Image.MAX_IMAGE_PIXELS
-    Image.MAX_IMAGE_PIXELS = _PIL_MAX_PIXELS
+    """Open an image and normalize EXIF orientation before RGB conversion.
+
+    Image.MAX_IMAGE_PIXELS is process-global. Raising and restoring it around the
+    open, from worker threads, meant the decompression-bomb guard was effectively
+    off for whatever else happened to be decoding at the same time -- and back on
+    at the wrong moment for this one. Set it once at import instead.
+    """
+    img = Image.open(source)
+    #Ask the JPEG decoder for a reduced DCT scale before anything loads. draft()
+    #picks the smallest scale that still covers the target, so this bounds the
+    #decode; _enforce_max_dim finishes the job exactly for callers that need it.
     try:
-        img = Image.open(source)
-    finally:
-        Image.MAX_IMAGE_PIXELS = old_limit
+        target = _max_dim_target(int(img.size[0]), int(img.size[1]), int(settings.cv_max_image_dim or 0))
+        if target is not None:
+            img.draft(None, target)
+    except Exception:
+        pass
     try:
         img = ImageOps.exif_transpose(img)
     except Exception:
@@ -1142,7 +1169,7 @@ def _embed_batch(batch: Tensor) -> Tensor:
 def detect(image_bytes: bytes, *, include_boxed_image: bool = True) -> IdentifyResult:
     """Run detection only and return the boxed image."""
     img = _open_rgb_image(io.BytesIO(image_bytes))
-    _enforce_max_dim(img)
+    img = _enforce_max_dim(img)
     image_size = (int(img.size[0]), int(img.size[1]))
     dets = _run_yolo(img)
     boxed_jpeg = b""
@@ -1157,7 +1184,7 @@ def detect(image_bytes: bytes, *, include_boxed_image: bool = True) -> IdentifyR
 def crop(image_bytes: bytes) -> IdentifyResult:
     """Run detection and return individual cropped cats plus a collage summary."""
     img = _open_rgb_image(io.BytesIO(image_bytes))
-    _enforce_max_dim(img)
+    img = _enforce_max_dim(img)
     dets = _run_yolo(img)
     
     crops = []
@@ -1187,7 +1214,7 @@ def identify(image_bytes: bytes) -> IdentifyResult:
     backend = get_backend()
 
     img = _open_rgb_image(io.BytesIO(image_bytes))
-    _enforce_max_dim(img)
+    img = _enforce_max_dim(img)
 
     # Gallery always stays local; encoder loads in LocalBackend.detect_and_embed.
     _ensure_gallery()
@@ -1426,7 +1453,7 @@ def identify_boxes(
     """Run DINOv3 identification on specific normalized boxes (cx, cy, w, h)."""
     t0_total = time.perf_counter()
     img = _open_rgb_image(io.BytesIO(image_bytes))
-    _enforce_max_dim(img)
+    img = _enforce_max_dim(img)
     _ensure_gallery()
     _ensure_device_only()
     preprocess_ms = (time.perf_counter() - t0_total) * 1000.0
@@ -2023,7 +2050,7 @@ def _embed_query_from_box(
         img = _open_rgb_image(io.BytesIO(image_bytes))
     except Exception:
         return None
-    _enforce_max_dim(img)
+    img = _enforce_max_dim(img)
     img_w, img_h = img.size
     try:
         cx, cy, w, h = [float(x) for x in box]
@@ -2903,7 +2930,7 @@ def detect_with_sam(image_bytes: bytes) -> DetectWithSamResult:
     """Run YOLO detection then refine all boxes in a batched SAM call."""
     import numpy as np
     img = _open_rgb_image(io.BytesIO(image_bytes))
-    _enforce_max_dim(img)
+    img = _enforce_max_dim(img)
     img_array = np.array(img)
     
     dets = _run_yolo(img)
@@ -2948,7 +2975,7 @@ def refine_boxes_with_diagnostics(
 
     import numpy as np
     img = _open_rgb_image(io.BytesIO(image_bytes))
-    _enforce_max_dim(img)
+    img = _enforce_max_dim(img)
     img_array = np.array(img)
     img_w, img_h = img.size
 

@@ -122,6 +122,7 @@ _loop_watchdog_started = False
 #Rising-step memory reporting: log once per _MEMORY_LOG_STEP_MB crossed above the
 #floor, so a session that walks toward the OOM ceiling leaves a curve behind.
 _memory_watermark_mb = 0
+_memory_watermark_error_logged = False
 _MEMORY_LOG_FLOOR_MB = max(256, int(os.getenv("LABELER_MEMORY_LOG_FLOOR_MB", "900") or "900"))
 _MEMORY_LOG_STEP_MB = max(64, int(os.getenv("LABELER_MEMORY_LOG_STEP_MB", "250") or "250"))
 _LOOP_HEARTBEAT_INTERVAL_SEC = max(
@@ -196,23 +197,45 @@ def _check_memory_watermark() -> None:
     if reached < int(_MEMORY_LOG_FLOOR_MB) or reached <= int(_memory_watermark_mb):
         return
     _memory_watermark_mb = reached
+    #_labeler_runtime_snapshot() cannot be used here: its task census calls
+    #asyncio.all_tasks(), which raises RuntimeError off the event loop and took
+    #this whole function down silently on every poll. Only read plain containers.
+    payload = {
+        "memory": mem,
+        "caches": {
+            "detect": int(len(_detect_result_cache)),
+            "refine": int(len(_refine_result_cache)),
+            "identify": int(len(_identify_result_cache)),
+            "manual": int(len(_manual_result_cache)),
+            "quality": int(len(_classify_quality_cache)),
+            "ref_crop": int(len(_ref_crop_result_cache)),
+            "ref_crop_bytes": int(sum(len(v[1]) for v in list(_ref_crop_result_cache.values()))),
+            "context": int(len(_photo_item_context_cache)),
+            "crop_index": int(len(_photo_crop_index_cache)),
+            "manual_metadata_ref": int(len(_manual_metadata_ref_cache)),
+        },
+        "threads": int(threading.active_count()),
+    }
     log_action(
         "labeler_memory_watermark",
         f"rss_mb={rss_mb}; peak_mb={int(mem.get('peak_rss_mb') or 0)}",
-        json.dumps(_labeler_runtime_snapshot(), separators=(",", ":")),
+        json.dumps(payload, separators=(",", ":")),
     )
 
 
 def _event_loop_stall_watchdog() -> None:
     """Log the main-thread stack once per stall while the loop is still wedged."""
     global _loop_stall_last_logged_heartbeat_mono
+    global _memory_watermark_error_logged
     while True:
         try:
             time.sleep(_LOOP_STALL_STACK_POLL_SEC)
             try:
                 _check_memory_watermark()
-            except Exception:  #diagnostics must never take the watchdog down
-                pass
+            except Exception as e:  #must never take the watchdog down, but must not vanish either
+                if not _memory_watermark_error_logged:
+                    _memory_watermark_error_logged = True
+                    log_action("labeler_memory_watermark_error", "error", f"{type(e).__name__}: {e!r}")
             heartbeat_mono = float(_loop_heartbeat_mono)
             age_ms = max(0.0, (time.monotonic() - heartbeat_mono) * 1000.0)
             if age_ms < float(_LOOP_STALL_STACK_THRESHOLD_MS):

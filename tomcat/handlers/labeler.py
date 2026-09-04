@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import re
 import os
+import math
 import time
 import json
 import random
@@ -118,6 +119,11 @@ _loop_lag_last_log_mono: float = 0.0
 _loop_lag_last_logged_ms: float = 0.0
 _loop_heartbeat_mono: float = time.monotonic()
 _loop_watchdog_started = False
+#Rising-step memory reporting: log once per _MEMORY_LOG_STEP_MB crossed above the
+#floor, so a session that walks toward the OOM ceiling leaves a curve behind.
+_memory_watermark_mb = 0
+_MEMORY_LOG_FLOOR_MB = max(256, int(os.getenv("LABELER_MEMORY_LOG_FLOOR_MB", "900") or "900"))
+_MEMORY_LOG_STEP_MB = max(64, int(os.getenv("LABELER_MEMORY_LOG_STEP_MB", "250") or "250"))
 _LOOP_HEARTBEAT_INTERVAL_SEC = max(
     0.05,
     float(os.getenv("LABELER_LOOP_HEARTBEAT_INTERVAL_SEC", "0.25") or "0.25"),
@@ -172,12 +178,41 @@ def _snapshot_main_thread_stack(limit: int = 12) -> Dict[str, Any]:
         return {"available": False, "error": f"{type(e).__name__}: {e!r}"}
 
 
+def _check_memory_watermark() -> None:
+    """Log a cache breakdown each time RSS climbs past a new step.
+
+    Runs on the watchdog thread rather than the event loop: an OOM kill gives no
+    warning and leaves nothing in the log, so this has to keep reporting even if
+    the loop is busy. Only rising steps log, so a steady process stays quiet while
+    a run toward the ceiling leaves a growth curve to read afterwards.
+    """
+    global _memory_watermark_mb
+    mem = _process_memory_snapshot()
+    rss_mb = int(mem.get("rss_mb") or 0)
+    if rss_mb <= 0:
+        return
+    step = int(_MEMORY_LOG_STEP_MB)
+    reached = (rss_mb // step) * step
+    if reached < int(_MEMORY_LOG_FLOOR_MB) or reached <= int(_memory_watermark_mb):
+        return
+    _memory_watermark_mb = reached
+    log_action(
+        "labeler_memory_watermark",
+        f"rss_mb={rss_mb}; peak_mb={int(mem.get('peak_rss_mb') or 0)}",
+        json.dumps(_labeler_runtime_snapshot(), separators=(",", ":")),
+    )
+
+
 def _event_loop_stall_watchdog() -> None:
     """Log the main-thread stack once per stall while the loop is still wedged."""
     global _loop_stall_last_logged_heartbeat_mono
     while True:
         try:
             time.sleep(_LOOP_STALL_STACK_POLL_SEC)
+            try:
+                _check_memory_watermark()
+            except Exception:  #diagnostics must never take the watchdog down
+                pass
             heartbeat_mono = float(_loop_heartbeat_mono)
             age_ms = max(0.0, (time.monotonic() - heartbeat_mono) * 1000.0)
             if age_ms < float(_LOOP_STALL_STACK_THRESHOLD_MS):
@@ -341,6 +376,30 @@ def _claim_snapshot() -> Dict[str, Any]:
     }
 
 
+def _process_memory_snapshot() -> Dict[str, int]:
+    """Resident/peak process memory in MB.
+
+    The bot has been OOM-killed repeatedly under labeler load without leaving any
+    trace in its own logs -- the kernel kills it outright, so the last thing it
+    records is whatever it happened to be doing. Carrying RSS in the snapshot that
+    already rides along with loop-lag and slow-transition events means the next
+    occurrence says how much memory was resident and which caches were holding it.
+    """
+    out: Dict[str, int] = {}
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    out["rss_mb"] = int(int(line.split()[1]) / 1024)
+                elif line.startswith("VmHWM:"):
+                    out["peak_rss_mb"] = int(int(line.split()[1]) / 1024)
+                if len(out) == 2:
+                    break
+    except Exception:  #non-Linux dev box, or /proc unavailable
+        pass
+    return out
+
+
 def _labeler_runtime_snapshot() -> Dict[str, Any]:
     return {
         "tasks": _get_task_census_snapshot(),
@@ -361,7 +420,11 @@ def _labeler_runtime_snapshot() -> Dict[str, Any]:
             "manual": int(len(_manual_result_cache)),
             "quality": int(len(_classify_quality_cache)),
             "quality_soft_fail": int(len(_classify_quality_soft_fail_cache)),
+            "ref_crop": int(len(_ref_crop_result_cache)),
+            "ref_crop_bytes": int(sum(len(v[1]) for v in _ref_crop_result_cache.values())),
+            "context": int(len(_photo_item_context_cache)),
         },
+        "memory": _process_memory_snapshot(),
         "claims": _claim_snapshot(),
         "inflight": {
             "identify_singleflight": int(len(_identify_inflight)),
@@ -580,6 +643,9 @@ _ref_crop_result_cache: Dict[str, Tuple[float, bytes]] = {}
 _ref_crop_cache_keys_by_serial: Dict[int, Set[str]] = {}
 _ref_crop_negative_cache: Dict[Tuple[int, int], float] = {}
 _REF_CROP_RESULT_CACHE_MAX = max(200, int(os.getenv("LABELER_REF_CROP_RESULT_CACHE_MAX", "3000") or "3000"))
+#Floor on the box fraction used to size a draft decode. A degenerate box
+#would otherwise ask for an enormous decode target and defeat the draft.
+_MIN_REF_CROP_FRACTION = 0.01
 _REF_CROP_SERIAL_INDEX_MAX = max(500, int(_REF_CROP_RESULT_CACHE_MAX))
 _REF_CROP_MISS_LOG_COOLDOWN_SEC = max(
     5.0,
@@ -3227,9 +3293,25 @@ def _internal_error_response(
     return _with_cors(web.Response(status=500, text=message), request)
 
 
-def _open_rgb_image(source: Any) -> Image.Image:
-    """Open an image and normalize EXIF orientation before RGB conversion."""
+def _open_rgb_image(
+    source: Any,
+    draft_size: Optional[Tuple[int, int]] = None,
+) -> Image.Image:
+    """Open an image and normalize EXIF orientation before RGB conversion.
+
+    A full-resolution decode of one of our photos retains ~45MB of RSS, and the
+    labeler decodes many at once while warming. draft_size lets a caller that
+    only needs a smaller image hand the JPEG decoder a target: it then decodes at
+    a 1/2, 1/4 or 1/8 DCT scale, which measured 13x cheaper and 2x faster while
+    producing a byte-identical thumbnail. draft() must run before any load, and
+    is a no-op for formats that cannot scale while decoding.
+    """
     img = Image.open(source)
+    if draft_size is not None:
+        try:
+            img.draft("RGB", (max(1, int(draft_size[0])), max(1, int(draft_size[1]))))
+        except Exception:
+            pass
     try:
         img = ImageOps.exif_transpose(img)
     except Exception:
@@ -3244,9 +3326,19 @@ def _render_ref_crop_jpeg(
     pad: float,
 ) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
     """Decode, crop, and encode a reference JPEG crop in a worker thread."""
-    img = _open_rgb_image(io.BytesIO(image_bytes))
-    img_w, img_h = img.size
+    #Only the padded box survives into a thumb_size thumbnail, so decoding the
+    #full frame throws away almost all of it at ~45MB of RSS per call -- with the
+    #warm path running several at once that is what pushed the box into the OOM
+    #killer. Ask for the smallest decode that still leaves the crop above
+    #thumb_size. EXIF transpose can swap the axes after the draft, so size both
+    #axes off whichever fraction is tighter rather than matching them per-axis.
     cx, cy, w, h = box
+    padded_w = max(float(w) * (1.0 + 2.0 * float(pad)), _MIN_REF_CROP_FRACTION)
+    padded_h = max(float(h) * (1.0 + 2.0 * float(pad)), _MIN_REF_CROP_FRACTION)
+    crop_fraction = min(1.0, padded_w, padded_h)
+    draft_edge = int(math.ceil(float(thumb_size) / crop_fraction))
+    img = _open_rgb_image(io.BytesIO(image_bytes), draft_size=(draft_edge, draft_edge))
+    img_w, img_h = img.size
     x1 = (cx - w / 2) * img_w
     y1 = (cy - h / 2) * img_h
     x2 = (cx + w / 2) * img_w
@@ -3269,23 +3361,36 @@ def _render_ref_crop_jpeg(
     return out.getvalue(), None, None
 
 
+def _oriented_image_size(image_bytes: bytes) -> Tuple[int, int]:
+    """Return (width, height) after EXIF rotation, reading only the header."""
+    img = Image.open(io.BytesIO(image_bytes))
+    w, h = int(img.size[0]), int(img.size[1])
+    try:
+        orientation = int((img.getexif() or {}).get(0x0112, 1) or 1)
+    except Exception:
+        orientation = 1
+    #5-8 are the transposed/rotated orientations, which swap the axes.
+    if orientation in (5, 6, 7, 8):
+        w, h = h, w
+    return w, h
+
+
 def _vision_working_image_size(image_bytes: bytes) -> Tuple[int, int]:
     """Return the effective image size used by vision.detect/refine preprocessing."""
-    img = _open_rgb_image(io.BytesIO(image_bytes))
+    #A size probe never needs pixels. This used to go through _open_rgb_image and
+    #pay a full ~45MB RGB decode for two integers, then call draft() afterwards
+    #where it is a no-op. Read the header instead, applying the EXIF rotation by
+    #hand so the result still matches the transposed image the rest of the code
+    #works with.
+    w, h = _oriented_image_size(image_bytes)
     max_dim = int(getattr(settings, "cv_max_image_dim", 0) or 0)
-    if max_dim > 0:
-        w, h = img.size
-        if w > max_dim or h > max_dim:
-            if w > h:
-                target = (int(max_dim), max(1, int(h * (float(max_dim) / float(w)))))
-            else:
-                target = (max(1, int(w * (float(max_dim) / float(h)))), int(max_dim))
-            try:
-                # Mirror tomcat.vision._enforce_max_dim() behavior (JPEG decoder draft mode).
-                img.draft(None, target)
-            except Exception:
-                pass
-    return img.size
+    if max_dim > 0 and (w > max_dim or h > max_dim):
+        #Mirror tomcat.vision._enforce_max_dim(), which scales the long edge down
+        #to max_dim before the model sees the image.
+        if w > h:
+            return (int(max_dim), max(1, int(h * (float(max_dim) / float(w)))))
+        return (max(1, int(w * (float(max_dim) / float(h)))), int(max_dim))
+    return (int(w), int(h))
 
 
 def _boxes_to_yolo_strings(boxes: List[Tuple[float, float, float, float]]) -> List[str]:

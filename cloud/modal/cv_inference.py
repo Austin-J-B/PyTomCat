@@ -349,6 +349,7 @@ class CVInference:
             "ok": True,
             "device": str(self._device),
             "cuda_available": torch.cuda.is_available(),
+            "encoder_revision": "R6",
         }
 
 

@@ -1285,6 +1285,36 @@ async def start_web_server(bot):
         except FileNotFoundError:
             return web.Response(text="labeler.js not found", status=404)
 
+    async def get_labeler_save_queue_js(request):
+        """Serve the labeler's standalone pending-save queue."""
+        try:
+            with open("labeler-save-queue.js", "r", encoding="utf-8") as f:
+                resp = web.Response(text=f.read(), content_type="application/javascript")
+                resp.headers["Cache-Control"] = "no-store"
+                return _with_cors(resp, request)
+        except FileNotFoundError:
+            return web.Response(text="labeler-save-queue.js not found", status=404)
+
+    async def get_labeler_api_js(request):
+        """Serve the labeler's standalone HTTP client."""
+        try:
+            with open("labeler-api.js", "r", encoding="utf-8") as f:
+                resp = web.Response(text=f.read(), content_type="application/javascript")
+                resp.headers["Cache-Control"] = "no-store"
+                return _with_cors(resp, request)
+        except FileNotFoundError:
+            return web.Response(text="labeler-api.js not found", status=404)
+
+    async def get_labeler_theme_css(request):
+        """Serve the labeler's standalone visual theme."""
+        try:
+            with open("labeler-theme.css", "r", encoding="utf-8") as f:
+                resp = web.Response(text=f.read(), content_type="text/css")
+                resp.headers["Cache-Control"] = "no-store"
+                return _with_cors(resp, request)
+        except FileNotFoundError:
+            return web.Response(text="labeler-theme.css not found", status=404)
+
     async def get_members(request):
         """Return JSON list of members allowed to be scheduled."""
         _, error = await _require_permissions(request, require_view=True)
@@ -1898,6 +1928,9 @@ async def start_web_server(bot):
         web.get('/', get_index),
         web.get('/privacy', get_privacy),
         web.get('/about', get_about),
+        web.get('/labeler-theme.css', get_labeler_theme_css),
+        web.get('/labeler-api.js', get_labeler_api_js),
+        web.get('/labeler-save-queue.js', get_labeler_save_queue_js),
         web.get('/labeler.js', get_labeler_js),
         web.get('/api/members', get_members),
         web.options('/api/members', _options_preflight),
@@ -2450,6 +2483,56 @@ async def on_message_delete(message: discord.Message):
 
 
 #------- Member join/leave + invite tracking -------
+#Account-shape signals captured at the moment of joining. Deliberately recorded
+#and not acted on: measured against a year of confirmed spam accounts, the best
+#metadata-only rule still flagged a real member every third time it fired, so
+#none of this is decisive enough to gate access on. The avatar fields especially
+#had no historical record at all, which is why the "default pfp means bot"
+#intuition has never been possible to check against real numbers.
+async def _join_profile_signals(member: discord.Member) -> dict:
+    """Collect account-metadata signals for a joining member (best-effort)."""
+    out: dict = {}
+    try:
+        #Member.avatar proxies the *global* avatar, so None means the account
+        #still carries Discord's generated default rather than a real photo.
+        avatar = getattr(member, 'avatar', None)
+        out["default_avatar"] = avatar is None
+        #The hash catches a farm reusing one stolen photo across many accounts,
+        #which no per-account rule could ever see.
+        out["avatar_hash"] = getattr(avatar, 'key', None)
+        out["guild_avatar"] = getattr(member, 'guild_avatar', None) is not None
+    except Exception:  #partial member object; leave the avatar fields absent
+        pass
+    try:
+        out["global_name"] = getattr(member, 'global_name', None)
+        out["is_bot"] = bool(getattr(member, 'bot', False))
+        #True while the account still hasn't cleared membership screening.
+        out["pending"] = bool(getattr(member, 'pending', False))
+        out["public_flags"] = int(getattr(getattr(member, 'public_flags', None), 'value', 0) or 0)
+    except Exception:  #flags/screening unavailable on this gateway payload
+        pass
+    try:
+        created = getattr(member, 'created_at', None)
+        #Explicit creation timestamp so later analysis doesn't have to decode the
+        #snowflake, and so creation *hour* survives as a first-class field --
+        #account_age_days rounds it away.
+        out["created_at"] = created.isoformat() if created else None
+    except Exception:  #missing/naive timestamp
+        pass
+    #Banner and accent colour never arrive in the GUILD_MEMBER_ADD payload; they
+    #need a user fetch. One extra call per join (~200/year) is cheap, and a
+    #failure here must not cost us the rest of the record.
+    try:
+        full = await bot.fetch_user(int(getattr(member, 'id', 0) or 0))
+        out["has_banner"] = getattr(full, 'banner', None) is not None
+        out["accent_color"] = getattr(getattr(full, 'accent_color', None), 'value', None)
+    except Exception as fetch_exc:
+        out["has_banner"] = None
+        out["accent_color"] = None
+        log_action("member_join_fetch_error", f"user={getattr(member, 'id', None)}", str(fetch_exc))
+    return out
+
+
 @bot.event
 async def on_member_join(member: discord.Member):
     """Track invite usage and log onboarding events."""
@@ -2497,6 +2580,7 @@ async def on_member_join(member: discord.Member):
             "account_age_days": age_days,
             "invite_code": code_used,
             "inviter_id": inviter_id,
+            **(await _join_profile_signals(member)),
         })
     except Exception:
         pass

@@ -42,6 +42,7 @@ _LABELER_ALLOWED_ORIGINS = {
     for origin in os.getenv("UI_ALLOWED_ORIGINS", "http://localhost:8080").split(",")
     if origin.strip()
 }
+_SAVE_BATCH_MAX = max(1, int(os.getenv("LABELER_SAVE_BATCH_MAX", "500") or "500"))
 
 #Column indices in local photo metadata rows (0-indexed)
 COL_CAT_ID = 0       #A: CatID (e.g., "1. Twix")
@@ -573,6 +574,10 @@ _photo_crop_index_generation: int = 0
 _PHOTO_CROP_INDEX_MISS_REBUILD_INTERVAL_SEC = max(
     1.0,
     float(os.getenv("LABELER_PHOTO_CROP_INDEX_MISS_REBUILD_INTERVAL_SEC", "15") or "15"),
+)
+_PHOTO_CROP_INDEX_FORCE_COALESCE_SEC = max(
+    0.01,
+    float(os.getenv("LABELER_PHOTO_CROP_INDEX_FORCE_COALESCE_SEC", "0.25") or "0.25"),
 )
 _photo_crop_index_miss_rebuild_next_mono: float = 0.0
 _ref_crop_result_cache: Dict[str, Tuple[float, bytes]] = {}
@@ -2289,6 +2294,12 @@ async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
         and (now - float(_photo_crop_index_built_mono)) < _MANUAL_METADATA_REF_TTL_SEC
     ):
         return
+    if (
+        force
+        and _photo_crop_index_cache
+        and (now - float(_photo_crop_index_built_mono)) < _PHOTO_CROP_INDEX_FORCE_COALESCE_SEC
+    ):
+        return
     #A forced rebuild scans the whole photo metadata table, and the UI fetches
     #ref crops a dozen at a time, so a single batch of misses used to queue a
     #dozen full rebuilds back to back.
@@ -2301,7 +2312,13 @@ async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
             and (now2 - float(_photo_crop_index_built_mono)) < _MANUAL_METADATA_REF_TTL_SEC
         ):
             return
-        if force and _photo_crop_index_generation != requested_generation:
+        if (
+            force
+            and _photo_crop_index_cache
+            and (now2 - float(_photo_crop_index_built_mono)) < _PHOTO_CROP_INDEX_FORCE_COALESCE_SEC
+        ):
+            return
+        if force and float(_photo_crop_index_built_mono) > requested_mono:
             #Somebody else rebuilt while this caller waited for the lock, so the
             #index is already newer than the miss that triggered this call.
             return
@@ -6130,11 +6147,18 @@ async def post_save(request: web.Request) -> web.Response:
         global _manual_metadata_ref_cache, _manual_metadata_ref_built_mono
         global _photo_crop_index_cache, _photo_crop_index_built_mono
         data = await request.json()
+        if not isinstance(data, dict):
+            return _with_cors(web.Response(status=400, text="Invalid request"), request)
         updates = data.get("updates", [])  #List of {serial, box_coords, box_cat_ids}
         _, actor_name = _actor_from_request(request)
 
         if not isinstance(updates, list) or not updates:
             return _with_cors(web.Response(status=400, text="No updates"), request)
+        if len(updates) > _SAVE_BATCH_MAX:
+            return _with_cors(
+                web.Response(status=400, text=f"Too many updates (maximum {_SAVE_BATCH_MAX})"),
+                request,
+            )
 
         save_outcome = await asyncio.to_thread(_apply_save_updates_sync, updates, str(actor_name or ""))
         pending_unblacklist_ref_serials = list(save_outcome.get("pending_unblacklist_ref_serials") or [])
@@ -6160,25 +6184,29 @@ async def post_save(request: web.Request) -> web.Response:
         #crop each time forced the UI (which fetches ref crops 12 at a time) to
         #re-render the whole gallery from disk after every save, so evict only
         #the serials this save actually touched.
-        saved_serials: List[int] = []
-        for update in updates:
-            if not isinstance(update, dict):
-                continue
-            saved_sn = _parse_serial(str(update.get("serial") or ""))
-            if saved_sn:
-                saved_serials.append(int(saved_sn))
+        saved_serials = [int(sn) for sn in save_outcome.get("saved_serials", [])]
         _drop_ref_crop_renders_for_serials(saved_serials)
 
-        log_action("labeler_save", "saved", f"{len(updates)} annotations by {actor_name}")
+        saved_count = int(save_outcome.get("saved", len(saved_serials)) or 0)
+        requested_count = int(save_outcome.get("requested", len(updates)) or 0)
+        missing_serials = [int(sn) for sn in save_outcome.get("missing_serials", [])]
+        log_action(
+            "labeler_save",
+            "saved",
+            f"saved={saved_count}; requested={requested_count}; missing={len(missing_serials)}; actor={actor_name}",
+        )
         return _with_cors(web.json_response({
             "status": "ok",
-            "saved": len(updates),
+            "requested": requested_count,
+            "saved": saved_count,
+            "saved_serials": saved_serials,
+            "missing_serials": missing_serials,
             "unblacklisted_ref_serials": sorted(list(dict.fromkeys(cleared_ref_blacklist_serials))),
         }), request)
+    except local_photos.AnnotationUpdateError as e:
+        log_action("labeler_save_error", "bad_request", str(e))
+        return _with_cors(web.Response(status=400, text=str(e)), request)
     except ValueError as e:
-        #No code path here raises ValueError deliberately, so anything caught
-        #comes from library internals (json/int parsing) and str(e) can carry
-        #stack detail. Log it; hand the caller a generic message.
         log_action("labeler_save_error", "bad_request", str(e))
         return _with_cors(web.Response(status=400, text="Invalid request"), request)
     except Exception as e:
@@ -6258,9 +6286,15 @@ async def post_flag_incorrect(request: web.Request) -> web.Response:
 #---------- Cat List Endpoint ----------
 
 async def get_cats(request: web.Request) -> web.Response:
-    """Return list of all known cat names from the gallery."""
+    """Return all profile and gallery identities available to the labeler."""
     try:
-        cats = await asyncio.to_thread(V.get_all_cats)
+        def load_names() -> List[str]:
+            _, profile_rows, _ = _load_profile_catalog()
+            names = [str(row.get("name") or "").strip() for row in profile_rows]
+            names.extend(str(name or "").strip() for name in (V.get_all_cats() or []))
+            return list(dict.fromkeys(name for name in names if name))
+
+        cats = await asyncio.to_thread(load_names)
         return _with_cors(web.json_response({"cats": cats}), request)
     except Exception as e:
         log_action("labeler_get_cats_error", "error", str(e))
@@ -6488,7 +6522,39 @@ async def options_handler(request: web.Request) -> web.Response:
 #---------- Route registration ----------
 
 async def kickoff_boot_cache_warm_startup() -> None:
-    """Startup hook: fire-and-forget boot cache warming if enabled."""
+    """Restore legacy labels, then fire-and-forget boot cache warming."""
+    try:
+        from ..services.legacy_wildlife import restore_legacy_wildlife_annotations
+
+        restored = await asyncio.to_thread(restore_legacy_wildlife_annotations)
+        count = int(restored.get("restored") or 0)
+        if count:
+            log_action(
+                "legacy_wildlife_restored",
+                f"restored={count}",
+                ",".join(str(sn) for sn in restored.get("restored_serials") or []),
+            )
+        gallery_names = {str(name or "").strip() for name in (V.get_all_cats() or [])}
+        needs_r7 = not {"Melvin", "Stove"}.issubset(gallery_names)
+        if needs_r7 and str(getattr(settings, "cv_backend", "") or "").strip().lower() == "modal":
+            scheduled = await schedule_gallery_retrain(
+                requested_by="legacy-wildlife-v1",
+                gallery_version="7",
+                required_backend="modal",
+            )
+            log_action(
+                "legacy_wildlife_gallery_scheduled",
+                "version=R7 backend=modal",
+                str(scheduled.get("scheduled_date") or ""),
+            )
+        elif needs_r7:
+            log_action(
+                "legacy_wildlife_gallery_deferred",
+                "version=R7 backend=modal",
+                f"active_backend={getattr(settings, 'cv_backend', '')}",
+            )
+    except Exception as e:
+        log_action("legacy_wildlife_restore_error", "error", f"{type(e).__name__}: {e!r}")
     await _log_local_mode_once()
     _kickoff_boot_cache_warm_once()
 

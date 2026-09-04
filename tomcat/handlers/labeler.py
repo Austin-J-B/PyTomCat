@@ -56,7 +56,13 @@ COL_BOX_CAT_IDS = 9  #J: BoxCatIDs
 #Regex for serial extraction
 SN_PATTERN = re.compile(r"sn(\d+)", re.IGNORECASE)
 _IDENTIFY_CONCURRENCY = max(1, int(os.getenv("LABELER_IDENTIFY_CONCURRENCY", "2") or "2"))
-_IDENTIFY_TIMEOUT_SEC = float(os.getenv("LABELER_IDENTIFY_TIMEOUT_SEC", "45") or "45")
+#A cold Modal container takes 30-60s to answer; 45s left the foreground path
+#failing on the first item after any idle gap. Ordered deliberately:
+#prefetch 20s < foreground 60s < client 75s < client hard ceiling 90s <
+#Modal function timeout 180s. Prefetch stays short on purpose -- it is
+#speculative and holds one of only two identify slots, and a timed-out
+#prefetch still warms the container because the worker thread runs on.
+_IDENTIFY_TIMEOUT_SEC = float(os.getenv("LABELER_IDENTIFY_TIMEOUT_SEC", "60") or "60")
 _IDENTIFY_PREFETCH_TIMEOUT_SEC = float(os.getenv("LABELER_IDENTIFY_PREFETCH_TIMEOUT_SEC", "20") or "20")
 _IDENTIFY_PREFETCH_MAX_BOXES = max(1, int(os.getenv("LABELER_IDENTIFY_PREFETCH_MAX_BOXES", "12") or "12"))
 _IDENTIFY_PREFETCH_REFS_PER_CANDIDATE = max(

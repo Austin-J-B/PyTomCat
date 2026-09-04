@@ -76,7 +76,13 @@
     const INITIAL_CLASSIFY_WARM_TIMEOUT_MS = 30000;
     const ITEM_READY_WAIT_TIMEOUT_MS = 90000;
     const DETECT_READY_WAIT_TIMEOUT_MS = 60000;
-    const CLASSIFY_READY_WAIT_TIMEOUT_MS = 15000;
+    //Classify waits on a GPU embed that runs on a Modal container, and that
+    //container scales to zero after 15 minutes idle. A cold start costs 30-60s,
+    //so a 15s budget guaranteed that the first item after any break failed and
+    //the panel came up empty -- the shortest budget in the file guarding the
+    //slowest call. Sit above the server's own identify timeout so a slow item
+    //returns a real answer instead of the client giving up first.
+    const CLASSIFY_READY_WAIT_TIMEOUT_MS = 75000;
     const CLASSIFY_WARM_JOIN_TIMEOUT_MS = 12000;
     const CLASSIFY_PREFETCH_TIMEOUT_MS = 30000;
     const READY_WAIT_DIAG_INTERVAL_MS = 2000;

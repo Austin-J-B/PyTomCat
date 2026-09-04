@@ -725,11 +725,18 @@ def _prep_emails_between(start_dt: datetime, end_dt: datetime) -> list[dict]:
         })
     return prepped
 
-def _email_only_candidates(rows: list[dict], cur_sem: str) -> list[tuple[str, str]]:
-    """Fallback: verify by membership row + payment email when portal message is missing."""
+def _email_only_candidates(rows: list[dict], cur_sem: str,
+                           donations: Optional[list] = None) -> list[tuple[str, str]]:
+    """Fallback: verify by membership row + payment email when portal message is missing.
+
+    Pass `donations` to also collect (email, semester, extra) for overpayments.
+    Unlike the portal path there is no Discord message asserting a dues payment
+    here, so the "dues" note requirement below is the only corroboration that
+    this payment was dues at all - it stays required on this path.
+    """
     cur_sem_norm = _norm_sem_label(cur_sem)
-    base_due = float(getattr(settings, 'dues_base_amount', 15.0) or 15.0)
-    tol = float(getattr(settings, 'dues_amount_tolerance', 0.01) or 0.01)
+    base_due = _dues_base_amount()
+    tol = _dues_amount_tolerance()
     backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
     now = _dues_now()
     def _align_dt(dt: Optional[datetime]) -> Optional[datetime]:
@@ -794,6 +801,10 @@ def _email_only_candidates(rows: list[dict], cur_sem: str) -> list[tuple[str, st
                 best = E
         if best:
             out.append((email, sem or cur_sem))
+            if donations is not None:
+                best_amt = best.get('amount')
+                if best_amt is not None and best_amt > base_due + tol:
+                    donations.append((email, sem or cur_sem, round(best_amt - base_due, 2)))
     #Deduplicate
     seen: set[tuple[str, str]] = set()
     uniq: list[tuple[str, str]] = []
@@ -1207,6 +1218,63 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
         except Exception:
             pass
         return False, f"Error updating sheet: {e}"
+
+
+def _donation_extra_for_record(rec: dict) -> float:
+    """Amount a verified dues payment overshot the base dues by, or 0.0.
+
+    The portal message has already asserted a dues payment, so the matched
+    payment email is treated as that payment; anything above the base dues in a
+    single payment is an add-on donation and belongs in the sheet's donation
+    column. Two cases must not be split:
+
+    * The matched payment is exactly the dues amount - nothing extra.
+    * A separate dues-amount payment also scored for this message, meaning the
+      member paid dues and donated separately. The larger payment is a
+      standalone donation; finance logs it on the income tab from the email, so
+      writing it here too would double-count it.
+    """
+    E = rec.get('primary_email') or None
+    if not E:
+        return 0.0
+    text = f"{E.get('subject') or ''} {E.get('content') or ''}"
+    amt = _extract_amount(text)
+    if amt is None:
+        return 0.0
+    base = _dues_base_amount()
+    tol = _dues_amount_tolerance()
+    if amt <= base + tol:
+        return 0.0
+    matched_id = str(E.get('id') or '')
+    for cand in rec.get('payment_candidates') or []:
+        if str(cand.get('id') or '') == matched_id:
+            continue
+        if _is_dues_amount(cand.get('amount')):
+            #Separate dues payment exists; leave this one to finance.
+            return 0.0
+    return round(max(0.0, amt - base), 2)
+
+
+def _collect_donation_updates(recs: list[dict]) -> list[tuple[str, Optional[str], float]]:
+    """Build (email, semester, donation) rows for records worth a donation write."""
+    updates: list[tuple[str, Optional[str], float]] = []
+    for rec in recs:
+        S = rec.get('primary_member') or {}
+        email = (S.get('email') or '').strip().lower()
+        if not email:
+            continue
+        extra = _donation_extra_for_record(rec)
+        if extra <= 0.0:
+            continue
+        rec['donation_extra'] = extra
+        updates.append((email, (S.get('semester') or '').strip() or None, extra))
+        try:
+            log_action('dues_donation_detected',
+                       f"user={rec.get('author','?')} extra={extra:.2f}",
+                       f"email={email}; semester={(S.get('semester') or '').strip() or 'none'}")
+        except Exception:
+            pass
+    return updates
 
 
 async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float]]) -> tuple[bool, str]:
@@ -1627,9 +1695,8 @@ async def handle_update_dues_members(intent, ctx) -> None:
 
     #2) Auto-verify high-confidence entries and delete their portal messages
     eligible: list[dict] = []
-    donation_updates: list[tuple[str, Optional[str], float]] = []
-    base_due = float(getattr(settings, 'dues_base_amount', 15.0) or 15.0)
-    tol = float(getattr(settings, 'dues_amount_tolerance', 0.01) or 0.01)
+    base_due = _dues_base_amount()
+    tol = _dues_amount_tolerance()
     for rec in rows:
         sc = float(rec.get('score_total') or 0.0)
         S = rec.get('primary_member') or {}
@@ -1662,27 +1729,21 @@ async def handle_update_dues_members(intent, ctx) -> None:
                     pass
                 else:
                     continue
-        #Require amount == 15 or email mentions dues/due in subject/body
+        #Payment must at least cover the dues; an overpayment is a combined
+        #dues + donation and gets split by _donation_extra_for_record below.
+        #This used to also drop any overpayment whose note omitted the word
+        #"dues", which silently discarded the member instead of verifying them.
         subj = (E.get('subject') or '')
         body = (E.get('content') or '')
         text = f"{subj} {body}"
         amt = _extract_amount(text)
-        has_dues_word = bool(_DUES_WORD_RE.search(text))
         if amt is None:
             continue
         if amt + tol < base_due:
             continue
-        if amt > base_due + tol and not has_dues_word:
-            continue
-        donation_extra = 0.0
-        if has_dues_word and amt > base_due + tol:
-            donation_extra = round(max(0.0, amt - base_due), 2)
-        if donation_extra > 0.0:
-            rec['donation_extra'] = donation_extra
-            email_for_donation = (S.get('email') or '').strip().lower()
-            if email_for_donation:
-                donation_updates.append((email_for_donation, (S.get('semester') or '').strip() or None, donation_extra))
         eligible.append(rec)
+
+    donation_updates = _collect_donation_updates(eligible)
 
     #Mark Verified for eligible emails (email + semester)
     emails_with_sem: list[tuple[str, str | None]] = []
@@ -2681,6 +2742,46 @@ _W = {
 
 _ALLOWED_AMOUNTS = set(int(x) for x in getattr(settings,'dues_allowed_amounts',[15,20,25,30]))
 
+def _dues_base_amount() -> float:
+    return float(getattr(settings, 'dues_base_amount', 15.0) or 15.0)
+
+def _dues_amount_tolerance() -> float:
+    return float(getattr(settings, 'dues_amount_tolerance', 0.01) or 0.01)
+
+def _is_dues_amount(amount: Optional[float]) -> bool:
+    if amount is None:
+        return False
+    return abs(float(amount) - _dues_base_amount()) <= _dues_amount_tolerance()
+
+def _prefer_dues_amount(cands: List[Tuple[float, dict]]) -> List[Tuple[float, dict]]:
+    """Promote an exact dues-amount payment over a near-tied larger one.
+
+    A member who pays dues and makes a separate donation the same day produces
+    two payment emails. Picking between them was left to the amount weights
+    alone (amount_15=0.25 vs amount_tiers=0.10), a 0.15 gap that name_overlap
+    (0.60) or time_2h (0.45) can easily swamp - so the donation could win the
+    match. Then the dues payment looks unaccounted for, the donation gets
+    consumed by the dues pipeline instead of reaching finance's income tab, and
+    the difference is misread as an add-on donation.
+
+    Only near-ties are reordered, so this breaks the ambiguous case without
+    overriding a clearly better match.
+    """
+    if len(cands) < 2:
+        return cands
+    if _is_dues_amount((cands[0][1] or {}).get('amount')):
+        return cands
+    margin = float(getattr(settings, 'dues_amount_tiebreak_margin', 0.30) or 0.30)
+    top_score = cands[0][0]
+    for i, (sc, E) in enumerate(cands):
+        if i == 0:
+            continue
+        if top_score - sc > margin:
+            break
+        if _is_dues_amount((E or {}).get('amount')):
+            return [cands[i]] + cands[:i] + cands[i + 1:]
+    return cands
+
 def _time_score(dts: Optional[datetime], ets: Optional[datetime]) -> float:
     if not dts or not ets:
         return 0.0
@@ -2942,6 +3043,7 @@ async def _analyze_dues(bot) -> List[dict]:
             if se > 0:
                 email_cands.append((se, E))
         email_cands.sort(key=lambda x: x[0], reverse=True)
+        email_cands = _prefer_dues_amount(email_cands)
         E_best = email_cands[0][1] if email_cands else None
         E_best_score = email_cands[0][0] if email_cands else 0.0
 
@@ -3039,6 +3141,14 @@ async def _analyze_dues(bot) -> List[dict]:
             'name_guess': p.get('name'),
             'primary_member': S or {},
             'primary_email': (E_final['raw'] if E_final else None),
+            #Amounts of the other payment emails that scored for this message,
+            #so the donation split can tell a combined payment apart from a
+            #same-day dues + separate-donation pair.
+            'payment_candidates': [
+                {'id': c.get('id'), 'amount': c.get('amount'), 'provider': c.get('provider')}
+                for _sc, c in rec.get('email_cands', [])
+                if c and c.get('amount') is not None
+            ],
             'payment_username_email': _payment_username_from_email(E_final['raw']) if E_final else None,
             'payment_username_sheet': S.get('payment_username') if S else None,
             'flag_reason': flag_reason,
@@ -3385,7 +3495,21 @@ async def _run_daily_dues_job(bot) -> None:
             log_action('dues_auto_verify',
                        f"user={rec.get('author','?')} score={score:.2f}",
                        json.dumps({k: v for k, v in rec.items() if k.startswith('score_') or k in ['author', 'provider', 'semester']}))
-    
+
+    #2b. Write add-on donations for members who overpaid their dues.
+    # Only the manual dues-update command did this before, so the donation
+    # column went unfilled unless an officer ran it by hand.
+    if verified:
+        try:
+            donation_updates = _collect_donation_updates(verified)
+            if donation_updates:
+                ok_don, msg_don = await _update_donation_amounts(donation_updates)
+                log_action('dues_auto_donation',
+                           f"count={len(donation_updates)} ok={int(bool(ok_don))}",
+                           msg_don)
+        except Exception as e:
+            log_action('dues_auto_donation_error', '', str(e))
+
     #3. Mark verified in sheet if we have emails
     try:
         emails_to_verify: list[tuple[str, str]] = []
@@ -3403,9 +3527,15 @@ async def _run_daily_dues_job(bot) -> None:
         extra: list[tuple[str, str]] = []
         try:
             rows_for_fallback = _load_membership_rows()
-            extra = _email_only_candidates(rows_for_fallback, cur_sem)
+            fallback_donations: list[tuple[str, Optional[str], float]] = []
+            extra = _email_only_candidates(rows_for_fallback, cur_sem, donations=fallback_donations)
             if extra:
                 emails_to_verify.extend(extra)
+            if fallback_donations:
+                ok_don, msg_don = await _update_donation_amounts(fallback_donations)
+                log_action('dues_auto_donation',
+                           f"fallback={len(fallback_donations)} ok={int(bool(ok_don))}",
+                           msg_don)
         except Exception:
             pass
         #Deduplicate

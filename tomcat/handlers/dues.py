@@ -119,6 +119,130 @@ _PAID_PHRASE_RE = re.compile(r"\b(paid (?:on|via|through|to)|sent you|paid you|i
 _DUES_WORD_RE = re.compile(r"\bdues?\b", re.I)
 _DONATION_WORD_RE = re.compile(r"\bdonat(?:e|ion|ed)\b", re.I)
 
+#----------- Payer name extraction -----------
+#Tokens that are never part of a payer's name. A candidate is trimmed of these
+#at both ends and rejected if any survives in the middle, which is what keeps
+#sentence scaffolding ("Hi I paid $15 on Cash App") and provider words
+#("- paid via Paypal") out of the name slot.
+_NAME_STOPWORDS = {
+    #providers and payment nouns
+    "paypal", "venmo", "cashapp", "cash", "app", "zelle", "irl", "dues", "due",
+    "donation", "donate", "donated", "money", "payment", "tag", "cashtag",
+    "username", "user", "discord", "account", "receipt", "dollars",
+    #payment verbs
+    "paid", "payed", "pay", "paying", "sent", "send", "spent", "venmoed",
+    "cashapped", "cashappd", "zelled", "gave",
+    #sentence filler -- the old comma fallback returned whole clauses of this
+    "hi", "hello", "hey", "sorry", "thanks", "thank", "yall", "just", "did",
+    "this", "that", "the", "a", "an", "my", "me", "im", "i", "is", "was",
+    "am", "name", "names", "and", "on", "via", "to", "for", "from", "with",
+    "in", "at", "of", "under", "it", "its", "as", "so", "but", "also", "here",
+    "days", "day", "ago", "couple", "last", "time", "late", "activity", "fair",
+    "person", "already", "today", "yesterday", "back", "still", "again",
+}
+
+#"my name is X", "I'm X", "it's under X", "my names X". This is how most people
+#actually identify themselves, and the old parser had no rule for it at all --
+#it fell through to a comma split that returned everything BEFORE the name.
+_SELF_NAME_RE = re.compile(
+    r"\b(?:my\s+name(?:\s*['’]?s|\s+is)?|i\s*['’]?\s*m\b|i\s+am\b|"
+    r"it\s*['’]?s\s+under|under\s+the\s+name|paid\s+under|name\s*[:\-])\s+"
+    r"([A-Za-z'`\-]+(?:\s+[A-Za-z'`\-]+){0,3})",
+    re.I,
+)
+#"paid $15 via CashApp as Mintea Fresh" -- weaker cue, so it demands a
+#two-token name rather than accepting a single trailing word.
+_AS_NAME_RE = re.compile(r"\bas\s+([A-Za-z'`\-]+(?:\s+[A-Za-z'`\-]+){0,3})", re.I)
+#"Paid dues on PayPal under Giovanna Hernandez!"
+_UNDER_NAME_RE = re.compile(r"\bunder\s+([A-Za-z'`\-]+(?:\s+[A-Za-z'`\-]+){0,3})", re.I)
+#"Bunny Wood venmo", "Jon Ruhl - paid via Venmo", "Charlotte Brownlee (handle) paypal"
+_LEADING_NAME_RE = re.compile(r"^\s*([A-Z][A-Za-z'`\-]*(?:\s+[A-Z][A-Za-z'`\-]*){0,3})")
+#"Celeste bowles paid $15 via venmo" -- surname left uncapitalized. Anchored on
+#a following payment word so it cannot swallow an ordinary sentence opener.
+_LEADING_LOOSE_NAME_RE = re.compile(
+    r"^\s*([A-Z][A-Za-z'`\-]*(?:\s+[A-Za-z'`\-]+){1,2}?)\s+"
+    r"(?:paid|payed|pays|sent|venmo|venmoed|cashapp|cash\s?app|paypal|zelle|zelled)\b",
+    re.I,
+)
+#"Paid 20$ on PayPal - Logan Hackett". Uncommon, so it sits below the rules above.
+_TRAILING_NAME_RE = re.compile(
+    r"[-–—;!.,]\s*([A-Z][A-Za-z'`\-]*(?:\s+[A-Z][A-Za-z'`\-]*){0,3})\s*$"
+)
+
+
+def _trim_name_tokens(cand: str) -> str:
+    """Strip punctuation, then shed stopword tokens from both ends."""
+    cleaned = _norm_space(re.sub(r"[^A-Za-z'`\-\s]", " ", cand or ""))
+    toks = [t for t in cleaned.split(" ") if t.strip("'`-")]
+    lo, hi = 0, len(toks)
+    while lo < hi and toks[lo].lower().strip("'`-") in _NAME_STOPWORDS:
+        lo += 1
+    while hi > lo and toks[hi - 1].lower().strip("'`-") in _NAME_STOPWORDS:
+        hi -= 1
+    return " ".join(toks[lo:hi])
+
+
+def _looks_like_person_name(cand: str, min_tokens: int = 2, author_keys: tuple = ()) -> Optional[str]:
+    """Return the cleaned name if it plausibly names a person, else None."""
+    trimmed = _trim_name_tokens(cand)
+    if not trimmed:
+        return None
+    toks = trimmed.split(" ")
+    if len(toks) < min_tokens or len(toks) > 4:
+        return None
+    #A stopword surviving in the middle means we captured a clause, not a name.
+    if any(t.lower().strip("'`-") in _NAME_STOPWORDS for t in toks):
+        return None
+    #A parenthetical that just repeats the author's Discord handle is a handle.
+    key = _norm_user(trimmed)
+    if key and any(key == _norm_user(a) for a in author_keys if a):
+        return None
+    return trimmed
+
+
+def _extract_payer_name(text: str, author_keys: tuple = ()) -> Optional[str]:
+    """Pull the payer's name out of a dues portal message.
+
+    Ordered most explicit first. Every candidate goes through
+    _looks_like_person_name, so a rule that fires on the wrong span yields None
+    and the next rule gets its turn instead of poisoning the match.
+    """
+    if not text:
+        return None
+    #These four read the name out of the sentence, so a result matching the
+    #author's display name is confirmation rather than a handle collision --
+    #plenty of members set their display name to their real name.
+    m = _SELF_NAME_RE.search(text)
+    if m:
+        got = _looks_like_person_name(m.group(1), min_tokens=1)
+        if got:
+            return got
+    for weak in (_AS_NAME_RE, _UNDER_NAME_RE):
+        m = weak.search(text)
+        if m:
+            got = _looks_like_person_name(m.group(1), min_tokens=2)
+            if got:
+                return got
+    for lead in (_LEADING_NAME_RE, _LEADING_LOOSE_NAME_RE):
+        m = lead.match(text)
+        if m:
+            got = _looks_like_person_name(m.group(1), min_tokens=2)
+            if got:
+                return got
+    m = _TRAILING_NAME_RE.search(text)
+    if m:
+        got = _looks_like_person_name(m.group(1), min_tokens=2)
+        if got:
+            return got
+    #Last resort: a parenthetical holding a real name rather than a handle.
+    for inner in re.findall(r"\(([^()]{1,60})\)", text):
+        if _VENMO_HANDLE_RE.search(inner) or _CASHAPP_RE.search(inner):
+            continue
+        got = _looks_like_person_name(inner, min_tokens=2, author_keys=author_keys)
+        if got:
+            return got
+    return None
+
 try:
     from rapidfuzz import fuzz as rf_fuzz
     def _ratio(a: str, b: str) -> int:
@@ -299,34 +423,13 @@ def _parse_portal_message(msg) -> Dict[str, Any]:
     venmo_handles = _VENMO_HANDLE_RE.findall(text)
     cash_handles = _CASHAPP_RE.findall(text)
 
-    # Extract the payer name from parentheses first, then fall back to text patterns.
-    name = None
-    paren = re.search(r"\(([^(]{1,60})\)", text)
-    if paren:
-        inner = paren.group(1).strip()
-        if not (_VENMO_HANDLE_RE.search(inner) or _CASHAPP_RE.search(inner)):
-            name = inner
-    if not name:
-        m2 = _PAID_PHRASE_RE.search(text)
-        if m2:
-            tail = text[m2.end():].strip()
-            cand = re.match(r"([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})", tail)
-            if cand:
-                name = cand.group(1).strip()
-    if not name:
-        mlead = re.match(r"^\s*([A-Z][A-Za-z'`\-]+(?:\s+[A-Z][A-Za-z'`\-]+){0,3})\s+paid\b", text)
-        if mlead:
-            name = mlead.group(1).strip()
-    if not name and ',' in text:
-        head = text.split(',', 1)[0].strip()
-        if re.match(r"[A-Za-z].+\s+[A-Za-z].+", head):
-            name = head
-    if name and 'http' in name.lower():
-        name = None
-
     author_obj = getattr(msg, 'author', None)
     author_username = getattr(author_obj, 'name', '')
     author_display = getattr(author_obj, 'display_name', '') or author_username
+
+    name = _extract_payer_name(text, author_keys=(author_username, author_display))
+    if name and 'http' in name.lower():
+        name = None
 
     return {
         "author_id": int(getattr(author_obj,'id', 0) or 0),
@@ -1707,6 +1810,11 @@ async def handle_update_dues_members(intent, ctx) -> None:
             continue
         if not (S and E):
             continue
+        #The sheet row and the receipt have to name the same person. Timing,
+        #amount and provider alone are enough to pull in a stranger's payment
+        #when the member's own email is missing.
+        if rec.get('flag_reason') == 'name_mismatch':
+            continue
         prov = ((_provider_from_email((E.get('from') or ''), (E.get('subject') or ''), (E.get('content') or ''))) or '').lower()
         if prov not in {'venmo','cashapp','paypal'}:
             continue
@@ -1855,7 +1963,10 @@ async def handle_update_dues_members(intent, ctx) -> None:
         if _is_current_verified(best_mem):
             continue
         reason = None
-        if rec.get('flag_reason') in {'cash','donation'}:
+        if rec.get('flag_reason') == 'name_mismatch':
+            payer = rec.get('payment_username_email') or '(unknown)'
+            reason = f"receipt says {payer}"
+        elif rec.get('flag_reason') in {'cash','donation'}:
             reason = rec.get('flag_reason')
         elif sc < 1.20:
             reason = f"score={sc:.2f}"
@@ -2742,6 +2853,34 @@ _W = {
 
 _ALLOWED_AMOUNTS = set(int(x) for x in getattr(settings,'dues_allowed_amounts',[15,20,25,30]))
 
+#A sheet row has to clear this to count as a match. 0.35 admits a row carrying
+#the author's Discord handle (0.50) or a genuine name overlap of half its
+#tokens (0.70 * 0.5), and rejects a bare provider-word coincidence (0.20) or a
+#one-token sliver off a mis-parsed name.
+_MIN_SHEET_SCORE = 0.35
+
+
+def _payer_agrees(sheet_name: str, email_payer: str) -> bool:
+    """Do the sheet row and the payment email name the same person?
+
+    Deliberately loose: relatives pay on each other's behalf, so 'Kai Waddell'
+    against payer 'Lindsay Waddell' still agrees on the surname. What it
+    rejects is zero overlap -- 'Grant Atkinson' paired with payer 'Mai Thy
+    Doan', which is the shape of every wrong attachment in the logs.
+    """
+    a = _simplify_name(sheet_name or "")
+    b = _simplify_name(email_payer or "")
+    if not a or not b:
+        #No payer name to check against; fall back to the other evidence.
+        return True
+    A = {t for t in re.findall(r"[a-z]+", a.lower()) if len(t) > 1}
+    B = {t for t in re.findall(r"[a-z]+", b.lower()) if len(t) > 1}
+    if A & B:
+        return True
+    #Catches spelling drift that shares no exact token, e.g. Bowes / Bowles.
+    return _name_match(a, b) >= 80
+
+
 def _dues_base_amount() -> float:
     return float(getattr(settings, 'dues_base_amount', 15.0) or 15.0)
 
@@ -3022,11 +3161,14 @@ async def _analyze_dues(bot) -> List[dict]:
         if not mem_candidates:
             mem_candidates = members[:50]
 
-        #Score sheet candidates
+        #Score sheet candidates. Anything below the floor is no match at all --
+        #accepting every sc > 0 let a 0.10 name sliver attach a payment to an
+        #unrelated row, which is how a $15 Cash App payment landed on a
+        #leftover 2024 test entry whose full_name was "Hi".
         scored_S: List[Tuple[float, dict]] = []
         for S in mem_candidates:
             sc = _score_sheet(p, S)
-            if sc > 0:
+            if sc >= _MIN_SHEET_SCORE:
                 scored_S.append((sc, S))
         scored_S.sort(key=lambda x: x[0], reverse=True)
         S_best = scored_S[0][1] if scored_S else None
@@ -3128,6 +3270,14 @@ async def _analyze_dues(bot) -> List[dict]:
             subj = ((E_final or {}).get('raw') or {}).get('subject', '') if (E_final or rec.get('email_best')) else ''
             if eprov in {'venmo','cashapp','paypal'} and (eamt is None or int(round(eamt or 0)) in _ALLOWED_AMOUNTS or 'dues' in subj.lower()):
                 flag_reason = None
+
+        #Raised last so it survives the clearing above: a receipt that names
+        #somebody unrelated to the sheet row is the one thing a matching
+        #provider and amount must not be allowed to wave through.
+        if S and E_final:
+            payer = _payment_username_from_email(E_final['raw'])
+            if payer and not _payer_agrees(S.get('full_name') or '', payer):
+                flag_reason = 'name_mismatch'
 
         results.append({
             'event': 'dues_portal_analysis',

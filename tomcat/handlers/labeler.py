@@ -16,6 +16,7 @@ import io
 import re
 import os
 import math
+import ctypes
 import time
 import json
 import random
@@ -123,6 +124,12 @@ _loop_watchdog_started = False
 #floor, so a session that walks toward the OOM ceiling leaves a curve behind.
 _memory_watermark_mb = 0
 _memory_watermark_error_logged = False
+_last_malloc_trim_mono: float = 0.0
+#Only trim when there is enough resident memory for it to matter, and not
+#more often than the interval -- a trim walks every arena.
+_MALLOC_TRIM_FLOOR_MB = max(256, int(os.getenv("LABELER_MALLOC_TRIM_FLOOR_MB", "900") or "900"))
+_MALLOC_TRIM_INTERVAL_SEC = max(5.0, float(os.getenv("LABELER_MALLOC_TRIM_INTERVAL_SEC", "20") or "20"))
+_MALLOC_TRIM_LOG_MIN_MB = max(1, int(os.getenv("LABELER_MALLOC_TRIM_LOG_MIN_MB", "25") or "25"))
 _MEMORY_LOG_FLOOR_MB = max(256, int(os.getenv("LABELER_MEMORY_LOG_FLOOR_MB", "900") or "900"))
 _MEMORY_LOG_STEP_MB = max(64, int(os.getenv("LABELER_MEMORY_LOG_STEP_MB", "250") or "250"))
 _LOOP_HEARTBEAT_INTERVAL_SEC = max(
@@ -205,8 +212,15 @@ def _heap_census() -> Dict[str, Any]:
             tensor_bytes = 0
             tensor_count = 0
             buffer_bytes = 0
+            ndarray_bytes = 0
+            ndarray_count = 0
+            pil_bytes = 0
+            pil_count = 0
             torch_mod = sys.modules.get("torch")
             tensor_cls = getattr(torch_mod, "Tensor", None) if torch_mod is not None else None
+            numpy_mod = sys.modules.get("numpy")
+            ndarray_cls = getattr(numpy_mod, "ndarray", None) if numpy_mod is not None else None
+            image_cls = Image.Image
             for o in objs:
                 try:
                     tname = type(o).__name__
@@ -219,6 +233,20 @@ def _heap_census() -> Dict[str, Any]:
                         tensor_count += 1
                     except Exception:
                         pass
+                elif ndarray_cls is not None and isinstance(o, ndarray_cls):
+                    try:
+                        ndarray_bytes += int(o.nbytes)
+                        ndarray_count += 1
+                    except Exception:
+                        pass
+                elif image_cls is not None and isinstance(o, image_cls):
+                    #PIL keeps pixels in a C buffer that sys.getsizeof cannot see.
+                    try:
+                        w, h = o.size
+                        pil_bytes += int(w) * int(h) * len(o.getbands() or "RGB")
+                        pil_count += 1
+                    except Exception:
+                        pass
                 elif isinstance(o, (bytes, bytearray)):
                     n = len(o)
                     buffer_bytes += n
@@ -227,6 +255,10 @@ def _heap_census() -> Dict[str, Any]:
         del objs
         out["torch_tensor_count"] = int(tensor_count)
         out["torch_tensor_mb"] = int(tensor_bytes / 1048576)
+        out["numpy_count"] = int(ndarray_count)
+        out["numpy_mb"] = int(ndarray_bytes / 1048576)
+        out["pil_count"] = int(pil_count)
+        out["pil_mb"] = int(pil_bytes / 1048576)
         out["bytes_objects_mb"] = int(buffer_bytes / 1048576)
         out["big_bytes_mb"] = int(bytes_by_type.get("big_bytes", 0) / 1048576)
         out["top_types"] = [
@@ -236,6 +268,45 @@ def _heap_census() -> Dict[str, Any]:
     except Exception as e:
         out["error"] = f"{type(e).__name__}: {e!r}"
     return out
+
+
+def _release_freed_heap(rss_mb: int) -> None:
+    """Hand glibc's freed arenas back to the OS.
+
+    The labeler's work is a long run of large short-lived allocations -- full
+    frame decodes, numpy arrays, model activations. glibc keeps that freed memory
+    in its arenas rather than returning it, so RSS ratchets upward while nothing
+    is actually retained: a session climbed 2.1GB while every Python-visible
+    structure stayed flat. Replaying the workload, a trim recovered roughly a
+    third. Only runs above the floor and no more than once per interval, because
+    a trim walks the arenas and is not free.
+    """
+    global _last_malloc_trim_mono
+    if rss_mb < int(_MALLOC_TRIM_FLOOR_MB):
+        return
+    now = time.monotonic()
+    if (now - float(_last_malloc_trim_mono)) < float(_MALLOC_TRIM_INTERVAL_SEC):
+        return
+    _last_malloc_trim_mono = now
+    try:
+        libc = ctypes.CDLL("libc.so.6", use_errno=False)
+    except Exception:  #musl, macOS, Windows -- no malloc_trim to call
+        return
+    trim = getattr(libc, "malloc_trim", None)
+    if trim is None:
+        return
+    before = int(_process_memory_snapshot().get("rss_mb") or 0)
+    try:
+        trim(0)
+    except Exception:
+        return
+    after = int(_process_memory_snapshot().get("rss_mb") or 0)
+    if (before - after) >= int(_MALLOC_TRIM_LOG_MIN_MB):
+        log_action(
+            "labeler_malloc_trim",
+            f"reclaimed_mb={before - after}",
+            f"rss_before_mb={before}; rss_after_mb={after}",
+        )
 
 
 def _check_memory_watermark() -> None:
@@ -251,6 +322,7 @@ def _check_memory_watermark() -> None:
     rss_mb = int(mem.get("rss_mb") or 0)
     if rss_mb <= 0:
         return
+    _release_freed_heap(rss_mb)
     step = int(_MEMORY_LOG_STEP_MB)
     reached = (rss_mb // step) * step
     if reached < int(_MEMORY_LOG_FLOOR_MB) or reached <= int(_memory_watermark_mb):

@@ -142,6 +142,8 @@ _PIL_HOLDER_MIN_BYTES = max(1, int(os.getenv("LABELER_PIL_HOLDER_MIN_BYTES", "20
 _PIL_HOLDER_SAMPLE = max(1, int(os.getenv("LABELER_PIL_HOLDER_SAMPLE", "40") or "40"))
 #Referrer graphs fan out fast; cap how wide the walk goes per level.
 _PIL_HOLDER_WALK_MAX = max(8, int(os.getenv("LABELER_PIL_HOLDER_WALK_MAX", "60") or "60"))
+#Levels of referrer walking; each level is one batched heap scan.
+_PIL_HOLDER_LEVELS = max(1, int(os.getenv("LABELER_PIL_HOLDER_LEVELS", "3") or "3"))
 #Skip the referrer walk entirely until retained image memory is worth
 #explaining; a normal session should never pay for it.
 _PIL_HOLDER_MIN_TOTAL_BYTES = max(
@@ -223,38 +225,34 @@ def _module_container_names() -> Dict[int, str]:
 def _describe_pil_holders(images: List[Any]) -> List[Dict[str, Any]]:
     """Name whatever is keeping decoded images alive.
 
-    138 live PIL images were holding 1.4GB while only about seven decodes can be
-    in flight at once, so something retains them after the work is done. One
-    get_referrers call over the whole sample costs a single heap pass; anything
-    that resolves to a module-level container in our packages gets named outright,
-    and a frame referrer means the image is genuinely still being worked on rather
-    than held.
+    gc.get_referrers scans the whole heap on every call, so asking per object
+    turned this into a 9.7s GIL hold on a live bot. Walk it a level at a time
+    instead: one batched call per level, three passes total regardless of how
+    many objects are being chased. Anything resolving to a module-level container
+    in our packages, an instance attribute, a coroutine or a frame gets named; a
+    frame means the image is still being worked on rather than held.
     """
     import gc as _gc
 
-    out: Dict[str, int] = {}
-    try:
-        referrers = _gc.get_referrers(*images)
-    except Exception:
-        return []
     known = _module_container_names()
     image_ids = {id(im) for im in images}
 
-    def _held_here(container: Any) -> int:
-        """How many of the sampled images this one container refers to directly."""
+    def _members(container: Any) -> List[Any]:
         try:
             if isinstance(container, dict):
-                values = list(container.values())
-            elif isinstance(container, (list, tuple, set, frozenset)):
-                values = list(container)
-            else:
-                return 0
-            return sum(1 for v in values if id(v) in image_ids)
+                return list(container.values())
+            if isinstance(container, (list, tuple, set, frozenset)):
+                return list(container)
         except Exception:
-            return 0
+            pass
+        return []
+
+    def _held_here(container: Any) -> Set[int]:
+        """Which of the sampled images this one container refers to directly."""
+        return {id(v) for v in _members(container) if id(v) in image_ids}
 
     def _describe(obj: Any) -> Optional[str]:
-        """Name one object: a module container, a frame, a coroutine, an instance."""
+        """Name one object, or None if the walk should keep going past it."""
         named = known.get(id(obj))
         if named:
             return named
@@ -262,97 +260,92 @@ def _describe_pil_holders(images: List[Any]) -> List[Dict[str, Any]]:
         if tname == "frame":
             return f"frame:{getattr(getattr(obj, 'f_code', None), 'co_name', '?')}"
         if tname == "coroutine":
-            code = getattr(obj, "cr_code", None)
-            return f"coroutine:{getattr(code, 'co_name', '?')}"
+            return f"coroutine:{getattr(getattr(obj, 'cr_code', None), 'co_name', '?')}"
+        if tname == "task":
+            return "asyncio task"
         if tname in ("function", "method"):
             return f"{tname}:{getattr(obj, '__qualname__', '?')}"
-        #A closure cell is a real referrer but names nothing useful, so the walk
-        #keeps going past it rather than stopping on it.
+        #Closure cells and bare containers name nothing useful; keep walking.
         return None
 
-    def _name_of(obj: Any) -> Optional[str]:
-        """Walk up from a container until something identifiable appears.
+    try:
+        level = _gc.get_referrers(*images)
+    except Exception:
+        return []
 
-        A plain list of crops is usually a local inside the coroutine that built
-        it, so stopping at "list (unnamed)" says nothing. Two hops up reaches the
-        frame, coroutine or instance that owns it, which is the thing to fix.
-        """
-        direct = _describe(obj)
-        if direct:
-            return direct
-        #Several referrers are usually reachable -- a closure cell, the frame that
-        #built the list, the object that stored it. Collect what the walk finds and
-        #report the most specific, rather than whichever turned up first.
-        best_rank = 99
-        best_label: Optional[str] = None
+    #Carry the identities of the images, not a running total: a holder reached by
+    #several paths would otherwise be counted once per path. An earlier version
+    #inflated eight images to sixty-six that way.
+    out: Dict[str, Set[int]] = {}
 
-        def _offer(label: Optional[str], rank: int) -> None:
-            nonlocal best_rank, best_label
-            if label and rank < best_rank:
-                best_rank, best_label = rank, f"{type(obj).__name__} in {label}"
+    def _record(label: str, ids: Set[int]) -> None:
+        out.setdefault(label, set()).update(ids)
 
-        seen = {id(obj)}
-        frontier = [obj]
-        for _ in range(2):
-            nxt: List[Any] = []
-            for node in frontier:
-                try:
-                    parents = _gc.get_referrers(node)
-                except Exception:
-                    continue
-                for parent in parents:
-                    if id(parent) in seen:
-                        continue
-                    seen.add(id(parent))
-                    named = known.get(id(parent))
-                    if named:
-                        _offer(named, 0)
-                        continue
-                    #An instance's __dict__ is a plain dict; find the owner and
-                    #which attribute of it points here.
-                    if isinstance(parent, dict):
-                        try:
-                            for owner in _gc.get_referrers(parent):
-                                if getattr(owner, "__dict__", None) is parent:
-                                    attr = next(
-                                        (k for k, v in parent.items() if v is node), "?"
-                                    )
-                                    _offer(f"{type(owner).__name__}.{attr}", 1)
-                                    break
-                        except Exception:
-                            pass
-                    label = _describe(parent)
-                    if label:
-                        _offer(label, 2 if label.startswith("coroutine") else 3)
-                        continue
-                    nxt.append(parent)
-                if len(nxt) > _PIL_HOLDER_WALK_MAX:
-                    break
-            if best_rank <= 1:
-                break
-            frontier = nxt[:_PIL_HOLDER_WALK_MAX]
-        return best_label
-
-    for r in referrers:
+    pending: List[Tuple[Any, Set[int]]] = []
+    for r in level:
         try:
-            tname = type(r).__name__
-            if tname == "frame":
-                #A frame referrer means the image is still being worked on, which
-                #is expected concurrency rather than something holding it.
-                label = f"frame:{getattr(getattr(r, 'f_code', None), 'co_name', '?')}"
-                held = 1
+            label = _describe(r)
+            ids = _held_here(r)
+            if not ids:
+                #A frame or closure refers to an image without containing it; we
+                #know it holds something, just not which one.
+                ids = {id(r)}
+            if label:
+                _record(label, ids)
             else:
-                label = _name_of(r) or f"{tname} (unnamed)"
-                held = _held_here(r) or 1
-            if len(out) > _PIL_HOLDER_WALK_MAX:
-                break
-            out[label] = out.get(label, 0) + held
+                pending.append((r, ids))
         except Exception:
             continue
-    del referrers
+    del level
+
+    for _ in range(_PIL_HOLDER_LEVELS):
+        if not pending:
+            break
+        pending = pending[:_PIL_HOLDER_WALK_MAX]
+        nodes = [node for node, _ in pending]
+        carried = {id(node): ids for node, ids in pending}
+        try:
+            parents = _gc.get_referrers(*nodes)
+        except Exception:
+            break
+        nxt: List[Tuple[Any, Set[int]]] = []
+        for parent in parents:
+            try:
+                inherited: Set[int] = set()
+                for m in _members(parent):
+                    inherited |= carried.get(id(m), set())
+                if not inherited:
+                    for node_id, ids in carried.items():
+                        inherited |= ids
+                        break
+                label = _describe(parent)
+                if label is None and isinstance(parent, dict):
+                    #An instance __dict__ is a plain dict; name its owner and the
+                    #attribute on it that points here.
+                    for owner in _gc.get_referrers(parent)[:8]:
+                        if getattr(owner, "__dict__", None) is parent:
+                            attr = next(
+                                (k for k, v in parent.items() if id(v) in carried),
+                                None,
+                            )
+                            owner_name = getattr(owner, "__name__", None) or type(owner).__name__
+                            label = f"{owner_name}.{attr}" if attr else str(owner_name)
+                            break
+                if label:
+                    _record(label, inherited)
+                else:
+                    nxt.append((parent, inherited))
+            except Exception:
+                continue
+        del parents
+        pending = nxt
+
+    for node, ids in pending[:_PIL_HOLDER_WALK_MAX]:
+        _record(f"{type(node).__name__} (unnamed)", ids)
+
     return [
-        {"holder": str(k), "images": int(v)}
-        for k, v in sorted(out.items(), key=lambda kv: -kv[1])[:10]
+        {"holder": str(k), "images": int(len(v))}
+        for k, v in sorted(out.items(), key=lambda kv: -len(kv[1]))[:10]
     ]
 
 

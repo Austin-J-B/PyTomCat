@@ -1674,7 +1674,7 @@ def _prepare_labeler_ref_entry(
     crop_idx: int,
     thumb_size: int,
 ) -> Optional[Tuple[Image.Image, dict[str, Any]]]:
-    from ..services import local_photos
+    from ..services import image_budget, local_photos
 
     coord = _parse_yolo_box_str(coord_str)
     if coord is None:
@@ -1683,8 +1683,21 @@ def _prepare_labeler_ref_entry(
     if not data:
         return None
 
+    #Same ceiling as the labeler's crop path: the reservation is held for as long
+    #as the decoded image and its crop are alive, so total resident image memory
+    #stays bounded no matter how many of these run at once.
+    try:
+        with Image.open(io.BytesIO(data)) as probe:
+            src_w, src_h = probe.size
+    except Exception:
+        src_w, src_h = 0, 0
+    cost = image_budget.estimate_decode_bytes(
+        src_w, src_h, max_edge=int(getattr(settings, "cv_max_image_dim", 0) or 0)
+    )
+    reservation = image_budget.BUDGET.reserve(cost)
     img: Optional[Image.Image] = None
     try:
+        reservation.__enter__()
         img = _open_rgb_image(io.BytesIO(data))
         img_w, img_h = img.size
         cx, cy, w, h = coord
@@ -1694,6 +1707,15 @@ def _prepare_labeler_ref_entry(
         y2 = (cy + h / 2) * img_h
         cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
         crop = img.crop((cx1, cy1, cx2, cy2)).copy()
+        #The crop outlives this function -- callers hold a batch of them across an
+        #embed that can take tens of seconds on a cold container. Charge it to the
+        #budget for as long as it actually exists.
+        try:
+            image_budget.BUDGET.hold_for(
+                crop, image_budget.estimate_decode_bytes(*crop.size)
+            )
+        except Exception:
+            pass
         thumb_b64 = _thumb_b64_from_pil(crop, size=thumb_size)
         if not thumb_b64:
             crop.close()
@@ -1707,6 +1729,12 @@ def _prepare_labeler_ref_entry(
                 img.close()
             except Exception:
                 pass
+        #The returned crop stays alive past this point, but it is a fraction of
+        #the frame; releasing here keeps the ceiling on the expensive part.
+        try:
+            reservation.__exit__(None, None, None)
+        except Exception:
+            pass
 
 
 def _collect_labeler_ref_entries(

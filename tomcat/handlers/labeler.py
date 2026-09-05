@@ -36,6 +36,7 @@ from ..config import settings
 from ..logger import log_action
 from ..vision import vision as V
 from ..services.catsheets import get_photo_metadata_rows, force_refresh_photo_rows_cache
+from ..services import image_budget
 from ..services import labeler_cache, local_photos
 from ..services.gallery_retrain import get_gallery_retrain_status, schedule_gallery_retrain
 
@@ -3666,7 +3667,27 @@ def _render_ref_crop_jpeg(
     padded_h = max(float(h) * (1.0 + 2.0 * float(pad)), _MIN_REF_CROP_FRACTION)
     crop_fraction = min(1.0, padded_w, padded_h)
     draft_edge = int(math.ceil(float(thumb_size) / crop_fraction))
-    img = _open_rgb_image(io.BytesIO(image_bytes), draft_size=(draft_edge, draft_edge))
+    #Reserve for what this decode will hold, and keep the reservation for as long
+    #as the image is alive. Concurrency here is spread over several independent
+    #semaphores that do not know about each other; this is what bounds the total.
+    src_w, src_h = _oriented_image_size(image_bytes)
+    cost = image_budget.estimate_decode_bytes(src_w, src_h, max_edge=draft_edge)
+    with image_budget.BUDGET.reserve(cost):
+        return _render_ref_crop_jpeg_inner(
+            image_bytes, box, thumb_size, pad, (draft_edge, draft_edge)
+        )
+
+
+def _render_ref_crop_jpeg_inner(
+    image_bytes: bytes,
+    box: Tuple[float, float, float, float],
+    thumb_size: int,
+    pad: float,
+    draft_size: Tuple[int, int],
+) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
+    """Decode and crop, with the memory reservation already held by the caller."""
+    cx, cy, w, h = box
+    img = _open_rgb_image(io.BytesIO(image_bytes), draft_size=draft_size)
     img_w, img_h = img.size
     x1 = (cx - w / 2) * img_w
     y1 = (cy - h / 2) * img_h

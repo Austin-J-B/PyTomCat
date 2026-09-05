@@ -18,8 +18,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from datetime import date  # noqa: E402
+
 from tomcat.handlers.dues import (  # noqa: E402
     _extract_payer_name,
+    _member_row_is_current,
     _payer_agrees,
     _score_sheet,
     _MIN_SHEET_SCORE,
@@ -168,6 +171,39 @@ def test_payer_agreement():
           _payer_agrees("Bunny Wood", ""))
 
 
+def test_expired_rows():
+    print("\n[10] rows from expired terms are not candidates at all")
+    sept = date(2026, 9, 5)
+
+    def row(sem, dt=""):
+        return {"semester": sem, "date": dt}
+
+    #The row that absorbed the Kynslee payment.
+    check("Fall 2024 is expired in Sept 2026",
+          not _member_row_is_current(row("Fall 2024", "8/30/2024"), sept))
+    check("Spring 2025 is expired in Sept 2026",
+          not _member_row_is_current(row("Spring 2025"), sept))
+    check("current term is live", _member_row_is_current(row("Fall 2026"), sept))
+    #Spring runs to Sept 15, so the previous term is still inside its grace
+    #window on Sept 5 -- the "or maybe even the last sem" case.
+    check("last term is still live inside its grace window",
+          _member_row_is_current(row("Spring 2026"), sept))
+    check("last term drops once the grace window closes",
+          not _member_row_is_current(row("Spring 2026"), date(2026, 9, 16)))
+    check("Fall keeps its row until Jan 31",
+          _member_row_is_current(row("Fall 2026"), date(2027, 1, 30))
+          and not _member_row_is_current(row("Fall 2026"), date(2027, 2, 1)))
+
+    print("\n[11] a missing semester falls back to the signup date")
+    #The old filter fed these to fromisoformat, which never parsed them.
+    check("M/D/YYYY signup date is understood",
+          not _member_row_is_current(row("", "8/30/2024"), sept))
+    check("a recent signup date keeps the row",
+          _member_row_is_current(row("", "8/30/2026"), sept))
+    check("no term and no date -> kept rather than silently dropped",
+          _member_row_is_current(row("", ""), sept))
+
+
 def main() -> int:
     print("=" * 70)
     print("dues payer-name extraction / match gating")
@@ -178,6 +214,7 @@ def main() -> int:
     test_refuses_junk()
     test_sheet_floor()
     test_payer_agreement()
+    test_expired_rows()
     print("\n" + "=" * 70)
     if FAILURES:
         print("FAILED (%d):" % len(FAILURES))

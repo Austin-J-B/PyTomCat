@@ -941,6 +941,43 @@ def _get_semester_expiry(semester_label: str) -> date:
         return (datetime.now() + timedelta(days=180)).date()
 
 
+def _row_semester_expiry(row: dict):
+    """When this membership row stops counting, or None if we cannot tell.
+
+    Prefers the row's semester label and falls back to deriving one from its
+    signup date, since the semester cell is not always filled in.
+    """
+    label = _norm_sem_label(row.get('semester') or '')
+    if re.search(r"\d{4}", label) and re.search(r"spring|fall", label, re.I):
+        return _get_semester_expiry(label)
+    signed = _parse_member_date(row.get('date') or '')
+    if signed:
+        derived = "%s %d" % ('Spring' if signed.month <= 6 else 'Fall', signed.year)
+        return _get_semester_expiry(derived)
+    return None
+
+
+def _member_row_is_current(row: dict, today=None) -> bool:
+    """Is this row recent enough to be paying dues today?
+
+    A payment arriving now belongs to the current semester, or to the previous
+    one during its grace window -- Spring rows stay live until Sept 15, Fall
+    rows until Jan 31. Older rows are expired and must not be matched at all:
+    a Fall 2024 entry was still a candidate for a September 2026 payment, and
+    a junk row from that term absorbed one.
+
+    Rows whose term cannot be determined are kept, so a blank semester cell
+    does not silently drop a real member.
+    """
+    if today is None:
+        from datetime import date as _date
+        today = _date.today()
+    expiry = _row_semester_expiry(row)
+    if expiry is None:
+        return True
+    return today <= expiry
+
+
 def _is_uta_email(s: str) -> bool:
     e = (s or '').strip().lower()
     if not e:
@@ -3039,15 +3076,19 @@ async def _analyze_dues(bot) -> List[dict]:
     if skip and len(parsed_msgs) > max(20, skip):
         parsed_msgs = parsed_msgs[skip:]
 
-    #Restrict member rows by earliest message timestamp (with buffer)
+    #Drop membership rows from terms that have already expired. This replaces a
+    #filter that parsed the date column with fromisoformat alone: the sheet
+    #writes "8/30/2024", which never parsed, and unparseable rows were kept --
+    #so it removed nothing and every row back to 2024 stayed a candidate.
+    #Scoping by term rather than by the scan's own window also keeps a member
+    #who signed up earlier in the same semester eligible.
     oldest_ts = parsed_msgs[0][1]['ts']
-    min_date = (oldest_ts.replace(tzinfo=None) - timedelta(days=int(getattr(settings,'dues_email_window_days',3) or 3))).date()
-    def _parse_date(s: str):
-        try:
-            return datetime.fromisoformat(s.replace('Z','+00:00')).date()
-        except Exception:
-            return None
-    members = [r for r in members if (not r.get('date')) or (_parse_date(r.get('date')) is None) or (_parse_date(r.get('date')) >= min_date)]
+    as_of = oldest_ts.replace(tzinfo=None).date()
+    before = len(members)
+    members = [r for r in members if _member_row_is_current(r, as_of)]
+    if before != len(members):
+        log_event({"event": "dues_scan_rows_filtered", "as_of": as_of.isoformat(),
+                   "kept": len(members), "dropped": before - len(members)})
 
     #Preload emails in the global window
     start = parsed_msgs[0][1]['ts'].replace(tzinfo=None) - timedelta(days=int(getattr(settings,'dues_email_window_days',5) or 5))

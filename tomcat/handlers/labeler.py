@@ -136,6 +136,10 @@ _last_malloc_trim_mono: float = 0.0
 _MALLOC_TRIM_FLOOR_MB = max(256, int(os.getenv("LABELER_MALLOC_TRIM_FLOOR_MB", "900") or "900"))
 _MALLOC_TRIM_INTERVAL_SEC = max(5.0, float(os.getenv("LABELER_MALLOC_TRIM_INTERVAL_SEC", "20") or "20"))
 _MALLOC_TRIM_LOG_MIN_MB = max(1, int(os.getenv("LABELER_MALLOC_TRIM_LOG_MIN_MB", "25") or "25"))
+#Only chase holders of images big enough to matter, and cap the sample:
+#get_referrers walks the heap, so the cost is per call, not per image.
+_PIL_HOLDER_MIN_BYTES = max(1, int(os.getenv("LABELER_PIL_HOLDER_MIN_BYTES", "2000000") or "2000000"))
+_PIL_HOLDER_SAMPLE = max(1, int(os.getenv("LABELER_PIL_HOLDER_SAMPLE", "40") or "40"))
 _MEMORY_LOG_FLOOR_MB = max(256, int(os.getenv("LABELER_MEMORY_LOG_FLOOR_MB", "900") or "900"))
 _MEMORY_LOG_STEP_MB = max(64, int(os.getenv("LABELER_MEMORY_LOG_STEP_MB", "250") or "250"))
 _LOOP_HEARTBEAT_INTERVAL_SEC = max(
@@ -192,6 +196,90 @@ def _snapshot_main_thread_stack(limit: int = 12) -> Dict[str, Any]:
         return {"available": False, "error": f"{type(e).__name__}: {e!r}"}
 
 
+def _module_container_names() -> Dict[int, str]:
+    """id() -> "module.attr" for module-level containers in our own packages."""
+    names: Dict[int, str] = {}
+    for mod_name, mod in list(sys.modules.items()):
+        if not mod_name.startswith("tomcat"):
+            continue
+        try:
+            members = vars(mod)
+        except Exception:
+            continue
+        for attr, value in list(members.items()):
+            if isinstance(value, (dict, list, set, tuple)):
+                names[id(value)] = f"{mod_name}.{attr}"
+    return names
+
+
+def _describe_pil_holders(images: List[Any]) -> List[Dict[str, Any]]:
+    """Name whatever is keeping decoded images alive.
+
+    138 live PIL images were holding 1.4GB while only about seven decodes can be
+    in flight at once, so something retains them after the work is done. One
+    get_referrers call over the whole sample costs a single heap pass; anything
+    that resolves to a module-level container in our packages gets named outright,
+    and a frame referrer means the image is genuinely still being worked on rather
+    than held.
+    """
+    import gc as _gc
+
+    out: Dict[str, int] = {}
+    try:
+        referrers = _gc.get_referrers(*images)
+    except Exception:
+        return []
+    known = _module_container_names()
+    image_ids = {id(im) for im in images}
+
+    def _held_here(container: Any) -> int:
+        """How many of the sampled images this one container refers to directly."""
+        try:
+            if isinstance(container, dict):
+                values = list(container.values())
+            elif isinstance(container, (list, tuple, set, frozenset)):
+                values = list(container)
+            else:
+                return 0
+            return sum(1 for v in values if id(v) in image_ids)
+        except Exception:
+            return 0
+
+    def _name_of(obj: Any) -> Optional[str]:
+        """Walk up to a container we can name, at most two hops."""
+        direct = known.get(id(obj))
+        if direct:
+            return direct
+        try:
+            for parent in _gc.get_referrers(obj):
+                named = known.get(id(parent))
+                if named:
+                    return f"{type(obj).__name__} in {named}"
+        except Exception:
+            pass
+        return None
+
+    for r in referrers:
+        try:
+            tname = type(r).__name__
+            if tname == "frame":
+                #A frame referrer means the image is still being worked on, which
+                #is expected concurrency rather than something holding it.
+                label = f"frame:{getattr(getattr(r, 'f_code', None), 'co_name', '?')}"
+                held = 1
+            else:
+                label = _name_of(r) or f"{tname} (unnamed)"
+                held = _held_here(r) or 1
+            out[label] = out.get(label, 0) + held
+        except Exception:
+            continue
+    del referrers
+    return [
+        {"holder": str(k), "images": int(v)}
+        for k, v in sorted(out.items(), key=lambda kv: -kv[1])[:10]
+    ]
+
+
 def _heap_census() -> Dict[str, Any]:
     """Attribute resident memory that the cache counts cannot see.
 
@@ -222,6 +310,7 @@ def _heap_census() -> Dict[str, Any]:
             ndarray_count = 0
             pil_bytes = 0
             pil_count = 0
+            pil_images: List[Any] = []
             torch_mod = sys.modules.get("torch")
             tensor_cls = getattr(torch_mod, "Tensor", None) if torch_mod is not None else None
             numpy_mod = sys.modules.get("numpy")
@@ -249,8 +338,11 @@ def _heap_census() -> Dict[str, Any]:
                     #PIL keeps pixels in a C buffer that sys.getsizeof cannot see.
                     try:
                         w, h = o.size
-                        pil_bytes += int(w) * int(h) * len(o.getbands() or "RGB")
+                        nbytes = int(w) * int(h) * len(o.getbands() or "RGB")
+                        pil_bytes += nbytes
                         pil_count += 1
+                        if nbytes >= _PIL_HOLDER_MIN_BYTES and len(pil_images) < _PIL_HOLDER_SAMPLE:
+                            pil_images.append(o)
                     except Exception:
                         pass
                 elif isinstance(o, (bytes, bytearray)):
@@ -261,6 +353,8 @@ def _heap_census() -> Dict[str, Any]:
         del objs
         out["torch_tensor_count"] = int(tensor_count)
         out["torch_tensor_mb"] = int(tensor_bytes / 1048576)
+        if pil_images:
+            out["pil_holders"] = _describe_pil_holders(pil_images)
         out["numpy_count"] = int(ndarray_count)
         out["numpy_mb"] = int(ndarray_bytes / 1048576)
         out["pil_count"] = int(pil_count)

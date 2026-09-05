@@ -54,6 +54,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--serials", type=int, default=400, help="how many distinct photos to cycle through")
     p.add_argument("--modal", action="store_true",
                    help="also drive detect/identify, which bill for GPU time (default off)")
+    p.add_argument("--stall-embed", type=float, default=0.0,
+                   help="stub the embedding backend and make it take this many seconds. "
+                        "Reproduces a cold or slow Modal container without calling it, so "
+                        "the cost of holding crops across a remote round trip is visible.")
+    p.add_argument("--refs-per-cat", type=int, default=5,
+                   help="crops per ref-cache batch (default 5)")
     p.add_argument("--json", type=str, default="", help="write the samples to this path as JSON")
     return p.parse_args()
 
@@ -83,6 +89,19 @@ def main() -> int:
 
     captured: List[Tuple[Any, ...]] = []
     labeler.log_action = lambda *a, **k: captured.append(a)
+
+    if args.stall_embed > 0:
+        #Stand in for a slow remote embed. The point is not the embedding but what
+        #the caller keeps alive while waiting for one.
+        import torch as _torch
+
+        def _slow_embed(crops):
+            time.sleep(args.stall_embed)
+            return _torch.zeros((len(crops), 512), dtype=_torch.float32)
+
+        V._embed_crops = _slow_embed
+        print(f"embedding stubbed to take {args.stall_embed:.1f}s per batch "
+              f"(no Modal calls)", flush=True)
 
     serials = sorted(local_photos.local_serials())
     if not serials:
@@ -116,16 +135,26 @@ def main() -> int:
 
                 #The ref-cache path, which returns live PIL crops to its caller.
                 if r.random() < 0.25:
-                    box = pick_boxes(r)
-                    coord = f"{box[0]:.6f} {box[1]:.6f} {box[2]:.6f} {box[3]:.6f}"
-                    crops, _refs = V._collect_labeler_ref_entries(
-                        [(int(sn), coord, 1)], thumb_size=96
-                    )
-                    for c in crops:
-                        try:
-                            c.close()
-                        except Exception:
-                            pass
+                    entries = []
+                    for _ in range(max(1, args.refs_per_cat)):
+                        box = pick_boxes(r)
+                        entries.append((
+                            int(r.choice(pool)),
+                            f"{box[0]:.6f} {box[1]:.6f} {box[2]:.6f} {box[3]:.6f}",
+                            1,
+                        ))
+                    crops, _refs = V._collect_labeler_ref_entries(entries, thumb_size=96)
+                    try:
+                        if crops and args.stall_embed > 0:
+                            #Exactly what _build_ref_cache does: hold the crops for
+                            #the duration of the embed call.
+                            V._embed_crops(crops)
+                    finally:
+                        for c in crops:
+                            try:
+                                c.close()
+                            except Exception:
+                                pass
                     bump("ref_entry")
 
                 if args.modal and r.random() < 0.08:

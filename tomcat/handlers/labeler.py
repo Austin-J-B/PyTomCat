@@ -140,6 +140,14 @@ _MALLOC_TRIM_LOG_MIN_MB = max(1, int(os.getenv("LABELER_MALLOC_TRIM_LOG_MIN_MB",
 #get_referrers walks the heap, so the cost is per call, not per image.
 _PIL_HOLDER_MIN_BYTES = max(1, int(os.getenv("LABELER_PIL_HOLDER_MIN_BYTES", "2000000") or "2000000"))
 _PIL_HOLDER_SAMPLE = max(1, int(os.getenv("LABELER_PIL_HOLDER_SAMPLE", "40") or "40"))
+#Referrer graphs fan out fast; cap how wide the walk goes per level.
+_PIL_HOLDER_WALK_MAX = max(8, int(os.getenv("LABELER_PIL_HOLDER_WALK_MAX", "60") or "60"))
+#Skip the referrer walk entirely until retained image memory is worth
+#explaining; a normal session should never pay for it.
+_PIL_HOLDER_MIN_TOTAL_BYTES = max(
+    1,
+    int(os.getenv("LABELER_PIL_HOLDER_MIN_TOTAL_MB", "400") or "400") * 1024 * 1024,
+)
 _MEMORY_LOG_FLOOR_MB = max(256, int(os.getenv("LABELER_MEMORY_LOG_FLOOR_MB", "900") or "900"))
 _MEMORY_LOG_STEP_MB = max(64, int(os.getenv("LABELER_MEMORY_LOG_STEP_MB", "250") or "250"))
 _LOOP_HEARTBEAT_INTERVAL_SEC = max(
@@ -245,19 +253,85 @@ def _describe_pil_holders(images: List[Any]) -> List[Dict[str, Any]]:
         except Exception:
             return 0
 
+    def _describe(obj: Any) -> Optional[str]:
+        """Name one object: a module container, a frame, a coroutine, an instance."""
+        named = known.get(id(obj))
+        if named:
+            return named
+        tname = type(obj).__name__
+        if tname == "frame":
+            return f"frame:{getattr(getattr(obj, 'f_code', None), 'co_name', '?')}"
+        if tname == "coroutine":
+            code = getattr(obj, "cr_code", None)
+            return f"coroutine:{getattr(code, 'co_name', '?')}"
+        if tname in ("function", "method"):
+            return f"{tname}:{getattr(obj, '__qualname__', '?')}"
+        #A closure cell is a real referrer but names nothing useful, so the walk
+        #keeps going past it rather than stopping on it.
+        return None
+
     def _name_of(obj: Any) -> Optional[str]:
-        """Walk up to a container we can name, at most two hops."""
-        direct = known.get(id(obj))
+        """Walk up from a container until something identifiable appears.
+
+        A plain list of crops is usually a local inside the coroutine that built
+        it, so stopping at "list (unnamed)" says nothing. Two hops up reaches the
+        frame, coroutine or instance that owns it, which is the thing to fix.
+        """
+        direct = _describe(obj)
         if direct:
             return direct
-        try:
-            for parent in _gc.get_referrers(obj):
-                named = known.get(id(parent))
-                if named:
-                    return f"{type(obj).__name__} in {named}"
-        except Exception:
-            pass
-        return None
+        #Several referrers are usually reachable -- a closure cell, the frame that
+        #built the list, the object that stored it. Collect what the walk finds and
+        #report the most specific, rather than whichever turned up first.
+        best_rank = 99
+        best_label: Optional[str] = None
+
+        def _offer(label: Optional[str], rank: int) -> None:
+            nonlocal best_rank, best_label
+            if label and rank < best_rank:
+                best_rank, best_label = rank, f"{type(obj).__name__} in {label}"
+
+        seen = {id(obj)}
+        frontier = [obj]
+        for _ in range(2):
+            nxt: List[Any] = []
+            for node in frontier:
+                try:
+                    parents = _gc.get_referrers(node)
+                except Exception:
+                    continue
+                for parent in parents:
+                    if id(parent) in seen:
+                        continue
+                    seen.add(id(parent))
+                    named = known.get(id(parent))
+                    if named:
+                        _offer(named, 0)
+                        continue
+                    #An instance's __dict__ is a plain dict; find the owner and
+                    #which attribute of it points here.
+                    if isinstance(parent, dict):
+                        try:
+                            for owner in _gc.get_referrers(parent):
+                                if getattr(owner, "__dict__", None) is parent:
+                                    attr = next(
+                                        (k for k, v in parent.items() if v is node), "?"
+                                    )
+                                    _offer(f"{type(owner).__name__}.{attr}", 1)
+                                    break
+                        except Exception:
+                            pass
+                    label = _describe(parent)
+                    if label:
+                        _offer(label, 2 if label.startswith("coroutine") else 3)
+                        continue
+                    nxt.append(parent)
+                if len(nxt) > _PIL_HOLDER_WALK_MAX:
+                    break
+            if best_rank <= 1:
+                break
+            frontier = nxt[:_PIL_HOLDER_WALK_MAX]
+        return best_label
 
     for r in referrers:
         try:
@@ -270,6 +344,8 @@ def _describe_pil_holders(images: List[Any]) -> List[Dict[str, Any]]:
             else:
                 label = _name_of(r) or f"{tname} (unnamed)"
                 held = _held_here(r) or 1
+            if len(out) > _PIL_HOLDER_WALK_MAX:
+                break
             out[label] = out.get(label, 0) + held
         except Exception:
             continue
@@ -353,8 +429,13 @@ def _heap_census() -> Dict[str, Any]:
         del objs
         out["torch_tensor_count"] = int(tensor_count)
         out["torch_tensor_mb"] = int(tensor_bytes / 1048576)
-        if pil_images:
+        #The referrer walk holds the GIL for a few hundred ms. Only pay that when
+        #retained image memory is actually large enough to be worth explaining --
+        #below the threshold the counts alone are the answer.
+        if pil_images and pil_bytes >= _PIL_HOLDER_MIN_TOTAL_BYTES:
+            t_walk = time.perf_counter()
             out["pil_holders"] = _describe_pil_holders(pil_images)
+            out["pil_holders_ms"] = int((time.perf_counter() - t_walk) * 1000)
         out["numpy_count"] = int(ndarray_count)
         out["numpy_mb"] = int(ndarray_bytes / 1048576)
         out["pil_count"] = int(pil_count)

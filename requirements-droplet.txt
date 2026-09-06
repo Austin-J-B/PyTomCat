@@ -21,7 +21,7 @@ beautifulsoup4==4.12.3
 
 # Computer vision helpers (still imported by local code paths)
 opencv-python-headless==4.10.0.84
-ultralytics>=8.3.200
+ultralytics>=8.4.138
 
 # PyTorch CPU-only (CV is on Modal; local needs torch for gallery tensor ops)
 torch==2.14.0+cpu

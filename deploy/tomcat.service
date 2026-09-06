@@ -1,0 +1,31 @@
+[Unit]
+Description=TomCat Discord bot and web API
+Documentation=https://github.com/Austin-J-B/PyTomCat
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tomcat
+Group=tomcat
+WorkingDirectory=/home/tomcat/PyTomCat
+EnvironmentFile=/home/tomcat/PyTomCat/.env
+ExecStart=/home/tomcat/PyTomCat/.venv/bin/python /home/tomcat/PyTomCat/scripts/start.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+
+# The app needs to update runtime state, model galleries, OAuth tokens, and
+# config.yml inside its repository, but it has no reason to write elsewhere.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/tomcat/PyTomCat
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

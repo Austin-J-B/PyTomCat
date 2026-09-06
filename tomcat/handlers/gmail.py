@@ -117,7 +117,7 @@ async def _build_gmail_service(channel) -> Any:
                 "6. Reply here with: `TomCat, auth url <paste the full URL here>`\n\n"
                 f"Authorization Link:\n{auth_url}"
             ))
-            log_action("gmail_auth_url", "", auth_url)
+            log_action("gmail_auth_url", "generated", "authorization URL sent to officer")
         except Exception:
             pass
         raise RuntimeError("gmail_auth_pending")
@@ -291,11 +291,21 @@ async def handle_gmail_auth_code(intent, ctx) -> None:
         with open(token_path, "w", encoding="utf-8") as f:
             f.write(flow.credentials.to_json())
         try:
+            os.chmod(token_path, 0o600)
+        except OSError:
+            pass
+        try:
             _PENDING_OAUTH.pop(_oauth_key(ch), None)
             _PENDING_OAUTH.pop(-1, None)
         except Exception:
             pass
         await safe_send(ch, "Gmail authorized.")
+        source_message = ctx.get("message")
+        if source_message is not None and hasattr(source_message, "delete"):
+            try:
+                await source_message.delete()
+            except Exception:
+                pass
         action = _pop_post_auth_action(ch)
         if action:
             action_type = str(action.get("type") or "").strip().lower()

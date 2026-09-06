@@ -6660,7 +6660,7 @@ async def post_save(request: web.Request) -> web.Response:
         }), request)
     except local_photos.AnnotationUpdateError as e:
         log_action("labeler_save_error", "bad_request", str(e))
-        return _with_cors(web.Response(status=400, text=str(e)), request)
+        return _with_cors(web.Response(status=400, text="Invalid annotation update"), request)
     except ValueError as e:
         log_action("labeler_save_error", "bad_request", str(e))
         return _with_cors(web.Response(status=400, text="Invalid request"), request)

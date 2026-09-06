@@ -19,10 +19,14 @@ tunnel crash produced a Cloudflare **1033** with nothing to restart it).
 ```bash
 cd /home/tomcat/PyTomCat
 sudo install -m644 -o root -g root deploy/cloudflared.service /etc/systemd/system/cloudflared.service
+sudo install -m644 -o root -g root deploy/tomcat.service /etc/systemd/system/tomcat.service
+sudo install -m644 -o root -g root deploy/tomcat-deploy.service /etc/systemd/system/tomcat-deploy.service
+sudo install -m644 -o root -g root deploy/tomcat-deploy.timer /etc/systemd/system/tomcat-deploy.timer
 sudo install -m440 -o root -g root deploy/tomcat-cloudflared.sudoers /etc/sudoers.d/tomcat-cloudflared
 sudo visudo -cf /etc/sudoers.d/tomcat-cloudflared   # validate sudoers syntax
 sudo systemctl daemon-reload
 sudo systemctl enable --now cloudflared.service
+sudo systemctl enable --now tomcat.service tomcat-deploy.timer
 ```
 
 Then restart the bot so `start.py` stops spawning its own (Linux) tunnel child:

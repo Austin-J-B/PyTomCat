@@ -21,6 +21,12 @@ import aiohttp
 from aiohttp import web
 import logging
 from .config import settings
+from .web_security import (
+    oauth_redirect_is_allowed,
+    origin_is_allowed,
+    redact_oauth_message,
+    trusted_client_ip,
+)
 # Discord application identifiers used by the activity UI.
 CLIENT_ID = getattr(settings, 'ui_activity_app_id', None) or os.getenv("UITEST_ACTIVITY_APP_ID")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
@@ -40,6 +46,20 @@ _ALLOWED_ORIGINS = {
     for origin in os.getenv("UI_ALLOWED_ORIGINS", "http://localhost:8080").split(",")
     if origin.strip()
 }
+
+_OAUTH_REDIRECT_URIS = {
+    uri.strip()
+    for uri in os.getenv("UI_OAUTH_REDIRECT_URIS", "").split(",")
+    if uri.strip()
+}
+
+
+def _origin_is_allowed(origin: Optional[str]) -> bool:
+    return origin_is_allowed(origin, _ALLOWED_ORIGINS)
+
+
+def _oauth_redirect_is_allowed(redirect_uri: str) -> bool:
+    return oauth_redirect_is_allowed(redirect_uri, _ALLOWED_ORIGINS, _OAUTH_REDIRECT_URIS)
 
 _AUTH_DEBUG = os.getenv("UI_AUTH_DEBUG", "false").lower() == "true"
 
@@ -546,7 +566,10 @@ def _require_csrf(request: web.Request, session: dict) -> Optional[web.Response]
 
 async def auth_token_exchange(request):
     """Exchanges the temporary code from frontend for a user access token."""
-    _debug(f"POST /api/auth/token headers_origin={request.headers.get('Origin')} query={dict(request.query)}")
+    origin = request.headers.get("Origin")
+    if not _origin_is_allowed(origin):
+        return _with_cors(web.Response(status=403, text="Origin not allowed"), request)
+    _debug(f"POST /api/auth/token origin_allowed={bool(origin)}")
     try:
         data = await request.json()
     except Exception:
@@ -554,10 +577,12 @@ async def auth_token_exchange(request):
 
     code = data.get("code")
     redirect_uri = data.get("redirect_uri") 
-    _debug(f"payload redirect_uri={redirect_uri} code_present={bool(code)}")
+    _debug(f"payload redirect_uri_present={bool(redirect_uri)} code_present={bool(code)}")
 
     if not code:
         return _with_cors(web.Response(status=400, text="Missing authorization code"), request)
+    if redirect_uri and not _oauth_redirect_is_allowed(str(redirect_uri)):
+        return _with_cors(web.Response(status=400, text="Redirect URI not allowed"), request)
     if not CLIENT_SECRET or not CLIENT_ID:
         return _with_cors(web.Response(status=500, text="OAuth client is not configured"), request)
 
@@ -582,8 +607,10 @@ async def auth_token_exchange(request):
                 data=token_payload,
             ) as resp:
                 if resp.status != 200:
-                    err_text = await resp.text()
-                    _debug(f"discord token error status={resp.status} body={err_text}")
+                    # Do not log Discord's raw body: upstream errors can echo
+                    # authorization details that should never enter machine logs.
+                    await resp.read()
+                    _debug(f"discord token error status={resp.status}")
                     return _with_cors(
                         web.Response(
                             status=401,
@@ -637,6 +664,8 @@ async def auth_token_exchange(request):
 
 async def get_session(request: web.Request):
     """Validate an existing session cookie and refresh it."""
+    if not _origin_is_allowed(request.headers.get("Origin")):
+        return _with_cors(web.Response(status=403, text="Origin not allowed"), request)
     session = _get_session_from_request(request)
     if not session:
         return _with_cors(web.Response(status=401, text="Missing or invalid session"), request)
@@ -731,6 +760,23 @@ async def get_schedule(request):
 
 import discord
 from discord.ext import commands
+
+
+def _allowed_user_mentions(*user_ids: Any) -> discord.AllowedMentions:
+    users = []
+    for raw in user_ids:
+        try:
+            uid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if uid > 0:
+            users.append(discord.Object(id=uid))
+    return discord.AllowedMentions(
+        everyone=False,
+        roles=False,
+        users=users,
+        replied_user=False,
+    )
 from datetime import datetime, timezone
 
 from .config import settings
@@ -1072,11 +1118,7 @@ async def _refresh_invites(guild: discord.Guild, *, force: bool = False) -> None
 
 def _cors_headers(request: web.Request) -> Dict[str, str]:
     origin = request.headers.get("Origin")
-    allow_origin = None
-    if origin and ("*" in _ALLOWED_ORIGINS or origin in _ALLOWED_ORIGINS):
-        allow_origin = origin
-    elif "*" in _ALLOWED_ORIGINS:
-        allow_origin = "*"
+    allow_origin = origin if origin and _origin_is_allowed(origin) else None
 
     headers = {
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
@@ -1086,7 +1128,7 @@ def _cors_headers(request: web.Request) -> Dict[str, str]:
     _debug(f"CORS origin={origin!r} allow_origin={allow_origin!r}")
     if allow_origin:
         headers["Access-Control-Allow-Origin"] = allow_origin
-    if allow_origin and allow_origin != "*":
+    if allow_origin:
         headers["Access-Control-Allow-Credentials"] = "true"
     return headers
 
@@ -1094,6 +1136,44 @@ def _cors_headers(request: web.Request) -> Dict[str, str]:
 def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResponse:
     resp.headers.update(_cors_headers(request))
     return resp
+
+
+_CONTENT_SECURITY_POLICY = "; ".join([
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob: https:",
+    "connect-src 'self' https://ui.catsofuta.org https://discord.com https://*.discord.com",
+    "form-action 'self' https://discord.com",
+    "frame-ancestors https://discord.com https://*.discord.com https://*.discordsays.com",
+])
+
+
+def _apply_security_headers(response: web.StreamResponse, request: web.Request) -> web.StreamResponse:
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+    response.headers.setdefault("Content-Security-Policy", _CONTENT_SECURITY_POLICY)
+    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",", 1)[0].strip().lower()
+    if request.secure or forwarded_proto == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return response
+
+
+@web.middleware
+async def security_headers_middleware(request: web.Request, handler):
+    try:
+        response = await handler(request)
+    except web.HTTPException as exc:
+        response = exc
+    return _apply_security_headers(response, request)
+
+
+def _trusted_client_ip(request: web.Request) -> str:
+    return trusted_client_ip(request.remote, request.headers.get("CF-Connecting-IP"))
 
 
 @web.middleware
@@ -1130,8 +1210,8 @@ async def rate_limit_middleware(request: web.Request, handler):
             if not expected or not provided or not hmac.compare_digest(expected, str(provided)):
                 return _with_cors(web.Response(status=403, text="Missing or invalid CSRF token"), request)
 
-    client_ip = request.remote
-    if not client_ip:
+    client_ip = _trusted_client_ip(request)
+    if client_ip == "unknown":
         peername = request.transport.get_extra_info("peername") if request.transport else None
         if isinstance(peername, (tuple, list)) and peername:
             client_ip = peername[0]
@@ -1171,7 +1251,7 @@ async def rate_limit_middleware(request: web.Request, handler):
 
 async def start_web_server(bot):
     """Simple web server to serve the UI and API."""
-    app = web.Application(middlewares=[rate_limit_middleware])
+    app = web.Application(middlewares=[security_headers_middleware, rate_limit_middleware])
 
     async def _cleanup_cv_temp_dir_startup(_app: web.Application) -> None:
         """Delete stale temp vision files from the configured temp directory on startup."""
@@ -1469,17 +1549,25 @@ async def start_web_server(bot):
         parsed_requests = []
 
         if isinstance(raw_requests, list) and raw_requests:
+            if len(raw_requests) > 31:
+                return _with_cors(web.Response(status=400, text="Too many requests"), request)
             for entry in raw_requests:
+                if not isinstance(entry, dict):
+                    return _with_cors(web.Response(status=400, text="Invalid request entry"), request)
                 date_iso = entry.get("date")
                 stations = entry.get("stations") or []
-                if not date_iso or not stations:
+                if not date_iso or not isinstance(stations, list) or not stations:
                     continue
                 try:
                     date_obj = datetime.fromisoformat(str(date_iso))
                     date_iso_clean = date_obj.date().isoformat()
                 except ValueError:
                     continue
-                stations_clean = [s for s in stations if s]
+                submitted_stations = list(dict.fromkeys(str(s).strip() for s in stations if str(s).strip()))
+                allowed_stations = set(station_names(date_iso_clean))
+                stations_clean = [s for s in submitted_stations if s in allowed_stations]
+                if len(stations_clean) != len(submitted_stations):
+                    return _with_cors(web.Response(status=400, text="Invalid station"), request)
                 if stations_clean:
                     parsed_requests.append({
                         "date": date_iso_clean,
@@ -1488,14 +1576,18 @@ async def start_web_server(bot):
         else:
             date_iso = data.get("date")
             stations = data.get("stations") or []
-            if not req_user_id or not date_iso or not stations:
+            if not req_user_id or not date_iso or not isinstance(stations, list) or not stations:
                 return _with_cors(web.Response(status=400, text="Missing required fields"), request)
             try:
                 date_obj = datetime.fromisoformat(str(date_iso))
                 date_iso_clean = date_obj.date().isoformat()
             except ValueError:
                 return _with_cors(web.Response(status=400, text="Invalid date format"), request)
-            stations_clean = [s for s in stations if s]
+            submitted_stations = list(dict.fromkeys(str(s).strip() for s in stations if str(s).strip()))
+            allowed_stations = set(station_names(date_iso_clean))
+            stations_clean = [s for s in submitted_stations if s in allowed_stations]
+            if len(stations_clean) != len(submitted_stations):
+                return _with_cors(web.Response(status=400, text="Invalid station"), request)
             parsed_requests.append({
                 "date": date_iso_clean,
                 "stations": list(dict.fromkeys(stations_clean)),
@@ -1552,7 +1644,11 @@ async def start_web_server(bot):
                         pretty_date = _format_date_for_notification(date_iso)
                         lines.append(f"- {pretty_date}: **{stations_str}**")
                     view = build_open_sub_requests_view()
-                    await ch.send("\n".join(lines), view=view)
+                    await ch.send(
+                        "\n".join(lines),
+                        view=view,
+                        allowed_mentions=_allowed_user_mentions(req_user_id),
+                    )
         except Exception:
             pass
 
@@ -1826,6 +1922,8 @@ async def start_web_server(bot):
         if not permissions.get("is_officer"):
             user_id = session.get("user_id")
         picks = data.get("picks") or []
+        if not isinstance(picks, list) or len(picks) > 31:
+            return _with_cors(web.Response(status=400, text="Invalid picks"), request)
         if not user_id or not picks:
             return _with_cors(web.Response(status=400, text="Missing user_id or picks"), request)
 
@@ -1833,14 +1931,63 @@ async def start_web_server(bot):
         now_iso = datetime.now().isoformat()
         messages_by_date = {}  #date_iso -> list of (station, requester_id, requester_name)
 
+        # Rebuild claim details from server-side request logs. Client-supplied
+        # requester names/IDs must never become trusted Discord mentions.
+        requested_by_id = {}
+        accepted_keys = set()
+        for _path, rows in _feed._load_sub_files(
+            month_keys=None,
+            include_legacy=_feed.SUBS_LEGACY_FILE.exists(),
+        ):
+            for rec in rows:
+                rec_id = str(rec.get("id") or "")
+                rec_dates = rec.get("dates") or []
+                rec_date = str(rec_dates[0]) if rec_dates else ""
+                rec_stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
+                if rec.get("status") == "requested" and rec_id:
+                    requested_by_id[rec_id] = rec
+                elif rec.get("status") == "accepted":
+                    parent = str(rec.get("parent_id") or rec_id)
+                    for rec_station in rec_stations:
+                        accepted_keys.add((parent, str(rec_station), rec_date))
+
+        validated_picks = []
+        pending_keys = set()
         for pick in picks:
-            parent_id = pick.get("id")
-            station = pick.get("station")
-            date_iso = pick.get("date")
-            requester = pick.get("requester_id")
-            requester_name = pick.get("requester_name") or ""
-            if not parent_id or not station or not date_iso:
-                continue
+            if not isinstance(pick, dict):
+                return _with_cors(web.Response(status=400, text="Invalid claim"), request)
+            parent_id = str(pick.get("id") or "")
+            source = requested_by_id.get(parent_id)
+            if not source:
+                return _with_cors(web.Response(status=404, text="Substitute request not found"), request)
+            station = str(pick.get("station") or "").strip()
+            try:
+                date_iso = datetime.fromisoformat(str(pick.get("date") or "")).date().isoformat()
+            except ValueError:
+                return _with_cors(web.Response(status=400, text="Invalid date"), request)
+            source_dates = [str(v) for v in (source.get("dates") or [])]
+            source_stations = [
+                str(v) for v in (
+                    source.get("stations")
+                    or ([source.get("station")] if source.get("station") else [])
+                )
+            ]
+            if date_iso not in source_dates or station not in source_stations:
+                return _with_cors(web.Response(status=400, text="Claim does not match request"), request)
+            claim_key = (parent_id, station, date_iso)
+            if claim_key in accepted_keys or claim_key in pending_keys:
+                return _with_cors(web.Response(status=409, text="Request already claimed"), request)
+            requester = source.get("requester")
+            requester_name = source.get("requester_name") or ""
+            pending_keys.add(claim_key)
+            validated_picks.append((parent_id, station, date_iso, requester, requester_name))
+
+        # Only append after every submitted claim has passed validation so a
+        # malformed later item cannot leave a partially applied request.
+        for pick_idx, (parent_id, station, date_iso, requester, requester_name) in enumerate(
+            validated_picks,
+            start=1,
+        ):
             try:
                 #Locate log file by month
                 from .handlers.feeding import _sub_month_key_from_date, _sub_log_path_from_key
@@ -1849,7 +1996,7 @@ async def start_web_server(bot):
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 rec = {
                     "kind": "sub_accept",
-                    "id": f"sub-accept-{int(datetime.now().timestamp()*1000)}",
+                    "id": f"sub-accept-{int(datetime.now().timestamp()*1000)}-{pick_idx}",
                     "parent_id": parent_id,
                     "station": station,
                     "stations": [station],
@@ -1916,7 +2063,16 @@ async def start_web_server(bot):
                         else:
                             req_mentions = "someone"
                         msg = f"<@{user_id}> picked up {req_mentions}'s substitute request for " + " and ".join(date_bits)
-                        await ch.send(msg)
+                        mention_ids = [user_id]
+                        mention_ids.extend(
+                            req
+                            for items in messages_by_date.values()
+                            for _, req, _ in items
+                        )
+                        await ch.send(
+                            msg,
+                            allowed_mentions=_allowed_user_mentions(*mention_ids),
+                        )
                     except Exception:
                         pass
         except Exception:
@@ -2145,6 +2301,11 @@ async def on_ready():
 
 
 #------- Message entrypoint -------
+def _message_content_for_log(message: Any) -> str:
+    raw = message.clean_content if isinstance(getattr(message, "content", None), str) else ""
+    return redact_oauth_message(raw)
+
+
 @bot.event
 async def on_message(message: discord.Message):
     """Main message hook: run anti-spam and route intents."""
@@ -2156,7 +2317,7 @@ async def on_message(message: discord.Message):
         "event": "message",
         "author": _user_label(message.author),
         "channel": _channel_label(message.channel),
-        "content": message.clean_content if isinstance(message.content, str) else "",
+        "content": _message_content_for_log(message),
         "attachments": len(getattr(message, "attachments", []) or []),
     })
 
@@ -2195,7 +2356,7 @@ async def on_message(message: discord.Message):
                 "event": "spam",
                 "user": _user_label(message.author),
                 "channel": _channel_label(message.channel),
-                "content": message.clean_content if isinstance(message.content, str) else "",
+                "content": _message_content_for_log(message),
                 "decision": decision,
                 "reason": reason,
                 "score": score,
@@ -2460,8 +2621,8 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
             "event": "message_edit",
             "author": _user_label(before.author),
             "channel": _channel_label(before.channel),
-            "before": before.clean_content if isinstance(before.content, str) else "",
-            "after": after.clean_content if isinstance(after.content, str) else "",
+            "before": _message_content_for_log(before),
+            "after": _message_content_for_log(after),
         })
     except Exception:
         pass
@@ -2476,7 +2637,7 @@ async def on_message_delete(message: discord.Message):
             "event": "message_delete",
             "author": _user_label(getattr(message, 'author', type('X', (), {'name':'unknown'})())),
             "channel": _channel_label(getattr(message, 'channel', type('Y', (), {'name':'unknown'})())),
-            "content": message.clean_content if isinstance(getattr(message, 'content', None), str) else "",
+            "content": _message_content_for_log(message),
         })
     except Exception:
         pass

@@ -2510,7 +2510,7 @@
             }
 
             const urlParams = new URLSearchParams(window.location.search);
-            apiBase = (urlParams.get('api') || apiBase || '').replace(/\/$/, '');
+            apiBase = normalizeApiBase(urlParams.get('api') || apiBase).replace(/\/$/, '');
             scheduleData = makeEmptySchedule();
 
             //Start observing legends for resize
@@ -4106,6 +4106,10 @@
         const CLIENT_ID = "1341667150066225192";
         const DEFAULT_API = "";
         const STATE_STORAGE_KEY = 'tc_ui_oauth_nonce';
+        const TRUSTED_API_ORIGINS = new Set([
+            window.location.origin,
+            "https://ui.catsofuta.org"
+        ]);
 
         //Strip search/hash to ensure this matches Discord Portal exactly
         const REDIRECT_URI = window.location.origin + window.location.pathname;
@@ -4115,10 +4119,8 @@
             try {
                 if (nonce) {
                     sessionStorage.setItem(STATE_STORAGE_KEY, nonce);
-                    localStorage.setItem(STATE_STORAGE_KEY, nonce);
                 } else {
                     sessionStorage.removeItem(STATE_STORAGE_KEY);
-                    localStorage.removeItem(STATE_STORAGE_KEY);
                 }
             } catch (e) {
                 console.warn('Unable to persist OAuth nonce', e);
@@ -4127,7 +4129,7 @@
 
         function readStoredNonce() {
             try {
-                return sessionStorage.getItem(STATE_STORAGE_KEY) || localStorage.getItem(STATE_STORAGE_KEY);
+                return sessionStorage.getItem(STATE_STORAGE_KEY);
             } catch (e) {
                 return oauthNonce;
             }
@@ -4149,6 +4151,20 @@
             } catch (e) {
                 console.warn('Invalid state payload', e);
                 return null;
+            }
+        }
+
+        function normalizeApiBase(raw) {
+            if (!raw) return DEFAULT_API;
+            try {
+                const parsed = new URL(raw, window.location.origin);
+                const isLocalHttp = parsed.protocol === 'http:'
+                    && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+                if (parsed.protocol !== 'https:' && !isLocalHttp) return DEFAULT_API;
+                if (!TRUSTED_API_ORIGINS.has(parsed.origin)) return DEFAULT_API;
+                return parsed.origin === window.location.origin ? DEFAULT_API : parsed.origin;
+            } catch (e) {
+                return DEFAULT_API;
             }
         }
 
@@ -4182,7 +4198,7 @@
             }
 
             //Set global apiBase
-            apiBase = (currentApi || DEFAULT_API).replace(/\/$/, '');
+            apiBase = normalizeApiBase(currentApi).replace(/\/$/, '');
             console.log("Using Backend:", apiBase);
             console.log("Environment: ", isEmbedded ? "Discord Activity" : "Web Browser");
 

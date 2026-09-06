@@ -1,0 +1,13 @@
+[Unit]
+Description=Update and restart TomCat from the protected main branch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=tomcat
+Group=tomcat
+WorkingDirectory=/home/tomcat/PyTomCat
+ExecStart=/home/tomcat/deploy.sh
+UMask=0077
+PrivateTmp=true

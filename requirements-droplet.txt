@@ -24,7 +24,7 @@ opencv-python-headless==4.10.0.84
 ultralytics>=8.3.200
 
 # PyTorch CPU-only (CV is on Modal; local needs torch for gallery tensor ops)
-torch==2.8.0
+torch==2.14.0+cpu
 torchvision==0.23.0
 
 # HTTP utilities

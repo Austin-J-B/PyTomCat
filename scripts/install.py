@@ -42,6 +42,7 @@ DISCORD_TOKEN=
 DISCORD_CLIENT_SECRET=
 UI_SESSION_SECRET=                    # Required: secret for signing UI session cookies
 UI_ALLOWED_ORIGINS=                   # Should match the Discord OAuth2 dev portal
+UI_OAUTH_REDIRECT_URIS=               # Exact comma-separated Discord redirect URIs (recommended)
 UI_AUTH_DEBUG=false                   # Enable verbose auth/CORS logging when true
 UI_GUILD_ID=                          # Optional: override guild ID to validate membership for UI auth
 UI_COOKIE_SECURE=true                 # Use secure cookies (SameSite=None) so cross-site pages send session

@@ -2,7 +2,7 @@
 
 #Core Discord bot stack
 discord.py==2.4.0
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 aiohttp==3.14.3
 
 #Google Sheets + OAuth

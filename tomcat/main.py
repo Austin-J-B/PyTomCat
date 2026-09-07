@@ -10,6 +10,7 @@ import time
 import secrets
 import socket
 import threading
+import re
 from typing import Any, Callable, Dict, Optional, Union
 from collections import deque
 from datetime import datetime, timedelta
@@ -84,10 +85,22 @@ HONEYPOT_CHANNEL_IDS = {
 }
 
 
+def _redact_sensitive_log_text(msg: str) -> str:
+    """Redact common secret-bearing key/value fragments from debug text."""
+    text = str(msg)
+    patterns = [
+        r"(?i)\b(password|passwd|pwd|secret|client_secret|access_token|refresh_token|authorization|auth|code)\b\s*[:=]\s*([^\s,&]+)",
+        r"(?i)\b(password|passwd|pwd|secret|client_secret|access_token|refresh_token|authorization|auth|code)\b\s*=\s*['\"]([^'\"]+)['\"]",
+    ]
+    for pattern in patterns:
+        text = re.sub(pattern, r"\1=<redacted>", text)
+    return text
+
+
 def _debug(msg: str) -> None:
     """Print lightweight auth/debug traces when enabled."""
     if _AUTH_DEBUG:
-        print(f"[UI-AUTH] {msg}")
+        print(f"[UI-AUTH] {_redact_sensitive_log_text(msg)}")
 
 # The UI stores schedules in NDJSON and can still read the older JSON file.
 SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.ndjson"

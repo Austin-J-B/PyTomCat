@@ -474,13 +474,10 @@ async def handle_cat_profile(intent: 'Intent', ctx: dict) -> None:
     if not name:
         await ch.send("Which cat would you like to see? Ex: `TomCat, who is Microwave`")
         return
-    prof = PC.get_profile(name)
-    if not prof:
-        live_profile = await get_cat_profile(name)
-        if isinstance(live_profile, str):
-            await ch.send(live_profile)
-            return
-        prof = live_profile
+    prof = await _lookup_cat_profile(name)
+    if isinstance(prof, str):
+        await ch.send(prof)
+        return
     #Build embed from cached profile with classic text layout
     actual = prof.get('actual_name') or name
     display = re.sub(r"^\s*\d+\.\s*", "", str(actual))

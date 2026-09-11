@@ -97,12 +97,49 @@ def test_show_me_uses_cache_first():
     check("cache misses fall back to live read", live_calls == ["Ed", "Brand New Cat"], repr(live_calls))
 
 
+def test_who_is_uses_cache_first():
+    print("\n[3] who-is profile card: same exact cache lookup")
+    live_calls: list[str] = []
+
+    async def fake_live(name: str):
+        live_calls.append(name)
+        return "No match for '%s'." % name
+
+    async def no_image(_actual: str):
+        return None, None
+
+    cats.get_cat_profile = fake_live
+    cats._build_latest_profile_image_payload = no_image
+
+    def run(name: str):
+        sent: list[dict] = []
+
+        class Channel:
+            async def send(self, content=None, **kwargs):
+                sent.append({"content": content, **kwargs})
+
+        intent = SimpleNamespace(data={"name": name})
+        asyncio.run(cats.handle_cat_profile(intent, {"channel": Channel()}))
+        return sent
+
+    sent = run("ford f150")
+    embed = sent[0].get("embed") if sent else None
+    title = getattr(embed, "title", "") or ""
+    check("who is ford f150 -> Ford F-150 card", "Ford F-150" in title, repr(sent))
+    check("cache hit never reads the sheet", live_calls == [], repr(live_calls))
+
+    sent = run("Ed")
+    check("who is Ed does not substring-match", bool(sent) and "No match" in str(sent[0].get("content")), repr(sent))
+    check("miss falls back to live read", live_calls == ["Ed"], repr(live_calls))
+
+
 def main():
     print("=" * 70)
     print("cat lookup regression tests")
     print("=" * 70)
     test_live_lookup_keeps_digits_in_names()
     test_show_me_uses_cache_first()
+    test_who_is_uses_cache_first()
     print("\n" + "=" * 70)
     if FAILURES:
         print("FAILED (%d): %s" % (len(FAILURES), ", ".join(FAILURES)))

@@ -339,24 +339,6 @@ def _ensure_loaded() -> None:
     if not _CACHE:
         _load_from_csv()
 
-def get_profile(name: str) -> Optional[Dict[str, Any]]:
-    """Fetch a profile dict from cache, refreshing if stale."""
-    _ensure_loaded()
-    #Refresh if stale based on TTL
-    if _cache_is_stale():
-        try:
-            refresh_sync()
-        except Exception:
-            pass
-    key = _norm(name)
-    if key in _CACHE:
-        return _CACHE[key]
-    #Try contains search
-    for k, v in _CACHE.items():
-        if key and key in k:
-            return v
-    return None
-
 def get_profile_exact(name: str) -> Optional[Dict[str, Any]]:
     """Exact normalized-name lookup from local cache only (no sheet refresh, no substring match).
 

@@ -357,6 +357,17 @@ def get_profile(name: str) -> Optional[Dict[str, Any]]:
             return v
     return None
 
+def get_profile_exact(name: str) -> Optional[Dict[str, Any]]:
+    """Exact normalized-name lookup from local cache only (no sheet refresh, no substring match).
+
+    Freshness comes from start_profile_cache_scheduler; misses should fall back to a live read.
+    """
+    _ensure_loaded()
+    key = _norm(_display_from_full(name))
+    if not key:
+        return None
+    return _CACHE.get(key)
+
 def get_profile_local(name: str) -> Optional[Dict[str, Any]]:
     """Fetch a profile dict from local cache only (no sheet refresh)."""
     _ensure_loaded()

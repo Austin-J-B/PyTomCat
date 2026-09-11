@@ -112,12 +112,20 @@ async def _build_local_show_image_payload(serial: Any) -> tuple[Optional[bytes],
     return raw_bytes, filename, False
 
 
+async def _lookup_cat_profile(name: str) -> dict | str:
+    """Exact match from the hourly profile cache; live sheet read only on a cache miss."""
+    cached = PC.get_profile_exact(name)
+    if cached:
+        return cached
+    return await get_cat_profile(name)
+
+
 async def _resolve_random_photo_pick(name: str) -> dict | str:
     """Resolve a random local photo using metadata rows, retrying via actual name when needed."""
     pick = await get_random_photo(name)
     if not isinstance(pick, str):
         return pick
-    profile = await get_cat_profile(name)
+    profile = await _lookup_cat_profile(name)
     if isinstance(profile, dict):
         actual = str(profile.get("actual_name") or name).strip()
         if actual:
@@ -401,7 +409,7 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
         await ch.send("Which cat would you like to see? Ex: `TomCat, show me Microwave`")
         return
 
-    profile = await get_cat_profile(name)
+    profile = await _lookup_cat_profile(name)
     if isinstance(profile, str):
         await ch.send(profile)
         return

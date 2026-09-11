@@ -479,8 +479,8 @@ async def get_cat_profile(query: str) -> dict | str:
         if norm_alnum_lower(full_name) == key:
             best_row = r
             break
-        #Fallback: try without leading digits and punctuation
-        name_only = "".join(ch for ch in full_name if not ch.isdigit()).lstrip(". ").strip()
+        #Fallback: try without the leading "N. " index (keep digits inside the name, e.g. "Ford F-150")
+        name_only = re.sub(r"^\s*\d+\.\s*", "", full_name).strip()
         if norm_alnum_lower(name_only) == key:
             best_row = r
             break

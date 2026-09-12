@@ -1195,6 +1195,11 @@ async def _throttle_sheet_call() -> None:
         await asyncio.sleep(delay)
 
 
+def _open_worksheet(sid: str, ws_name: str):
+    """One worksheet, opened without retries. Blocking; call in a thread."""
+    return sheets_client().open_by_key(sid).worksheet(ws_name)
+
+
 def _open_worksheet_with_retry(sid: str, ws_name: str, label: str, attempts: int = 3):
     """Open a worksheet, retrying transient Sheets failures.
 
@@ -1249,7 +1254,9 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
         last_error = "ok"
         try:
             await _throttle_sheet_call()
-            ws.append_row(row, value_input_option='USER_ENTERED')
+            await asyncio.to_thread(
+                ws.append_row, row, value_input_option='USER_ENTERED'
+            )
             success = True
             last_error = "ok"
             if observed_counts is not None:
@@ -1520,13 +1527,15 @@ async def _append_ledger_rows(
         return {event.email_id: (False, 'missing_sheet_id') for event in events}
     try:
         ws_name = getattr(settings, sheet.title_setting, sheet.default_title)
-        ws = _open_worksheet_with_retry(sid, ws_name, sheet.kind)
+        #Every sheet call below is synchronous HTTP, so none of them run on the
+        #event loop: an email scan can write dozens of rows in one pass.
+        ws = await asyncio.to_thread(_open_worksheet_with_retry, sid, ws_name, sheet.kind)
     except Exception:
         #A distinct reason rather than the raw exception text: nothing was
         #written, so the notifier must not announce a row per payment.
         return {event.email_id: (False, 'sheet_open_failed') for event in events}
 
-    snapshot = _fetch_recent_sheet_snapshot(ws, sheet.kind)
+    snapshot = await asyncio.to_thread(_fetch_recent_sheet_snapshot, ws, sheet.kind)
     #A failed read (None) must abort: writing blind would duplicate rows.
     if snapshot is None:
         return {event.email_id: (False, 'sheet_read_failed') for event in events}
@@ -1668,8 +1677,8 @@ async def _process_finance_events(
         if sid:
             try:
                 ws_name = getattr(settings, 'income_ws_title', 'Income')
-                ws = sheets_client().open_by_key(sid).worksheet(ws_name)
-                sheet_records = _fetch_recent_records(ws, 'income')
+                ws = await asyncio.to_thread(_open_worksheet, sid, ws_name)
+                sheet_records = await asyncio.to_thread(_fetch_recent_records, ws, 'income')
             except Exception:
                 pass  # Non-critical: inference will still use batch context
 

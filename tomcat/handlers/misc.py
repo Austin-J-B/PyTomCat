@@ -118,6 +118,12 @@ async def _run_google_api_health_check(bot, *, source: str) -> None:
                 await safe_send(log_channel, f"Google Sheets health check failed for {label}: {e}")
 
 
+def _read_catabase(client, sheet_id: str):
+    """The CatDatabase worksheet and its rows. Blocking; call in a thread."""
+    ws = client.open_by_key(sheet_id).worksheet("CatDatabase")
+    return ws, ws.get_all_values()
+
+
 def _embed_digest(embed_dict: dict) -> str:
     """Stable digest for comparing profile embeds between scheduler runs."""
     try:
@@ -362,8 +368,8 @@ async def handle_profiles_create(intent, ctx):
             except Exception:
                 pass
             return
-        ws = gc.open_by_key(sheet_id).worksheet("CatDatabase")
-        rows = ws.get_all_values()
+        #gspread is synchronous HTTP; keep it off the event loop.
+        ws, rows = await asyncio.to_thread(_read_catabase, gc, sheet_id)
     except Exception as e:
         log_action("profiles_error", "sheet_read", str(e))
         try:
@@ -452,8 +458,8 @@ async def handle_profile_update_one(intent, ctx):
             except Exception:
                 pass
             return
-        ws = gc.open_by_key(sheet_id).worksheet("CatDatabase")
-        rows = ws.get_all_values()
+        #gspread is synchronous HTTP; keep it off the event loop.
+        ws, rows = await asyncio.to_thread(_read_catabase, gc, sheet_id)
         _, *data = rows if rows else ([], [])
         r = next((r for r in data if len(r) > 1 and r[1] == cat_id), None)
         if not r:
@@ -501,8 +507,8 @@ async def handle_profiles_update_all(intent, ctx):
         if not sheet_id:
             log_action("profiles_error", "missing_catabase_id", "")
             return
-        ws = gc.open_by_key(sheet_id).worksheet("CatDatabase")
-        rows = ws.get_all_values()
+        #gspread is synchronous HTTP; keep it off the event loop.
+        ws, rows = await asyncio.to_thread(_read_catabase, gc, sheet_id)
         _, *data = rows if rows else ([], [])
         by_id = {r[1]: r for r in data if len(r) > 1}
     except Exception as e:

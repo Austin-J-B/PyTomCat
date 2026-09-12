@@ -37,6 +37,9 @@ jobs:
       - name: Check for undefined names
         run: python scripts/check_undefined_names.py
 
+      - name: Check for blocking sheet calls on the event loop
+        run: python scripts/check_event_loop_blocking.py
+
       - name: Run Python regression scripts
         run: |
           python scripts/test_web_security.py

@@ -8,6 +8,7 @@ Expected headers (by column index) based on the current data sources:
 """
 from __future__ import annotations
 from typing import Any
+import asyncio
 import csv
 import datetime as dt
 import json
@@ -440,14 +441,20 @@ IDX = {
     "comments": 15,
 }
 
+def _read_catabase_rows() -> list[list[str]]:
+    """Blocking read of the CatDatabase worksheet. Call off the event loop."""
+    book = sheets_client().open_by_key(settings.sheet_catabase_id)
+    return book.worksheet("CatDatabase").get_all_values()
+
+
 async def get_cat_profile(query: str) -> dict | str:
     """Return a CatDatabase-backed profile dict or a friendly error string."""
     if not settings.sheet_catabase_id:
         return "Catabase sheet ID not configured. Set SHEET_CATABASE_ID in .env."
-    gc = sheets_client()
-    ws = gc.open_by_key(settings.sheet_catabase_id).worksheet("CatDatabase")
-
-    rows = ws.get_all_values()
+    #A gspread read is a synchronous HTTP round trip. Left on the loop it stalls
+    #every other handler and the Discord heartbeat along with them, which is how
+    #the bot ends up connected but silent.
+    rows = await asyncio.to_thread(_read_catabase_rows)
     if not rows:
         return "Catabase is empty."
 

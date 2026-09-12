@@ -4354,6 +4354,55 @@ def _decode_classify_quality_metrics(data: bytes) -> Tuple[int, int, float]:
     return int(width), int(height), float(blur)
 
 
+def _classify_quality_report(
+    width: Any, height: Any, blur: Any, reasons: List[str], *, hard_fail: Optional[bool] = None
+) -> Dict[str, Any]:
+    """The measurement the classify queue reports for one image."""
+    width, height = int(width), int(height)
+    return {
+        "width": width,
+        "height": height,
+        "pixels": int(width * height),
+        "blur": float(blur),
+        "reasons": list(reasons),
+        "hard_fail": bool(reasons) if hard_fail is None else bool(hard_fail),
+    }
+
+
+def _classify_quality_reasons(width: int, height: int, blur: float) -> List[str]:
+    """Which classify gates this measurement fails, in report order."""
+    reasons: List[str] = []
+    if _CLASSIFY_MIN_PIXELS > 0 and int(width) * int(height) < _CLASSIFY_MIN_PIXELS:
+        reasons.append("pixels")
+    if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
+        reasons.append("min_dim")
+    if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
+        reasons.append("blur")
+    return reasons
+
+
+def _classify_quality_from_cached(
+    cached: Tuple[bool, int, int, float]
+) -> Tuple[bool, Dict[str, Any]]:
+    """Re-apply the gates to a stored measurement.
+
+    The thresholds come from the environment at import, so a score cached by an
+    earlier run may have been taken under different ones. The measurement is
+    what gets stored; the gates are re-checked here.
+    """
+    ok, width, height, blur = cached
+    reasons = _classify_quality_reasons(width, height, blur)
+    return bool(ok and not reasons), _classify_quality_report(width, height, blur, reasons)
+
+
+def _classify_quality_soft_fail(reason: str) -> Tuple[bool, Dict[str, Any]]:
+    """A measurement that could not be taken at all — a failed fetch or decode.
+
+    Not a hard fail: the image may be fine, so it is worth another look later.
+    """
+    return False, _classify_quality_report(0, 0, 0.0, [reason], hard_fail=False)
+
+
 async def _evaluate_classify_quality_uncached(
     serial: int,
     url: str,
@@ -4364,49 +4413,18 @@ async def _evaluate_classify_quality_uncached(
     data = await _fetch_image_bytes_for_labeler(int(serial), str(url or "").strip())
     if not data:
         _cache_set_classify_quality_soft_fail(int(serial), "fetch")
-        return False, {
-            "width": 0,
-            "height": 0,
-            "pixels": 0,
-            "blur": 0.0,
-            "reasons": ["fetch"],
-            "hard_fail": False,
-        }
+        return _classify_quality_soft_fail("fetch")
 
-    width = 0
-    height = 0
-    blur = 0.0
     try:
         width, height, blur = await asyncio.to_thread(_decode_classify_quality_metrics, data)
     except Exception:
         _cache_set_classify_quality_soft_fail(int(serial), "decode")
-        return False, {
-            "width": 0,
-            "height": 0,
-            "pixels": 0,
-            "blur": 0.0,
-            "reasons": ["decode"],
-            "hard_fail": False,
-        }
+        return _classify_quality_soft_fail("decode")
 
-    pixels = int(width * height)
-    reasons: List[str] = []
-    if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
-        reasons.append("pixels")
-    if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
-        reasons.append("min_dim")
-    if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
-        reasons.append("blur")
+    reasons = _classify_quality_reasons(width, height, blur)
     ok = not reasons
     _cache_set_classify_quality(int(serial), ok, width, height, blur)
-    return ok, {
-        "width": int(width),
-        "height": int(height),
-        "pixels": int(pixels),
-        "blur": float(blur),
-        "reasons": reasons,
-        "hard_fail": bool(reasons),
-    }
+    return ok, _classify_quality_report(width, height, blur, reasons)
 
 
 async def _evaluate_classify_quality(
@@ -4419,35 +4437,9 @@ async def _evaluate_classify_quality(
     if _CLASSIFY_MIN_PIXELS <= 0 and _CLASSIFY_MIN_DIM <= 0 and _CLASSIFY_MIN_BLUR <= 0:
         return True, {"width": 0, "height": 0, "pixels": 0, "blur": 0.0, "reasons": []}
     sn = int(serial)
-    cached = _cache_get_classify_quality(sn)
+    cached = _evaluate_cached_classify_quality(sn)
     if cached is not None:
-        ok, width, height, blur = cached
-        pixels = int(width * height)
-        reasons: List[str] = []
-        if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
-            reasons.append("pixels")
-        if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
-            reasons.append("min_dim")
-        if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
-            reasons.append("blur")
-        return bool(ok and not reasons), {
-            "width": int(width),
-            "height": int(height),
-            "pixels": int(pixels),
-            "blur": float(blur),
-            "reasons": reasons,
-            "hard_fail": bool(reasons),
-        }
-    soft_fail_reason = _cache_get_classify_quality_soft_fail(sn)
-    if soft_fail_reason:
-        return False, {
-            "width": 0,
-            "height": 0,
-            "pixels": 0,
-            "blur": 0.0,
-            "reasons": [soft_fail_reason],
-            "hard_fail": False,
-        }
+        return cached
 
     fut, is_owner = await _classify_quality_singleflight_enter(sn)
     if not is_owner:
@@ -4457,36 +4449,10 @@ async def _evaluate_classify_quality(
                 return shared  # type: ignore[return-value]
         except Exception:
             pass
-        # If the owner lookup fails, try the cached score once more before recomputing.
-        cached = _cache_get_classify_quality(sn)
+        #If the owner's lookup failed, the score may still have landed.
+        cached = _evaluate_cached_classify_quality(sn)
         if cached is not None:
-            ok, width, height, blur = cached
-            pixels = int(width * height)
-            reasons: List[str] = []
-            if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
-                reasons.append("pixels")
-            if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
-                reasons.append("min_dim")
-            if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
-                reasons.append("blur")
-            return bool(ok and not reasons), {
-                "width": int(width),
-                "height": int(height),
-                "pixels": int(pixels),
-                "blur": float(blur),
-                "reasons": reasons,
-                "hard_fail": bool(reasons),
-            }
-        soft_fail_reason = _cache_get_classify_quality_soft_fail(sn)
-        if soft_fail_reason:
-            return False, {
-                "width": 0,
-                "height": 0,
-                "pixels": 0,
-                "blur": 0.0,
-                "reasons": [soft_fail_reason],
-                "hard_fail": False,
-            }
+            return cached
 
     try:
         result = await _evaluate_classify_quality_uncached(sn, str(url or "").strip(), source=source)
@@ -4498,37 +4464,14 @@ async def _evaluate_classify_quality(
 
 
 def _evaluate_cached_classify_quality(serial: int) -> Optional[Tuple[bool, Dict[str, Any]]]:
+    """The stored verdict for an image, or None if it has never been measured."""
     cached = _cache_get_classify_quality(int(serial))
-    if cached is None:
-        soft_fail_reason = _cache_get_classify_quality_soft_fail(int(serial))
-        if not soft_fail_reason:
-            return None
-        return False, {
-            "width": 0,
-            "height": 0,
-            "pixels": 0,
-            "blur": 0.0,
-            "reasons": [soft_fail_reason],
-            "hard_fail": False,
-        }
-    ok, width, height, blur = cached
-    pixels = int(width * height)
-    reasons: List[str] = []
-    if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
-        reasons.append("pixels")
-    if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
-        reasons.append("min_dim")
-    if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
-        reasons.append("blur")
-    passes = bool(ok and not reasons)
-    return passes, {
-        "width": int(width),
-        "height": int(height),
-        "pixels": int(pixels),
-        "blur": float(blur),
-        "reasons": reasons,
-        "hard_fail": bool(reasons),
-    }
+    if cached is not None:
+        return _classify_quality_from_cached(cached)
+    soft_fail_reason = _cache_get_classify_quality_soft_fail(int(serial))
+    if soft_fail_reason:
+        return _classify_quality_soft_fail(soft_fail_reason)
+    return None
 
 
 def _build_rejected_labels(num_boxes: int) -> str:

@@ -26,6 +26,42 @@ import weakref
 from typing import Any, Optional
 
 
+#Decoded images are not the only thing resident. torch, the DINOv3 gallery and
+#the labeler caches cost well over a gigabyte before a single crop is decoded,
+#so the budget has to leave room for them rather than claiming a flat share of
+#the machine.
+_BASELINE_RESERVE_MB = 1600
+_MIN_BUDGET_BYTES = 256 * 1024 * 1024
+
+
+def _cgroup_limit_bytes() -> Optional[int]:
+    """Return the cgroup memory ceiling for this process, if one is set.
+
+    /proc/meminfo reports the host's RAM even when systemd caps the unit with
+    MemoryMax, so a budget sized from MemTotal alone would overshoot the cap and
+    get the service killed by the very limit meant to contain it. cgroup v2
+    first, then v1.
+    """
+    for path in ("/sys/fs/cgroup/memory.max",
+                 "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                raw = fh.read().strip()
+        except Exception:
+            continue
+        if not raw or raw == "max":
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            continue
+        #v1 reports a sentinel near 2**63 when the limit is unset.
+        if value <= 0 or value >= (1 << 62):
+            continue
+        return value
+    return None
+
+
 def _total_ram_bytes() -> int:
     try:
         with open("/proc/meminfo", "r", encoding="utf-8") as fh:
@@ -35,6 +71,15 @@ def _total_ram_bytes() -> int:
     except Exception:
         pass
     return 4 * 1024 ** 3  # assume a small box rather than an unbounded one
+
+
+def _memory_ceiling_bytes() -> int:
+    """The real ceiling this process runs under: cgroup limit or host RAM."""
+    total = _total_ram_bytes()
+    limit = _cgroup_limit_bytes()
+    if limit:
+        return min(total, limit)
+    return total
 
 
 def _default_budget_bytes() -> int:
@@ -50,7 +95,21 @@ def _default_budget_bytes() -> int:
     except Exception:
         pass
     fraction = min(0.9, max(0.05, fraction))
-    return int(_total_ram_bytes() * fraction)
+
+    reserve_mb = _BASELINE_RESERVE_MB
+    try:
+        reserve_mb = int(float(os.getenv("LABELER_IMAGE_BUDGET_RESERVE_MB", "") or _BASELINE_RESERVE_MB))
+    except Exception:
+        pass
+    reserve = max(0, reserve_mb) * 1024 * 1024
+
+    #Whichever binds first: a share of the ceiling, or what is left after the
+    #process's own baseline. On a 4GB box the flat fraction allowed 1.7GB of
+    #decoded images on top of a ~1.4GB baseline, which is how it reached 3.4GB
+    #and was OOM-killed.
+    ceiling = _memory_ceiling_bytes()
+    budget = min(int(ceiling * fraction), ceiling - reserve)
+    return max(_MIN_BUDGET_BYTES, int(budget))
 
 
 #Seconds a reservation will wait before giving up and proceeding anyway. Blocking

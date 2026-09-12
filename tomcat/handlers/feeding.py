@@ -1016,6 +1016,40 @@ _MORNING_SCHEDULER_STARTED = False
 _LAST_MORNING_MESSAGE_KEY: Optional[str] = None  #Tracks last sent date to prevent duplicates
 
 
+def _canonical_stations(record: dict) -> List[str]:
+    """The stations one sub record covers, as canonical display names."""
+    raw = record.get("stations")
+    if isinstance(raw, list) and raw:
+        names = [(_canonical_station(name) or name) for name in raw]
+    elif record.get("station"):
+        single = record.get("station")
+        names = [_canonical_station(single) or single]
+    else:
+        return []
+    return list(dict.fromkeys(name for name in names if name))
+
+
+def _open_request_index(subs: List[dict], today_iso: str) -> Dict[tuple, Any]:
+    """(requester, station) -> the open request id covering today, if any.
+
+    build_morning_message needs this for every station and feeder on the day's
+    schedule. Looking it up by scanning the sub log each time, re-canonicalizing
+    every record's stations on each pass, cost the whole log times the roster --
+    and the morning message reads every month ever, so it grew without bound.
+    """
+    index: Dict[tuple, Any] = {}
+    for record in subs:
+        if record.get("status") != "requested":
+            continue
+        if today_iso not in _normalize_dates(record.get("dates") or []):
+            continue
+        requester = str(record.get("requester"))
+        for station in _canonical_stations(record):
+            #First match wins, as the original scan did.
+            index.setdefault((requester, station), record.get("id"))
+    return index
+
+
 async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.View | None]:
     """Builds the 7:45 AM 'Good Morning' message with the day's feeding schedule."""
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
@@ -1044,33 +1078,15 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
 
     lines = ["Good Morning!", "Todays currently scheduled feeders are:"]
     open_request_exists = False
+    open_requests = _open_request_index(subs, today_iso)
 
     for station in todays_stations:
         roster_parts = []
         original_feeders = sched.get(station, [])
         station_canonical = _canonical_station(station) or station
-        
+
         for feeder_id in original_feeders:
-            feeder_request_id = None
-            for req in subs:
-                req_stations: List[str] = []
-                if isinstance(req.get("stations"), list) and req.get("stations"):
-                    for st in req.get("stations") or []:
-                        canon = _canonical_station(st) or st
-                        if canon:
-                            req_stations.append(canon)
-                    req_stations = list(dict.fromkeys(req_stations))
-                elif req.get("station"):
-                    canon = _canonical_station(req.get("station")) or req.get("station")
-                    if canon:
-                        req_stations = [canon]
-                if (req.get("status") == "requested" 
-                    and str(req.get("requester")) == str(feeder_id) 
-                    and station_canonical in req_stations 
-                    and today_iso in _normalize_dates(req.get("dates") or [])):
-                    feeder_request_id = req.get("id")
-                    break
-            
+            feeder_request_id = open_requests.get((str(feeder_id), station_canonical))
             if feeder_request_id:
                 sub_assignee_id = accepted_req_map.get(feeder_request_id)
                 if sub_assignee_id:
@@ -1081,7 +1097,7 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
                     open_request_exists = True
             else:
                 roster_parts.append(_format_user(bot, feeder_id, False))
-        
+
         #Handle stations with no one assigned
         if not roster_parts:
             roster_parts.append("Unassigned")

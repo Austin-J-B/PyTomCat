@@ -349,6 +349,46 @@ def test_gallery_rebuild_notification_transport() -> None:
         gallery_updater.settings.ch_logging = original_channel
 
 
+def test_failed_ref_crops_do_not_accumulate() -> None:
+    """The known-bad crop record expires and stays bounded.
+
+    Entries always carried an expiry, but nothing removed them, so the dict grew
+    for the life of the process: one entry per crop that ever failed to render,
+    across a photo table of ~12,000 rows.
+    """
+    from tomcat.handlers import labeler
+
+    original_max = labeler._REF_CROP_NEGATIVE_CACHE_MAX
+    labeler._ref_crop_negative_cache.clear()
+    labeler._REF_CROP_NEGATIVE_CACHE_MAX = 100
+    try:
+        labeler._mark_ref_crop_failed(7, 1, 600.0)
+        check("a recent failure is remembered", labeler._ref_crop_recently_failed(7, 1))
+        labeler._mark_ref_crop_failed(8, 1, -1.0)
+        check("an expired failure is ignored", not labeler._ref_crop_recently_failed(8, 1))
+        check("an unseen crop is not known bad", not labeler._ref_crop_recently_failed(999, 9))
+
+        labeler._ref_crop_negative_cache.clear()
+        for serial in range(150):
+            labeler._mark_ref_crop_failed(serial, 0, -1.0)
+        check("expired entries are purged past the cap",
+              len(labeler._ref_crop_negative_cache) <= 100,
+              "%d entries" % len(labeler._ref_crop_negative_cache))
+
+        labeler._ref_crop_negative_cache.clear()
+        for serial in range(150):
+            labeler._mark_ref_crop_failed(serial, 0, 600.0 + serial)
+        check("live entries are capped too",
+              len(labeler._ref_crop_negative_cache) <= 100,
+              "%d entries" % len(labeler._ref_crop_negative_cache))
+        check("the entries kept are the ones with longest to run",
+              labeler._ref_crop_recently_failed(149, 0)
+              and not labeler._ref_crop_recently_failed(0, 0))
+    finally:
+        labeler._REF_CROP_NEGATIVE_CACHE_MAX = original_max
+        labeler._ref_crop_negative_cache.clear()
+
+
 def main() -> int:
     print("labeler hot paths")
     print("=" * 70)
@@ -366,6 +406,8 @@ def main() -> int:
     test_legacy_wildlife_manifest()
     print("gallery rebuild notifications")
     test_gallery_rebuild_notification_transport()
+    print("failed ref crop record")
+    test_failed_ref_crops_do_not_accumulate()
 
     print("\n" + "=" * 70)
     if FAILURES:

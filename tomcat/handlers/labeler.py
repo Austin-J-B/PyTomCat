@@ -977,7 +977,43 @@ _ref_crop_result_cache: Dict[str, Tuple[float, bytes]] = {}
 #serial -> rendered ref-crop cache keys, so a save can drop just the crops it
 #touched instead of throwing away every rendered thumbnail in the process.
 _ref_crop_cache_keys_by_serial: Dict[int, Set[str]] = {}
+#(serial, crop) -> monotonic time after which the crop is worth trying again.
+#Entries always carried their own expiry, but nothing ever removed them, so the
+#dict grew for the life of the process: one entry per crop that ever failed,
+#across a photo table of ~12,000 rows.
 _ref_crop_negative_cache: Dict[Tuple[int, int], float] = {}
+_REF_CROP_NEGATIVE_CACHE_MAX = max(
+    500, int(os.getenv("LABELER_REF_CROP_NEGATIVE_CACHE_MAX", "5000") or "5000")
+)
+
+
+def _ref_crop_unavailable_until(serial: int, crop_num: int) -> float:
+    """When this crop becomes worth retrying, or 0 if it is not known bad."""
+    return float(_ref_crop_negative_cache.get((int(serial), int(crop_num)), 0.0))
+
+
+def _ref_crop_recently_failed(serial: int, crop_num: int) -> bool:
+    """Whether this crop failed recently enough that retrying is pointless."""
+    until = _ref_crop_unavailable_until(serial, crop_num)
+    return bool(until) and time.monotonic() < until
+
+
+def _mark_ref_crop_failed(serial: int, crop_num: int, retry_after_sec: float) -> None:
+    """Hold off on this crop for a while, and keep the record from growing."""
+    _ref_crop_negative_cache[(int(serial), int(crop_num))] = (
+        time.monotonic() + float(retry_after_sec)
+    )
+    if len(_ref_crop_negative_cache) <= _REF_CROP_NEGATIVE_CACHE_MAX:
+        return
+    now = time.monotonic()
+    for key in [k for k, until in _ref_crop_negative_cache.items() if until <= now]:
+        _ref_crop_negative_cache.pop(key, None)
+    #Still over the cap with nothing expired: drop the entries closest to
+    #expiring, which are the ones whose retry is due soonest anyway.
+    excess = len(_ref_crop_negative_cache) - _REF_CROP_NEGATIVE_CACHE_MAX
+    if excess > 0:
+        for key, _until in sorted(_ref_crop_negative_cache.items(), key=lambda kv: kv[1])[:excess]:
+            _ref_crop_negative_cache.pop(key, None)
 _REF_CROP_RESULT_CACHE_MAX = max(200, int(os.getenv("LABELER_REF_CROP_RESULT_CACHE_MAX", "3000") or "3000"))
 #Floor on the box fraction used to size a draft decode. A degenerate box
 #would otherwise ask for an enormous decode target and defeat the draft.
@@ -2808,8 +2844,7 @@ def _map_identify_candidate_refs_to_metadata(
         if key in seen:
             continue
         # Skip known-bad refs to avoid repeated fetch errors and log spam.
-        bad_until = _ref_crop_negative_cache.get(key, 0.0)
-        if bad_until and time.monotonic() < float(bad_until):
+        if _ref_crop_recently_failed(key[0], key[1]):
             continue
         entry = _photo_crop_index_cache.get(key) or {}
         if not entry:
@@ -3246,9 +3281,7 @@ async def _warm_single_ref_crop(
     ):
         return "cached"
 
-    neg_key = (int(serial), int(crop_num))
-    bad_until = _ref_crop_negative_cache.get(neg_key, 0.0)
-    if bad_until and time.monotonic() < float(bad_until):
+    if _ref_crop_recently_failed(serial, crop_num):
         return "negative"
 
     entry = _photo_crop_index_cache.get((int(serial), int(crop_num)))
@@ -3297,7 +3330,7 @@ async def _warm_single_ref_crop(
 
     if not payload:
         if str(crop_err or "") == "invalid_bounds":
-            _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
+            _mark_ref_crop_failed(serial, crop_num, 600.0)
             return "invalid_bounds"
         return "render_failed"
 
@@ -5277,9 +5310,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
         image_source = "none"
 
         # Avoid spamming downstream storage/network and logs for known-bad refs.
-        neg_key = (int(sn), int(crop_num))
-        bad_until = _ref_crop_negative_cache.get(neg_key, 0.0)
-        if bad_until and time.monotonic() < float(bad_until):
+        if _ref_crop_recently_failed(sn, crop_num):
             return _with_cors(web.Response(status=404, text="Crop not found"), request)
 
         await _ensure_photo_crop_index_cache(force=False)
@@ -5289,13 +5320,13 @@ async def get_ref_crop(request: web.Request) -> web.Response:
             entry = _photo_crop_index_cache.get((int(sn), int(crop_num)))
         if not entry:
             _log_ref_crop_miss(int(sn), int(crop_num), "photo_entry_missing")
-            _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
+            _mark_ref_crop_failed(sn, crop_num, 600.0)
             return _with_cors(web.Response(status=404, text="Crop not found"), request)
 
         box = _parse_yolo_box_str(str(entry.get("box") or "").strip())
         if box is None:
             _log_ref_crop_miss(int(sn), int(crop_num), "box_missing")
-            _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
+            _mark_ref_crop_failed(sn, crop_num, 600.0)
             return _with_cors(web.Response(status=404, text="Crop coordinates missing"), request)
 
         t_image = time.perf_counter()
@@ -5314,7 +5345,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
         if not image_bytes:
             _log_ref_crop_miss(int(sn), int(crop_num), "image_unavailable")
             # Treat source-image fetch failures as transient; avoid long false negatives.
-            _ref_crop_negative_cache[neg_key] = time.monotonic() + 20.0
+            _mark_ref_crop_failed(sn, crop_num, 20.0)
             return _with_cors(web.Response(status=502, text="Source image unavailable"), request)
 
         acquired = False
@@ -5343,7 +5374,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
                     "invalid_bounds",
                     str(crop_detail or ""),
                 )
-                _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
+                _mark_ref_crop_failed(sn, crop_num, 600.0)
                 return _with_cors(web.Response(status=422, text="Invalid crop bounds"), request)
             return _with_cors(web.Response(status=500, text="Failed to render reference crop"), request)
 

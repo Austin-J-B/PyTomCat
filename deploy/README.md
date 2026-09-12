@@ -24,6 +24,7 @@ sudo install -m644 -o root -g root deploy/tomcat-deploy.service /etc/systemd/sys
 sudo install -m644 -o root -g root deploy/tomcat-deploy.timer /etc/systemd/system/tomcat-deploy.timer
 sudo install -m440 -o root -g root deploy/tomcat-cloudflared.sudoers /etc/sudoers.d/tomcat-cloudflared
 sudo visudo -cf /etc/sudoers.d/tomcat-cloudflared   # validate sudoers syntax
+sudo install -m755 -o root -g root deploy/tomcat-sync-units.sh /usr/local/sbin/tomcat-sync-units
 sudo systemctl daemon-reload
 sudo systemctl enable --now cloudflared.service
 sudo systemctl enable --now tomcat.service tomcat-deploy.timer
@@ -93,14 +94,32 @@ the DINOv3 gallery, the labeler caches).
 The values suit a CPX21 (4GB). **After rescaling the server, raise `MemoryHigh`
 and `MemoryMax`** -- the decode budget follows them on its own.
 
-Unit changes need reinstalling; `deploy.sh` only pulls code:
+Unit changes apply themselves: every `deploy.sh` run calls
+`sudo /usr/local/sbin/tomcat-sync-units`, which reinstalls any unit whose repo
+copy differs from what is in `/etc/systemd/system`, runs `daemon-reload`, and
+lets `deploy.sh` do the restart. To confirm the caps are live after a deploy:
 
 ```bash
-sudo install -m644 -o root -g root deploy/tomcat.service /etc/systemd/system/tomcat.service
-sudo systemctl daemon-reload
-sudo systemctl restart tomcat
-systemctl show tomcat -p MemoryHigh -p MemoryMax   # confirm the caps are live
+systemctl show tomcat -p MemoryHigh -p MemoryMax
 ```
+
+To apply a unit change immediately rather than waiting for 5am, run
+`/home/tomcat/deploy.sh` (a no-op for code if already up to date, but it still
+syncs units), or run the sync and restart by hand:
+
+```bash
+sudo /usr/local/sbin/tomcat-sync-units && sudo systemctl restart tomcat
+```
+
+Two things the sync deliberately does **not** do:
+
+- **It will not install a `deploy/` tree that differs from `HEAD`.** The bot can
+  write its own checkout (`ReadWritePaths`), so installing unverified files
+  would let a compromised bot plant a root-run unit and wait for the timer.
+  A dirty `deploy/` aborts the sync with a non-zero exit instead.
+- **It does not update itself.** `tomcat-sync-units` runs as root, so changes to
+  `deploy/tomcat-sync-units.sh` need the `install` line from the one-time setup
+  re-run by hand. Only the units it copies deploy automatically.
 
 ### Swap
 

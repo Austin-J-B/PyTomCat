@@ -1,6 +1,7 @@
-"""Handlers for station-level informational queries."""
+﻿"""Handlers for station-level informational queries."""
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict
 
 from ..logger import log_action
@@ -22,7 +23,9 @@ async def handle_station_residents(intent, ctx: Dict[str, Any]) -> None:
         log_action("station_residents", "unmatched", raw_query or "")
         return
 
-    residents = get_residents_for_station(station)
+    #In a thread: the resident map is rebuilt from the sheet when its
+    #fifteen-minute window is up, and that is a network round trip.
+    residents = await asyncio.to_thread(get_residents_for_station, station)
     if not residents:
         await safe_send(channel, f"I don't have any residents recorded for the {station} station yet.")
         log_action("station_residents", f"station={station}", "no_residents")

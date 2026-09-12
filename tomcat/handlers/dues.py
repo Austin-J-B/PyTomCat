@@ -1,4 +1,4 @@
-"""Dues ingestion + Gmail logging pipeline for CCC membership tracking."""
+﻿"""Dues ingestion + Gmail logging pipeline for CCC membership tracking."""
 
 from __future__ import annotations
 import os
@@ -3869,7 +3869,8 @@ async def _run_daily_dues_job(bot) -> None:
                 pass
     
     #6. Output MavOrgs invite list (UTA emails only)
-    uninvited = _get_uninvited_uta_emails(cur_sem)
+    #In a thread: this loads the membership sheet if its TTL is up.
+    uninvited = await asyncio.to_thread(_get_uninvited_uta_emails, cur_sem)
     if log_ch and uninvited:
         email_list = '\n'.join(uninvited)
         view = InvitesConfirmView(0, uninvited)  #0 = any officer can confirm

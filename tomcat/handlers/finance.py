@@ -1,4 +1,4 @@
-"""Non-dues finance ingestion: classify emails, build Sheets payloads, notify sandbox."""
+﻿"""Non-dues finance ingestion: classify emails, build Sheets payloads, notify sandbox."""
 
 from __future__ import annotations
 
@@ -1232,7 +1232,11 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
     if not rows:
         return []
 
-    observed_counts = _recent_sheet_row_counts(ws, label)
+    #In a thread: this reads the whole ledger back over synchronous HTTP, and
+    #the verify loop below does it up to five more times with a backoff. On the
+    #event loop that stalls the Discord heartbeat for seconds at exactly the
+    #moment Sheets is already refusing writes.
+    observed_counts = await asyncio.to_thread(_recent_sheet_row_counts, ws, label)
     results: List[Tuple[bool, str]] = []
     for row in rows:
         row_key = _sheet_row_key(row)
@@ -1255,7 +1259,7 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
                 if verify_attempt:
                     await asyncio.sleep(delay)
                     delay = min(delay * 2.0, 8.0)
-                verified_counts = _recent_sheet_row_counts(ws, label)
+                verified_counts = await asyncio.to_thread(_recent_sheet_row_counts, ws, label)
                 if verified_counts is not None:
                     current_count = verified_counts.get(row_key, 0)
                     previous_count = baseline_count if baseline_count is not None else 0
@@ -2150,7 +2154,9 @@ async def _check_dues_corroboration(counterparty: str, provider: str, bot) -> bo
     
     #Check membership application list for unverified entry matching this name
     try:
-        rows = dues_module._load_membership_rows()
+        #Off the loop: this reads the membership sheet over synchronous HTTP
+        #whenever its TTL is up, with quota retries behind it.
+        rows = await dues_module._load_membership_rows_async()
         cur_sem = dues_module._current_semester_label()
         cur_sem_norm = dues_module._norm_sem_label(cur_sem).lower()
         
@@ -2222,7 +2228,9 @@ async def _process_pending_dues(bot) -> None:
     #pending clock kept counting down against a source that could not answer.
     from . import dues as _dues_mod
     try:
-        _dues_mod._load_membership_rows()
+        #Off the loop, for the same reason. The load is for its side effect:
+        #membership_data_is_authoritative reports on the one that just ran.
+        await _dues_mod._load_membership_rows_async()
         corroboration_ok, corroboration_detail = _dues_mod.membership_data_is_authoritative()
     except Exception as e:
         corroboration_ok, corroboration_detail = False, f'{type(e).__name__}: {e}'

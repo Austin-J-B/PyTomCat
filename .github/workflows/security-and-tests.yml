@@ -76,6 +76,7 @@ jobs:
           python scripts/test_vision_handlers.py
           python scripts/test_profile_cache.py
           python scripts/test_image_budget.py
+          python scripts/test_gallery_file.py
 
       - name: Run JavaScript regression scripts
         run: |

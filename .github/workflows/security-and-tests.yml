@@ -45,6 +45,7 @@ jobs:
           python scripts/test_log_retention.py
           python scripts/test_labeler_hot_paths.py
           python scripts/test_cat_lookup.py
+          python scripts/test_alias_index.py
           python scripts/test_image_budget.py
 
       - name: Run JavaScript regression scripts

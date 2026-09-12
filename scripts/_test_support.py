@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from unittest.mock import MagicMock
 
 #Heavy or credential-bound packages that a bare checkout will not have.
@@ -56,5 +57,26 @@ def ensure_session_secret() -> None:
     os.environ.setdefault("UI_SESSION_SECRET", "tests-do-not-sign-cookies")
 
 
+def redirect_machine_log() -> str:
+    """Send this process's machine log to a scratch directory.
+
+    Six of the regression scripts exercise code that logs, and those records
+    used to land in logs/machine beside the real ones -- 78 lines per suite
+    run, including 63 finance events and mocked memory readings like
+    rss=1000MB. That corpus is what production latency and behaviour get
+    analysed from, so test output in it is not noise, it is wrong data.
+
+    Must run before tomcat.logger is imported: it reads the directory once, at
+    import, and keeps the day's file handle open.
+    """
+    existing = os.environ.get("TOMCAT_LOG_DIR")
+    if existing:
+        return existing
+    path = tempfile.mkdtemp(prefix="tomcat-test-logs")
+    os.environ["TOMCAT_LOG_DIR"] = path
+    return path
+
+
 STUBBED = stub_missing_optional_deps()
 ensure_session_secret()
+MACHINE_LOG_DIR = redirect_machine_log()

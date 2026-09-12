@@ -8,11 +8,17 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import atexit
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Any, Optional, TextIO
 
-LOG_DIR_MACHINE = Path("logs/machine")
+#Where the machine log is written. TOMCAT_LOG_DIR moves it, which is what the
+#test scripts use: several of them exercise code that logs, and those records
+#used to land in the real corpus. 78 lines per suite run, including 63 finance
+#events indistinguishable from genuine ones -- and that corpus is what latency
+#and behaviour are analysed from afterwards.
+LOG_DIR_MACHINE = Path(os.getenv("TOMCAT_LOG_DIR", "") or "logs/machine")
 LOG_DIR_MACHINE.mkdir(parents=True, exist_ok=True)
 
 TZ = ZoneInfo("America/Chicago")

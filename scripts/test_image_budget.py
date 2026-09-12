@@ -24,6 +24,11 @@ import sys
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+#Sends this process's machine log to a scratch directory, so the tests do
+#not write records into the corpus the real logs are analysed from.
+import _test_support  # noqa: F401
 
 from tomcat.services import image_budget as IB  # noqa: E402
 

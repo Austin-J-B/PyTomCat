@@ -39,6 +39,13 @@ def read_records(root: Path) -> List[dict]:
     return out
 
 
+#log-isolation: self-managed
+#This one tests the logger, so it cannot use _test_support's TOMCAT_LOG_DIR
+#redirect: the assertions below look for the file under the working directory,
+#and the variable would send it somewhere else. It chdirs into a temp directory
+#before importing tomcat.logger instead, which isolates it just as completely.
+
+
 def main() -> int:
     workdir = tempfile.mkdtemp(prefix="tomcat-logger-")
     os.chdir(workdir)

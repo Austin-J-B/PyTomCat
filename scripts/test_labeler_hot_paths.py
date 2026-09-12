@@ -27,21 +27,9 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 #The code under test is plain cache bookkeeping, but importing the labeler
-#module drags in the CV and Google stacks. Stub whatever is not installed so
-#this runs on a bare checkout like the other scripts/test_*.py do.
-_OPTIONAL_DEPS = (
-    "torch", "torch.nn", "torch.nn.functional", "torchvision",
-    "torchvision.transforms", "ultralytics", "cv2", "numpy", "discord",
-    "gspread", "gspread.auth", "gspread.exceptions", "gspread.utils",
-    "google", "google.oauth2", "google.oauth2.service_account", "modal",
-)
-for _dep in _OPTIONAL_DEPS:
-    try:
-        __import__(_dep)
-    except Exception:
-        from unittest.mock import MagicMock
-
-        sys.modules[_dep] = MagicMock()
+#module drags in the CV and Google stacks. _test_support stubs whatever is not
+#installed, so this runs on a bare checkout like the other scripts/test_*.py.
+import _test_support  # noqa: F401
 
 FAILURES: list[str] = []
 

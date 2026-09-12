@@ -24,6 +24,10 @@ from typing import Any, Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+#Stubs whatever of the CV and Google stacks is not installed, and gives
+#tomcat.main a session secret. Must come before any tomcat import.
+import _test_support  # noqa: F401
+
 from tomcat.handlers import labeler
 
 FAILURES: List[str] = []

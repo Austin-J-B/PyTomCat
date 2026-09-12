@@ -19,10 +19,9 @@ from typing import Any, Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-#tomcat.main refuses to import without a session secret, by design -- the UI
-#must never sign cookies with a default. None of these tests issue one; they
-#just have to get through the import.
-os.environ.setdefault("UI_SESSION_SECRET", "tests-do-not-sign-cookies")
+#Stubs whatever of the CV and Google stacks is not installed, and gives
+#tomcat.main a session secret. Must come before any tomcat import.
+import _test_support  # noqa: F401
 
 from tomcat import main as tomcat_main
 

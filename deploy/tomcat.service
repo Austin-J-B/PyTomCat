@@ -3,6 +3,9 @@ Description=TomCat Discord bot and web API
 Documentation=https://github.com/Austin-J-B/PyTomCat
 After=network-online.target
 Wants=network-online.target
+# Never stop retrying. A bot that gave up after a burst of crashes would stay
+# down until someone noticed, which is strictly worse than restarting forever.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -12,7 +15,19 @@ WorkingDirectory=/home/tomcat/PyTomCat
 EnvironmentFile=/home/tomcat/PyTomCat/.env
 ExecStart=/home/tomcat/PyTomCat/.venv/bin/python /home/tomcat/PyTomCat/scripts/start.py
 Restart=always
-RestartSec=5
+RestartSec=10
+# Without a cap the kernel picks its own victims when memory runs out, and on a
+# 4GB box it took sshd and cloudflared with it -- the whole server went dark and
+# only a console power-cycle brought it back. These bound the damage to this
+# service: MemoryHigh throttles and reclaims first (slow, still serving), and
+# MemoryMax kills only this unit if it keeps climbing, leaving the box reachable.
+# Sized for CPX21 (4GB); raise both if the server is rescaled.
+MemoryAccounting=true
+MemoryHigh=2.2G
+MemoryMax=2.8G
+# A child being OOM-killed must not stop the unit; Restart= handles the main
+# process. OOMPolicy=stop would leave the bot down after a single kill.
+OOMPolicy=continue
 TimeoutStopSec=15
 UMask=0077
 

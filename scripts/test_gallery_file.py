@@ -22,6 +22,11 @@ from pathlib import Path
 from typing import List
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+#Sends this process's machine log to a scratch directory, so the test does
+#not write records into the corpus the real logs are analysed from.
+import _test_support  # noqa: F401
 
 import numpy as np
 
@@ -29,11 +34,11 @@ from tomcat.vision import gallery_file
 
 #Reading the old .pt format needs torch, which CI does not install. That is the
 #whole reason .npz exists, so the tests say so rather than requiring it.
-try:
-    import torch  # noqa: F401
-    _HAVE_TORCH = True
-except Exception:
-    _HAVE_TORCH = False
+#
+#Ask _test_support rather than trying the import: it stands a MagicMock in for
+#a missing torch, and a MagicMock answers every call, so `import torch`
+#succeeding proves nothing and the tensor checks below would run against it.
+_HAVE_TORCH = "torch" not in _test_support.STUBBED
 
 FAILURES: List[str] = []
 

@@ -53,6 +53,7 @@ jobs:
           python scripts/test_log_retention.py
           python scripts/test_labeler_hot_paths.py
           python scripts/test_classify_quality.py
+          python scripts/test_labeler_queues.py
           python scripts/test_cat_lookup.py
           python scripts/test_photo_picker.py
           python scripts/test_cat_query.py

@@ -4787,6 +4787,119 @@ async def _get_photo_metadata_rows_async(*, force: bool = False, ttl_sec: Option
     return await asyncio.to_thread(get_photo_metadata_rows, ttl)
 
 
+#---------- Queue scans ----------
+#Each of these walks every row of the photo metadata table, which the labeler UI
+#polls, so all three run in a thread. They take their inputs as arguments and
+#touch no module state, which is what makes that safe.
+
+
+def _parse_queue_detect_candidates(
+    in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
+) -> List[Dict[str, Any]]:
+    """Photos with no boxes yet: the detector has not run on them."""
+    out_queue: List[Dict[str, Any]] = []
+    for row in in_rows[1:]:  #Skip header
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+        if sn is None:
+            continue
+        claim = in_claims.get(("detect", int(sn)))
+        if claim and str(claim.get("user_id") or "") != in_user_id:
+            continue
+        box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
+        if not box_coords.strip():
+            url = row[COL_URL] if len(row) > COL_URL else ""
+            out_queue.append({"serial": sn, "url": url})
+    out_queue.sort(key=lambda item: int(item.get("serial") or 0))
+    return out_queue
+
+
+def _parse_queue_classify_candidates(
+    in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
+) -> List[Dict[str, Any]]:
+    """Photos with boxes but at least one box still unnamed."""
+    out_candidates: List[Dict[str, Any]] = []
+    for row in in_rows[1:]:
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+        if sn is None:
+            continue
+        claim = in_claims.get(("classify", int(sn)))
+        if claim and str(claim.get("user_id") or "") != in_user_id:
+            continue
+        box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
+        box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
+        
+        if not box_coords.strip() or box_coords.strip().lower() == "rejected":
+            continue
+        
+        # Queue parsing must stay cheap; full box validation happens in identify/refine paths.
+        num_boxes = len([b for b in str(box_coords).split("|") if str(b).strip()])
+        if num_boxes <= 0:
+            continue
+        labels = box_cat_ids.split("|") if box_cat_ids else []
+        num_labeled = 0
+        for idx in range(min(num_boxes, len(labels))):
+            if str(labels[idx] or "").strip():
+                num_labeled += 1
+        
+        if num_labeled < num_boxes:
+            url = row[COL_URL] if len(row) > COL_URL else ""
+            out_candidates.append({
+                "serial": sn,
+                "url": url,
+                "boxes": box_coords,
+                "labels": box_cat_ids,
+                "num_boxes": num_boxes,
+                "num_labeled": num_labeled,
+            })
+    return out_candidates
+
+
+def _parse_queue_manual_candidates(
+    in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
+) -> List[Dict[str, Any]]:
+    """Photos with at least one box a labeler marked for review."""
+    out_queue: List[Dict[str, Any]] = []
+    for row in in_rows[1:]:
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+        if sn is None:
+            continue
+        claim = in_claims.get(("manual", int(sn)))
+        if claim and str(claim.get("user_id") or "") != in_user_id:
+            continue
+        box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
+        box_cat_ids = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
+        if not box_coords or box_coords.lower() == "rejected" or not box_cat_ids:
+            continue
+        coords = [c.strip() for c in box_coords.split("|")]
+        labels = [l.strip() for l in box_cat_ids.split("|")]
+        if not coords or not labels:
+            continue
+        review_indices = [
+            idx for idx in range(min(len(coords), len(labels)))
+            if _is_needs_review_label(labels[idx])
+        ]
+        if not review_indices:
+            continue
+        url = row[COL_URL] if len(row) > COL_URL else ""
+        out_queue.append({
+            "serial": sn,
+            "url": url,
+            "boxes": box_coords,
+            "labels": box_cat_ids,
+            "num_boxes": len(coords),
+            "review_indices": review_indices,
+            "num_review": len(review_indices),
+        })
+    out_queue.sort(key=lambda item: int(item.get("serial") or 0))
+    return out_queue
+
+
 async def get_queue_detect(request: web.Request) -> web.Response:
     """Return list of serials needing detector labels (empty BoxCoordinates)."""
     try:
@@ -4798,27 +4911,10 @@ async def get_queue_detect(request: web.Request) -> web.Response:
         local_serials_snapshot = await _local_serials_async(force_refresh=force)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
-        def _parse_queue_detect_candidates(
-            in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
-        ) -> List[Dict[str, Any]]:
-            out_queue: List[Dict[str, Any]] = []
-            for row in in_rows[1:]:  #Skip header
-                if len(row) <= COL_SERIAL:
-                    continue
-                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-                if sn is None:
-                    continue
-                claim = in_claims.get(("detect", int(sn)))
-                if claim and str(claim.get("user_id") or "") != in_user_id:
-                    continue
-                box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
-                if not box_coords.strip():
-                    url = row[COL_URL] if len(row) > COL_URL else ""
-                    out_queue.append({"serial": sn, "url": url})
-            out_queue.sort(key=lambda item: int(item.get("serial") or 0))
-            return out_queue
-
-        queue = _parse_queue_detect_candidates(rows, claims, user_id)
+        #Off the loop: this walks every photo metadata row, and the UI polls
+        #this endpoint. The scan takes its inputs as arguments so it can run in
+        #a thread without touching module state.
+        queue = await asyncio.to_thread(_parse_queue_detect_candidates, rows, claims, user_id)
         queue, local_excluded, local_sample = _filter_queue_to_local(
             "detect",
             queue,
@@ -4854,48 +4950,10 @@ async def get_queue_classify(request: web.Request) -> web.Response:
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
 
-        def _parse_queue_classify_candidates(
-            in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
-        ) -> List[Dict[str, Any]]:
-            out_candidates: List[Dict[str, Any]] = []
-            for row in in_rows[1:]:
-                if len(row) <= COL_SERIAL:
-                    continue
-                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-                if sn is None:
-                    continue
-                claim = in_claims.get(("classify", int(sn)))
-                if claim and str(claim.get("user_id") or "") != in_user_id:
-                    continue
-                box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
-                box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
-                
-                if not box_coords.strip() or box_coords.strip().lower() == "rejected":
-                    continue
-                
-                # Queue parsing must stay cheap; full box validation happens in identify/refine paths.
-                num_boxes = len([b for b in str(box_coords).split("|") if str(b).strip()])
-                if num_boxes <= 0:
-                    continue
-                labels = box_cat_ids.split("|") if box_cat_ids else []
-                num_labeled = 0
-                for idx in range(min(num_boxes, len(labels))):
-                    if str(labels[idx] or "").strip():
-                        num_labeled += 1
-                
-                if num_labeled < num_boxes:
-                    url = row[COL_URL] if len(row) > COL_URL else ""
-                    out_candidates.append({
-                        "serial": sn,
-                        "url": url,
-                        "boxes": box_coords,
-                        "labels": box_cat_ids,
-                        "num_boxes": num_boxes,
-                        "num_labeled": num_labeled,
-                    })
-            return out_candidates
-
-        candidates = _parse_queue_classify_candidates(rows, claims, user_id)
+        #Off the loop, as in get_queue_detect: a full metadata scan per poll.
+        candidates = await asyncio.to_thread(
+            _parse_queue_classify_candidates, rows, claims, user_id
+        )
 
         local_only_mode = local_photos.is_local_only()
         queue: List[Dict[str, Any]] = []
@@ -5034,47 +5092,8 @@ async def get_queue_manual(request: web.Request) -> web.Response:
         local_serials_snapshot = await _local_serials_async(force_refresh=force)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
-        def _parse_queue_manual_candidates(
-            in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
-        ) -> List[Dict[str, Any]]:
-            out_queue: List[Dict[str, Any]] = []
-            for row in in_rows[1:]:
-                if len(row) <= COL_SERIAL:
-                    continue
-                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-                if sn is None:
-                    continue
-                claim = in_claims.get(("manual", int(sn)))
-                if claim and str(claim.get("user_id") or "") != in_user_id:
-                    continue
-                box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
-                box_cat_ids = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
-                if not box_coords or box_coords.lower() == "rejected" or not box_cat_ids:
-                    continue
-                coords = [c.strip() for c in box_coords.split("|")]
-                labels = [l.strip() for l in box_cat_ids.split("|")]
-                if not coords or not labels:
-                    continue
-                review_indices = [
-                    idx for idx in range(min(len(coords), len(labels)))
-                    if _is_needs_review_label(labels[idx])
-                ]
-                if not review_indices:
-                    continue
-                url = row[COL_URL] if len(row) > COL_URL else ""
-                out_queue.append({
-                    "serial": sn,
-                    "url": url,
-                    "boxes": box_coords,
-                    "labels": box_cat_ids,
-                    "num_boxes": len(coords),
-                    "review_indices": review_indices,
-                    "num_review": len(review_indices),
-                })
-            out_queue.sort(key=lambda item: int(item.get("serial") or 0))
-            return out_queue
-
-        queue = _parse_queue_manual_candidates(rows, claims, user_id)
+        #Off the loop, as in get_queue_detect: a full metadata scan per poll.
+        queue = await asyncio.to_thread(_parse_queue_manual_candidates, rows, claims, user_id)
         queue, local_excluded, local_sample = _filter_queue_to_local(
             "manual",
             queue,

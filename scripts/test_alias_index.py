@@ -243,6 +243,19 @@ def main() -> int:
     check("resolution restored after swap back", before,
           A.resolve_station_or_cat("quantumcat", want="cat"))
 
+    #Alias order is the tie-break when two aliases score the same in fuzzy
+    #matching, so it has to be stable: it used to come from a set and changed
+    #between restarts, which made the same message resolve differently.
+    check("alias variants are ordered, not set-ordered",
+          ["ford f-150", "ford f 150", "fordf150"], A._alias_variants("Ford F-150"))
+    check("a name with no variants yields itself", ["microwave"], A._alias_variants("Microwave"))
+    check("blank name yields nothing", [], A._alias_variants("   "))
+    check("nicknames follow the name, in order",
+          ["twix", "tw1x", "candy bar", "candybar", "candy", "bar"],
+          A._aliases_for("Twix", ["tw1x", "Candy Bar"]))
+    check("rebuilding the static table is stable",
+          A._build_cat_aliases(), A._build_cat_aliases())
+
     if FAILURES:
         print(f"FAIL: {len(FAILURES)} mismatch(es) over {len(corpus)} texts")
         for line in FAILURES[:20]:

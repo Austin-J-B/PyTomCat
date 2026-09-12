@@ -58,35 +58,59 @@ CAT_NICKNAMES: Dict[str, List[str]] = {
     "Meatball": ["Nimbus"],
 }
 
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+_WS = re.compile(r"\s+")
+#One sheet cell holds every nickname: "Mike, Micro / Buddy".
+_NICK_SPLIT_RE = re.compile(r",|/|;|\n")
+
+
 def _alias_variants(name: str) -> List[str]:
+    """Spellings of one name, most literal first.
+
+    Order matters and used to come from a set, so it changed between restarts:
+    it becomes the order of _AliasIndex.pairs, which is the tie-break when two
+    aliases score the same in fuzzy matching. The same message could resolve to
+    different cats on different runs.
+    """
     base = name.lower().strip()
-    simple = re.sub(r"\s+", " ", base)
-    tight = re.sub(r"[^a-z0-9]+", "", base)
-    hyphens = base.replace("-", " ")
-    variants = {base, simple, hyphens, tight}
-    return [v for v in variants if v]
+    return list(dict.fromkeys(v for v in (
+        base,
+        _WS.sub(" ", base),
+        base.replace("-", " "),
+        _NON_ALNUM_RE.sub("", base),
+    ) if v))
+
+
+def _aliases_for(display: str, nicknames: Iterable[str] = ()) -> List[str]:
+    """Every spelling that should resolve to `display`, first mention winning.
+
+    Used for the built-in names and for both dynamic sources, which all supply
+    a display name plus some nicknames.
+    """
+    values = list(_alias_variants(display))
+    for nick in nicknames:
+        nick = nick.strip()
+        if not nick:
+            continue
+        values.extend(_alias_variants(nick))
+        #A multi-word nickname also contributes its words, so "Tito" finds
+        #"Tito FluffyButt".
+        for token in _NON_ALNUM_RE.split(nick.lower()):
+            if token:
+                values.extend(_alias_variants(token))
+    return list(dict.fromkeys(values))
+
+
+def _split_nicknames(cell: str) -> List[str]:
+    """Nicknames out of one free-text CatDatabase cell."""
+    return [nick.strip() for nick in _NICK_SPLIT_RE.split(cell or "") if nick.strip()]
+
 
 def _build_cat_aliases() -> Dict[str, List[str]]:
-    table: Dict[str, List[str]] = {}
-    for disp in CAT_NAMES:
-        key = disp.lower()
-        vals: List[str] = []
-        #canonical name variants
-        vals.extend(_alias_variants(disp))
-        #nicknames and their token variants
-        for nick in CAT_NICKNAMES.get(disp, []):
-            vals.extend(_alias_variants(nick))
-            #also split multi-words to allow partial tokens (e.g., "tito" from "Tito FluffyButt")
-            for tok in re.split(r"[^a-z0-9]+", nick.lower()):
-                if tok:
-                    vals.extend(_alias_variants(tok))
-        #unique preserve order
-        seen = set(); out: List[str] = []
-        for v in vals:
-            if v not in seen:
-                seen.add(v); out.append(v)
-        table[key] = out
-    return table
+    return {
+        disp.lower(): _aliases_for(disp, CAT_NICKNAMES.get(disp, []))
+        for disp in CAT_NAMES
+    }
 
 _CAT_ALIASES: Dict[str, List[str]] = _build_cat_aliases()
 
@@ -172,6 +196,43 @@ def _refresh_dyn_aliases(force: bool = False) -> None:
     threading.Thread(target=_runner, name="dyn-alias-refresh", daemon=True).start()
 
 
+#Column 14 of the CatDatabase sheet holds the nicknames cell.
+_SHEET_NICK_COL = 14
+
+
+def _dyn_tables_from_rows(
+    rows: Iterable[List[str]], nick_col: int
+) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
+    """Alias and display tables from CatDatabase rows; the name is column 0."""
+    aliases: Dict[str, List[str]] = {}
+    display: Dict[str, str] = {}
+    for row in rows:
+        disp = _parse_full_name_to_display((row[0] if row else "").strip())
+        if not disp:
+            continue
+        cell = row[nick_col].strip() if 0 <= nick_col < len(row) else ""
+        key = disp.lower()
+        aliases[key] = _aliases_for(disp, _split_nicknames(cell))
+        display[key] = disp
+    return aliases, display
+
+
+def _write_catabase_snapshot(display: Dict[str, str]) -> None:
+    """Leave a name-only CSV behind so a later start without Sheets still works.
+
+    Nicknames are not kept: the sheet rows are gone by this point, and the names
+    alone are enough for the offline fallback in _ensure_fallback_cat_aliases.
+    """
+    try:
+        _CATABASE_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _CATABASE_CSV_PATH.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["Full Name", "Common Nicknames"])
+            writer.writerows([disp, ""] for disp in display.values())
+    except Exception:
+        pass
+
+
 def _do_dyn_alias_refresh() -> None:
     """Blocking refresh of dynamic cat aliases from Sheets (CSV fallback).
 
@@ -180,108 +241,38 @@ def _do_dyn_alias_refresh() -> None:
     """
     global _DYN_LAST_TS
     now = time.monotonic()
-    new_aliases: Dict[str, List[str]] = {}
-    new_display: Dict[str, str] = {}
-    #Try Sheets first
+    #Sheets is the source of truth; the local CSV only covers it being down.
     try:
         sid = getattr(settings, 'sheet_catabase_id', None) if settings else None
         if sid and sheets_client:
-            ws = sheets_client().open_by_key(sid).worksheet("CatDatabase")
-            rows = ws.get_all_values()
-            data = rows[1:] if rows else []
-            for r in data:
-                full = (r[0] if r else '').strip()
-                disp = _parse_full_name_to_display(full)
-                if not disp:
-                    continue
-                key = disp.lower()
-                vals: List[str] = []
-                vals.extend(_alias_variants(disp))
-                #include nickname variants from the sheet if present (column index 14 in our mapping)
-                try:
-                    nicks = (r[14] if len(r) > 14 else '').strip()
-                except Exception:
-                    nicks = ''
-                if nicks:
-                    for nick in re.split(r",|/|;|\n", nicks):
-                        nick = nick.strip()
-                        if not nick:
-                            continue
-                        vals.extend(_alias_variants(nick))
-                        for tok in re.split(r"[^a-z0-9]+", nick.lower()):
-                            if tok:
-                                vals.extend(_alias_variants(tok))
-                #unique preserve order
-                seen = set(); out: List[str] = []
-                for v in vals:
-                    if v and v not in seen:
-                        seen.add(v); out.append(v)
-                new_aliases[key] = out
-                new_display[key] = disp
-            _swap_dyn_aliases(new_aliases, new_display)
+            rows = sheets_client().open_by_key(sid).worksheet("CatDatabase").get_all_values()
+            aliases, display = _dyn_tables_from_rows(rows[1:] if rows else [], _SHEET_NICK_COL)
+            _swap_dyn_aliases(aliases, display)
             _DYN_LAST_TS = now
-            #Persist a lightweight CSV snapshot for offline fallback
-            try:
-                import csv as _csv
-                _CATABASE_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-                with _CATABASE_CSV_PATH.open("w", encoding="utf-8", newline="") as f:
-                    w = _csv.writer(f)
-                    #Write just Full Name + Common Nicknames if we have headers
-                    w.writerow(["Full Name", "Common Nicknames"])
-                    for key, disp in new_display.items():
-                        #Rebuild nicknames approximation from aliases (not perfect but useful)
-                        #Prefer original sheet nicks if we had them in r[14]; above we didn't keep per-row, so write blank.
-                        w.writerow([disp, ""])
-            except Exception:
-                pass
+            _write_catabase_snapshot(display)
             return
     except Exception:
         pass
-    #Fallback: local CSV in repo if Sheets unavailable
+
     try:
-        import csv
         for path in _FALLBACK_CSV_PATHS:
             if not path.exists():
                 continue
-            with path.open('r', encoding='utf-8') as f:
-                reader = csv.reader(f)
+            with path.open('r', encoding='utf-8') as handle:
+                reader = csv.reader(handle)
                 header = next(reader, None)
-                for row in reader:
-                    full = (row[0] if row else '').strip()
-                    disp = _parse_full_name_to_display(full)
-                    if not disp:
-                        continue
-                    key = disp.lower()
-                    vals: List[str] = []
-                    vals.extend(_alias_variants(disp))
-                    #Guess nicknames column by header if present
-                    nicks = ''
-                    if header:
-                        try:
-                            idx = [h.strip().lower() for h in header].index('common nicknames')
-                            nicks = (row[idx] if len(row) > idx else '').strip()
-                        except Exception:
-                            nicks = ''
-                    if nicks:
-                        for nick in re.split(r",|/|;|\n", nicks):
-                            nick = nick.strip()
-                            if not nick:
-                                continue
-                            vals.extend(_alias_variants(nick))
-                            for tok in re.split(r"[^a-z0-9]+", nick.lower()):
-                                if tok:
-                                    vals.extend(_alias_variants(tok))
-                    seen = set(); out: List[str] = []
-                    for v in vals:
-                        if v and v not in seen:
-                            seen.add(v); out.append(v)
-                    new_aliases[key] = out
-                    new_display[key] = disp
-            _swap_dyn_aliases(new_aliases, new_display)
+                nick_col = -1
+                if header:
+                    try:
+                        nick_col = [h.strip().lower() for h in header].index('common nicknames')
+                    except ValueError:
+                        nick_col = -1
+                aliases, display = _dyn_tables_from_rows(reader, nick_col)
+            _swap_dyn_aliases(aliases, display)
             _DYN_LAST_TS = now
             return
     except Exception:
-        #leave dynamic empty on failure
+        #Leave the dynamic tables empty; the built-in names still resolve.
         _swap_dyn_aliases({}, {})
         _DYN_LAST_TS = now
 
@@ -422,18 +413,18 @@ def refresh_aliases_now() -> None:
     """Force a refresh of dynamic cat aliases from the sheet or CSV."""
     _refresh_dyn_aliases(force=True)
 
-_WS = re.compile(r"\s+")
-def norm(s: str) -> str:
+def _norm(s: str) -> str:
+    """Lowercase, trim, and collapse runs of whitespace."""
     return _WS.sub(" ", (s or "").lower().strip())
 
-def _norm(s: str) -> str:
-    return _WS.sub(" ", (s or "").lower().strip())
+
+#Kept under both names: _norm for this module, norm for anything importing it.
+norm = _norm
+_normalize = _norm
+
 
 def _words(s: str) -> List[str]:
-    return [w for w in re.split(r"[^a-z0-9]+", _norm(s)) if w]
-
-def _normalize(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "").strip().lower())
+    return [w for w in _NON_ALNUM_RE.split(_norm(s)) if w]
 
 
 def _display_for(key: str) -> str:

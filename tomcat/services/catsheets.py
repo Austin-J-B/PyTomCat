@@ -10,7 +10,9 @@ from __future__ import annotations
 from typing import Any
 import csv
 import datetime as dt
-import json, time
+import json
+import random
+import time
 from .sheets_client import sheets_client
 from . import local_photos
 from ..config import settings
@@ -337,105 +339,87 @@ def get_photo_metadata_rows(ttl_sec: int | None = None) -> list[list[str]]:
             return snap_rows
         return []
 
+def _entry_serial(entry: dict) -> int:
+    """Serial number of a photo row, or 0 when it has none."""
+    row = entry.get("row") or []
+    return _parse_serial_number(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+
+
+def _entries_with_local_files(entries: list[dict]) -> list[dict]:
+    """Drop rows whose image is not in the local photo cache.
+
+    The metadata sheet outlives the files: a row whose photo was never
+    downloaded, or has since been pruned, cannot be sent to Discord.
+    """
+    kept: list[dict] = []
+    for entry in entries:
+        serial = _entry_serial(entry)
+        if serial > 0 and local_photos.has_local_photo(serial):
+            kept.append(entry)
+    return kept
+
+
+def _photo_result(entry: dict, display_name: str, total: int, **extra: Any) -> dict:
+    """The payload handlers/cats.py expects for one chosen photo."""
+    row = entry.get("row") or []
+    return {
+        "actual_name": display_name,
+        "url": row[COL_URL] if len(row) > COL_URL else "",
+        "serial": row[COL_SERIAL],
+        "total_available": total,
+        **extra,
+        "matched_label": entry.get("matched_label"),
+        "matched_box_index": entry.get("matched_box_index"),
+        "matched_box_indices": entry.get("matched_box_indices") or [],
+    }
+
+
+def _local_photo_matches(full_name: str) -> list[dict]:
+    """Photo rows for a cat that still have a file behind them."""
+    return _entries_with_local_files(_matched_photo_entries(full_name))
+
+
 async def get_most_recent_photo(full_name: str, _retried: bool = False) -> dict | str:
-    """Fetch the most recent photo row for a cat from the long-format list.
-    
-    If no photos found, force-refresh cache and retry once.
+    """The newest photo of a cat by serial number, or a message saying why not.
+
+    Finding nothing on the first attempt may just mean the metadata cache is
+    behind the sheet, so it refreshes and asks once more.
     """
     display_name = _display_label(full_name) or str(full_name or "").strip()
-    matches = []
-
     try:
-        entries = _matched_photo_entries(full_name)
+        matches = _local_photo_matches(full_name)
     except Exception as e:
         return f"Photo metadata error: {e}"
 
-    for entry in entries:
-        r = entry.get("row") or []
-        #Safety check for row length
-        if len(r) <= COL_SERIAL:
-            continue
-        serial_num = _parse_serial_number(r[COL_SERIAL] if len(r) > COL_SERIAL else "")
-        if serial_num <= 0 or not local_photos.has_local_photo(serial_num):
-            continue
-        matches.append(entry)
-
     if not matches:
-        #Force refresh and retry once
         if not _retried:
             force_refresh_photo_rows_cache()
             return await get_most_recent_photo(full_name, _retried=True)
         return f"No photos found for {display_name}."
 
-    #Sort by Serial Number (descending)
-    def parse_serial(entry):
-        row = entry.get("row") or []
-        return _parse_serial_number(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+    return _photo_result(max(matches, key=_entry_serial), display_name, len(matches))
 
-    best_entry = max(matches, key=parse_serial)
-    best_row = best_entry.get("row") or []
-    
-    return {
-        "actual_name": display_name,
-        "url": best_row[COL_URL] if len(best_row) > COL_URL else "",
-        "serial": best_row[COL_SERIAL],
-        "total_available": len(matches),
-        "matched_label": best_entry.get("matched_label"),
-        "matched_box_index": best_entry.get("matched_box_index"),
-        "matched_box_indices": best_entry.get("matched_box_indices") or [],
-    }
 
 async def get_recent_photo(full_name: str, _retried: bool = False) -> dict | str:
-    """Pick a random recent photo from the full history.
-    
-    If no photos found, force-refresh cache and retry once.
-    """
+    """A random photo from a cat's history, with where it falls in that history."""
     display_name = _display_label(full_name) or str(full_name or "").strip()
-    matches = []
-
     try:
-        entries = _matched_photo_entries(full_name)
+        matches = _local_photo_matches(full_name)
     except Exception as e:
         return f"Photo metadata error: {e}"
 
-    for entry in entries:
-        r = entry.get("row") or []
-        if len(r) <= COL_SERIAL:
-            continue
-        serial_num = _parse_serial_number(r[COL_SERIAL] if len(r) > COL_SERIAL else "")
-        if serial_num <= 0 or not local_photos.has_local_photo(serial_num):
-            continue
-        matches.append(entry)
-
     if not matches:
-        #Force refresh and retry once
         if not _retried:
             force_refresh_photo_rows_cache()
             return await get_recent_photo(full_name, _retried=True)
         return f"No recent photos for '{display_name}'."
 
-    import random
-    
-    #Sort by serial ascending (oldest=lowest serial first)
-    def parse_serial(entry):
-        row = entry.get("row") or []
-        return _parse_serial_number(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-    
-    matches.sort(key=parse_serial)
+    #Oldest first, so reverse_index reads as "the Nth photo we have of them".
+    matches.sort(key=_entry_serial)
     pick_idx = random.randrange(len(matches))
-    pick = matches[pick_idx]
-    pick_row = pick.get("row") or []
-    
-    return {
-        "actual_name": display_name,
-        "url": pick_row[COL_URL] if len(pick_row) > COL_URL else "",
-        "serial": pick_row[COL_SERIAL],
-        "total_available": len(matches),
-        "reverse_index": pick_idx + 1,  #1-based: oldest=1, newest=total
-        "matched_label": pick.get("matched_label"),
-        "matched_box_index": pick.get("matched_box_index"),
-        "matched_box_indices": pick.get("matched_box_indices") or [],
-    }
+    return _photo_result(matches[pick_idx], display_name, len(matches),
+                         reverse_index=pick_idx + 1)
+
 
 IDX = {
     "full_name": 0,

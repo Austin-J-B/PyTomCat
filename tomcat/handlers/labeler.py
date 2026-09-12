@@ -4433,11 +4433,25 @@ def _compute_blur_score(img: Image.Image) -> float:
 
 
 def _decode_classify_quality_metrics(data: bytes) -> Tuple[int, int, float]:
-    """Decode image bytes and compute width/height/blur off the event loop."""
-    img = _open_rgb_image(io.BytesIO(data))
-    width, height = [int(x) for x in img.size]
-    blur = _compute_blur_score(img)
-    return int(width), int(height), float(blur)
+    """Decode image bytes and compute width/height/blur off the event loop.
+
+    Reserved against the shared image budget, like the crop renderer. This is a
+    full-resolution RGB decode -- about 45MB for one of our photos -- and the
+    classify prefilter runs several at once, so without a reservation it was the
+    one decode path invisible to the ceiling meant to keep the host out of the
+    OOM killer.
+
+    It cannot be drafted the way the crop renderer is: the pixel and minimum-
+    dimension gates need the true size, and the blur score is measured from the
+    full image, so decoding smaller would move the sharpness gate and disagree
+    with every score already cached.
+    """
+    src_w, src_h = _oriented_image_size(data)
+    with image_budget.BUDGET.reserve(image_budget.estimate_decode_bytes(src_w, src_h)):
+        img = _open_rgb_image(io.BytesIO(data))
+        width, height = [int(x) for x in img.size]
+        blur = _compute_blur_score(img)
+        return int(width), int(height), float(blur)
 
 
 def _classify_quality_report(

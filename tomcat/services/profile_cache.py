@@ -12,6 +12,21 @@ from . import local_photos
 _CACHE: Dict[str, Dict[str, Any]] = {}
 _TS: float = 0.0
 _COUNT: int = 0
+#Bumped on every swap of _CACHE. Callers that derive something from the whole
+#cache key off this so they rebuild once per change instead of once per request.
+_GENERATION: int = 0
+
+
+def generation() -> int:
+    """Opaque token that changes whenever the profile cache is replaced."""
+    return _GENERATION
+
+
+def _set_cache(profiles: Dict[str, Dict[str, Any]], ts: float) -> None:
+    global _CACHE, _TS, _GENERATION
+    _CACHE = profiles
+    _TS = ts
+    _GENERATION += 1
 _CAT_ID_RE = re.compile(r"^\s*(\d+)\s*[.)\-:]?\s*(.*?)\s*$")
 _CATABASE_CSV_PATH = os.path.join("cache", "catabase", "Catabase - CatDatabase.csv")
 _LEGACY_CATABASE_CSV_PATH = "Catabase - CatDatabase.csv"
@@ -107,15 +122,13 @@ def _snapshot_path() -> str:
 
 def _load_snapshot() -> None:
     """Load the on-disk snapshot if present."""
-    global _CACHE, _TS
     try:
         with open(_snapshot_path(), 'r', encoding='utf-8') as f:
             data = json.load(f)
-        _CACHE = {str(k): v for k, v in (data.get('profiles') or {}).items()}
-        _TS = float(data.get('ts') or 0.0)
+        _set_cache({str(k): v for k, v in (data.get('profiles') or {}).items()},
+                   float(data.get('ts') or 0.0))
     except Exception:
-        _CACHE = {}
-        _TS = 0.0
+        _set_cache({}, 0.0)
 
 #Profile field -> the header spellings the CatDatabase has used for it, most
 #specific first. Column order has changed over the sheet's life, so columns are
@@ -179,7 +192,6 @@ def _profiles_from_rows(rows: List[List[str]]) -> Dict[str, Dict[str, Any]]:
 
 def _load_from_csv() -> None:
     """Hydrate the cache from the bundled CSV snapshot, if one is readable."""
-    global _CACHE, _TS
     for path in _readable_catabase_csv_paths():
         try:
             with open(path, "r", encoding="utf-8") as handle:
@@ -187,8 +199,7 @@ def _load_from_csv() -> None:
         except Exception:
             continue
         if profiles:
-            _CACHE = profiles
-            _TS = time.monotonic()
+            _set_cache(profiles, time.monotonic())
             return
 
 
@@ -220,7 +231,7 @@ def _cache_is_stale() -> bool:
 
 def refresh_sync() -> int:
     """Refresh the cache from the CatDatabase sheet. Returns the count, 0 on failure."""
-    global _CACHE, _TS, _COUNT
+    global _COUNT
     sid = getattr(settings, 'sheet_catabase_id', None)
     if not sid:
         return 0
@@ -240,8 +251,7 @@ def refresh_sync() -> int:
     profiles = _profiles_from_rows(rows)
     if not profiles:
         return 0
-    _CACHE = profiles
-    _TS = time.monotonic()
+    _set_cache(profiles, time.monotonic())
     _COUNT = len(_CACHE)
     _save_snapshot()
     #Also keep an all-columns CSV snapshot for offline use.

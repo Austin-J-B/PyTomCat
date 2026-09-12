@@ -151,7 +151,14 @@ def main() -> int:
     with open(pc._preferred_catabase_csv_path(), encoding="utf-8", newline="") as handle:
         check("csv snapshot keeps every column", sheet_rows, list(csv.reader(handle)))
 
-    print("\n[8] a sheet with no usable rows leaves the cache alone")
+    print("\n[8] the generation token moves only when the cache is replaced")
+    before = pc.generation()
+    check("a read does not move it", before, pc.generation())
+    pc._set_cache({"x": {"actual_name": "x"}}, 1.0)
+    check("a swap moves it", before + 1, pc.generation())
+    check("and the cache changed with it", {"x": {"actual_name": "x"}}, pc._CACHE)
+
+    print("\n[9] a sheet with no usable rows leaves the cache alone")
     sheet_rows = [CANONICAL_HEADER]
     pc._CACHE = {"kept": {"actual_name": "kept"}}
     check("header-only sheet returns 0", 0, pc.refresh_sync())

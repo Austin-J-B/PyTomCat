@@ -12,11 +12,17 @@ Run: python scripts/test_subrequest_parsing.py
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+#tomcat.main refuses to import without a session secret, by design -- the UI
+#must never sign cookies with a default. None of these tests issue one; they
+#just have to get through the import.
+os.environ.setdefault("UI_SESSION_SECRET", "tests-do-not-sign-cookies")
 
 from tomcat import main as tomcat_main
 

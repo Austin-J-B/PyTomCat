@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import sys
+import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -21,6 +22,18 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import tomcat.aliases as _aliases
+
+#The cats these cases name. Without the CatDatabase -- no credentials in CI,
+#and the local CSV cache is not in the repo -- nothing resolved and the tests
+#only passed on a machine that happened to have the cache. They bring their
+#own list instead, so what resolves is the same everywhere.
+_CATS = ["Microwave", "Eraser", "Twix", "Eggs", "Pencil", "Snickers", "Ford F-150"]
+_FIXTURE_CSV = Path(tempfile.mkdtemp(prefix="aliases")) / "CatDatabase.csv"
+_FIXTURE_CSV.write_text(
+    "\n".join(["Full Name,Common Nicknames"] + [f"{name}," for name in _CATS]) + "\n",
+    encoding="utf-8",
+)
+_aliases._FALLBACK_CSV_PATHS = [_FIXTURE_CSV]
 
 #Resolve cat aliases once up front: the background refresh would otherwise swap
 #the table mid-run and change which names resolve.

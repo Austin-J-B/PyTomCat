@@ -2,7 +2,7 @@
 
 The volunteer UI lets an officer file a substitute request on somebody else's
 behalf. Everyone else has to be filing for themselves, and the only thing
-enforcing that is _subrequest_identity: the form is free to send any user_id it
+enforcing that is _acting_identity: the form is free to send any user_id it
 likes. This test pins that boundary, and the station validation next to it —
 a submission naming a station that does not exist on the date is refused
 outright rather than quietly trimmed to nothing.
@@ -52,27 +52,27 @@ def main() -> int:
     #The form can send whatever it likes; this is the check that ignores it.
     spoofed = {"user_id": "999", "user_name": "somebody else"}
     check("a spoofed id is discarded", ("100", "volunteer"),
-          tomcat_main._subrequest_identity(session(), spoofed))
+          tomcat_main._acting_identity(session(), spoofed))
     check("an empty body still identifies them", ("100", "volunteer"),
-          tomcat_main._subrequest_identity(session(), {}))
+          tomcat_main._acting_identity(session(), {}))
     check("a missing permissions block is not an officer", ("100", "volunteer"),
-          tomcat_main._subrequest_identity(
+          tomcat_main._acting_identity(
               {"user_id": "100", "username": "volunteer"}, spoofed))
     check("a null permissions block is not an officer", ("100", "volunteer"),
-          tomcat_main._subrequest_identity(
+          tomcat_main._acting_identity(
               {"user_id": "100", "username": "volunteer", "permissions": None}, spoofed))
 
     print("\n[2] an officer may file for somebody else")
     check("the named user is used", ("999", "somebody else"),
-          tomcat_main._subrequest_identity(session(officer=True), spoofed))
+          tomcat_main._acting_identity(session(officer=True), spoofed))
     check("filing for themselves needs no fields", ("100", "volunteer"),
-          tomcat_main._subrequest_identity(session(officer=True), {}))
+          tomcat_main._acting_identity(session(officer=True), {}))
     check("a half-filled body falls back per field", ("999", "volunteer"),
-          tomcat_main._subrequest_identity(session(officer=True), {"user_id": "999"}))
+          tomcat_main._acting_identity(session(officer=True), {"user_id": "999"}))
 
     print("\n[3] a session with no user at all yields no requester")
     check("nothing to file against", (None, None),
-          tomcat_main._subrequest_identity(
+          tomcat_main._acting_identity(
               {"permissions": {"is_officer": False}}, spoofed))
 
     print("\n[4] a null permissions block is not an escape hatch")
@@ -85,7 +85,7 @@ def main() -> int:
     #single-date form used to check the requester first and the multi-date form
     #last; they agree now.
     check("null permissions cannot impersonate", ("100", "volunteer"),
-          tomcat_main._subrequest_identity(
+          tomcat_main._acting_identity(
               {"user_id": "100", "username": "volunteer", "permissions": None},
               {"user_id": "999", "user_name": "somebody else"}))
 

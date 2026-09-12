@@ -13,7 +13,7 @@ import threading
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import os
 import json
@@ -613,10 +613,10 @@ def _coerce_iso_date(value: Any) -> Optional[str]:
         return None
 
 
-def _subrequest_identity(session: dict, data: dict) -> Tuple[Optional[str], Optional[str]]:
-    """Who a sub request is filed for: (user_id, user_name).
+def _acting_identity(session: dict, data: dict) -> Tuple[Optional[str], Optional[str]]:
+    """Who a sub request or claim is made for: (user_id, user_name).
 
-    An officer may file on someone else's behalf, so the body is allowed to name
+    An officer may act on someone else's behalf, so the body is allowed to name
     them. Everyone else is pinned to their own session identity whatever the
     body asks for — this is the only thing between the form and impersonation.
     """
@@ -685,6 +685,85 @@ def _parse_subrequest_dates(data: dict) -> Tuple[List[dict], Optional[str]]:
     if error:
         return [], error
     return [{"date": date_iso, "stations": clean}], None
+
+
+def _index_sub_records(
+    files: Any,
+) -> Tuple[Dict[str, dict], set]:
+    """Open sub requests by id, and the claims already taken.
+
+    Both come from the server's own logs, never from the request body: a claim
+    names an id and nothing else is trusted, so a client cannot turn its own
+    strings into a Discord mention. Taken claims are keyed by
+    (request id, station, date), which is the granularity a claim covers.
+    """
+    requested: Dict[str, dict] = {}
+    accepted = set()
+    for _path, rows in files:
+        for record in rows:
+            record_id = str(record.get("id") or "")
+            dates = record.get("dates") or []
+            date_iso = str(dates[0]) if dates else ""
+            stations = record.get("stations") or (
+                [record.get("station")] if record.get("station") else []
+            )
+            if record.get("status") == "requested" and record_id:
+                requested[record_id] = record
+            elif record.get("status") == "accepted":
+                parent = str(record.get("parent_id") or record_id)
+                for station in stations:
+                    accepted.add((parent, str(station), date_iso))
+    return requested, accepted
+
+
+def _validate_sub_claims(
+    picks: Any,
+    requested: Dict[str, dict],
+    accepted: set,
+) -> Tuple[List[tuple], Optional[Tuple[int, str]]]:
+    """Check every claim before any of them is written.
+
+    Returns (validated, None) or ([], (status, message)). All-or-nothing on
+    purpose: a malformed later pick must not leave an earlier one half-applied
+    in the log. Each validated entry carries the station, date, requester and
+    requester name read off the stored request rather than off the body.
+    """
+    if not isinstance(picks, list) or len(picks) > _MAX_SUBREQUEST_DATES:
+        return [], (400, "Invalid picks")
+
+    validated: List[tuple] = []
+    pending = set()
+    for pick in picks:
+        if not isinstance(pick, dict):
+            return [], (400, "Invalid claim")
+        parent_id = str(pick.get("id") or "")
+        source = requested.get(parent_id)
+        if not source:
+            return [], (404, "Substitute request not found")
+        station = str(pick.get("station") or "").strip()
+        date_iso = _coerce_iso_date(pick.get("date") or "")
+        if not date_iso:
+            return [], (400, "Invalid date")
+        source_dates = [str(v) for v in (source.get("dates") or [])]
+        source_stations = [
+            str(v) for v in (
+                source.get("stations")
+                or ([source.get("station")] if source.get("station") else [])
+            )
+        ]
+        #The claim has to name a station and date the request actually asked
+        #for, not just a request id that exists.
+        if date_iso not in source_dates or station not in source_stations:
+            return [], (400, "Claim does not match request")
+        claim_key = (parent_id, station, date_iso)
+        if claim_key in accepted or claim_key in pending:
+            return [], (409, "Request already claimed")
+        pending.add(claim_key)
+        validated.append((
+            parent_id, station, date_iso,
+            source.get("requester"), source.get("requester_name") or "",
+        ))
+    return validated, None
 
 
 async def _authorized(
@@ -817,7 +896,7 @@ def _allowed_user_mentions(*user_ids: Any) -> discord.AllowedMentions:
         users=users,
         replied_user=False,
     )
-from datetime import datetime, timezone
+
 
 from .config import settings
 from .logger import log_event, log_action  #noqa: F401  #imported for shared use
@@ -1601,7 +1680,7 @@ async def start_web_server(bot):
         if error:
             return error
 
-        req_user_id, req_user_name = _subrequest_identity(session, data)
+        req_user_id, req_user_name = _acting_identity(session, data)
         #No requester means nothing to file, so that is settled before the
         #payload is examined. The single-date form used to check this first and
         #the multi-date form last; there is no reason for them to differ.
@@ -1774,8 +1853,6 @@ async def start_web_server(bot):
         _, error = await _require_permissions(request, require_view=True)
         if error:
             return error
-        import json
-        from datetime import datetime
         from .handlers import feeding as _feed
         today = datetime.now().date()
 
@@ -1918,70 +1995,26 @@ async def start_web_server(bot):
         session, data, error = await _authorized_json(request, require_view=True)
         if error:
             return error
-        permissions = session.get("permissions", {})
-        user_id = data.get("user_id") or session.get("user_id")
-        if not permissions.get("is_officer"):
-            user_id = session.get("user_id")
+        user_id, _user_name = _acting_identity(session, data)
         picks = data.get("picks") or []
-        if not isinstance(picks, list) or len(picks) > 31:
+        if not isinstance(picks, list) or len(picks) > _MAX_SUBREQUEST_DATES:
             return _with_cors(web.Response(status=400, text="Invalid picks"), request)
         if not user_id or not picks:
             return _with_cors(web.Response(status=400, text="Missing user_id or picks"), request)
 
-        from datetime import datetime
         now_iso = datetime.now().isoformat()
         messages_by_date = {}  #date_iso -> list of (station, requester_id, requester_name)
 
-        # Rebuild claim details from server-side request logs. Client-supplied
-        # requester names/IDs must never become trusted Discord mentions.
-        requested_by_id = {}
-        accepted_keys = set()
-        for _path, rows in _feed._load_sub_files(
+        requested_by_id, accepted_keys = _index_sub_records(_feed._load_sub_files(
             month_keys=None,
             include_legacy=_feed.SUBS_LEGACY_FILE.exists(),
-        ):
-            for rec in rows:
-                rec_id = str(rec.get("id") or "")
-                rec_dates = rec.get("dates") or []
-                rec_date = str(rec_dates[0]) if rec_dates else ""
-                rec_stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
-                if rec.get("status") == "requested" and rec_id:
-                    requested_by_id[rec_id] = rec
-                elif rec.get("status") == "accepted":
-                    parent = str(rec.get("parent_id") or rec_id)
-                    for rec_station in rec_stations:
-                        accepted_keys.add((parent, str(rec_station), rec_date))
-
-        validated_picks = []
-        pending_keys = set()
-        for pick in picks:
-            if not isinstance(pick, dict):
-                return _with_cors(web.Response(status=400, text="Invalid claim"), request)
-            parent_id = str(pick.get("id") or "")
-            source = requested_by_id.get(parent_id)
-            if not source:
-                return _with_cors(web.Response(status=404, text="Substitute request not found"), request)
-            station = str(pick.get("station") or "").strip()
-            try:
-                date_iso = datetime.fromisoformat(str(pick.get("date") or "")).date().isoformat()
-            except ValueError:
-                return _with_cors(web.Response(status=400, text="Invalid date"), request)
-            source_dates = [str(v) for v in (source.get("dates") or [])]
-            source_stations = [
-                str(v) for v in (
-                    source.get("stations")
-                    or ([source.get("station")] if source.get("station") else [])
-                )
-            ]
-            if date_iso not in source_dates or station not in source_stations:
-                return _with_cors(web.Response(status=400, text="Claim does not match request"), request)
-            claim_key = (parent_id, station, date_iso)
-            if claim_key in accepted_keys or claim_key in pending_keys:
-                return _with_cors(web.Response(status=409, text="Request already claimed"), request)
-            requester = source.get("requester")
-            requester_name = source.get("requester_name") or ""
-            pending_keys.add(claim_key)
-            validated_picks.append((parent_id, station, date_iso, requester, requester_name))
+        ))
+        validated_picks, claim_error = _validate_sub_claims(
+            picks, requested_by_id, accepted_keys
+        )
+        if claim_error:
+            status, message = claim_error
+            return _with_cors(web.Response(status=status, text=message), request)
 
         # Only append after every submitted claim has passed validation so a
         # malformed later item cannot leave a partially applied request.

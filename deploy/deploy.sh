@@ -103,6 +103,14 @@ else
   echo "[deploy $TS] Requirements unchanged - skipping pip install"
 fi
 
+# Apply unit changes from main before starting, so an edited tomcat.service
+# (memory caps, ordering) takes effect on this deploy instead of sitting in the
+# repo until someone reinstalls it by hand. Best-effort on purpose: a unit that
+# fails to sync must not leave the bot down, and the old unit still works.
+if ! sudo /usr/local/sbin/tomcat-sync-units; then
+  echo "[deploy $TS] WARNING: unit sync failed - starting with the installed units" >&2
+fi
+
 sudo systemctl start tomcat
 STOPPED=0
 echo "[deploy $TS] Started tomcat.service"

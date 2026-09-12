@@ -142,13 +142,43 @@ async def handler():
     return resolve_name("west")
 '''))
 
-    print("\n[5] a lambda body belongs to whoever runs it")
+    print("\n[5] the other ways to stop the loop dead")
+    #Matched on the dotted target, because "run", "get" and "call" are far too
+    #common as bare method names to flag on their own.
+    for label, source in [
+        ("time.sleep", 'async def h():\n    time.sleep(1)\n'),
+        ("a blocking HTTP request", 'async def h():\n    requests.get(url)\n'),
+        ("a subprocess", 'async def h():\n    subprocess.run(cmd)\n'),
+        #The gallery is 25MB and the encoder 1.2GB; this was running at startup.
+        ("torch.load", 'async def h():\n    torch.load(path)\n'),
+    ]:
+        check(label, (1, 0), scan(source))
+    check("reached through a helper", (0, 1), scan('''
+def nap():
+    time.sleep(1)
+
+async def h():
+    nap()
+'''))
+    check("asyncio.sleep is the right one", (0, 0), scan('''
+async def h():
+    await asyncio.sleep(1)
+'''))
+    for label, source in [
+        ("a dict .get", 'async def h():\n    return cfg.get("k")\n'),
+        ("some object's .run", 'async def h():\n    return job.run()\n'),
+        ("some object's .call", 'async def h():\n    return rpc.call()\n'),
+        ("a queue .request", 'async def h():\n    return q.request()\n'),
+    ]:
+        check(f"not flagged: {label}", (0, 0), scan(source))
+
+    print("\n[6] a lambda body belongs to whoever runs it")
     check("not the enclosing async frame", (0, 0), scan('''
 async def handler():
     return lambda: ws.get_all_values()
 '''))
 
-    print("\n[6] the real tree is clean")
+    print("\n[7] the real tree is clean")
     #Not a fresh scan -- just that main() agrees with itself.
     check("check returns success", 0, checker.main())
 

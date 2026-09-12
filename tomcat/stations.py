@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -79,6 +80,12 @@ _VERSIONS_CACHE_MTIME: Optional[float] = None
 #Bumped whenever _load_versions reparses the file. Derived caches below key off
 #it so they rebuild exactly once per station-definition change.
 _VERSIONS_GENERATION: int = 0
+#Alias resolution reaches _load_versions several times per Discord message, and
+#the mtime check alone was two syscalls a go. Only the writer in this process
+#can change the file, and it clears the cache directly, so a short window
+#between stat() calls costs nothing and an outside edit still lands within it.
+_VERSIONS_STAT_INTERVAL_SEC = 2.0
+_VERSIONS_STAT_CHECKED_MONO: float = float("-inf")
 
 
 def station_generation() -> int:
@@ -96,10 +103,15 @@ def _load_versions() -> List[Dict]:
     # event loop — cheap normally, but seconds of stall when the host is
     # swapping. Now we only re-parse when the file actually changes.
     global _VERSIONS_CACHE, _VERSIONS_CACHE_MTIME, _VERSIONS_GENERATION
+    global _VERSIONS_STAT_CHECKED_MONO
+    now = time.monotonic()
+    if _VERSIONS_CACHE is not None and (now - _VERSIONS_STAT_CHECKED_MONO) < _VERSIONS_STAT_INTERVAL_SEC:
+        return _VERSIONS_CACHE
     try:
-        _mtime = STATIONS_PATH.stat().st_mtime if STATIONS_PATH.exists() else None
+        _mtime = STATIONS_PATH.stat().st_mtime
     except OSError:
         _mtime = None
+    _VERSIONS_STAT_CHECKED_MONO = now
     if _VERSIONS_CACHE is not None and _VERSIONS_CACHE_MTIME == _mtime:
         return _VERSIONS_CACHE
 
@@ -171,6 +183,10 @@ def _save_versions(versions: List[Dict], update_meta: bool = True) -> None:
             f.write(json.dumps(v, separators=(",", ":")) + "\n")
         f.write(json.dumps({"meta": meta}, separators=(",", ":")) + "\n")
     tmp.replace(STATIONS_PATH)
+    #Drop the cache rather than wait out the stat interval: this process just
+    #changed the file and the next read must see it.
+    global _VERSIONS_CACHE
+    _VERSIONS_CACHE = None
 
 
 def _resolve_version(target: Optional[date]) -> Dict:

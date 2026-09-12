@@ -44,7 +44,7 @@ from UserInterface.sub_request_linker import handle_sub_request_link
 from .services.cat_query import infer_query_from_text, looks_like_cat_query_text
 
 #---- Aliases and fuzzy matching ----------------------------------------------
-from .aliases import resolve_station_or_cat, alias_vocab
+from .aliases import alias_vocab, display_names_in, resolve_station_or_cat, resolve_stations
 from .utils.fuzzy import fuzzy_ratio, levenshtein_distance
 
 #---- Time zone handling (America/Chicago) -----------------------------------
@@ -1300,31 +1300,16 @@ class IntentRouter:
         *,
         allow_stopword_aliases: bool = False,
     ) -> List[str]:
-        #Stations: use alias resolver so aliases like "west" ? "West Hall" work
+        """Every station or cat named in the text, in the order names are found."""
+        #Stations go through the alias resolver so "west" -> "West Hall" works.
         if want == "station":
             try:
-                from .aliases import resolve_stations as _resolve_stations
-                stations = _resolve_stations(text, include_stopword_aliases=allow_stopword_aliases) or []
-                #resolve_stations returns display names already; ensure unique preserve order
-                out: List[str] = []
-                seen = set()
-                for s in stations:
-                    if s not in seen:
-                        seen.add(s); out.append(s)
-                return out
+                stations = resolve_stations(text, include_stopword_aliases=allow_stopword_aliases) or []
+                #Already display names; two keys can share one, so de-duplicate.
+                return list(dict.fromkeys(stations))
             except Exception:
                 pass
-        #Default cat path: match against display-name vocab (catch simple mentions like "Twix")
-        names: List[str] = []
-        for nm in (alias_vocab()[f"{want}s"]):
-            if re.search(rf"\b{re.escape(nm.lower())}\b", text.lower()):
-                names.append(nm)
-        #unique, preserve order
-        seen = set(); out = []
-        for n in names:
-            if n not in seen:
-                out.append(n); seen.add(n)
-        return out
+        return display_names_in(text, want)
 
     def _best_token_for_fuzzy(self, text: str) -> Optional[str]:
         #pick the longest token-ish word as candidate

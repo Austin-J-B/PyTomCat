@@ -21,13 +21,12 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+#Stubs whatever of the CV and Google stacks is not installed, and gives
+#tomcat.main a session secret. Must come before any tomcat import.
+import _test_support  # noqa: F401
+
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
-
-#tomcat.main refuses to import without a session secret, by design -- the UI
-#must never sign cookies with a default. None of these tests issue one; they
-#just have to get through the import.
-os.environ.setdefault("UI_SESSION_SECRET", "tests-do-not-sign-cookies")
 
 from tomcat import main as tomcat_main
 
@@ -45,12 +44,17 @@ def check(label: str, expected, actual) -> None:
 class Body:
     """Minimal stand-in for a request's payload stream.
 
-    aiohttp's Request.read() drains its payload until it gets an empty chunk,
-    so that is all this has to provide.
+    aiohttp's Request.read() drains its payload until it gets an empty chunk.
+    Since 3.14 it also raises the stream's chunk size first, so that has to be
+    accepted even though there is nothing here to tune -- without it the read
+    raises and the handler under test reports a malformed body instead.
     """
 
     def __init__(self, raw: bytes):
         self._raw = raw
+
+    def set_read_chunk_size(self, _size: int) -> None:
+        pass
 
     async def readany(self) -> bytes:
         raw, self._raw = self._raw, b""

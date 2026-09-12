@@ -1,5 +1,7 @@
 # Lightweight dependencies needed by the repository's regression scripts.
-# The CV stack is stubbed by scripts/test_labeler_hot_paths.py, keeping CI fast.
+# The CV stack is stubbed by scripts/_test_support.py, keeping CI fast. Pin the
+# same versions you develop against: a stubbed request body that satisfied
+# aiohttp 3.13 failed on the 3.14 pinned here, and only CI saw it.
 aiohttp==3.14.3
 beautifulsoup4==4.12.3
 discord.py==2.4.0

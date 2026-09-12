@@ -13,7 +13,7 @@ import threading
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from collections import deque
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import os
 import json
@@ -685,6 +685,119 @@ def _parse_subrequest_dates(data: dict) -> Tuple[List[dict], Optional[str]]:
     if error:
         return [], error
     return [{"date": date_iso, "stations": clean}], None
+
+
+def _display_name_for(names: Dict[int, str], raw: Any) -> str:
+    """Resolved display name for a Discord id, which may not be numeric."""
+    try:
+        return names.get(int(raw), "")
+    except (TypeError, ValueError):
+        return ""
+
+
+def _collect_sub_request_items(files: Any) -> Tuple[Dict[tuple, Any], List[dict], set, set]:
+    """Read the sub logs into the shape the open-requests view needs.
+
+    Returns the claims made against each (request, station, date), one item per
+    requested station, and the requester and assignee ids that still need a
+    display name looked up. A row the log cannot parse is skipped rather than
+    failing the whole listing.
+    """
+    accepted_map: Dict[tuple, Any] = {}
+    items: List[dict] = []
+    requester_ids: set = set()
+    assignee_ids: set = set()
+
+    for _path, rows in files:
+        try:
+            for record in rows:
+                status = record.get("status")
+                stations = record.get("stations") or (
+                    [record.get("station")] if record.get("station") else []
+                )
+                dates = record.get("dates") or []
+                date_iso = dates[0] if dates else None
+                record_id = record.get("id")
+                if status == "accepted":
+                    assignee = record.get("assignee")
+                    if assignee:
+                        try:
+                            assignee_ids.add(int(assignee))
+                        except ValueError:
+                            pass
+                    for station in stations:
+                        accepted_map[
+                            (record.get("parent_id") or record_id, station, date_iso)
+                        ] = assignee
+                elif status == "requested":
+                    requester = record.get("requester")
+                    requester_name = record.get("requester_name") or ""
+                    if requester and not requester_name:
+                        try:
+                            requester_ids.add(int(requester))
+                        except ValueError:
+                            pass
+                    for station in stations:
+                        items.append({
+                            "id": record_id,
+                            "station": station,
+                            "date": date_iso,
+                            #Strings, so the UI gets stable JSON rather than
+                            #numbers it might round.
+                            "requester_id": str(requester) if requester else "",
+                            "requester_name": requester_name,
+                            "assignee_id": None,
+                            "assignee_name": record.get("assignee_name") or "",
+                        })
+        except Exception:
+            #A malformed line in one month's log should not hide the others.
+            continue
+    return accepted_map, items, requester_ids, assignee_ids
+
+
+def _bucket_sub_requests(
+    items: List[dict],
+    accepted_map: Dict[tuple, Any],
+    *,
+    today: date,
+    requester_names: Dict[int, str],
+    assignee_names: Dict[int, str],
+) -> Dict[str, List[dict]]:
+    """Split sub requests into available, upcoming filled, and past.
+
+    A date in the past goes to `past` whether or not anybody took it; everything
+    else is `upcoming_filled` if claimed and `available` if not.
+    """
+    buckets: Dict[str, List[dict]] = {"available": [], "upcoming_filled": [], "past": []}
+    for item in items:
+        date_iso = item.get("date")
+        try:
+            when = datetime.fromisoformat(date_iso).date() if date_iso else None
+        except (TypeError, ValueError):
+            when = None
+        assignee = accepted_map.get((item.get("id"), item.get("station"), date_iso))
+
+        out = dict(item)
+        if item.get("requester_id") and not item.get("requester_name"):
+            out["requester_name"] = _display_name_for(requester_names, item["requester_id"])
+        if assignee:
+            out["assignee_id"] = str(assignee)
+            if not out.get("assignee_name"):
+                out["assignee_name"] = _display_name_for(assignee_names, assignee)
+
+        out["date_raw"] = date_iso
+        #Anchor a bare date to noon so a browser west of UTC does not render it
+        #as the day before.
+        if date_iso and len(str(date_iso)) == 10 and "T" not in str(date_iso):
+            out["date"] = f"{date_iso}T12:00:00"
+
+        if when and when < today:
+            buckets["past"].append(out)
+        elif assignee:
+            buckets["upcoming_filled"].append(out)
+        else:
+            buckets["available"].append(out)
+    return buckets
 
 
 def _index_sub_records(
@@ -1856,54 +1969,13 @@ async def start_web_server(bot):
         from .handlers import feeding as _feed
         today = datetime.now().date()
 
-        accepted_map = {}  #(parent_id, station, date_iso) -> assignee_id
-        accepted_meta = {}  #(parent_id, station, date_iso) -> requester_name
-        requested_items = []
-        missing_requester_ids = set()
-        missing_assignee_ids = set()
-
-        #Load using the shared feeding helpers so paths are consistent with the bot
-        files = _feed._load_sub_files(
-            month_keys=None,
-            include_legacy=_feed.SUBS_LEGACY_FILE.exists(),
+        #Load using the shared feeding helpers so paths match the bot's.
+        accepted_map, requested_items, missing_requester_ids, missing_assignee_ids = (
+            _collect_sub_request_items(_feed._load_sub_files(
+                month_keys=None,
+                include_legacy=_feed.SUBS_LEGACY_FILE.exists(),
+            ))
         )
-        for path, rows in files:
-            try:
-                for rec in rows:
-                    status = rec.get("status")
-                    stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
-                    dates = rec.get("dates") or []
-                    date_iso = dates[0] if dates else None
-                    parent_id = rec.get("id")
-                    if status == "accepted":
-                        assignee = rec.get("assignee")
-                        if assignee:
-                            try:
-                                missing_assignee_ids.add(int(assignee))
-                            except ValueError: # Catch non-integer assignee IDs
-                                pass
-                        for st in stations:
-                            accepted_map[(rec.get("parent_id") or parent_id, st, date_iso)] = assignee
-                    elif status == "requested":
-                        requester = rec.get("requester")
-                        requester_name = rec.get("requester_name") or ""
-                        if requester and not requester_name:
-                            try:
-                                missing_requester_ids.add(int(requester))
-                            except ValueError: # Catch non-integer requester IDs
-                                pass
-                        for st in stations:
-                            requested_items.append({
-                                "id": parent_id,
-                                "station": st,
-                                "date": date_iso,
-                                "requester_id": str(requester) if requester else "", #Ensure string
-                                "requester_name": requester_name,
-                                "assignee_id": None,
-                                "assignee_name": rec.get("assignee_name") or "",
-                            })
-            except Exception: # Catch JSON parsing errors for malformed lines
-                continue
 
         #Resolve display names via the process-wide username cache so repeat
         #lookups across boot sync / catabase sync don't burn through the
@@ -1924,69 +1996,15 @@ async def start_web_server(bot):
                 if display:
                     assignee_name_cache[uid] = display
 
-        # Fill requester and assignee details from the acceptance map built above.
-        for item in requested_items:
-            key = (item.get("id"), item.get("station"), item.get("date"))
-            assignee = accepted_map.get(key)
-            if assignee:
-                item["assignee_id"] = str(assignee) #Ensure string
-                if not item.get("assignee_name"):
-                    try:
-                        item["assignee_name"] = assignee_name_cache.get(int(assignee), "")
-                    except ValueError: # Catch non-integer assignee IDs
-                        item["assignee_name"] = ""
-            if item.get("requester_id") and not item.get("requester_name"):
-                try:
-                    item["requester_name"] = name_cache.get(int(item["requester_id"]), "")
-                except ValueError: # Catch non-integer requester IDs
-                    item["requester_name"] = ""
+        buckets = _bucket_sub_requests(
+            requested_items,
+            accepted_map,
+            today=today,
+            requester_names=name_cache,
+            assignee_names=assignee_name_cache,
+        )
 
-        available = []
-        upcoming_filled = []
-        past = []
-
-        for item in requested_items:
-            date_iso = item.get("date")
-            try:
-                d = datetime.fromisoformat(date_iso).date() if date_iso else None
-            except Exception:
-                d = None
-            assignee = accepted_map.get((item["id"], item["station"], date_iso))
-            target_list = None
-            if d and d < today:
-                target_list = past
-            else:
-                target_list = upcoming_filled if assignee else available
-
-            #Avoid timezone-induced date shifting in browsers: anchor date to noon
-            safe_date = date_iso
-            if date_iso and len(str(date_iso)) == 10 and "T" not in str(date_iso):
-                safe_date = f"{date_iso}T12:00:00"
-
-            out = dict(item)
-            out["date_raw"] = date_iso
-            out["date"] = safe_date
-            # Serialize IDs as strings so the UI receives stable JSON values.
-            if out.get("requester_id"):
-                out["requester_id"] = str(out["requester_id"])
-            if out.get("requester"):
-                out["requester"] = str(out["requester"])
-                
-            if assignee:
-                out["assignee_id"] = str(assignee)
-                if not out.get("assignee_name"):
-                    try:
-                        out["assignee_name"] = assignee_name_cache.get(int(assignee), "")
-                    except ValueError: # Catch non-integer assignee IDs
-                        out["assignee_name"] = ""
-            
-            target_list.append(out)
-
-        resp = web.json_response({
-            "available": available,
-            "upcoming_filled": upcoming_filled,
-            "past": past,
-        })
+        resp = web.json_response(buckets)
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         return _with_cors(resp, request)
 

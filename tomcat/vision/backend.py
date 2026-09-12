@@ -29,9 +29,16 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from PIL import Image
-from torch import Tensor
 
 if TYPE_CHECKING:
+    import numpy as np
+
+    #Annotation only. Importing torch here would defeat the point: the host
+    #process needs no model when CV_BACKEND=modal, and the import costs 358MB
+    #resident and 2.5s on a box that OOM-kills. Every method that actually
+    #uses torch imports it itself.
+    from torch import Tensor
+
     from .vision import Det
 
 
@@ -99,12 +106,18 @@ class CVBackend(ABC):
         """
 
     @abstractmethod
-    def embed_crops(self, crops: List[Image.Image]) -> Tensor:
-        """DINOv3 forward on a list of PIL crops. Returns [N, D] CPU tensor.
+    def embed_crops(self, crops: List[Image.Image]) -> "Tensor | np.ndarray":
+        """DINOv3 forward on a list of PIL crops. Returns [N, D] embeddings.
 
         Preferred over embed_tensors for any path that has PIL crops in hand:
         the backend owns preprocessing (resize/normalize) so ModalBackend can
         ship compact JPEG bytes instead of multi-megabyte raw tensors.
+
+        Either a torch tensor or a numpy array. LocalBackend has just run the
+        encoder and holds tensors; ModalBackend receives lists of floats over
+        the wire and has no reason to import torch to wrap them. Callers pass
+        the result through vision._as_embeddings, which is the one place that
+        converts, and everything downstream is numpy.
         """
 
     @abstractmethod
@@ -348,11 +361,14 @@ class ModalBackend(CVBackend):
             "Phase 3c work to switch."
         )
 
-    def embed_crops(self, crops: List[Image.Image]) -> Tensor:
-        import torch
+    def embed_crops(self, crops: List[Image.Image]) -> "np.ndarray":
+        #numpy, not torch: the gallery math this feeds is numpy, and on Modal
+        #nothing in this process runs a model, so there is no reason to pay for
+        #the torch import to hold a list of floats.
+        import numpy as np
 
         if not crops:
-            return torch.empty((0, 512))
+            return np.zeros((0, 512), dtype=np.float32)
         self._ensure_connected()
         crop_bytes: List[bytes] = []
         for c in crops:
@@ -362,7 +378,7 @@ class ModalBackend(CVBackend):
             c.convert("RGB").save(buf, format="JPEG", quality=92)
             crop_bytes.append(buf.getvalue())
         embs = self._instance.embed_crops.remote(crop_bytes)
-        return torch.tensor(embs, dtype=torch.float32)
+        return np.asarray(embs, dtype=np.float32)
 
     def sam_refine_crop(self, crop_bytes: bytes, prompt_box: List[float]) -> Any:
         import numpy as np

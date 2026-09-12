@@ -14,11 +14,18 @@ import random
 import re
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional, Any, Callable, cast
+from typing import Dict, List, Tuple, Optional, Any, Callable, TYPE_CHECKING
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-import torch
-from torch import Tensor
+
+if TYPE_CHECKING:
+    #Annotation only. torch is imported where a model actually runs, which is
+    #the local backend alone: the gallery is scored with numpy, and on Modal
+    #this process runs nothing. The import costs 358MB resident and 2.5s of
+    #startup on a 4GB box that OOM-kills.
+    import torch
+    from torch import Tensor
 
 #Keep Ultralytics config within the repo
 os.environ.setdefault(
@@ -28,11 +35,20 @@ os.environ.setdefault(
 
 warnings.filterwarnings("ignore", message=".*Torch was not compiled with flash attention.*")
 
-try:
-    from ultralytics import YOLO, SAM
-except Exception:
-    YOLO = None
-    SAM = None
+#Ultralytics imports torch, so it is loaded on demand rather than at module
+#scope. The detector and SAM run in this process only on the local backend; on
+#Modal the host does neither, and paying 358MB of torch for an import it never
+#calls was the single largest cost in the process.
+
+
+def _ultralytics():
+    """(YOLO, SAM) from ultralytics, or (None, None) if it will not import."""
+    try:
+        from ultralytics import YOLO, SAM
+
+        return YOLO, SAM
+    except Exception:
+        return None, None
 
 from ..config import settings, _find_latest_local_gallery
 from ..logger import log_action
@@ -95,16 +111,16 @@ _yolo_lock = threading.Lock()
 _sam: Optional[Any] = None
 _sam_lock = threading.Lock()
 _sam_failed: bool = False
-_clf: Optional[torch.nn.Module] = None
+_clf: Optional[Any] = None  #a torch.nn.Module, once the local encoder loads
 _clf_lock = threading.Lock()
-_gallery_emb: Optional[Tensor] = None
+#numpy, not torch: see "Gallery arithmetic" below.
+_gallery_emb: Optional[np.ndarray] = None
 _gallery_names: List[str] = []
 _gallery_paths: List[str] = []
 _gallery_records: List[dict[str, Any]] = []
-_gallery_cat_indices: dict[str, Tensor] = {}
-_gallery_cat_indices_cpu: dict[str, Tensor] = {}
+_gallery_cat_indices: dict[str, np.ndarray] = {}
 _gallery_root_hints: Optional[List[Path]] = None
-_device: Optional[torch.device] = None
+_device: Optional[Any] = None  #a torch.device, set only by local model paths
 _half: bool = False
 _font: Optional[Any] = None
 _labeler_ref_cache: dict[str, dict[str, Any]] = {}
@@ -259,24 +275,85 @@ def get_all_known_cats() -> List[str]:
     return sorted(names)
 
 
+#---------- Gallery arithmetic ----------
+#
+#The gallery is scored with numpy, not torch. Nothing on this path runs a
+#model: it is an L2 normalize, a matmul against (11799, 512) float32, and a
+#max or a top-k per cat. Doing it in torch meant the host process imported
+#torch to multiply matrices -- 358MB resident and 2.5s of startup on a 4GB box
+#that OOM-kills, for arithmetic numpy already does. There is also no device to
+#juggle in numpy, which is why the ..._cpu mirror of the index lookup is gone.
+
+
+def _empty_cuda_cache() -> None:
+    """Release cached GPU blocks, if a GPU is what we are running on.
+
+    Only the local backend ever loads a model, so this is a no-op -- and
+    crucially does not import torch -- when the work is on Modal.
+    """
+    if _device is None or getattr(_device, "type", "") != "cuda":
+        return
+    try:
+        import torch
+
+        torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def _as_embeddings(raw: Any) -> np.ndarray:
+    """Embeddings from a backend as a 2-D float32 numpy array.
+
+    The one place that converts. LocalBackend runs the encoder and has torch
+    tensors in hand, possibly on the GPU; ModalBackend gets lists of floats
+    over the wire. Everything downstream of here is numpy.
+    """
+    if hasattr(raw, "detach"):  #a torch tensor
+        raw = raw.detach().cpu().numpy()
+    out = np.asarray(raw, dtype=np.float32)
+    if out.ndim == 1:
+        out = out.reshape(1, -1)
+    return out
+
+
+def _l2_normalize(rows: np.ndarray) -> np.ndarray:
+    """Unit-length rows, matching torch.nn.functional.normalize(p=2, dim=1).
+
+    The clip is what torch does with its eps: a zero row stays zero instead of
+    turning into nan and poisoning every similarity computed against it.
+    """
+    norms = np.linalg.norm(rows, axis=-1, keepdims=True)
+    return rows / np.clip(norms, 1e-12, None)
+
+
+def _topk_desc(values: np.ndarray, k: int) -> Tuple[np.ndarray, np.ndarray]:
+    """The k largest values and their indices, best first.
+
+    Ties break toward the lower index. torch.topk left tie order to whatever
+    the BLAS accumulation produced, so two near-identical crops of one cat
+    could swap places between runs and the labeler would show a different
+    reference image for no reason.
+    """
+    if k <= 0 or values.size == 0:
+        return np.zeros(0, np.float32), np.zeros(0, np.int64)
+    k = min(int(k), int(values.size))
+    order = np.argsort(-values, kind="stable")[:k]
+    return values[order], order.astype(np.int64, copy=False)
+
+
 def _rebuild_gallery_cat_indices() -> None:
-    """Build name -> embedding-index tensor lookup for fast per-cat rerank scoring."""
-    global _gallery_cat_indices, _gallery_cat_indices_cpu
+    """Build name -> embedding-index lookup for fast per-cat rerank scoring."""
+    global _gallery_cat_indices
     if _gallery_emb is None or not _gallery_names:
         _gallery_cat_indices = {}
-        _gallery_cat_indices_cpu = {}
         return
     by_cat: dict[str, List[int]] = {}
     for idx, name in enumerate(_gallery_names):
         by_cat.setdefault(str(name), []).append(int(idx))
-    device = _gallery_emb.device
     _gallery_cat_indices = {
-        name: torch.tensor(idxs, dtype=torch.long, device=device)
+        name: np.asarray(idxs, dtype=np.int64)
         for name, idxs in by_cat.items()
         if idxs
-    }
-    _gallery_cat_indices_cpu = {
-        name: t.cpu() for name, t in _gallery_cat_indices.items()
     }
 
 
@@ -306,48 +383,38 @@ def _rank_unique_candidates_for_similarity(
     if not _gallery_names:
         return []
     rows: List[Tuple[str, float, float]] = []
-    # Use CPU index tensors when sims is on CPU to avoid device mismatch.
-    cat_idx_lookup = (
-        _gallery_cat_indices_cpu
-        if _gallery_cat_indices_cpu and not sims.is_cuda
-        else _gallery_cat_indices
-    )
-    if cat_idx_lookup:
-        for cat_name, idxs in cat_idx_lookup.items():
+    sims = np.asarray(sims).reshape(-1)
+    if _gallery_cat_indices:
+        for cat_name, idxs in _gallery_cat_indices.items():
             label = str(cat_name or "").strip()
             if not label:
                 continue
             try:
-                cat_sims = sims.index_select(0, idxs)
+                cat_sims = sims[idxs]
             except Exception:
                 continue
-            if getattr(cat_sims, "numel", lambda: 0)() <= 0:
+            if cat_sims.size <= 0:
                 continue
             try:
-                base_conf = float(torch.max(cat_sims).item())
+                base_conf = float(cat_sims.max())
             except Exception:
                 continue
             if not math.isfinite(base_conf):
                 continue
             rows.append((label, base_conf, base_conf))
     else:
-        vals, idxs = torch.sort(sims, descending=True)
+        #No per-cat index, so walk the whole gallery best-first and take each
+        #cat the first time it appears.
+        vals, idxs = _topk_desc(sims, int(sims.size))
         seen: set[str] = set()
-        total = int(idxs.numel()) if hasattr(idxs, "numel") else len(_gallery_names)
-        for j in range(total):
-            try:
-                cat_idx = int(idxs[j].item())
-            except Exception:
-                continue
+        for j in range(int(idxs.size)):
+            cat_idx = int(idxs[j])
             if cat_idx < 0 or cat_idx >= len(_gallery_names):
                 continue
             cat_name = str(_gallery_names[cat_idx] or "").strip()
             if not cat_name or cat_name in seen:
                 continue
-            try:
-                base_conf = float(vals[j].item())
-            except Exception:
-                continue
+            base_conf = float(vals[j])
             if not math.isfinite(base_conf):
                 continue
             rows.append((cat_name, base_conf, base_conf))
@@ -600,45 +667,71 @@ class Det:
     conf: float
 
 #---------- Architecture Wrapper ----------
-class DINOv3Wrapper(torch.nn.Module):
-    """Matches the R6 encoder checkpoint: ViT-L/16 backbone (1024 features) → 512 emb head.
+#Built on demand rather than at import. Subclassing torch.nn.Module at module
+#scope would pull torch into every process that so much as imports this file,
+#and only the local backend ever instantiates an encoder.
+_dinov3_wrapper_cls: Optional[type] = None
 
-    Earlier checkpoints (R4.5, R5) used vit_base_patch16_dinov3 (768 features) with
-    Linear(768, 512). R6 upgraded to ViT-L for ~2 pp R@1 improvement. Loading an
-    older checkpoint into this wrapper will fail at load_state_dict with a shape
-    mismatch on backbone.* and head.0.weight.
+
+def _dinov3_wrapper_class() -> type:
+    """The encoder architecture class, defined on first use.
+
+    Matches the R6 encoder checkpoint: ViT-L/16 backbone (1024 features) -> 512
+    emb head. Earlier checkpoints (R4.5, R5) used vit_base_patch16_dinov3 (768
+    features) with Linear(768, 512). R6 upgraded to ViT-L for ~2 pp R@1
+    improvement. Loading an older checkpoint into this wrapper will fail at
+    load_state_dict with a shape mismatch on backbone.* and head.0.weight.
     """
-    def __init__(self):
-        super().__init__()
-        import timm
-        # 1. Base Model (1024 features for ViT-L)
-        self.backbone = timm.create_model(
-            'vit_large_patch16_dinov3',
-            pretrained=True,
-            num_classes=0
-        )
+    global _dinov3_wrapper_cls
+    if _dinov3_wrapper_cls is not None:
+        return _dinov3_wrapper_cls
 
-        # 2. Head Structure (Linear -> BN -> PReLU); input dim matches backbone.num_features
-        self.head = torch.nn.Sequential(
-            torch.nn.Linear(1024, 512, bias=True),
-            torch.nn.BatchNorm1d(512),
-            torch.nn.PReLU()
-        )
+    import torch
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Silence flash attention warning for Windows
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=".*Torch was not compiled with flash attention.*")
-            feat = self.backbone(x)
-        emb = self.head(feat)
-        return torch.nn.functional.normalize(emb, p=2, dim=1)
+    class DINOv3Wrapper(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            import timm
+            # 1. Base Model (1024 features for ViT-L)
+            self.backbone = timm.create_model(
+                'vit_large_patch16_dinov3',
+                pretrained=True,
+                num_classes=0
+            )
+
+            # 2. Head Structure (Linear -> BN -> PReLU); input dim matches backbone.num_features
+            self.head = torch.nn.Sequential(
+                torch.nn.Linear(1024, 512, bias=True),
+                torch.nn.BatchNorm1d(512),
+                torch.nn.PReLU()
+            )
+
+        def forward(self, x):
+            # Silence flash attention warning for Windows
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*Torch was not compiled with flash attention.*")
+                feat = self.backbone(x)
+            emb = self.head(feat)
+            return torch.nn.functional.normalize(emb, p=2, dim=1)
+
+    _dinov3_wrapper_cls = DINOv3Wrapper
+    return _dinov3_wrapper_cls
 
 #---------- Device & Loader Helpers ----------
-def _pick_device() -> torch.device:
+def _pick_device():
+    import torch
+
     if torch.cuda.is_available(): return torch.device("cuda")
     return torch.device("cpu")
 
 def _ensure_device_only() -> None:
+    """Pick the torch device, for the paths that are about to run a model.
+
+    Asking torch whether CUDA is available means importing torch, so this is
+    no longer called from the gallery and scoring paths -- those are numpy and
+    have no device. Every remaining caller is a local-backend path on its way
+    into an encoder forward pass.
+    """
     global _device, _half
     if _device is None:
         _device = _pick_device()
@@ -650,8 +743,9 @@ def _ensure_detector() -> None:
     if _yolo is not None: return
     with _yolo_lock:
         if _yolo is not None: return
-        if YOLO is None: raise RuntimeError("ultralytics not installed")
-        y: Any = YOLO(settings.cv_detect_weights)
+        yolo_cls, _sam_cls = _ultralytics()
+        if yolo_cls is None: raise RuntimeError("ultralytics not installed")
+        y: Any = yolo_cls(settings.cv_detect_weights)
         _yolo = y
 
 def _ensure_sam() -> None:
@@ -665,9 +759,10 @@ def _ensure_sam() -> None:
         if _sam is not None or _sam_failed:
             return
         try:
-            if SAM is None:
+            _yolo_cls, sam_cls = _ultralytics()
+            if sam_cls is None:
                 raise RuntimeError("ultralytics SAM not available")
-            _sam = SAM(settings.cv_sam_weights)
+            _sam = sam_cls(settings.cv_sam_weights)
             # Ultralytics 8.3.249 calls predictor.model.warmup() unconditionally,
             # but SAM2Model does not implement it. Patch in a no-op so prompted
             # segmentation does not fail on first use.
@@ -697,7 +792,9 @@ def _ensure_encoder() -> None:
         if _clf is not None:
             return
         try:
-            encoder = DINOv3Wrapper()
+            import torch
+
+            encoder = _dinov3_wrapper_class()()
             try:
                 state = torch.load(settings.cv_encoder_weights, map_location=_device, weights_only=True)
             except Exception:
@@ -718,7 +815,8 @@ def _ensure_gallery() -> None:
     cheap CPU work and the data is what gets re-published by gallery retrain.
     """
     global _gallery_emb, _gallery_names, _gallery_paths, _gallery_records
-    _ensure_device_only()
+    #No device needed: the gallery and its scoring are numpy. Local
+    #model paths set the device themselves, in _ensure_encoder.
     if _gallery_emb is not None:
         return
     with _clf_lock:
@@ -738,8 +836,7 @@ def _ensure_gallery() -> None:
             from . import gallery_file
 
             gal_data = gallery_file.read_gallery(gallery_target)
-            _gallery_emb = torch.from_numpy(gal_data["emb"]).to(_device)
-            _gallery_emb = torch.nn.functional.normalize(_gallery_emb, p=2, dim=1)
+            _gallery_emb = _l2_normalize(gal_data["emb"])
 
             idx_to_class = gal_data.get('idx_to_class') or {v: k for k, v in gal_data['class_to_idx'].items()}
             _gallery_names = [idx_to_class[int(i)] for i in gal_data["label"]]
@@ -797,7 +894,9 @@ def _expand_box(x1: float, y1: float, x2: float, y2: float, pad_pct: float, img_
         min(img_h, y2 + ph)
     )
 
-def _prep_tensor(pil: Image.Image) -> Tensor:
+def _prep_tensor(pil: Image.Image) -> "Tensor":
+    #torchvision pulls torch in, which is correct here: this only runs when the
+    #local backend is about to do an encoder forward pass.
     from torchvision.transforms import Compose, Resize, ToTensor, Normalize
     size = settings.cv_clf_imgsz
     tfm = Compose([
@@ -805,7 +904,7 @@ def _prep_tensor(pil: Image.Image) -> Tensor:
         ToTensor(),
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-    return cast(Tensor, tfm(pil))
+    return tfm(pil)
 
 
 def _rerank_variant_crops(crop: Image.Image) -> List[Image.Image]:
@@ -846,18 +945,15 @@ def _rerank_scores_for_crop(crop: Image.Image, candidate_names: List[str]) -> di
         return {}
 
     from .backend import get_backend
-    q = get_backend().embed_crops(variants)
-    if q.device != _gallery_emb.device:
-        q = q.to(_gallery_emb.device)
+    q = _as_embeddings(get_backend().embed_crops(variants))
 
     out: dict[str, float] = {}
     for name in candidate_names:
         idxs = _gallery_cat_indices.get(name)
-        if idxs is None or idxs.numel() == 0:
+        if idxs is None or idxs.size == 0:
             continue
-        cat_emb = _gallery_emb.index_select(0, idxs)
-        sim = q @ cat_emb.T
-        out[name] = float(torch.max(sim).item())
+        sim = q @ _gallery_emb[idxs].T
+        out[name] = float(sim.max())
     return out
 
 def _get_gallery_root_hints() -> List[Path]:
@@ -1234,7 +1330,6 @@ def identify(image_bytes: bytes) -> IdentifyResult:
 
     # Gallery always stays local; encoder loads in LocalBackend.detect_and_embed.
     _ensure_gallery()
-    _ensure_device_only()
 
     # Re-encode the (possibly resized) image so the backend boundary is bytes,
     # not a PIL handle. JPEG quality 92 keeps detection/embedding fidelity high.
@@ -1265,9 +1360,8 @@ def identify(image_bytes: bytes) -> IdentifyResult:
             boxes.append((int(cx1), int(cy1), int(cx2), int(cy2)))
             emb_list.append(d["embedding"])
 
-        query_embs = torch.tensor(emb_list, dtype=torch.float32).to(_device)
-        with torch.inference_mode():
-            similarities = query_embs @ _gallery_emb.T
+        query_embs = _as_embeddings(emb_list)
+        similarities = query_embs @ _gallery_emb.T
 
         # Rerank now goes through backend.embed_crops which works on both
         # LocalBackend and ModalBackend (Phase 3a). On Modal it costs one
@@ -1324,20 +1418,20 @@ def _gallery_refs_for_candidate(
     search_pool: Optional[int] = None,
 ) -> List[dict]:
     """Return top-k gallery refs (serial/crop metadata, optionally with thumbs)."""
-    idx_lookup = _gallery_cat_indices_cpu if (_gallery_cat_indices_cpu and not sims.is_cuda) else _gallery_cat_indices
-    idxs = idx_lookup.get(cat_name)
-    if idxs is None or idxs.numel() == 0:
+    idxs = _gallery_cat_indices.get(cat_name)
+    if idxs is None or idxs.size == 0:
         return []
     k_target = max(0, int(refs_per or 0))
     if k_target <= 0:
         return []
     try:
-        cat_sims = sims.index_select(0, idxs)
+        sims = np.asarray(sims).reshape(-1)
+        cat_sims = sims[idxs]
         pool_target = max(k_target, int(search_pool or _LABELER_REF_SEARCH_POOL))
-        pool_k = min(pool_target, int(cat_sims.numel()))
+        pool_k = min(pool_target, int(cat_sims.size))
         if pool_k <= 0:
             return []
-        topk = torch.topk(cat_sims, k=pool_k)
+        top_values_arr, top_indices_arr = _topk_desc(cat_sims, pool_k)
     except Exception:
         return []
 
@@ -1345,8 +1439,8 @@ def _gallery_refs_for_candidate(
     seen_sc: set[Tuple[Optional[int], Optional[int]]] = set()
     seen_thumb: set[str] = set()
     seen_path: set[str] = set()
-    top_indices = [int(x) for x in topk.indices.tolist()]
-    top_values = [float(x) for x in topk.values.tolist()]
+    top_indices = [int(x) for x in top_indices_arr.tolist()]
+    top_values = [float(x) for x in top_values_arr.tolist()]
     for pos, rel in enumerate(top_indices):
         try:
             abs_idx = int(idxs[rel].item())
@@ -1471,7 +1565,6 @@ def identify_boxes(
     img = _open_rgb_image(io.BytesIO(image_bytes))
     img = _enforce_max_dim(img)
     _ensure_gallery()
-    _ensure_device_only()
     preprocess_ms = (time.perf_counter() - t0_total) * 1000.0
 
     if _gallery_emb is None or not boxes:
@@ -1503,13 +1596,11 @@ def identify_boxes(
 
     embed_t0 = time.perf_counter()
     from .backend import get_backend
-    query_embs = get_backend().embed_crops(tile_crops).to(_device)
-    with torch.inference_mode():
-        similarities = query_embs @ _gallery_emb.T
-    # Move to CPU once so the per-cat ranking loop avoids repeated GPU→CPU
-    # sync stalls (each .item() call blocks until all pending GPU work
-    # completes, which is very expensive under concurrent identify calls).
-    similarities_cpu = similarities.cpu()
+    query_embs = _as_embeddings(get_backend().embed_crops(tile_crops))
+    #The scoring is numpy on the CPU, so there is no device to come back from.
+    #This used to matmul on the GPU and then copy the result down, because each
+    #.item() in the ranking loop below blocked on pending GPU work.
+    similarities_cpu = query_embs @ _gallery_emb.T
     embed_ms = (time.perf_counter() - embed_t0) * 1000.0
 
     rank_t0 = time.perf_counter()
@@ -1614,7 +1705,7 @@ def identify_boxes(
                 f"tile_prep_ms={int(round(tile_prep_ms))}; embed_ms={int(round(embed_ms))}; "
                 f"rank_ms={int(round(rank_ms))}; gallery_refs_ms={int(round(ref_gallery_ms))}; "
                 f"query_refs_ms={int(round(ref_query_ms))}; result_build_ms={int(round(result_build_ms))}; "
-                f"crops={int(similarities.shape[0])}; candidate_names={int(candidate_name_total)}; "
+                f"crops={int(similarities_cpu.shape[0])}; candidate_names={int(candidate_name_total)}; "
                 f"ref_calls={int(ref_calls)}; returned_refs={int(returned_ref_total)}; "
                 f"thumbs={int(bool(include_ref_thumbs))}; rerank={int(bool(rerank))}; "
                 f"focus_idx={focus_idx if focus_idx is not None else -1}; "
@@ -1661,27 +1752,21 @@ def _embed_crops(crops: List[Image.Image]) -> Tensor:
     from .backend import get_backend
 
     if not crops:
-        return torch.empty((0, 512))
+        return np.zeros((0, 512), dtype=np.float32)
     backend = get_backend()
     batch_size = max(1, int(os.getenv("LABELER_REF_EMBED_BATCH_SIZE", "8") or "8"))
-    out: List[Tensor] = []
+    out: List[np.ndarray] = []
     for i in range(0, len(crops), batch_size):
         chunk = crops[i:i + batch_size]
         try:
-            emb = backend.embed_crops(chunk)
-            out.append(emb.detach().cpu())
+            out.append(_as_embeddings(backend.embed_crops(chunk)))
         except RuntimeError as e:
             if "out of memory" not in str(e).lower():
                 raise
-            if _device is not None and _device.type == "cuda":
-                try:
-                    torch.cuda.empty_cache()
-                except Exception:
-                    pass
+            _empty_cuda_cache()
             for c in chunk:
-                emb1 = backend.embed_crops([c])
-                out.append(emb1.detach().cpu())
-    return torch.cat(out, dim=0) if out else torch.empty((0, 512))
+                out.append(_as_embeddings(backend.embed_crops([c])))
+    return np.concatenate(out, axis=0) if out else np.zeros((0, 512), dtype=np.float32)
 
 
 def _prepare_labeler_ref_entry(
@@ -1871,7 +1956,7 @@ async def _build_ref_cache(
         if crops:
             try:
                 emb = await asyncio.to_thread(_embed_crops, crops)
-                if emb.numel() > 0:
+                if emb.size > 0:
                     new_cache[cat] = {"emb": emb, "refs": refs}
             finally:
                 for crop in crops:
@@ -2067,23 +2152,22 @@ def _get_labeler_refs_for_cat(cat: str, query_emb: Tensor, refs_per: int) -> Lis
     pack = _labeler_ref_cache.get(cat)
     if not pack:
         return []
-    emb: Tensor = pack.get("emb")
+    emb = pack.get("emb")
     refs: List[dict] = pack.get("refs", []) or []
     if not refs:
         thumbs: List[str] = pack.get("thumb", []) or []
         if thumbs:
             refs = [{"img": t, "serial": None, "crop": None} for t in thumbs]
-    if emb is None or not refs or emb.numel() == 0:
+    if emb is None or not refs or getattr(emb, "size", 0) == 0:
         return []
     try:
-        # Ensure shapes
-        q = query_emb.detach().cpu().view(1, -1)
-        sims = (emb @ q.T).squeeze(1)
-        k = min(refs_per, sims.numel(), len(refs))
+        q = _as_embeddings(query_emb).reshape(-1)
+        sims = np.asarray(emb) @ q
+        k = min(refs_per, int(sims.size), len(refs))
         if k <= 0:
             return []
-        topk = torch.topk(sims, k=k).indices.tolist()
-        return [refs[i] for i in topk if i < len(refs)]
+        _values, indices = _topk_desc(sims, k)
+        return [refs[i] for i in indices.tolist() if i < len(refs)]
     except Exception:
         return []
 
@@ -2128,7 +2212,6 @@ def manual_review_candidates(
 ) -> List[dict]:
     """Return one ranked candidate row per gallery cat for manual review."""
     _ensure_gallery()
-    _ensure_device_only()
     if _gallery_emb is None:
         return []
     query = _embed_query_from_box(image_bytes, box)
@@ -2136,10 +2219,8 @@ def manual_review_candidates(
         return []
     if not _gallery_names:
         return []
-    q = query.view(-1)
-    if q.device != _gallery_emb.device:
-        q = q.to(_gallery_emb.device)
-    sims = (_gallery_emb @ q).view(-1)
+    q = _as_embeddings(query).reshape(-1)
+    sims = _gallery_emb @ q
     refs_per_i = max(0, int(refs_per or 0))
     query_ref_limit = max(0, int(query_ref_cat_limit or 0))
     rows = _rank_unique_candidates_for_similarity(
@@ -2892,8 +2973,7 @@ def _sam_refine_boxes_batch(
         chosen_diag["box_index"] = int(i)
         diags.append(chosen_diag)
 
-    if _device is not None and _device.type == "cuda":
-        torch.cuda.empty_cache()
+    _empty_cuda_cache()
 
     return refined_boxes, diags, polygons, mask_tiles
 
@@ -3084,7 +3164,6 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
     global _labeler_ref_progress_total, _labeler_ref_progress_built
     global _manual_ref_cache, _manual_ref_ready, _manual_ref_task, _manual_ref_progress_total, _manual_ref_progress_built, _manual_ref_per_cat
     global _thumb_cache, _resolved_gallery_path_cache, _gallery_crop_roots
-    _ensure_device_only()
     try:
         if path:
             settings.cv_gallery_path = str(path)
@@ -3101,8 +3180,7 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
         from . import gallery_file
 
         gal_data = gallery_file.read_gallery(target)
-        emb = torch.from_numpy(gal_data["emb"]).to(_device)
-        emb = torch.nn.functional.normalize(emb, p=2, dim=1)
+        emb = _l2_normalize(gal_data["emb"])
         idx_to_class = gal_data.get("idx_to_class") or {v: k for k, v in gal_data["class_to_idx"].items()}
         names = [idx_to_class[int(i)] for i in gal_data["label"]]
         raw_paths = gal_data.get("path") or []

@@ -15,11 +15,16 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, TYPE_CHECKING, Tuple
 
 from PIL import Image, ImageOps
-import torch
-from torch import Tensor
+#torch is imported where the retrain actually runs, not at module scope.
+#handlers/labeler.py reaches this module through gallery_retrain just to expose
+#the retrain endpoints, and that import alone was pulling 358MB of torch into
+#the web server process -- which on CV_BACKEND=modal never runs a model at all.
+if TYPE_CHECKING:
+    import torch
+    from torch import Tensor
 
 from ..config import settings
 from ..logger import log_action
@@ -466,7 +471,9 @@ def _load_rows() -> List[List[str]]:
     return local_photos.read_metadata_table()
 
 
-def _initial_embed_batch_size(device: torch.device, base_batch: int) -> int:
+def _initial_embed_batch_size(device: "torch.device", base_batch: int) -> int:
+    import torch
+
     batch = max(1, int(base_batch))
     if device.type != "cuda":
         return batch
@@ -503,6 +510,9 @@ def _run_gallery_update_impl(
 
     Mode is currently coerced to `full` to ensure label corrections are reflected.
     """
+    #The retrain is the one thing in this process that genuinely runs a model.
+    import torch
+
     started_at = datetime.now().isoformat()
     mode_req = str(mode or "full").strip().lower()
     mode_eff = "full"

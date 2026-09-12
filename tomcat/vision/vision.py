@@ -374,7 +374,7 @@ def _clamp_confidence_score(score: Any) -> float:
 
 
 def _rank_unique_candidates_for_similarity(
-    sims: Tensor,
+    sims: np.ndarray,
     *,
     crop: Optional[Image.Image] = None,
     rerank: bool = True,
@@ -1273,7 +1273,7 @@ def _run_yolo(img: Image.Image) -> List[Det]:
     return get_backend().detect(img)
 
 
-def _embed_batch(batch: Tensor) -> Tensor:
+def _embed_batch(batch: "Tensor") -> "Tensor":
     """Run DINOv3 encoder forward on a preprocessed batch via the active backend."""
     from .backend import get_backend
     return get_backend().embed_tensors(batch)
@@ -1411,7 +1411,7 @@ def identify(image_bytes: bytes) -> IdentifyResult:
 def _gallery_refs_for_candidate(
     *,
     cat_name: str,
-    sims: Tensor,
+    sims: np.ndarray,
     refs_per: int,
     thumb_size: int,
     include_thumb: bool = True,
@@ -1743,7 +1743,7 @@ def _parse_yolo_box_str(box_str: str) -> Optional[Tuple[float, float, float, flo
         return None
     return parts[0], parts[1], parts[2], parts[3]
 
-def _embed_crops(crops: List[Image.Image]) -> Tensor:
+def _embed_crops(crops: List[Image.Image]) -> np.ndarray:
     """Batch-embed PIL crops via the active backend.
 
     Chunks at LABELER_REF_EMBED_BATCH_SIZE; on local OOM falls back to 1-at-a-
@@ -2148,7 +2148,7 @@ def labeler_manual_ref_status() -> dict:
     }
 
 
-def _get_labeler_refs_for_cat(cat: str, query_emb: Tensor, refs_per: int) -> List[dict]:
+def _get_labeler_refs_for_cat(cat: str, query_emb: np.ndarray, refs_per: int) -> List[dict]:
     pack = _labeler_ref_cache.get(cat)
     if not pack:
         return []
@@ -2175,7 +2175,7 @@ def _get_labeler_refs_for_cat(cat: str, query_emb: Tensor, refs_per: int) -> Lis
 def _embed_query_from_box(
     image_bytes: bytes,
     box: Tuple[float, float, float, float],
-) -> Optional[Tensor]:
+) -> Optional[np.ndarray]:
     try:
         img = _open_rgb_image(io.BytesIO(image_bytes))
     except Exception:
@@ -2195,9 +2195,9 @@ def _embed_query_from_box(
     cx1, cy1, cx2, cy2 = _expand_box(x1, y1, x2, y2, settings.cv_pad_pct, img_w, img_h)
     crop = img.crop((cx1, cy1, cx2, cy2))
     emb = _embed_crops([crop])
-    if emb.numel() == 0:
+    if emb.size == 0:
         return None
-    return emb[0].detach().cpu()
+    return emb[0]
 
 
 def manual_review_candidates(

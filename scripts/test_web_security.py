@@ -6,6 +6,11 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+#Sends this process's machine log to a scratch directory, so the test does
+#not write records into the corpus the real logs are analysed from.
+import _test_support  # noqa: F401
 
 from tomcat.web_security import (  # noqa: E402
     oauth_redirect_is_allowed,

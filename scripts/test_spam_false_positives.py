@@ -17,6 +17,11 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+#Sends this process's machine log to a scratch directory, so the tests do
+#not write records into the corpus the real logs are analysed from.
+import _test_support  # noqa: F401
 
 from tomcat.spam import (  # noqa: E402
     MIN_SPAM_SCORE, PHONE_RE, check_spam,

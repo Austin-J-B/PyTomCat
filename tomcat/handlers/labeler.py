@@ -2284,14 +2284,18 @@ def _actor_from_request(request: web.Request) -> Tuple[str, str]:
 
 
 def _kick_detector_warm_task() -> None:
-    """Fire-and-forget detector warmup once per process."""
-    global _detector_warm_task, _detector_warm_done
+    """Fire-and-forget detector warmup, once per process."""
+    global _detector_warm_task
     if _detector_warm_done:
         return
     if _detector_warm_task and not _detector_warm_task.done():
         return
 
     async def _runner() -> None:
+        #Without this global the flag below became a local of _runner, so
+        #_detector_warm_done never turned true and every poll of the detect
+        #queue started another full detector + SAM pass.
+        global _detector_warm_done
         try:
             await asyncio.to_thread(V.warm_labeler_detector)
         except Exception as e:
@@ -2714,7 +2718,7 @@ async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
             and (now2 - float(_photo_crop_index_built_mono)) < _PHOTO_CROP_INDEX_FORCE_COALESCE_SEC
         ):
             return
-        if force and float(_photo_crop_index_built_mono) > requested_mono:
+        if force and _photo_crop_index_generation > requested_generation:
             #Somebody else rebuilt while this caller waited for the lock, so the
             #index is already newer than the miss that triggered this call.
             return

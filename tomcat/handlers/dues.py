@@ -8,7 +8,7 @@ import asyncio
 import json
 import discord
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 try:
     from zoneinfo import ZoneInfo  #py>=3.9
@@ -518,11 +518,41 @@ def _membership_snapshot_paths() -> list[Path]:
         out.append(path)
     return out
 
+def _hkey(text: str) -> str:
+    """A header cell reduced to letters, so spellings and spacing stop mattering."""
+    return re.sub(r"[^a-z]+", "", (text or '').lower())
+
+
+def _best_header_index(rows: list[list[str]], target_keys: set[str], *, min_hits: int = 1) -> int:
+    """Index of the row most likely to be the header.
+
+    The membership sheet is form-backed and often carries a title, an export
+    note or a blank line above the real header, so row 0 cannot be assumed. The
+    row naming the most of `target_keys` within the first thirty wins.
+    """
+    best_idx, best_hits = 0, -1
+    for i in range(min(30, len(rows))):
+        hits = len({_hkey(cell) for cell in rows[i] if cell} & target_keys)
+        if hits > best_hits and hits >= min_hits:
+            best_idx, best_hits = i, hits
+    return best_idx
+
+
+def _locate_header(
+    rows: list[list[str]], target_keys: set[str], *, min_hits: int = 1
+) -> tuple[int, dict[str, int]]:
+    """The header row's index, and its column numbers by reduced name.
+
+    Callers need the index as well: data starts on the row after it, and sheet
+    updates are addressed by absolute row number.
+    """
+    header_idx = _best_header_index(rows, target_keys, min_hits=min_hits)
+    return header_idx, {_hkey(cell): i for i, cell in enumerate(rows[header_idx])}
+
+
 def _parse_membership_table(rows: list[list[str]]) -> list[dict]:
     if not rows:
         return []
-    def hkey(s: str) -> str:
-        return re.sub(r"[^a-z]+", "", (s or '').lower())
     target_keys = {
         'fullname','fulllegalname','legalname','name',
         'discordusername','discordhandle','discord','discordname','discordtag','discordid',
@@ -531,20 +561,13 @@ def _parse_membership_table(rows: list[list[str]]) -> list[dict]:
         'duesordonation','duesdonation','type','reason','category','donation','donations',
         'verified','isverified','email','semester'
     }
-    header_idx = 0
-    best_hits = -1
-    sample_limit = min(len(rows), 30)
-    for i in range(sample_limit):
-        row = rows[i]
-        keys = {hkey(c) for c in row if c}
-        hits = len(keys & target_keys)
-        if hits > best_hits and hits >= 2:
-            best_hits = hits
-            header_idx = i
+    #Two hits, not one: a form-backed sheet often has a stray row mentioning one
+    #of these words above the real header.
+    header_idx = _best_header_index(rows, target_keys, min_hits=2)
     header = rows[header_idx]
     data = rows[header_idx+1:]
     log_action('dues_membership_header', f'row={header_idx}', '|'.join(header[:12]))
-    idx = {hkey(h): i for i, h in enumerate(header)}
+    idx = {_hkey(h): i for i, h in enumerate(header)}
     def col(name_keys: List[str]) -> int:
         for k in name_keys:
             if k in idx:
@@ -1087,21 +1110,7 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
         rows = ws.get_all_values()
         if not rows:
             return False, "Sheet is empty."
-        def hkey(s: str) -> str:
-            return re.sub(r"[^a-z]+", "", (s or '').lower())
-        header_idx = 0
-        header = rows[0]
-        #Try to locate a better header row within first 30
-        target_keys = {'email','mavorgsinvite'}
-        best_hits = -1
-        for i in range(min(30, len(rows))):
-            rk = {hkey(c) for c in rows[i] if c}
-            hits = len(rk & target_keys)
-            if hits > best_hits and hits >= 1:
-                best_hits = hits
-                header_idx = i
-        header = rows[header_idx]
-        idx = {hkey(h): i for i, h in enumerate(header)}
+        header_idx, idx = _locate_header(rows, {'email', 'mavorgsinvite'})
         i_email = idx.get('email', -1)
         i_inv   = idx.get('mavorgsinvite', -1)
         if i_email < 0 or i_inv < 0:
@@ -1170,11 +1179,13 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
                         break
             return True, f"Marked invites for {done} member(s)."
     except Exception as e:
+        error_text = str(e)
         try:
-            log_action('mavorgs_invite_update_error', 'sheet', str(e))
+            log_action('mavorgs_invite_update_error', 'sheet', error_text)
         except Exception:
             pass
-    return False, f"Error updating sheet: {e}"
+        return False, f"Error updating sheet: {error_text}"
+    return False, "Error updating sheet."
 
 def _parse_money_value(text: str) -> Optional[float]:
     if not text:
@@ -1215,20 +1226,7 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
         rows = ws.get_all_values()
         if not rows:
             return False, "Sheet is empty."
-        def hkey(s: str) -> str:
-            return re.sub(r"[^a-z]+", "", (s or '').lower())
-        header_idx = 0
-        #Try to locate a better header row within first 30
-        target_keys = {'email','verified','semester'}
-        best_hits = -1
-        for i in range(min(30, len(rows))):
-            rk = {hkey(c) for c in rows[i] if c}
-            hits = len(rk & target_keys)
-            if hits > best_hits and hits >= 1:
-                best_hits = hits
-                header_idx = i
-        header = rows[header_idx]
-        idx = {hkey(h): i for i, h in enumerate(header)}
+        header_idx, idx = _locate_header(rows, {'email', 'verified', 'semester'})
         i_email = idx.get('email', -1)
         i_ver   = idx.get('verified', -1)
         i_sem   = idx.get('semester', -1)
@@ -1388,21 +1386,7 @@ async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float
         if not rows:
             return False, "Sheet is empty."
 
-        def hkey(s: str) -> str:
-            return re.sub(r"[^a-z]+", "", (s or '').lower())
-
-        header_idx = 0
-        target_keys = {'email', 'donation', 'donations', 'donationamount'}
-        best_hits = -1
-        for i in range(min(30, len(rows))):
-            rk = {hkey(c) for c in rows[i] if c}
-            hits = len(rk & target_keys)
-            if hits > best_hits and hits >= 1:
-                best_hits = hits
-                header_idx = i
-
-        header = rows[header_idx]
-        idx = {hkey(h): i for i, h in enumerate(header)}
+        header_idx, idx = _locate_header(rows, {'email', 'donation', 'donations', 'donationamount'})
         i_email = idx.get('email', -1)
         i_don = idx.get('donation', -1)
         if i_don < 0:
@@ -3543,7 +3527,11 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
 
 async def _run_daily_dues_job(bot) -> None:
     """Execute the daily dues verification and role sync."""
-    from datetime import date
+    #Declared here because this job invalidates the membership cache after it
+    #marks rows verified. Without it those assignments were locals, the stale
+    #cache kept serving pre-verification rows for the rest of its TTL, and the
+    #portal cleanup that runs moments later saw those members as unverified.
+    global _MEMBERSHIP_ROWS_CACHE, _MEMBERSHIP_ROWS_TS
     
     #Get target guild
     guild = None

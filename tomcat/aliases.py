@@ -290,7 +290,7 @@ def _ensure_fallback_cat_aliases() -> None:
         alias_map: Dict[str, str] = {}
         with path.open("r", encoding="utf-8") as f:
             reader = csv.reader(f)
-            header = next(reader, None)
+            next(reader, None)  #header row
             for row in reader:
                 if not row:
                     continue

@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import discord
 
@@ -1589,7 +1589,7 @@ async def handle_manual_8pm_preview(intent, ctx: Dict[str, Any]) -> None:
     bot = ctx.get("bot")
     msg = await build_8pm_lines(bot, mention=False)
     await safe_send(ctx["channel"], msg)
-    log_action("manual_8pm", f"by={uid}", "preview_sent")
+    log_action("manual_8pm", f"by={int(getattr(author, 'id', 0))}", "preview_sent")
 
 
 async def handle_feeding_today(intent, ctx: Dict[str, Any]) -> None:

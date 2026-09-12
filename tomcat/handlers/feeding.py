@@ -105,16 +105,20 @@ def _sub_month_key_from_date(date_iso: str) -> Optional[str]:
 
 
 def _sub_log_path_from_key(key: str) -> str:
-    """Return the jsonl log path for a month key, creating folders."""
+    """The jsonl log path for a month key.
+
+    Naming a path does not create it. This used to mkdir the year folder on
+    every call, including the read paths, which cost a syscall per month per
+    request -- and every writer already creates the folder it is about to
+    write into.
+    """
     try:
         year_str, month_str = key.split("-", 1)
         year = int(year_str)
         month = int(month_str)
     except Exception:
         raise ValueError(f"Invalid sub log month key: {key}")
-    folder = SUBS_ROOT / f"{year}"
-    folder.mkdir(parents=True, exist_ok=True)
-    return str(folder / f"{year}-{month:02d}.jsonl")
+    return str(SUBS_ROOT / f"{year}" / f"{year}-{month:02d}.jsonl")
 
 
 def _recent_month_keys(span: int = 2) -> List[str]:
@@ -147,7 +151,51 @@ def _all_sub_month_keys() -> List[str]:
     return sorted(keys)
 
 
+#Parsed sub records per file, keyed on that file's mtime and size. Parsing
+#normalizes station names, dates and ids for every row, and the volunteer claim
+#page asks for every month on each poll; the files change a few times a week.
+_SUB_FILE_CACHE: Dict[str, Tuple[Tuple[float, int], List[dict]]] = {}
+
+
+def _sub_file_stamp(path: str) -> Optional[Tuple[float, int]]:
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    return (stat.st_mtime, stat.st_size)
+
+
+def _copy_sub_rows(rows: List[dict]) -> List[dict]:
+    """A copy callers may edit without disturbing the cache.
+
+    Sub records are flat apart from their date and station lists, and callers do
+    edit those in place before writing a file back.
+    """
+    return [
+        {key: (list(value) if isinstance(value, list) else value) for key, value in row.items()}
+        for row in rows
+    ]
+
+
+def _forget_sub_file(path: str) -> None:
+    """Drop a file's parsed rows after writing to it."""
+    _SUB_FILE_CACHE.pop(str(path), None)
+
+
 def _read_sub_file(path: str, month_key: Optional[str]) -> List[dict]:
+    """Parsed records from a monthly subs jsonl, re-read only when it changes."""
+    stamp = _sub_file_stamp(path)
+    if stamp is None:
+        return []
+    cached = _SUB_FILE_CACHE.get(str(path))
+    if cached is not None and cached[0] == stamp:
+        return _copy_sub_rows(cached[1])
+    rows = _parse_sub_file(path, month_key)
+    _SUB_FILE_CACHE[str(path)] = (stamp, rows)
+    return _copy_sub_rows(rows)
+
+
+def _parse_sub_file(path: str, month_key: Optional[str]) -> List[dict]:
     """Read a monthly subs jsonl and return parsed records."""
     out: List[dict] = []
     if not os.path.exists(path):
@@ -212,6 +260,7 @@ def _write_sub_file(path: str, rows: List[dict]) -> None:
         for row in rows:
             f.write(json.dumps(row) + "\n")
     os.replace(tmp_path, path)
+    _forget_sub_file(path)
 
 
 def _message_preview(text: Optional[str], *, max_len: int = 200) -> str:
@@ -233,6 +282,7 @@ def _append_sub_record(record: dict, month_key: Optional[str] = None) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
+    _forget_sub_file(path)
 
 
 def _normalize_dates(dates: Iterable[str]) -> List[str]:

@@ -518,6 +518,12 @@ def _membership_snapshot_paths() -> list[Path]:
         out.append(path)
     return out
 
+def _read_worksheet(client, sheet_id: str, ws_name: str):
+    """One worksheet and its rows. Blocking; hand this to a thread."""
+    ws = client.open_by_key(sheet_id).worksheet(ws_name)
+    return ws, ws.get_all_values()
+
+
 def _hkey(text: str) -> str:
     """A header cell reduced to letters, so spellings and spacing stop mattering."""
     return re.sub(r"[^a-z]+", "", (text or '').lower())
@@ -623,6 +629,16 @@ def _load_membership_rows_from_csv(path: Path) -> list[dict]:
     with path.open('r', encoding='utf-8-sig', newline='') as f:
         rows = [list(row) for row in csv.reader(f)]
     return _parse_membership_table(rows)
+
+async def _load_membership_rows_async() -> list[dict]:
+    """Membership rows, without a cold cache stalling the event loop.
+
+    _load_membership_rows reads the sheet over synchronous HTTP whenever its TTL
+    has expired, so every await of it goes through a thread. A warm call is just
+    a dict copy, and the thread hop costs far less than the read it replaces.
+    """
+    return await asyncio.to_thread(_load_membership_rows)
+
 
 def _load_membership_rows():
     try:
@@ -1106,8 +1122,9 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
         if not sid:
             return False, "Missing sheet id for membership megasheet."
         ws_name = getattr(settings,'membership_ws_title','Membership Application List')
-        ws = _sc().open_by_key(sid).worksheet(ws_name)
-        rows = ws.get_all_values()
+        #gspread is synchronous HTTP. Left on the loop, one sheet call stalls
+        #every other handler and the Discord heartbeat with them.
+        ws, rows = await asyncio.to_thread(_read_worksheet, _sc(), sid, ws_name)
         if not rows:
             return False, "Sheet is empty."
         header_idx, idx = _locate_header(rows, {'email', 'mavorgsinvite'})
@@ -1136,7 +1153,9 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
             for i in range(0, len(cells), BATCH):
                 chunk = cells[i:i+BATCH]
                 try:
-                    ws.update_cells(chunk, value_input_option='USER_ENTERED')
+                    await asyncio.to_thread(
+                        ws.update_cells, chunk, value_input_option='USER_ENTERED'
+                    )
                     total += len(chunk)
                 except Exception as e2:
                     log_action('mavorgs_invite_update_error', f"batch={i}//{BATCH}", str(e2))
@@ -1145,7 +1164,9 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
                     for cell in chunk:
                         for attempt in range(5):
                             try:
-                                ws.update_cell(cell.row, cell.col, cell.value)
+                                await asyncio.to_thread(
+                                    ws.update_cell, cell.row, cell.col, cell.value
+                                )
                                 break
                             except Exception as e3:
                                 msg = str(e3).lower()
@@ -1166,7 +1187,7 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
             for r, c, v in updates:
                 for attempt in range(5):
                     try:
-                        ws.update_cell(r, c, v)
+                        await asyncio.to_thread(ws.update_cell, r, c, v)
                         done += 1
                         break
                     except Exception as e2:
@@ -1222,8 +1243,9 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
         if not sid:
             return False, "Missing sheet id for membership megasheet."
         ws_name = getattr(settings,'membership_ws_title','Membership Application List')
-        ws = _sc().open_by_key(sid).worksheet(ws_name)
-        rows = ws.get_all_values()
+        #gspread is synchronous HTTP. Left on the loop, one sheet call stalls
+        #every other handler and the Discord heartbeat with them.
+        ws, rows = await asyncio.to_thread(_read_worksheet, _sc(), sid, ws_name)
         if not rows:
             return False, "Sheet is empty."
         header_idx, idx = _locate_header(rows, {'email', 'verified', 'semester'})
@@ -1264,7 +1286,9 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
         for i in range(0, len(cells), BATCH):
             chunk = cells[i:i+BATCH]
             try:
-                ws.update_cells(chunk, value_input_option='USER_ENTERED')
+                await asyncio.to_thread(
+                    ws.update_cells, chunk, value_input_option='USER_ENTERED'
+                )
                 done += len(chunk)
             except Exception as e2:
                 log_action('mavorgs_verify_update_error', f"batch={i}//{BATCH}", str(e2))
@@ -1272,7 +1296,9 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
                 for cell in chunk:
                     for attempt in range(5):
                         try:
-                            ws.update_cell(cell.row, cell.col, cell.value)
+                            await asyncio.to_thread(
+                                ws.update_cell, cell.row, cell.col, cell.value
+                            )
                             done += 1
                             break
                         except Exception as e3:
@@ -1381,8 +1407,9 @@ async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float
         if not sid:
             return False, "Missing sheet id for membership megasheet."
         ws_name = getattr(settings, 'membership_ws_title', 'Membership Application List')
-        ws = _sc().open_by_key(sid).worksheet(ws_name)
-        rows = ws.get_all_values()
+        #gspread is synchronous HTTP. Left on the loop, one sheet call stalls
+        #every other handler and the Discord heartbeat with them.
+        ws, rows = await asyncio.to_thread(_read_worksheet, _sc(), sid, ws_name)
         if not rows:
             return False, "Sheet is empty."
 
@@ -1441,7 +1468,9 @@ async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float
         for i in range(0, len(cells), BATCH):
             chunk = cells[i:i + BATCH]
             try:
-                ws.update_cells(chunk, value_input_option='USER_ENTERED')
+                await asyncio.to_thread(
+                    ws.update_cells, chunk, value_input_option='USER_ENTERED'
+                )
                 updated += len(chunk)
             except Exception as e:
                 log_action('dues_donation_update_error', f"batch={i}//{BATCH}", str(e))
@@ -1449,7 +1478,9 @@ async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float
                 for cell in chunk:
                     for attempt in range(5):
                         try:
-                            ws.update_cell(cell.row, cell.col, cell.value)
+                            await asyncio.to_thread(
+                                ws.update_cell, cell.row, cell.col, cell.value
+                            )
                             updated += 1
                             break
                         except Exception as e2:
@@ -1808,7 +1839,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
     rows_for_fallback: list[dict] = []
     extra: list[tuple[str, str]] = []
     try:
-        rows_for_fallback = _load_membership_rows()
+        rows_for_fallback = await _load_membership_rows_async()
         extra = _email_only_candidates(rows_for_fallback, cur_sem)
         if extra:
             ok2, msg2 = await _mark_verified_emails(extra)
@@ -1872,7 +1903,8 @@ async def handle_update_dues_members(intent, ctx) -> None:
 
     #2b) Cleanup portal messages for already-verified members
     try:
-        verified_cleanup = await _cleanup_portal_messages_for_verified_rows(bot, _load_membership_rows(), cur_sem)
+        membership_rows = await _load_membership_rows_async()
+        verified_cleanup = await _cleanup_portal_messages_for_verified_rows(bot, membership_rows, cur_sem)
         if verified_cleanup:
             log_action('dues_auto_cleanup', f'verified_deleted={verified_cleanup}', '')
     except Exception:
@@ -2330,7 +2362,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         return
 
     #Load membership rows
-    rows = _load_membership_rows()
+    rows = await _load_membership_rows_async()
     cur_sem = _current_semester_label()
     cur_sem_norm = _norm_sem_label(cur_sem)
 
@@ -2956,7 +2988,7 @@ async def _fetch_portal_messages(bot, include_processed: bool = False, limit_ove
 async def _analyze_dues(bot) -> List[dict]:
     _debug('begin')
     msgs = await _fetch_portal_messages(bot)
-    members = _load_membership_rows()
+    members = await _load_membership_rows_async()
 
     #Filter portal messages to explicit payment statements
     parsed_msgs: List[Tuple[Any, dict]] = []
@@ -3386,7 +3418,7 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
         return [], []
     
     #Load all membership rows
-    rows = _load_membership_rows()
+    rows = await _load_membership_rows_async()
     membership_source = _MEMBERSHIP_ROWS_LAST_SOURCE
     membership_authoritative = _MEMBERSHIP_ROWS_LAST_AUTHORITATIVE
     membership_error = _MEMBERSHIP_ROWS_LAST_ERROR
@@ -3618,7 +3650,7 @@ async def _run_daily_dues_job(bot) -> None:
         rows_for_fallback: list[dict] = []
         extra: list[tuple[str, str]] = []
         try:
-            rows_for_fallback = _load_membership_rows()
+            rows_for_fallback = await _load_membership_rows_async()
             fallback_donations: list[tuple[str, Optional[str], float]] = []
             extra = _email_only_candidates(rows_for_fallback, cur_sem, donations=fallback_donations)
             if extra:
@@ -3655,7 +3687,8 @@ async def _run_daily_dues_job(bot) -> None:
             except Exception:
                 pass
         try:
-            verified_cleanup = await _cleanup_portal_messages_for_verified_rows(bot, _load_membership_rows(), cur_sem)
+            membership_rows = await _load_membership_rows_async()
+            verified_cleanup = await _cleanup_portal_messages_for_verified_rows(bot, membership_rows, cur_sem)
             if verified_cleanup:
                 log_action('dues_scheduler_cleanup', f'verified_deleted={verified_cleanup}', '')
         except Exception:

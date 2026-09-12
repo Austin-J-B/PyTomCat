@@ -66,6 +66,54 @@ refuses to shrink the sheet by more than `PHOTO_METADATA_SHEET_SYNC_MAX_SHRINK`
 (default 5%). Without that, a truncated local CSV would be copied over the only
 backup on the next sync.
 
+## Memory limits (why the server used to vanish)
+
+The labeler holds roughly 10MB of decoded pixels per in-flight image operation
+and `tomcat.service` had no memory cap, so when the box ran out the **kernel**
+chose the victims: it killed the bot every ~60s and eventually took `sshd` and
+`cloudflared` with it. The server stayed powered on, answered nothing, and only
+a console power-cycle brought it back.
+
+Two limits now bound that damage, and they only work together:
+
+| Where | Setting | Effect |
+| --- | --- | --- |
+| `tomcat.service` | `MemoryHigh=2.2G` | kernel throttles and reclaims first: slow, still serving |
+| `tomcat.service` | `MemoryMax=2.8G` | only this unit is killed, never sshd; the box stays reachable |
+| `image_budget.py` | cgroup-aware ceiling | the decode budget follows `MemoryMax`, not host RAM |
+
+That last row is the part that is easy to get wrong: `/proc/meminfo` reports the
+**host's** RAM even inside a capped unit, so a budget sized from `MemTotal`
+would sail past `MemoryMax` and be killed by the very limit meant to contain it.
+`_memory_ceiling_bytes()` reads the cgroup limit first, and the budget is the
+smaller of `LABELER_IMAGE_BUDGET_FRACTION` (45%) and what is left after
+`LABELER_IMAGE_BUDGET_RESERVE_MB` (1600MB, the process's own baseline: torch,
+the DINOv3 gallery, the labeler caches).
+
+The values suit a CPX21 (4GB). **After rescaling the server, raise `MemoryHigh`
+and `MemoryMax`** -- the decode budget follows them on its own.
+
+Unit changes need reinstalling; `deploy.sh` only pulls code:
+
+```bash
+sudo install -m644 -o root -g root deploy/tomcat.service /etc/systemd/system/tomcat.service
+sudo systemctl daemon-reload
+sudo systemctl restart tomcat
+systemctl show tomcat -p MemoryHigh -p MemoryMax   # confirm the caps are live
+```
+
+### Swap
+
+There is no swap on this host, so a spike has nowhere to go but the OOM killer.
+2GB turns a brief overshoot into a slow moment instead of a kill:
+
+```bash
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+sudo sysctl -w vm.swappiness=10 && echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf
+```
+
 ## Notes
 
 - `config.yml` and the `cloudflared` binary are gitignored and persist across

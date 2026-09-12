@@ -42,6 +42,7 @@ jobs:
 
       - name: Run Python regression scripts
         run: |
+          python scripts/test_blocking_check.py
           python scripts/test_web_security.py
           python scripts/test_static_assets.py
           python scripts/test_authorized_json.py

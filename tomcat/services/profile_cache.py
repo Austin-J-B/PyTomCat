@@ -1,4 +1,4 @@
-"""Background refresh + access layer for cat profile cache files."""
+﻿"""Background refresh + access layer for cat profile cache files."""
 
 from __future__ import annotations
 import os, re, json, asyncio, time, csv
@@ -281,14 +281,13 @@ def cached_count() -> int:
     """Return how many profiles are currently cached."""
     return int(_COUNT)
 
-def all_actual_names() -> list[str]:
-    """Return a list of full cat names (with numeric prefixes) from cache."""
+def cached_actual_names() -> list[str]:
+    """Full cat names (with numeric prefixes) already in the cache.
+
+    Never reads the sheet: the snapshot on disk is as far as this goes. Callers
+    on the event loop want this one -- the scheduler keeps the cache fresh.
+    """
     _ensure_loaded()
-    if _cache_is_stale():
-        try:
-            refresh_sync()
-        except Exception:
-            pass
     if not _CACHE:
         return []
     names: list[str] = []
@@ -297,6 +296,20 @@ def all_actual_names() -> list[str]:
         if full:
             names.append(str(full))
     return names
+
+
+def all_actual_names() -> list[str]:
+    """Full cat names, pulling the CatDatabase sheet first if the cache is stale.
+
+    That pull is synchronous HTTP, so call this off the event loop.
+    """
+    _ensure_loaded()
+    if _cache_is_stale():
+        try:
+            refresh_sync()
+        except Exception:
+            pass
+    return cached_actual_names()
 
 def _ensure_loaded() -> None:
     """Lazy-load the cache if nothing has been loaded yet."""

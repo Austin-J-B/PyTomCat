@@ -574,7 +574,10 @@ def _parse_membership_table(rows: list[list[str]]) -> list[dict]:
             return str(val).strip()
         def _truthy(s: str) -> bool:
             v = (s or '').strip().lower()
-            return v in {'true','yes','y','1','paid','verified','done','ok','x','âœ…'}
+            #The mojibake spelling is what a cp1252 round-trip of the tick looks
+            #like; it has shown up in exported sheets, so accept it too.
+            return v in {'true','yes','y','1','paid','verified','done','ok','x',
+                         '✅', 'âœ…'}
         row = {
             'date': get(i_date),
             'full_name': get(i_full),
@@ -618,75 +621,7 @@ def _load_membership_rows():
         if not rows:
             _set_membership_load_state('sheets', authoritative=True)
             return []
-        def hkey(s: str) -> str:
-            return re.sub(r"[^a-z]+", "", (s or '').lower())
-        target_keys = {
-            'fullname','fulllegalname','legalname','name',
-            'discordusername','discordhandle','discord','discordname','discordtag','discordid',
-            'paymentusername','paymenthandle','payhandle','paymentuser','paymenttag',
-            'paidwhere','paidvia','provider','method','wherepaid',
-            'duesordonation','duesdonation','type','reason','category','donation','donations',
-            'verified','isverified','email','semester'
-        }
-        header_idx = 0
-        best_hits = -1
-        sample_limit = min(len(rows), 30)
-        for i in range(sample_limit):
-            row = rows[i]
-            keys = {hkey(c) for c in row if c}
-            hits = len(keys & target_keys)
-            if hits > best_hits and hits >= 2:
-                best_hits = hits
-                header_idx = i
-        header = rows[header_idx]
-        data = rows[header_idx+1:]
-        log_action('dues_membership_header', f'row={header_idx}', '|'.join(header[:12]))
-        idx = {hkey(h): i for i, h in enumerate(header)}
-        def col(name_keys: List[str]) -> int:
-            for k in name_keys:
-                if k in idx: return idx[k]
-            return -1
-        i_date = col(['date','timestamp','submittedat'])
-        i_full = col(['fullname','fulllegalname','legalname','name'])
-        i_disc = col(['discordusername','discordhandle','discord','discordname','discordtag','discordid'])
-        i_payu = col(['paymentusername','paymenthandle','payhandle','paymentuser','paymenttag'])
-        i_where= col(['paidwhere','paidvia','provider','method','wherepaid'])
-        i_kind = col(['duesordonation','duesdonation','type','reason','category'])
-        i_email= col(['email'])
-        i_sem  = col(['semester'])
-        i_ver  = col(['verified','isverified'])
-        i_inv  = col(['mavorgsinvite','invite','mavorgs'])
-        i_don  = col(['donation','donations','donationamount','donation?'])
-        out = []
-        for r in data:
-            def get(i):
-                if i < 0 or i >= len(r):
-                    return ''
-                val = r[i]
-                if isinstance(val, str):
-                    return val.strip()
-                if val is None:
-                    return ''
-                return str(val).strip()
-            def _truthy(s: str) -> bool:
-                v = (s or '').strip().lower()
-                return v in {'true','yes','y','1','paid','verified','done','ok','x','✅'}
-            row = {
-                'date': get(i_date),
-                'full_name': get(i_full),
-                'discord_username': get(i_disc),
-                'payment_username': get(i_payu),
-                'paid_where': get(i_where),
-                'kind': get(i_kind),
-                'email': get(i_email),
-                'semester': get(i_sem),
-                'verified': _truthy(get(i_ver)) if i_ver >= 0 else False,
-                'mavorgs_invite': _truthy(get(i_inv)) if i_inv >= 0 else False,
-                'donation_amount': get(i_don),
-            }
-            if any(bool(v) for v in row.values()):
-                out.append(row)
-        log_action('dues_membership_rows', f'total={len(rows)-1}', f'usable={len(out)}')
+        out = _parse_membership_table(rows)
         _MEMBERSHIP_ROWS_CACHE = list(out)
         _MEMBERSHIP_ROWS_TS = _time.monotonic()
         _set_membership_load_state('sheets', authoritative=True)

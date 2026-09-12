@@ -687,6 +687,57 @@ def _parse_subrequest_dates(data: dict) -> Tuple[List[dict], Optional[str]]:
     return [{"date": date_iso, "stations": clean}], None
 
 
+def _may_delete_sub_record(record: dict, user_id: str, is_officer: bool) -> bool:
+    """Whether this user may remove one entry from the sub log.
+
+    Officers may remove anything. Everyone else only entries they are party to:
+    the person who asked for the substitute, or the person who took it. Ids
+    compare as strings because the log has carried both numbers and strings
+    over its life.
+
+    An empty user id matches nobody. Without that, a session with no user id
+    would have matched any entry that recorded no requester.
+    """
+    if is_officer:
+        return True
+    if not user_id:
+        return False
+    return user_id in {str(record.get("requester") or ""), str(record.get("assignee") or "")}
+
+
+def _remove_sub_record(
+    lines: Any, target_id: Any, *, user_id: str, is_officer: bool
+) -> Tuple[Optional[dict], List[str], bool]:
+    """Split a sub log into the entry to remove and the lines to keep.
+
+    Returns (removed, kept, forbidden). A line that will not parse is kept
+    untouched: this removes one known entry, it does not tidy the file.
+    """
+    kept: List[str] = []
+    removed: Optional[dict] = None
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except Exception:
+            kept.append(line)
+            continue
+        if record.get("id") != target_id:
+            kept.append(line)
+            continue
+        if not _may_delete_sub_record(record, user_id, is_officer):
+            return None, [], True
+        removed = record
+    return removed, kept, False
+
+
+def _deletion_announcement(record: dict, date_iso: str, actor_label: str) -> str:
+    """The line posted when somebody removes a sub request or a claim."""
+    kind = "Request" if record.get("kind") == "sub_request" else "Claim"
+    station = record.get("station") or "Unknown"
+    pretty_date = _format_date_for_notification(date_iso)
+    return f"**{kind} Deleted**: {actor_label} removed the item for **{station}** on {pretty_date}."
+
+
 def _join_stations(names: List[str]) -> str:
     """"Lot 50", "Lot 50 and HOP", "Lot 50, HOP, and West Hall"."""
     if len(names) >= 3:
@@ -1936,56 +1987,39 @@ async def start_web_server(bot):
         if not os.path.exists(path):
             return _with_cors(web.Response(status=404, text="Record not found"), request)
 
-        #Re-write file excluding the item
-        new_lines = []
-        deleted_item = None
-        user_id_str = str(session.get("user_id"))
-        is_officer = session.get("permissions", {}).get("is_officer")
+        user_id_str = str(session.get("user_id") or "")
+        is_officer = bool((session.get("permissions") or {}).get("is_officer"))
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        rec = json.loads(line)
-                        if rec.get("id") == target_id:
-                            #Permission check with strict ID comparison
-                            requester_id = str(rec.get("requester") or "")
-                            assignee_id = str(rec.get("assignee") or "")
-                            is_owner = (user_id_str == requester_id) or (user_id_str == assignee_id)
-
-                            if not is_officer and not is_owner:
-                                return _with_cors(web.Response(status=403, text="You can only delete your own items."), request)
-                            deleted_item = rec
-                            continue #Skip this line (Delete)
-                        new_lines.append(line)
-                    except Exception: # Catch JSON parsing errors for malformed lines
-                        new_lines.append(line)
-            
-            if deleted_item:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.writelines(new_lines)
-                
-                #Notify Discord
-                ch_id = getattr(settings, "ch_feeding_team", None)
-                if ch_id:
-                    ch = bot.get_channel(int(ch_id))
-                    if hasattr(ch, 'send'):
-                        actor_id = session.get("user_id")
-                        actor_name = session.get("username", "Unknown")
-                        actor_label = f"<@{actor_id}>" if actor_id else actor_name
-                        kind = "Request" if deleted_item.get("kind") == "sub_request" else "Claim"
-                        st = deleted_item.get("station") or "Unknown"
-                        pretty_date = _format_date_for_notification(date_iso)
-                        await ch.send(f"**{kind} Deleted**: {actor_label} removed the item for **{st}** on {pretty_date}.")
-
-                return _with_cors(web.json_response({"status": "ok"}), request)
-            else:
+            with open(path, "r", encoding="utf-8") as handle:
+                deleted_item, new_lines, forbidden = _remove_sub_record(
+                    handle, target_id, user_id=user_id_str, is_officer=is_officer
+                )
+            if forbidden:
+                return _with_cors(
+                    web.Response(status=403, text="You can only delete your own items."),
+                    request,
+                )
+            if not deleted_item:
                 return _with_cors(web.Response(status=404, text="Item ID not found in log"), request)
 
-        except Exception as e:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.writelines(new_lines)
+
+            ch_id = getattr(settings, "ch_feeding_team", None)
+            if ch_id:
+                ch = bot.get_channel(int(ch_id))
+                if hasattr(ch, 'send'):
+                    actor_id = session.get("user_id")
+                    actor_label = f"<@{actor_id}>" if actor_id else session.get("username", "Unknown")
+                    await ch.send(_deletion_announcement(deleted_item, date_iso, actor_label))
+
+            return _with_cors(web.json_response({"status": "ok"}), request)
+
+        except Exception:
             logging.exception("Error deleting subrequest")
             return _with_cors(web.Response(status=500, text="An internal error has occurred."), request)
-    
+
     async def leave_activity(request):
         """Disconnects the requesting user from their voice channel."""
         session, error = await _authorized(request, require_view=True)

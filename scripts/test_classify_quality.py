@@ -107,6 +107,7 @@ def main() -> int:
 
     print("\n[7] measuring a photo: fetch, decode, verdict")
     gates(122500, 0, 35.0)
+    real_decoder = labeler._decode_classify_quality_metrics
 
     async def measure(serial, fetch_bytes, metrics):
         clear_caches()
@@ -137,7 +138,42 @@ def main() -> int:
     check("a bad photo is a hard fail", (False, ["pixels", "blur"], True),
           (passes, report["reasons"], report["hard_fail"]))
 
-    print("\n[8] the async entry point agrees with the cached one")
+    print("\n[8] measuring an image reserves against the shared image budget")
+    #Section [7] stubbed the decoder out; put the real one back.
+    labeler._decode_classify_quality_metrics = real_decoder
+    #This is a full-resolution RGB decode, about 45MB for one of our photos, and
+    #the classify prefilter runs several at once. It used to be the one decode
+    #path the memory ceiling could not see.
+    import io as image_io
+
+    from PIL import Image
+
+    from tomcat.services import image_budget
+
+    buf = image_io.BytesIO()
+    Image.new("RGB", (1200, 900), (40, 90, 140)).save(buf, format="JPEG")
+    jpeg = buf.getvalue()
+
+    reserved: List[int] = []
+    real_acquire = image_budget.BUDGET._acquire
+
+    def spy(nbytes):
+        reserved.append(int(nbytes))
+        return real_acquire(nbytes)
+
+    image_budget.BUDGET._acquire = spy
+    try:
+        width, height, _blur = labeler._decode_classify_quality_metrics(jpeg)
+    finally:
+        image_budget.BUDGET._acquire = real_acquire
+    check("the decode reserves once", 1, len(reserved))
+    check("for the full-resolution cost",
+          image_budget.estimate_decode_bytes(1200, 900), reserved[0])
+    check("and the reservation is released",
+          0, image_budget.BUDGET.stats()["in_use_mb"])
+    check("the measurement is still the true size", (1200, 900), (width, height))
+
+    print("\n[9] the async entry point agrees with the cached one")
     gates(122500, 0, 35.0)
     clear_caches()
     labeler._cache_set_classify_quality(20, True, 800, 600, 90.0)

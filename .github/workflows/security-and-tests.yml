@@ -39,6 +39,7 @@ jobs:
           python scripts/test_web_security.py
           python scripts/test_finance_dedup.py
           python scripts/test_finance_classifiers.py
+          python scripts/test_finance_append.py
           python scripts/test_dues_name_match.py
           python scripts/test_dues_cleanup.py
           python scripts/test_membership_table.py

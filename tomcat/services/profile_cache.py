@@ -290,7 +290,6 @@ def all_actual_names() -> list[str]:
 
 def _ensure_loaded() -> None:
     """Lazy-load the cache if nothing has been loaded yet."""
-    global _CACHE, _TS
     if not _CACHE:
         _load_snapshot()
     if not _CACHE:

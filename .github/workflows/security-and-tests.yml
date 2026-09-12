@@ -34,6 +34,9 @@ jobs:
       - name: Compile Python
         run: python -m compileall -q tomcat UserInterface scripts cloud
 
+      - name: Check for undefined names
+        run: python scripts/check_undefined_names.py
+
       - name: Run Python regression scripts
         run: |
           python scripts/test_web_security.py

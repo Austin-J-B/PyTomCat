@@ -48,6 +48,7 @@ jobs:
           python scripts/test_subrequest_parsing.py
           python scripts/test_sub_claims.py
           python scripts/test_open_subs.py
+          python scripts/test_sub_deletion.py
           python scripts/test_finance_dedup.py
           python scripts/test_finance_classifiers.py
           python scripts/test_finance_append.py

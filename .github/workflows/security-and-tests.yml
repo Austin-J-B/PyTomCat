@@ -48,6 +48,7 @@ jobs:
           python scripts/test_alias_index.py
           python scripts/test_intent_router.py
           python scripts/test_logger.py
+          python scripts/test_schedule_store.py
           python scripts/test_image_budget.py
 
       - name: Run JavaScript regression scripts

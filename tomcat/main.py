@@ -22,6 +22,7 @@ import aiohttp
 from aiohttp import web
 import logging
 from .config import settings
+from .services import schedule_store
 from .web_security import (
     oauth_redirect_is_allowed,
     origin_is_allowed,
@@ -103,10 +104,8 @@ def _debug(msg: str) -> None:
         print(f"[UI-AUTH] {_redact_sensitive_log_text(msg)}")
 
 # The UI stores schedules in NDJSON and can still read the older JSON file.
-SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.ndjson"
-LEGACY_SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
 #Versioned schedule helpers
-_DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
+_DEFAULT_SCHED_EFFECTIVE = schedule_store.DEFAULT_EFFECTIVE
 
 def _week_start_iso(dt: datetime | None = None) -> str:
     d = (dt or datetime.now()).date()
@@ -359,115 +358,15 @@ def _issue_session_response(user_info: dict, permissions: dict, request: web.Req
 
 
 #--- schedule version helpers ---
-def _read_schedule_ndjson(path: Path) -> list:
-    versions: list = []
-    if not path.exists():
-        return versions
-    try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except Exception:
-                continue
-            if isinstance(obj, dict) and obj.get("effective_from"):
-                versions.append({
-                    "effective_from": obj.get("effective_from"),
-                    "schedule": obj.get("schedule") or {},
-                    "meta": obj.get("meta") or {}
-                })
-    except Exception:
-        return versions
-    return versions
-
-
-def _load_schedule_versions() -> list:
-    versions = _read_schedule_ndjson(SCHEDULE_PATH)
-    if versions:
-        return versions
-
-    #Legacy JSON fallback (migrates forward to ndjson)
-    if not LEGACY_SCHEDULE_PATH.exists():
-        return []
-    try:
-        data = json.loads(LEGACY_SCHEDULE_PATH.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and "versions" in data:
-            versions = data.get("versions") or []
-        elif isinstance(data, dict) and "schedule" in data:
-            versions = [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
-        elif isinstance(data, list):
-            versions = data
-        if versions:
-            _save_schedule_versions(versions)
-        return versions
-    except Exception:
-        return []
-    return []
-
-
-def _save_schedule_versions(versions: list):
-    meta = {"updated_at": int(time.time())}
-    SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = SCHEDULE_PATH.with_name(SCHEDULE_PATH.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        for v in versions:
-            f.write(json.dumps(v, separators=(",", ":")) + "\n")
-        f.write(json.dumps({"meta": meta}, separators=(",", ":")) + "\n")
-    tmp.replace(SCHEDULE_PATH)
-
-
 def _resolve_schedule_for_date(target_iso: Optional[str]) -> dict:
-    """Return schedule and effective_from for the given date (YYYY-MM-DD)."""
-    versions = _load_schedule_versions()
-    if not versions:
-        return {"schedule": {}, "effective_from": _DEFAULT_SCHED_EFFECTIVE, "meta": {}}
-    target_date = None
+    """Schedule in force on an ISO date, defaulting to the server's today."""
+    target = None
     if target_iso:
         try:
-            target_date = datetime.fromisoformat(target_iso).date()
-        except Exception:
-            target_date = None
-    if not target_date:
-        target_date = datetime.now().date()
-
-    best = None
-    for v in versions:
-        try:
-            eff = datetime.fromisoformat(str(v.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date()
-        except Exception:
-            continue
-        if eff <= target_date and (best is None or datetime.fromisoformat(str(best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date() < eff):
-            best = v
-    if not best:
-        best = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[0]
-
-    sched = best.get("schedule") or {}
-    #Filter schedule to known station names for that effective date
-    allowed = set(station_names(best.get("effective_from")))
-    sched = {st: row for st, row in sched.items() if st in allowed}
-    return {"schedule": sched, "effective_from": best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE, "meta": best.get("meta") or {}}
-
-
-def _upsert_schedule_version(schedule: dict, effective_from: str, meta: dict | None = None) -> list:
-    try:
-        eff = datetime.fromisoformat(str(effective_from)).date().isoformat()
-    except Exception:
-        eff = _DEFAULT_SCHED_EFFECTIVE
-    versions = _load_schedule_versions()
-    replaced = False
-    for v in versions:
-        if str(v.get("effective_from")) == eff:
-            v["schedule"] = schedule
-            v["meta"] = meta or v.get("meta") or {}
-            replaced = True
-            break
-    if not replaced:
-        versions.append({"effective_from": eff, "schedule": schedule, "meta": meta or {}})
-    versions = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)
-    _save_schedule_versions(versions)
-    return versions
+            target = datetime.fromisoformat(target_iso).date()
+        except ValueError:
+            target = None
+    return schedule_store.resolve_for_date(target or datetime.now().date())
 
 
 async def _resolve_member_once(
@@ -726,7 +625,7 @@ async def save_schedule(request):
 
     try:
         meta_out = {**meta, "saved_at": int(time.time())}
-        _upsert_schedule_version(schedule, effective_from, meta_out)
+        schedule_store.upsert_version(schedule, effective_from, meta_out)
     except Exception:
         logging.exception("Unexpected error when saving schedule")
         return _with_cors(web.Response(status=500, text="Failed to save schedule."), request)
@@ -753,7 +652,7 @@ async def get_schedule(request):
     resolved = _resolve_schedule_for_date(week_param)
     sched = stringify_schedule(resolved.get("schedule", {}))
     stations = station_names(week_param)
-    versions = _load_schedule_versions()
+    versions = schedule_store.load_versions()
     weeks = sorted([v.get("effective_from") for v in versions if v.get("effective_from") and v.get("effective_from") != _DEFAULT_SCHED_EFFECTIVE], reverse=True)
     if not weeks:
         weeks = [_week_start_iso()]
@@ -1151,6 +1050,67 @@ def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResp
     return resp
 
 
+#Static assets are read from disk only when the file changes. They were being
+#read and decoded inside the request handler on every hit, and labeler.js alone
+#is ~340KB -- enough synchronous work to stall the event loop on each page load.
+#Bytes are cached rather than text so responses skip the encode as well.
+_static_asset_cache: Dict[str, tuple[tuple[float, int], bytes]] = {}
+
+
+def _static_asset_bytes(filename: str, prefix: bytes = b"") -> bytes:
+    """Repo-root asset as UTF-8 bytes, cached against its mtime and size.
+
+    `prefix` is part of the cached payload, so it has to be stable for the life
+    of the process (it carries the labeler's feature flags, read from env once).
+    """
+    stat = os.stat(filename)
+    stamp = (stat.st_mtime, stat.st_size)
+    cached = _static_asset_cache.get(filename)
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    #Text mode on purpose: labeler.js is stored with CRLF endings and has always
+    #gone out with them translated. Reading it as bytes would change the payload.
+    with open(filename, "r", encoding="utf-8") as handle:
+        body = prefix + handle.read().encode("utf-8")
+    _static_asset_cache[filename] = (stamp, body)
+    return body
+
+
+def _static_asset_route(
+    filename: str,
+    content_type: str,
+    *,
+    prefix: bytes = b"",
+    missing_text: Optional[str] = None,
+):
+    """Build a no-store handler that serves one repo-root file."""
+    not_found = missing_text or f"{filename} not found"
+
+    async def handler(request: web.Request) -> web.Response:
+        try:
+            body = _static_asset_bytes(filename, prefix)
+        except OSError:
+            return web.Response(text=not_found, status=404)
+        resp = web.Response(body=body, content_type=content_type, charset="utf-8")
+        resp.headers["Cache-Control"] = "no-store"
+        return _with_cors(resp, request)
+
+    handler.__name__ = "get_" + filename.replace("-", "_").replace(".", "_")
+    return handler
+
+
+def _labeler_feature_prefix() -> bytes:
+    """Frontend feature flags, so rollouts can be toggled without editing JS."""
+    flags = {
+        "prefetchRetryFix": bool(LABELER_PREFETCH_RETRY_FIX),
+        "classifyReadyRelax": bool(LABELER_CLASSIFY_READY_RELAX),
+    }
+    return (
+        "globalThis.__LABELER_FEATURES = Object.assign({}, globalThis.__LABELER_FEATURES || {}, "
+        f"{json.dumps(flags, separators=(',', ':'))});\n"
+    ).encode("utf-8")
+
+
 _CONTENT_SECURITY_POLICY = "; ".join([
     "default-src 'self'",
     "base-uri 'self'",
@@ -1317,18 +1277,17 @@ async def start_web_server(bot):
         if h.strip()
     }
 
+    _serve_index = _static_asset_route(
+        "index.html", "text/html",
+        missing_text="index.html not found. Please upload it to the bot root.",
+    )
+
     async def get_index(request):
         """Serve the labeler UI, or the app description on an info hostname."""
         host = (request.headers.get("Host") or "").split(":")[0].strip().lower()
         if host in _APP_INFO_HOSTS:
             return _render_doc(request, "ABOUT.md", "TomCatBot", "About page")
-        try:
-            with open("index.html", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="text/html")
-                resp.headers["Cache-Control"] = "no-store"
-                return _with_cors(resp, request)
-        except FileNotFoundError:
-            return web.Response(text="index.html not found. Please upload it to the bot root.", status=404)
+        return await _serve_index(request)
 
     def _render_doc(request, filename: str, title: str, label: str):
         """Serve a docs/*.md file as HTML.
@@ -1358,55 +1317,16 @@ async def start_web_server(bot):
         the app exactly as the consent screen does and states its purpose."""
         return _render_doc(request, "ABOUT.md", "TomCatBot", "About page")
 
-    async def get_labeler_js(request):
-        """Serve the labeler.js file."""
-        try:
-            with open("labeler.js", "r", encoding="utf-8") as f:
-                raw_js = f.read()
-                # Serve frontend feature flags from env so rollouts can be toggled without JS edits.
-                flags = {
-                    "prefetchRetryFix": bool(LABELER_PREFETCH_RETRY_FIX),
-                    "classifyReadyRelax": bool(LABELER_CLASSIFY_READY_RELAX),
-                }
-                injected = (
-                    "globalThis.__LABELER_FEATURES = Object.assign({}, globalThis.__LABELER_FEATURES || {}, "
-                    f"{json.dumps(flags, separators=(',', ':'))});\n"
-                )
-                resp = web.Response(text=f"{injected}{raw_js}", content_type="application/javascript")
-                resp.headers["Cache-Control"] = "no-store"
-                return _with_cors(resp, request)
-        except FileNotFoundError:
-            return web.Response(text="labeler.js not found", status=404)
-
-    async def get_labeler_save_queue_js(request):
-        """Serve the labeler's standalone pending-save queue."""
-        try:
-            with open("labeler-save-queue.js", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="application/javascript")
-                resp.headers["Cache-Control"] = "no-store"
-                return _with_cors(resp, request)
-        except FileNotFoundError:
-            return web.Response(text="labeler-save-queue.js not found", status=404)
-
-    async def get_labeler_api_js(request):
-        """Serve the labeler's standalone HTTP client."""
-        try:
-            with open("labeler-api.js", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="application/javascript")
-                resp.headers["Cache-Control"] = "no-store"
-                return _with_cors(resp, request)
-        except FileNotFoundError:
-            return web.Response(text="labeler-api.js not found", status=404)
-
-    async def get_labeler_theme_css(request):
-        """Serve the labeler's standalone visual theme."""
-        try:
-            with open("labeler-theme.css", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="text/css")
-                resp.headers["Cache-Control"] = "no-store"
-                return _with_cors(resp, request)
-        except FileNotFoundError:
-            return web.Response(text="labeler-theme.css not found", status=404)
+    #The labeler UI's own assets: the bundle, its save queue, its HTTP client
+    #and its theme.
+    get_labeler_js = _static_asset_route(
+        "labeler.js", "application/javascript", prefix=_labeler_feature_prefix()
+    )
+    get_labeler_save_queue_js = _static_asset_route(
+        "labeler-save-queue.js", "application/javascript"
+    )
+    get_labeler_api_js = _static_asset_route("labeler-api.js", "application/javascript")
+    get_labeler_theme_css = _static_asset_route("labeler-theme.css", "text/css")
 
     async def get_members(request):
         """Return JSON list of members allowed to be scheduled."""

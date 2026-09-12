@@ -19,6 +19,7 @@ from ..utils.permissions import is_officer
 from ..aliases import resolve_station_or_cat
 from ..stations import station_names
 from ..utils.sender import safe_send
+from ..services import schedule_store
 
 #Optional TZ support
 try:
@@ -39,9 +40,7 @@ MACHINE_LOG_ROOT = _PACKAGE_ROOT / "logs" / "machine"
 _SUBS_LOCK = asyncio.Lock()
 
 # Feeding schedule cache written by the UI. Older JSON data remains readable.
-UI_SCHEDULE_PATH = _PACKAGE_ROOT / "cache" / "feeding_schedule.ndjson"
-UI_SCHEDULE_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_schedule.json"
-_DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
+_DEFAULT_SCHED_EFFECTIVE = schedule_store.DEFAULT_EFFECTIVE
 # Feeding checklist storage uses the same NDJSON-with-JSON-fallback layout.
 FEEDING_CHECKLIST_PATH = _PACKAGE_ROOT / "cache" / "feeding_checklist.ndjson"
 FEEDING_CHECKLIST_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_checklist.json"
@@ -482,85 +481,11 @@ def _coerce_uid(val) -> Optional[int | str]:
         return s  #allow non-numeric IDs
 
 
-def _read_schedule_ndjson(path: Path) -> List[dict]:
-    versions: List[dict] = []
-    if not path.exists():
-        return versions
-    try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except Exception:
-                continue
-            if isinstance(obj, dict) and obj.get("effective_from"):
-                versions.append({
-                    "effective_from": obj.get("effective_from"),
-                    "schedule": obj.get("schedule") or {},
-                    "meta": obj.get("meta") or {}
-                })
-    except Exception:
-        return versions
-    return versions
-
-
-def _load_schedule_versions() -> List[dict]:
-    versions = _read_schedule_ndjson(UI_SCHEDULE_PATH)
-    if versions:
-        return versions
-    if UI_SCHEDULE_PATH_LEGACY.exists():
-        try:
-            data = json.loads(UI_SCHEDULE_PATH_LEGACY.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and "versions" in data:
-                versions = data.get("versions") or []
-            elif isinstance(data, dict) and "schedule" in data:
-                versions = [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
-            elif isinstance(data, list):
-                versions = data
-            if versions:
-                _save_schedule_versions(versions)
-            return versions
-        except Exception:
-            return []
-    return []
-
-
-def _save_schedule_versions(versions: List[dict]) -> None:
-    meta = {"updated_at": int(time.time())}
-    UI_SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = UI_SCHEDULE_PATH.with_name(UI_SCHEDULE_PATH.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        for v in versions:
-            f.write(json.dumps(v, separators=(",", ":")) + "\n")
-        f.write(json.dumps({"meta": meta}, separators=(",", ":")) + "\n")
-    tmp.replace(UI_SCHEDULE_PATH)
-
-
 def _resolve_schedule_for_date(target_date: Optional[date]) -> Dict[str, Any]:
-    versions = _load_schedule_versions()
+    """Schedule in force on a date, defaulting to today in Central."""
     if not target_date:
         target_date = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
-    if not versions:
-        return {"schedule": {}, "effective_from": _DEFAULT_SCHED_EFFECTIVE}
-    best = None
-    for v in versions:
-        try:
-            eff = datetime.fromisoformat(str(v.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date()
-        except Exception:
-            continue
-        if eff <= target_date and (best is None or datetime.fromisoformat(str(best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date() < eff):
-            best = v
-    if not best:
-        best = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[0]
-    sched = best.get("schedule") or {}
-    if not isinstance(sched, dict):
-        sched = {}
-    #Restrict to known station names for that effective week
-    allowed = set(station_names(best.get("effective_from")))
-    sched = {st: row for st, row in sched.items() if st in allowed}
-    return {"schedule": sched, "effective_from": best.get("effective_from")}
+    return schedule_store.resolve_for_date(target_date)
 
 
 def _read_schedule_for_weekday(weekday_name: str, target_date: Optional[date] = None) -> Dict[str, List[int | str]]:

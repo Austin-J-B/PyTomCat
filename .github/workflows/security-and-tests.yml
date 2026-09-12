@@ -79,6 +79,7 @@ jobs:
           python scripts/test_gallery_file.py
           python scripts/test_no_torch_import.py
           python scripts/test_embed_backend_boundary.py
+          python scripts/test_image_decode.py
 
       - name: Run JavaScript regression scripts
         run: |

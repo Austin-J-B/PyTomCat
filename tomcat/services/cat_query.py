@@ -1312,6 +1312,31 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
     ):
         op = "count_by_filters"
 
+    #Every answer below reports the filters it applied and describes them the
+    #same way, so build those once here. None of the inputs change from this
+    #point on.
+    answer_filters: Dict[str, Any] = {
+        "location": requested_location,
+        "tnrd": requested_tnrd,
+        "color_family": requested_color,
+        "birth_year": requested_birth_year,
+        "photo_count_min": requested_photo_min,
+        "photo_count_max": requested_photo_max,
+        "photo_count_extreme": requested_photo_extreme,
+        "recent_scope": effective_recent_scope,
+    }
+    answer_phrase = _filter_phrase(
+        requested_location,
+        requested_tnrd,
+        requested_color,
+        requested_birth_year,
+        requested_photo_min,
+        requested_photo_max,
+    )
+    answer_scope_prefix = _scope_prefix(
+        effective_recent_scope, explicit=has_explicit_recent_scope
+    )
+
     total_count = 0
     recent_count = 0
     filtered_names: List[str] = []
@@ -1440,15 +1465,8 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     if requested_photo_extreme in {"max", "min"}:
-        scope_prefix = _scope_prefix(effective_recent_scope, explicit=has_explicit_recent_scope)
-        phrase = _filter_phrase(
-            requested_location,
-            requested_tnrd,
-            requested_color,
-            requested_birth_year,
-            requested_photo_min,
-            requested_photo_max,
-        )
+        scope_prefix = answer_scope_prefix
+        phrase = answer_phrase
         if not extreme_candidates:
             if phrase:
                 message = f"I couldn't find any {scope_prefix}cats {phrase} with a photo count."
@@ -1459,16 +1477,7 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
                 "op": "photo_count_extreme",
                 "count": 0,
                 "names": [],
-                "filters": {
-                    "location": requested_location,
-                    "tnrd": requested_tnrd,
-                    "color_family": requested_color,
-                    "birth_year": requested_birth_year,
-                    "photo_count_min": requested_photo_min,
-                    "photo_count_max": requested_photo_max,
-                    "photo_count_extreme": requested_photo_extreme,
-                    "recent_scope": effective_recent_scope,
-                },
+                "filters": dict(answer_filters),
                 "message": message,
             }
 
@@ -1526,29 +1535,13 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
             "op": "photo_count_extreme",
             "count": len(names),
             "names": out_names,
-            "filters": {
-                "location": requested_location,
-                "tnrd": requested_tnrd,
-                "color_family": requested_color,
-                "birth_year": requested_birth_year,
-                "photo_count_min": requested_photo_min,
-                "photo_count_max": requested_photo_max,
-                "photo_count_extreme": requested_photo_extreme,
-                "recent_scope": effective_recent_scope,
-            },
+            "filters": dict(answer_filters),
             "message": message,
         }
 
     count = len(filtered_names)
-    scope_prefix = _scope_prefix(effective_recent_scope, explicit=has_explicit_recent_scope)
-    phrase = _filter_phrase(
-        requested_location,
-        requested_tnrd,
-        requested_color,
-        requested_birth_year,
-        requested_photo_min,
-        requested_photo_max,
-    )
+    scope_prefix = answer_scope_prefix
+    phrase = answer_phrase
 
     if op == "count_by_filters":
         if phrase:
@@ -1560,16 +1553,7 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
             "op": op,
             "count": count,
             "names": [],
-            "filters": {
-                "location": requested_location,
-                "tnrd": requested_tnrd,
-                "color_family": requested_color,
-                "birth_year": requested_birth_year,
-                "photo_count_min": requested_photo_min,
-                "photo_count_max": requested_photo_max,
-                "photo_count_extreme": requested_photo_extreme,
-                "recent_scope": effective_recent_scope,
-            },
+            "filters": dict(answer_filters),
             "message": message,
         }
 
@@ -1590,16 +1574,7 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
         "op": op,
         "count": count,
         "names": filtered_names,
-        "filters": {
-            "location": requested_location,
-            "tnrd": requested_tnrd,
-            "color_family": requested_color,
-            "birth_year": requested_birth_year,
-            "photo_count_min": requested_photo_min,
-            "photo_count_max": requested_photo_max,
-            "photo_count_extreme": requested_photo_extreme,
-            "recent_scope": effective_recent_scope,
-        },
+        "filters": dict(answer_filters),
         "message": message,
     }
 

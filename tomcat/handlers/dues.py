@@ -1,4 +1,4 @@
-"""Dues ingestion + Gmail logging pipeline for CCC membership tracking."""
+﻿"""Dues ingestion + Gmail logging pipeline for CCC membership tracking."""
 
 from __future__ import annotations
 import os
@@ -8,7 +8,7 @@ import asyncio
 import json
 import discord
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 try:
     from zoneinfo import ZoneInfo  #py>=3.9
@@ -518,11 +518,47 @@ def _membership_snapshot_paths() -> list[Path]:
         out.append(path)
     return out
 
+def _read_worksheet(client, sheet_id: str, ws_name: str):
+    """One worksheet and its rows. Blocking; hand this to a thread."""
+    ws = client.open_by_key(sheet_id).worksheet(ws_name)
+    return ws, ws.get_all_values()
+
+
+def _hkey(text: str) -> str:
+    """A header cell reduced to letters, so spellings and spacing stop mattering."""
+    return re.sub(r"[^a-z]+", "", (text or '').lower())
+
+
+def _best_header_index(rows: list[list[str]], target_keys: set[str], *, min_hits: int = 1) -> int:
+    """Index of the row most likely to be the header.
+
+    The membership sheet is form-backed and often carries a title, an export
+    note or a blank line above the real header, so row 0 cannot be assumed. The
+    row naming the most of `target_keys` within the first thirty wins.
+    """
+    best_idx, best_hits = 0, -1
+    for i in range(min(30, len(rows))):
+        hits = len({_hkey(cell) for cell in rows[i] if cell} & target_keys)
+        if hits > best_hits and hits >= min_hits:
+            best_idx, best_hits = i, hits
+    return best_idx
+
+
+def _locate_header(
+    rows: list[list[str]], target_keys: set[str], *, min_hits: int = 1
+) -> tuple[int, dict[str, int]]:
+    """The header row's index, and its column numbers by reduced name.
+
+    Callers need the index as well: data starts on the row after it, and sheet
+    updates are addressed by absolute row number.
+    """
+    header_idx = _best_header_index(rows, target_keys, min_hits=min_hits)
+    return header_idx, {_hkey(cell): i for i, cell in enumerate(rows[header_idx])}
+
+
 def _parse_membership_table(rows: list[list[str]]) -> list[dict]:
     if not rows:
         return []
-    def hkey(s: str) -> str:
-        return re.sub(r"[^a-z]+", "", (s or '').lower())
     target_keys = {
         'fullname','fulllegalname','legalname','name',
         'discordusername','discordhandle','discord','discordname','discordtag','discordid',
@@ -531,20 +567,13 @@ def _parse_membership_table(rows: list[list[str]]) -> list[dict]:
         'duesordonation','duesdonation','type','reason','category','donation','donations',
         'verified','isverified','email','semester'
     }
-    header_idx = 0
-    best_hits = -1
-    sample_limit = min(len(rows), 30)
-    for i in range(sample_limit):
-        row = rows[i]
-        keys = {hkey(c) for c in row if c}
-        hits = len(keys & target_keys)
-        if hits > best_hits and hits >= 2:
-            best_hits = hits
-            header_idx = i
+    #Two hits, not one: a form-backed sheet often has a stray row mentioning one
+    #of these words above the real header.
+    header_idx = _best_header_index(rows, target_keys, min_hits=2)
     header = rows[header_idx]
     data = rows[header_idx+1:]
     log_action('dues_membership_header', f'row={header_idx}', '|'.join(header[:12]))
-    idx = {hkey(h): i for i, h in enumerate(header)}
+    idx = {_hkey(h): i for i, h in enumerate(header)}
     def col(name_keys: List[str]) -> int:
         for k in name_keys:
             if k in idx:
@@ -574,7 +603,10 @@ def _parse_membership_table(rows: list[list[str]]) -> list[dict]:
             return str(val).strip()
         def _truthy(s: str) -> bool:
             v = (s or '').strip().lower()
-            return v in {'true','yes','y','1','paid','verified','done','ok','x','âœ…'}
+            #The mojibake spelling is what a cp1252 round-trip of the tick looks
+            #like; it has shown up in exported sheets, so accept it too.
+            return v in {'true','yes','y','1','paid','verified','done','ok','x',
+                         '✅', 'âœ…'}
         row = {
             'date': get(i_date),
             'full_name': get(i_full),
@@ -598,6 +630,16 @@ def _load_membership_rows_from_csv(path: Path) -> list[dict]:
         rows = [list(row) for row in csv.reader(f)]
     return _parse_membership_table(rows)
 
+async def _load_membership_rows_async() -> list[dict]:
+    """Membership rows, without a cold cache stalling the event loop.
+
+    _load_membership_rows reads the sheet over synchronous HTTP whenever its TTL
+    has expired, so every await of it goes through a thread. A warm call is just
+    a dict copy, and the thread hop costs far less than the read it replaces.
+    """
+    return await asyncio.to_thread(_load_membership_rows)
+
+
 def _load_membership_rows():
     try:
         sid = getattr(settings, 'sheet_megasheet_id', None)
@@ -618,75 +660,7 @@ def _load_membership_rows():
         if not rows:
             _set_membership_load_state('sheets', authoritative=True)
             return []
-        def hkey(s: str) -> str:
-            return re.sub(r"[^a-z]+", "", (s or '').lower())
-        target_keys = {
-            'fullname','fulllegalname','legalname','name',
-            'discordusername','discordhandle','discord','discordname','discordtag','discordid',
-            'paymentusername','paymenthandle','payhandle','paymentuser','paymenttag',
-            'paidwhere','paidvia','provider','method','wherepaid',
-            'duesordonation','duesdonation','type','reason','category','donation','donations',
-            'verified','isverified','email','semester'
-        }
-        header_idx = 0
-        best_hits = -1
-        sample_limit = min(len(rows), 30)
-        for i in range(sample_limit):
-            row = rows[i]
-            keys = {hkey(c) for c in row if c}
-            hits = len(keys & target_keys)
-            if hits > best_hits and hits >= 2:
-                best_hits = hits
-                header_idx = i
-        header = rows[header_idx]
-        data = rows[header_idx+1:]
-        log_action('dues_membership_header', f'row={header_idx}', '|'.join(header[:12]))
-        idx = {hkey(h): i for i, h in enumerate(header)}
-        def col(name_keys: List[str]) -> int:
-            for k in name_keys:
-                if k in idx: return idx[k]
-            return -1
-        i_date = col(['date','timestamp','submittedat'])
-        i_full = col(['fullname','fulllegalname','legalname','name'])
-        i_disc = col(['discordusername','discordhandle','discord','discordname','discordtag','discordid'])
-        i_payu = col(['paymentusername','paymenthandle','payhandle','paymentuser','paymenttag'])
-        i_where= col(['paidwhere','paidvia','provider','method','wherepaid'])
-        i_kind = col(['duesordonation','duesdonation','type','reason','category'])
-        i_email= col(['email'])
-        i_sem  = col(['semester'])
-        i_ver  = col(['verified','isverified'])
-        i_inv  = col(['mavorgsinvite','invite','mavorgs'])
-        i_don  = col(['donation','donations','donationamount','donation?'])
-        out = []
-        for r in data:
-            def get(i):
-                if i < 0 or i >= len(r):
-                    return ''
-                val = r[i]
-                if isinstance(val, str):
-                    return val.strip()
-                if val is None:
-                    return ''
-                return str(val).strip()
-            def _truthy(s: str) -> bool:
-                v = (s or '').strip().lower()
-                return v in {'true','yes','y','1','paid','verified','done','ok','x','✅'}
-            row = {
-                'date': get(i_date),
-                'full_name': get(i_full),
-                'discord_username': get(i_disc),
-                'payment_username': get(i_payu),
-                'paid_where': get(i_where),
-                'kind': get(i_kind),
-                'email': get(i_email),
-                'semester': get(i_sem),
-                'verified': _truthy(get(i_ver)) if i_ver >= 0 else False,
-                'mavorgs_invite': _truthy(get(i_inv)) if i_inv >= 0 else False,
-                'donation_amount': get(i_don),
-            }
-            if any(bool(v) for v in row.values()):
-                out.append(row)
-        log_action('dues_membership_rows', f'total={len(rows)-1}', f'usable={len(out)}')
+        out = _parse_membership_table(rows)
         _MEMBERSHIP_ROWS_CACHE = list(out)
         _MEMBERSHIP_ROWS_TS = _time.monotonic()
         _set_membership_load_state('sheets', authoritative=True)
@@ -1148,25 +1122,12 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
         if not sid:
             return False, "Missing sheet id for membership megasheet."
         ws_name = getattr(settings,'membership_ws_title','Membership Application List')
-        ws = _sc().open_by_key(sid).worksheet(ws_name)
-        rows = ws.get_all_values()
+        #gspread is synchronous HTTP. Left on the loop, one sheet call stalls
+        #every other handler and the Discord heartbeat with them.
+        ws, rows = await asyncio.to_thread(_read_worksheet, _sc(), sid, ws_name)
         if not rows:
             return False, "Sheet is empty."
-        def hkey(s: str) -> str:
-            return re.sub(r"[^a-z]+", "", (s or '').lower())
-        header_idx = 0
-        header = rows[0]
-        #Try to locate a better header row within first 30
-        target_keys = {'email','mavorgsinvite'}
-        best_hits = -1
-        for i in range(min(30, len(rows))):
-            rk = {hkey(c) for c in rows[i] if c}
-            hits = len(rk & target_keys)
-            if hits > best_hits and hits >= 1:
-                best_hits = hits
-                header_idx = i
-        header = rows[header_idx]
-        idx = {hkey(h): i for i, h in enumerate(header)}
+        header_idx, idx = _locate_header(rows, {'email', 'mavorgsinvite'})
         i_email = idx.get('email', -1)
         i_inv   = idx.get('mavorgsinvite', -1)
         if i_email < 0 or i_inv < 0:
@@ -1192,7 +1153,9 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
             for i in range(0, len(cells), BATCH):
                 chunk = cells[i:i+BATCH]
                 try:
-                    ws.update_cells(chunk, value_input_option='USER_ENTERED')
+                    await asyncio.to_thread(
+                        ws.update_cells, chunk, value_input_option='USER_ENTERED'
+                    )
                     total += len(chunk)
                 except Exception as e2:
                     log_action('mavorgs_invite_update_error', f"batch={i}//{BATCH}", str(e2))
@@ -1201,7 +1164,9 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
                     for cell in chunk:
                         for attempt in range(5):
                             try:
-                                ws.update_cell(cell.row, cell.col, cell.value)
+                                await asyncio.to_thread(
+                                    ws.update_cell, cell.row, cell.col, cell.value
+                                )
                                 break
                             except Exception as e3:
                                 msg = str(e3).lower()
@@ -1222,7 +1187,7 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
             for r, c, v in updates:
                 for attempt in range(5):
                     try:
-                        ws.update_cell(r, c, v)
+                        await asyncio.to_thread(ws.update_cell, r, c, v)
                         done += 1
                         break
                     except Exception as e2:
@@ -1235,11 +1200,13 @@ async def _mark_mavorg_invites(emails: list[str]) -> tuple[bool, str]:
                         break
             return True, f"Marked invites for {done} member(s)."
     except Exception as e:
+        error_text = str(e)
         try:
-            log_action('mavorgs_invite_update_error', 'sheet', str(e))
+            log_action('mavorgs_invite_update_error', 'sheet', error_text)
         except Exception:
             pass
-    return False, f"Error updating sheet: {e}"
+        return False, f"Error updating sheet: {error_text}"
+    return False, "Error updating sheet."
 
 def _parse_money_value(text: str) -> Optional[float]:
     if not text:
@@ -1276,24 +1243,12 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
         if not sid:
             return False, "Missing sheet id for membership megasheet."
         ws_name = getattr(settings,'membership_ws_title','Membership Application List')
-        ws = _sc().open_by_key(sid).worksheet(ws_name)
-        rows = ws.get_all_values()
+        #gspread is synchronous HTTP. Left on the loop, one sheet call stalls
+        #every other handler and the Discord heartbeat with them.
+        ws, rows = await asyncio.to_thread(_read_worksheet, _sc(), sid, ws_name)
         if not rows:
             return False, "Sheet is empty."
-        def hkey(s: str) -> str:
-            return re.sub(r"[^a-z]+", "", (s or '').lower())
-        header_idx = 0
-        #Try to locate a better header row within first 30
-        target_keys = {'email','verified','semester'}
-        best_hits = -1
-        for i in range(min(30, len(rows))):
-            rk = {hkey(c) for c in rows[i] if c}
-            hits = len(rk & target_keys)
-            if hits > best_hits and hits >= 1:
-                best_hits = hits
-                header_idx = i
-        header = rows[header_idx]
-        idx = {hkey(h): i for i, h in enumerate(header)}
+        header_idx, idx = _locate_header(rows, {'email', 'verified', 'semester'})
         i_email = idx.get('email', -1)
         i_ver   = idx.get('verified', -1)
         i_sem   = idx.get('semester', -1)
@@ -1331,7 +1286,9 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
         for i in range(0, len(cells), BATCH):
             chunk = cells[i:i+BATCH]
             try:
-                ws.update_cells(chunk, value_input_option='USER_ENTERED')
+                await asyncio.to_thread(
+                    ws.update_cells, chunk, value_input_option='USER_ENTERED'
+                )
                 done += len(chunk)
             except Exception as e2:
                 log_action('mavorgs_verify_update_error', f"batch={i}//{BATCH}", str(e2))
@@ -1339,7 +1296,9 @@ async def _mark_verified_emails(emails_with_sem: list[tuple[str, str | None]]) -
                 for cell in chunk:
                     for attempt in range(5):
                         try:
-                            ws.update_cell(cell.row, cell.col, cell.value)
+                            await asyncio.to_thread(
+                                ws.update_cell, cell.row, cell.col, cell.value
+                            )
                             done += 1
                             break
                         except Exception as e3:
@@ -1448,26 +1407,13 @@ async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float
         if not sid:
             return False, "Missing sheet id for membership megasheet."
         ws_name = getattr(settings, 'membership_ws_title', 'Membership Application List')
-        ws = _sc().open_by_key(sid).worksheet(ws_name)
-        rows = ws.get_all_values()
+        #gspread is synchronous HTTP. Left on the loop, one sheet call stalls
+        #every other handler and the Discord heartbeat with them.
+        ws, rows = await asyncio.to_thread(_read_worksheet, _sc(), sid, ws_name)
         if not rows:
             return False, "Sheet is empty."
 
-        def hkey(s: str) -> str:
-            return re.sub(r"[^a-z]+", "", (s or '').lower())
-
-        header_idx = 0
-        target_keys = {'email', 'donation', 'donations', 'donationamount'}
-        best_hits = -1
-        for i in range(min(30, len(rows))):
-            rk = {hkey(c) for c in rows[i] if c}
-            hits = len(rk & target_keys)
-            if hits > best_hits and hits >= 1:
-                best_hits = hits
-                header_idx = i
-
-        header = rows[header_idx]
-        idx = {hkey(h): i for i, h in enumerate(header)}
+        header_idx, idx = _locate_header(rows, {'email', 'donation', 'donations', 'donationamount'})
         i_email = idx.get('email', -1)
         i_don = idx.get('donation', -1)
         if i_don < 0:
@@ -1522,7 +1468,9 @@ async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float
         for i in range(0, len(cells), BATCH):
             chunk = cells[i:i + BATCH]
             try:
-                ws.update_cells(chunk, value_input_option='USER_ENTERED')
+                await asyncio.to_thread(
+                    ws.update_cells, chunk, value_input_option='USER_ENTERED'
+                )
                 updated += len(chunk)
             except Exception as e:
                 log_action('dues_donation_update_error', f"batch={i}//{BATCH}", str(e))
@@ -1530,7 +1478,9 @@ async def _update_donation_amounts(entries: list[tuple[str, Optional[str], float
                 for cell in chunk:
                     for attempt in range(5):
                         try:
-                            ws.update_cell(cell.row, cell.col, cell.value)
+                            await asyncio.to_thread(
+                                ws.update_cell, cell.row, cell.col, cell.value
+                            )
                             updated += 1
                             break
                         except Exception as e2:
@@ -1584,17 +1534,75 @@ async def _delete_portal_messages(bot, ids: list[int]) -> int:
             continue
     return deleted
 
-async def _cleanup_portal_messages_for_emails(bot, rows: list[dict], emails_with_sem: list[tuple[str, str | None]]) -> int:
-    """Attempt to delete portal messages for verified emails, even when verified via email-only fallback."""
+def _same_awareness(ts: datetime, reference: datetime) -> datetime:
+    """Put `ts` in `reference`'s timezone (or naivety) so the two can subtract."""
+    if reference.tzinfo is None:
+        return ts.replace(tzinfo=None)
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=reference.tzinfo)
+    return ts.astimezone(reference.tzinfo)
+
+
+async def _delete_logged_portal_messages(bot, emails_with_sem: list[tuple[str, str | None]]) -> int:
+    """Delete the portal messages the dues log already ties to these emails."""
     if not emails_with_sem:
         return 0
-    deleted = 0
     try:
         log_ids = _dues_log_message_ids_for_emails(emails_with_sem)
         if log_ids:
-            deleted += await _delete_portal_messages(bot, log_ids)
+            return await _delete_portal_messages(bot, log_ids)
     except Exception:
         pass
+    return 0
+
+
+async def _delete_portal_messages_by_author(bot, targets: set[str]) -> int:
+    """Delete recent payment posts in the portal written by one of `targets`.
+
+    Only explicit payment messages, and only inside the email backfill window:
+    an older post by the same member is somebody else's payment round and must
+    survive.
+    """
+    if not targets:
+        return 0
+    cleanup_limit = int(getattr(settings, 'dues_cleanup_scan_limit', 0) or 0)
+    msgs = await _fetch_portal_messages(
+        bot,
+        include_processed=True,
+        limit_override=cleanup_limit if cleanup_limit > 0 else None,
+    )
+    if not msgs:
+        return 0
+    now = _dues_now()
+    backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
+    ids: list[int] = []
+    for m in msgs:
+        p = _parse_portal_message(m)
+        if not _is_explicit_payment_message(p.get('content', '')):
+            continue
+        ts = p.get('ts')
+        if isinstance(ts, datetime) and (now - _same_awareness(ts, now)).days > backfill_days:
+            continue
+        author_keys = {
+            _norm_user_key(p.get('author_name') or ''),
+            _norm_user_key(p.get('author_display') or ''),
+        }
+        if author_keys & targets:
+            mid = int(getattr(m, 'id', 0) or 0)
+            if mid:
+                ids.append(mid)
+    if not ids:
+        return 0
+    #One post can match more than one target; delete it once.
+    return await _delete_portal_messages(bot, list(dict.fromkeys(ids)))
+
+
+async def _cleanup_portal_messages_for_emails(bot, rows: list[dict], emails_with_sem: list[tuple[str, str | None]]) -> int:
+    """Delete portal messages for verified emails, including email-only verification."""
+    if not emails_with_sem:
+        return 0
+    deleted = await _delete_logged_portal_messages(bot, emails_with_sem)
+
     targets: set[str] = set()
     for email, sem in emails_with_sem:
         email_norm = (email or '').strip().lower()
@@ -1608,49 +1616,11 @@ async def _cleanup_portal_messages_for_emails(bot, rows: list[dict], emails_with
                 r_sem = _norm_sem_label(r.get('semester') or '')
                 if r_sem and r_sem != sem_norm:
                     continue
-            handle = r.get('discord_username') or ''
-            key = _norm_user_key(handle)
+            key = _norm_user_key(r.get('discord_username') or '')
             if key:
                 targets.add(key)
-    if not targets:
-        return deleted
-    cleanup_limit = int(getattr(settings, 'dues_cleanup_scan_limit', 0) or 0)
-    msgs = await _fetch_portal_messages(
-        bot,
-        include_processed=True,
-        limit_override=cleanup_limit if cleanup_limit > 0 else None,
-    )
-    if not msgs:
-        return deleted
-    now = _dues_now()
-    backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
-    ids: list[int] = []
-    for m in msgs:
-        p = _parse_portal_message(m)
-        if not _is_explicit_payment_message(p.get('content','')):
-            continue
-        ts = p.get('ts')
-        if isinstance(ts, datetime):
-            if now.tzinfo is None:
-                ts_cmp = ts.replace(tzinfo=None)
-            elif ts.tzinfo is None:
-                ts_cmp = ts.replace(tzinfo=now.tzinfo)
-            else:
-                ts_cmp = ts.astimezone(now.tzinfo)
-            if (now - ts_cmp).days > backfill_days:
-                continue
-        au = _norm_user_key(p.get('author_name') or '')
-        ad = _norm_user_key(p.get('author_display') or '')
-        if au in targets or ad in targets:
-            mid = int(getattr(m, 'id', 0) or 0)
-            if mid:
-                ids.append(mid)
-    if not ids:
-        return deleted
-    # Remove duplicates so the same portal message is not deleted twice.
-    ids = list(dict.fromkeys(ids))
-    deleted += await _delete_portal_messages(bot, ids)
-    return deleted
+    return deleted + await _delete_portal_messages_by_author(bot, targets)
+
 
 async def _cleanup_portal_messages_for_verified_rows(bot, rows: list[dict], cur_sem: str) -> int:
     """Delete portal messages for members already verified in the current semester."""
@@ -1664,60 +1634,18 @@ async def _cleanup_portal_messages_for_verified_rows(bot, rows: list[dict], cur_
             sem = _norm_sem_label(r.get('semester') or '')
             if sem and sem != cur_sem_norm:
                 continue
-        raw_handle = r.get('discord_username') or ''
         email = (r.get('email') or '').strip().lower()
         if email:
             emails_with_sem.append((email, r.get('semester') or None))
-        for cand in _split_handle_candidates(raw_handle):
+        #A member may have listed several handles; any of them can be the author.
+        for cand in _split_handle_candidates(r.get('discord_username') or ''):
             key = _norm_user_key(cand)
             if key:
                 targets.add(key)
-    deleted = 0
-    if emails_with_sem:
-        try:
-            log_ids = _dues_log_message_ids_for_emails(emails_with_sem)
-            if log_ids:
-                deleted += await _delete_portal_messages(bot, log_ids)
-        except Exception:
-            pass
-    if not targets:
-        return deleted
-    cleanup_limit = int(getattr(settings, 'dues_cleanup_scan_limit', 0) or 0)
-    msgs = await _fetch_portal_messages(
-        bot,
-        include_processed=True,
-        limit_override=cleanup_limit if cleanup_limit > 0 else None,
-    )
-    if not msgs:
-        return deleted
-    now = _dues_now()
-    backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
-    ids: list[int] = []
-    for m in msgs:
-        p = _parse_portal_message(m)
-        if not _is_explicit_payment_message(p.get('content','')):
-            continue
-        ts = p.get('ts')
-        if isinstance(ts, datetime):
-            if now.tzinfo is None:
-                ts_cmp = ts.replace(tzinfo=None)
-            elif ts.tzinfo is None:
-                ts_cmp = ts.replace(tzinfo=now.tzinfo)
-            else:
-                ts_cmp = ts.astimezone(now.tzinfo)
-            if (now - ts_cmp).days > backfill_days:
-                continue
-        au = _norm_user_key(p.get('author_name') or '')
-        ad = _norm_user_key(p.get('author_display') or '')
-        if au in targets or ad in targets:
-            mid = int(getattr(m, 'id', 0) or 0)
-            if mid:
-                ids.append(mid)
-    if not ids:
-        return deleted
-    ids = list(dict.fromkeys(ids))
-    deleted += await _delete_portal_messages(bot, ids)
-    return deleted
+
+    deleted = await _delete_logged_portal_messages(bot, emails_with_sem)
+    return deleted + await _delete_portal_messages_by_author(bot, targets)
+
 
 async def handle_update_dues_members(intent, ctx) -> None:
     """Reconcile dues spreadsheet entries with Discord member info."""
@@ -1911,7 +1839,7 @@ async def handle_update_dues_members(intent, ctx) -> None:
     rows_for_fallback: list[dict] = []
     extra: list[tuple[str, str]] = []
     try:
-        rows_for_fallback = _load_membership_rows()
+        rows_for_fallback = await _load_membership_rows_async()
         extra = _email_only_candidates(rows_for_fallback, cur_sem)
         if extra:
             ok2, msg2 = await _mark_verified_emails(extra)
@@ -1975,7 +1903,8 @@ async def handle_update_dues_members(intent, ctx) -> None:
 
     #2b) Cleanup portal messages for already-verified members
     try:
-        verified_cleanup = await _cleanup_portal_messages_for_verified_rows(bot, _load_membership_rows(), cur_sem)
+        membership_rows = await _load_membership_rows_async()
+        verified_cleanup = await _cleanup_portal_messages_for_verified_rows(bot, membership_rows, cur_sem)
         if verified_cleanup:
             log_action('dues_auto_cleanup', f'verified_deleted={verified_cleanup}', '')
     except Exception:
@@ -2433,7 +2362,7 @@ async def handle_run_dues_perks(intent, ctx) -> None:
         return
 
     #Load membership rows
-    rows = _load_membership_rows()
+    rows = await _load_membership_rows_async()
     cur_sem = _current_semester_label()
     cur_sem_norm = _norm_sem_label(cur_sem)
 
@@ -3059,7 +2988,7 @@ async def _fetch_portal_messages(bot, include_processed: bool = False, limit_ove
 async def _analyze_dues(bot) -> List[dict]:
     _debug('begin')
     msgs = await _fetch_portal_messages(bot)
-    members = _load_membership_rows()
+    members = await _load_membership_rows_async()
 
     #Filter portal messages to explicit payment statements
     parsed_msgs: List[Tuple[Any, dict]] = []
@@ -3489,7 +3418,7 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
         return [], []
     
     #Load all membership rows
-    rows = _load_membership_rows()
+    rows = await _load_membership_rows_async()
     membership_source = _MEMBERSHIP_ROWS_LAST_SOURCE
     membership_authoritative = _MEMBERSHIP_ROWS_LAST_AUTHORITATIVE
     membership_error = _MEMBERSHIP_ROWS_LAST_ERROR
@@ -3630,7 +3559,11 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
 
 async def _run_daily_dues_job(bot) -> None:
     """Execute the daily dues verification and role sync."""
-    from datetime import date
+    #Declared here because this job invalidates the membership cache after it
+    #marks rows verified. Without it those assignments were locals, the stale
+    #cache kept serving pre-verification rows for the rest of its TTL, and the
+    #portal cleanup that runs moments later saw those members as unverified.
+    global _MEMBERSHIP_ROWS_CACHE, _MEMBERSHIP_ROWS_TS
     
     #Get target guild
     guild = None
@@ -3717,7 +3650,7 @@ async def _run_daily_dues_job(bot) -> None:
         rows_for_fallback: list[dict] = []
         extra: list[tuple[str, str]] = []
         try:
-            rows_for_fallback = _load_membership_rows()
+            rows_for_fallback = await _load_membership_rows_async()
             fallback_donations: list[tuple[str, Optional[str], float]] = []
             extra = _email_only_candidates(rows_for_fallback, cur_sem, donations=fallback_donations)
             if extra:
@@ -3754,7 +3687,8 @@ async def _run_daily_dues_job(bot) -> None:
             except Exception:
                 pass
         try:
-            verified_cleanup = await _cleanup_portal_messages_for_verified_rows(bot, _load_membership_rows(), cur_sem)
+            membership_rows = await _load_membership_rows_async()
+            verified_cleanup = await _cleanup_portal_messages_for_verified_rows(bot, membership_rows, cur_sem)
             if verified_cleanup:
                 log_action('dues_scheduler_cleanup', f'verified_deleted={verified_cleanup}', '')
         except Exception:
@@ -3935,7 +3869,8 @@ async def _run_daily_dues_job(bot) -> None:
                 pass
     
     #6. Output MavOrgs invite list (UTA emails only)
-    uninvited = _get_uninvited_uta_emails(cur_sem)
+    #In a thread: this loads the membership sheet if its TTL is up.
+    uninvited = await asyncio.to_thread(_get_uninvited_uta_emails, cur_sem)
     if log_ch and uninvited:
         email_list = '\n'.join(uninvited)
         view = InvitesConfirmView(0, uninvited)  #0 = any officer can confirm

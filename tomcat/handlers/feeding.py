@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import discord
 
@@ -19,6 +19,7 @@ from ..utils.permissions import is_officer
 from ..aliases import resolve_station_or_cat
 from ..stations import station_names
 from ..utils.sender import safe_send
+from ..services import schedule_store
 
 #Optional TZ support
 try:
@@ -39,9 +40,7 @@ MACHINE_LOG_ROOT = _PACKAGE_ROOT / "logs" / "machine"
 _SUBS_LOCK = asyncio.Lock()
 
 # Feeding schedule cache written by the UI. Older JSON data remains readable.
-UI_SCHEDULE_PATH = _PACKAGE_ROOT / "cache" / "feeding_schedule.ndjson"
-UI_SCHEDULE_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_schedule.json"
-_DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
+_DEFAULT_SCHED_EFFECTIVE = schedule_store.DEFAULT_EFFECTIVE
 # Feeding checklist storage uses the same NDJSON-with-JSON-fallback layout.
 FEEDING_CHECKLIST_PATH = _PACKAGE_ROOT / "cache" / "feeding_checklist.ndjson"
 FEEDING_CHECKLIST_PATH_LEGACY = _PACKAGE_ROOT / "cache" / "feeding_checklist.json"
@@ -106,16 +105,20 @@ def _sub_month_key_from_date(date_iso: str) -> Optional[str]:
 
 
 def _sub_log_path_from_key(key: str) -> str:
-    """Return the jsonl log path for a month key, creating folders."""
+    """The jsonl log path for a month key.
+
+    Naming a path does not create it. This used to mkdir the year folder on
+    every call, including the read paths, which cost a syscall per month per
+    request -- and every writer already creates the folder it is about to
+    write into.
+    """
     try:
         year_str, month_str = key.split("-", 1)
         year = int(year_str)
         month = int(month_str)
     except Exception:
         raise ValueError(f"Invalid sub log month key: {key}")
-    folder = SUBS_ROOT / f"{year}"
-    folder.mkdir(parents=True, exist_ok=True)
-    return str(folder / f"{year}-{month:02d}.jsonl")
+    return str(SUBS_ROOT / f"{year}" / f"{year}-{month:02d}.jsonl")
 
 
 def _recent_month_keys(span: int = 2) -> List[str]:
@@ -148,7 +151,51 @@ def _all_sub_month_keys() -> List[str]:
     return sorted(keys)
 
 
+#Parsed sub records per file, keyed on that file's mtime and size. Parsing
+#normalizes station names, dates and ids for every row, and the volunteer claim
+#page asks for every month on each poll; the files change a few times a week.
+_SUB_FILE_CACHE: Dict[str, Tuple[Tuple[float, int], List[dict]]] = {}
+
+
+def _sub_file_stamp(path: str) -> Optional[Tuple[float, int]]:
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    return (stat.st_mtime, stat.st_size)
+
+
+def _copy_sub_rows(rows: List[dict]) -> List[dict]:
+    """A copy callers may edit without disturbing the cache.
+
+    Sub records are flat apart from their date and station lists, and callers do
+    edit those in place before writing a file back.
+    """
+    return [
+        {key: (list(value) if isinstance(value, list) else value) for key, value in row.items()}
+        for row in rows
+    ]
+
+
+def _forget_sub_file(path: str) -> None:
+    """Drop a file's parsed rows after writing to it."""
+    _SUB_FILE_CACHE.pop(str(path), None)
+
+
 def _read_sub_file(path: str, month_key: Optional[str]) -> List[dict]:
+    """Parsed records from a monthly subs jsonl, re-read only when it changes."""
+    stamp = _sub_file_stamp(path)
+    if stamp is None:
+        return []
+    cached = _SUB_FILE_CACHE.get(str(path))
+    if cached is not None and cached[0] == stamp:
+        return _copy_sub_rows(cached[1])
+    rows = _parse_sub_file(path, month_key)
+    _SUB_FILE_CACHE[str(path)] = (stamp, rows)
+    return _copy_sub_rows(rows)
+
+
+def _parse_sub_file(path: str, month_key: Optional[str]) -> List[dict]:
     """Read a monthly subs jsonl and return parsed records."""
     out: List[dict] = []
     if not os.path.exists(path):
@@ -213,6 +260,7 @@ def _write_sub_file(path: str, rows: List[dict]) -> None:
         for row in rows:
             f.write(json.dumps(row) + "\n")
     os.replace(tmp_path, path)
+    _forget_sub_file(path)
 
 
 def _message_preview(text: Optional[str], *, max_len: int = 200) -> str:
@@ -234,6 +282,7 @@ def _append_sub_record(record: dict, month_key: Optional[str] = None) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
+    _forget_sub_file(path)
 
 
 def _normalize_dates(dates: Iterable[str]) -> List[str]:
@@ -482,85 +531,11 @@ def _coerce_uid(val) -> Optional[int | str]:
         return s  #allow non-numeric IDs
 
 
-def _read_schedule_ndjson(path: Path) -> List[dict]:
-    versions: List[dict] = []
-    if not path.exists():
-        return versions
-    try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except Exception:
-                continue
-            if isinstance(obj, dict) and obj.get("effective_from"):
-                versions.append({
-                    "effective_from": obj.get("effective_from"),
-                    "schedule": obj.get("schedule") or {},
-                    "meta": obj.get("meta") or {}
-                })
-    except Exception:
-        return versions
-    return versions
-
-
-def _load_schedule_versions() -> List[dict]:
-    versions = _read_schedule_ndjson(UI_SCHEDULE_PATH)
-    if versions:
-        return versions
-    if UI_SCHEDULE_PATH_LEGACY.exists():
-        try:
-            data = json.loads(UI_SCHEDULE_PATH_LEGACY.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and "versions" in data:
-                versions = data.get("versions") or []
-            elif isinstance(data, dict) and "schedule" in data:
-                versions = [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
-            elif isinstance(data, list):
-                versions = data
-            if versions:
-                _save_schedule_versions(versions)
-            return versions
-        except Exception:
-            return []
-    return []
-
-
-def _save_schedule_versions(versions: List[dict]) -> None:
-    meta = {"updated_at": int(time.time())}
-    UI_SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = UI_SCHEDULE_PATH.with_name(UI_SCHEDULE_PATH.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        for v in versions:
-            f.write(json.dumps(v, separators=(",", ":")) + "\n")
-        f.write(json.dumps({"meta": meta}, separators=(",", ":")) + "\n")
-    tmp.replace(UI_SCHEDULE_PATH)
-
-
 def _resolve_schedule_for_date(target_date: Optional[date]) -> Dict[str, Any]:
-    versions = _load_schedule_versions()
+    """Schedule in force on a date, defaulting to today in Central."""
     if not target_date:
         target_date = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
-    if not versions:
-        return {"schedule": {}, "effective_from": _DEFAULT_SCHED_EFFECTIVE}
-    best = None
-    for v in versions:
-        try:
-            eff = datetime.fromisoformat(str(v.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date()
-        except Exception:
-            continue
-        if eff <= target_date and (best is None or datetime.fromisoformat(str(best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date() < eff):
-            best = v
-    if not best:
-        best = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[0]
-    sched = best.get("schedule") or {}
-    if not isinstance(sched, dict):
-        sched = {}
-    #Restrict to known station names for that effective week
-    allowed = set(station_names(best.get("effective_from")))
-    sched = {st: row for st, row in sched.items() if st in allowed}
-    return {"schedule": sched, "effective_from": best.get("effective_from")}
+    return schedule_store.resolve_for_date(target_date)
 
 
 def _read_schedule_for_weekday(weekday_name: str, target_date: Optional[date] = None) -> Dict[str, List[int | str]]:
@@ -1091,6 +1066,40 @@ _MORNING_SCHEDULER_STARTED = False
 _LAST_MORNING_MESSAGE_KEY: Optional[str] = None  #Tracks last sent date to prevent duplicates
 
 
+def _canonical_stations(record: dict) -> List[str]:
+    """The stations one sub record covers, as canonical display names."""
+    raw = record.get("stations")
+    if isinstance(raw, list) and raw:
+        names = [(_canonical_station(name) or name) for name in raw]
+    elif record.get("station"):
+        single = record.get("station")
+        names = [_canonical_station(single) or single]
+    else:
+        return []
+    return list(dict.fromkeys(name for name in names if name))
+
+
+def _open_request_index(subs: List[dict], today_iso: str) -> Dict[tuple, Any]:
+    """(requester, station) -> the open request id covering today, if any.
+
+    build_morning_message needs this for every station and feeder on the day's
+    schedule. Looking it up by scanning the sub log each time, re-canonicalizing
+    every record's stations on each pass, cost the whole log times the roster --
+    and the morning message reads every month ever, so it grew without bound.
+    """
+    index: Dict[tuple, Any] = {}
+    for record in subs:
+        if record.get("status") != "requested":
+            continue
+        if today_iso not in _normalize_dates(record.get("dates") or []):
+            continue
+        requester = str(record.get("requester"))
+        for station in _canonical_stations(record):
+            #First match wins, as the original scan did.
+            index.setdefault((requester, station), record.get("id"))
+    return index
+
+
 async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.View | None]:
     """Builds the 7:45 AM 'Good Morning' message with the day's feeding schedule."""
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
@@ -1119,33 +1128,15 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
 
     lines = ["Good Morning!", "Todays currently scheduled feeders are:"]
     open_request_exists = False
+    open_requests = _open_request_index(subs, today_iso)
 
     for station in todays_stations:
         roster_parts = []
         original_feeders = sched.get(station, [])
         station_canonical = _canonical_station(station) or station
-        
+
         for feeder_id in original_feeders:
-            feeder_request_id = None
-            for req in subs:
-                req_stations: List[str] = []
-                if isinstance(req.get("stations"), list) and req.get("stations"):
-                    for st in req.get("stations") or []:
-                        canon = _canonical_station(st) or st
-                        if canon:
-                            req_stations.append(canon)
-                    req_stations = list(dict.fromkeys(req_stations))
-                elif req.get("station"):
-                    canon = _canonical_station(req.get("station")) or req.get("station")
-                    if canon:
-                        req_stations = [canon]
-                if (req.get("status") == "requested" 
-                    and str(req.get("requester")) == str(feeder_id) 
-                    and station_canonical in req_stations 
-                    and today_iso in _normalize_dates(req.get("dates") or [])):
-                    feeder_request_id = req.get("id")
-                    break
-            
+            feeder_request_id = open_requests.get((str(feeder_id), station_canonical))
             if feeder_request_id:
                 sub_assignee_id = accepted_req_map.get(feeder_request_id)
                 if sub_assignee_id:
@@ -1156,7 +1147,7 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
                     open_request_exists = True
             else:
                 roster_parts.append(_format_user(bot, feeder_id, False))
-        
+
         #Handle stations with no one assigned
         if not roster_parts:
             roster_parts.append("Unassigned")
@@ -1664,7 +1655,7 @@ async def handle_manual_8pm_preview(intent, ctx: Dict[str, Any]) -> None:
     bot = ctx.get("bot")
     msg = await build_8pm_lines(bot, mention=False)
     await safe_send(ctx["channel"], msg)
-    log_action("manual_8pm", f"by={uid}", "preview_sent")
+    log_action("manual_8pm", f"by={int(getattr(author, 'id', 0))}", "preview_sent")
 
 
 async def handle_feeding_today(intent, ctx: Dict[str, Any]) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -19,8 +20,11 @@ def _now_iso() -> str:
     return datetime.now().isoformat()
 
 
+_WS_RE = re.compile(r"\s+")
+
+
 def _norm(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "").strip().lower())
+    return _WS_RE.sub(" ", (s or "").strip().lower())
 
 
 #Seed data taken from prior hardcoded aliases; written once if no file exists.
@@ -73,6 +77,21 @@ def _clean_stations(stations: List[Dict]) -> List[Dict]:
 
 _VERSIONS_CACHE: Optional[List[Dict]] = None
 _VERSIONS_CACHE_MTIME: Optional[float] = None
+#Bumped whenever _load_versions reparses the file. Derived caches below key off
+#it so they rebuild exactly once per station-definition change.
+_VERSIONS_GENERATION: int = 0
+#Alias resolution reaches _load_versions several times per Discord message, and
+#the mtime check alone was two syscalls a go. Only the writer in this process
+#can change the file, and it clears the cache directly, so a short window
+#between stat() calls costs nothing and an outside edit still lands within it.
+_VERSIONS_STAT_INTERVAL_SEC = 2.0
+_VERSIONS_STAT_CHECKED_MONO: float = float("-inf")
+
+
+def station_generation() -> int:
+    """Opaque token that changes whenever station definitions are reloaded."""
+    _load_versions()
+    return _VERSIONS_GENERATION
 
 
 def _load_versions() -> List[Dict]:
@@ -83,11 +102,16 @@ def _load_versions() -> List[Dict]:
     # parsing the file on every call was hundreds of synchronous reads on the
     # event loop — cheap normally, but seconds of stall when the host is
     # swapping. Now we only re-parse when the file actually changes.
-    global _VERSIONS_CACHE, _VERSIONS_CACHE_MTIME
+    global _VERSIONS_CACHE, _VERSIONS_CACHE_MTIME, _VERSIONS_GENERATION
+    global _VERSIONS_STAT_CHECKED_MONO
+    now = time.monotonic()
+    if _VERSIONS_CACHE is not None and (now - _VERSIONS_STAT_CHECKED_MONO) < _VERSIONS_STAT_INTERVAL_SEC:
+        return _VERSIONS_CACHE
     try:
-        _mtime = STATIONS_PATH.stat().st_mtime if STATIONS_PATH.exists() else None
+        _mtime = STATIONS_PATH.stat().st_mtime
     except OSError:
         _mtime = None
+    _VERSIONS_STAT_CHECKED_MONO = now
     if _VERSIONS_CACHE is not None and _VERSIONS_CACHE_MTIME == _mtime:
         return _VERSIONS_CACHE
 
@@ -144,6 +168,7 @@ def _load_versions() -> List[Dict]:
 
     _VERSIONS_CACHE = versions
     _VERSIONS_CACHE_MTIME = _mtime
+    _VERSIONS_GENERATION += 1
     return versions
 
 
@@ -158,6 +183,10 @@ def _save_versions(versions: List[Dict], update_meta: bool = True) -> None:
             f.write(json.dumps(v, separators=(",", ":")) + "\n")
         f.write(json.dumps({"meta": meta}, separators=(",", ":")) + "\n")
     tmp.replace(STATIONS_PATH)
+    #Drop the cache rather than wait out the stat interval: this process just
+    #changed the file and the next read must see it.
+    global _VERSIONS_CACHE
+    _VERSIONS_CACHE = None
 
 
 def _resolve_version(target: Optional[date]) -> Dict:
@@ -200,9 +229,8 @@ def station_names(target: Optional[date | str] = None) -> List[str]:
     return [item.get("name") or "" for item in station_definitions(target) if item.get("name")]
 
 
-def station_alias_table(target: Optional[date | str] = None) -> Dict[str, List[str]]:
-    table: Dict[str, List[str]] = {}
-    items = list(station_definitions(target))
+def _build_alias_table(items: List[Dict]) -> Dict[str, List[str]]:
+    items = list(items)
     seen_names = {_norm(item.get("name") or "") for item in items if item.get("name")}
     # Backfill stations that may be missing from a stale cache version.
     for item in _SEEDED_STATIONS:
@@ -210,30 +238,53 @@ def station_alias_table(target: Optional[date | str] = None) -> Dict[str, List[s
         if key and key not in seen_names:
             items.append({"name": item.get("name"), "aliases": item.get("aliases") or []})
             seen_names.add(key)
+    table: Dict[str, List[str]] = {}
     for item in items:
-        name = item.get("name") or ""
-        key = _norm(name)
-        aliases = []
-        for a in item.get("aliases") or []:
-            na = _norm(a)
-            if not na or na == key:
-                continue
-            if na not in aliases:
-                aliases.append(na)
-        aliases.insert(0, key)
-        table[key] = aliases
+        key = _norm(item.get("name") or "")
+        aliases = dict.fromkeys(
+            na for na in (_norm(a) for a in item.get("aliases") or []) if na and na != key
+        )
+        table[key] = [key, *aliases]
     return table
+
+
+def _build_display_map(items: List[Dict]) -> Dict[str, str]:
+    #Later entries must not shadow earlier ones: the old linear scan returned
+    #the first match in definitions, then fell back to the seed list.
+    display: Dict[str, str] = {}
+    for item in list(items) + _SEEDED_STATIONS:
+        name = item.get("name") or ""
+        display.setdefault(_norm(name), name)
+    return display
+
+
+#Derived views of the current station version, rebuilt only when it changes.
+#Both are read once per resolved station name, so the old per-call rebuild and
+#linear scan showed up as hundreds of redundant passes per Discord message.
+_DERIVED_CACHE: Dict[Optional[str], tuple] = {}
+
+
+def _derived(target: Optional[date | str]) -> tuple[Dict[str, List[str]], Dict[str, str]]:
+    gen = station_generation()
+    ckey = target.isoformat() if isinstance(target, date) else target
+    cached = _DERIVED_CACHE.get(ckey)
+    if cached is not None and cached[0] == gen:
+        return cached[1], cached[2]
+    items = station_definitions(target)
+    built = (gen, _build_alias_table(items), _build_display_map(items))
+    if len(_DERIVED_CACHE) > 32:
+        _DERIVED_CACHE.clear()
+    _DERIVED_CACHE[ckey] = built
+    return built[1], built[2]
+
+
+def station_alias_table(target: Optional[date | str] = None) -> Dict[str, List[str]]:
+    return _derived(target)[0]
 
 
 def station_display_for(key: str, *, target: Optional[date | str] = None) -> str:
     k = _norm(key)
-    for item in station_definitions(target):
-        if _norm(item.get("name") or "") == k:
-            return item.get("name") or key
-    for item in _SEEDED_STATIONS:
-        if _norm(item.get("name") or "") == k:
-            return item.get("name") or key
-    return key
+    return _derived(target)[1].get(k, key)
 
 
 def save_stations_version(stations: List[Dict], effective_from: str) -> List[Dict]:

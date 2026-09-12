@@ -9,7 +9,8 @@ import time
 import aiohttp
 import discord
 from datetime import timezone
-from typing import Dict, Any, Optional, List, Tuple
+from dataclasses import dataclass
+from typing import Awaitable, Callable, Dict, Any, Optional, List, Tuple
 
 from ..config import settings
 from ..logger import log_action
@@ -261,239 +262,188 @@ async def handle_top5_reaction(reply_message_id: int) -> bool:
 
 
 #---------- public handlers ----------
-async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
-    """Run object detection on an image and report bounding boxes."""
+#Detect, crop and identify differ only in which model call they make and what
+#they do with the result. Everything around that -- find the image, acknowledge
+#the request, download it, hold the semaphore, watch for a cold start, clean up
+#-- is the same, and used to be written out three times.
+@dataclass(frozen=True)
+class _CvCommand:
+    """A vision command: how to invoke it, and what to call it to the user."""
+
+    label: str          #log name and the command someone types
+    noun: str           #how the error messages name the operation
+    operation: Any      #the blocking V.* function
+
+
+@dataclass
+class _CvRun:
+    """One request's inputs and result, handed to the command's renderer."""
+
+    message: discord.Message
+    channel: Any
+    reply: discord.Message
+    attachment: discord.Attachment
+    source: Optional[discord.Message]
+    data: bytes
+    out: Any
+
+
+async def _run_cv_command(
+    cv: _CvCommand,
+    ctx: Dict[str, Any],
+    render: Callable[[_CvRun], Awaitable[None]],
+) -> None:
+    """Run one vision command end to end, then let `render` post the result."""
     message: discord.Message = ctx["message"]
     ch: discord.abc.MessageableChannel = ctx["channel"]
 
-    att = _first_image(message)
+    att, source = _first_image_with_source(message)
     if not att:
         if not ctx.get("silent_on_no_image"):
-            await ch.send("Attach an image or reply to one, then say `TomCat, detect`.")
+            await ch.send(f"Attach an image or reply to one, then say `TomCat, {cv.label}`.")
         return
 
-    # detect/crop also hit the GPU — keep the Modal container warm like identify.
+    #Every vision command hits the GPU, so bump the Modal keep-warm window.
+    #No-op when CV_BACKEND=local or keep-warm is off in settings.
     await _notify_modal_activity_safe()
 
-    tmp = []
+    tmp: List[str] = []
     reply_msg: Optional[discord.Message] = None
     heads_up: Optional[asyncio.Task] = None
+    timeout = _cv_timeout_sec()
     try:
-        timeout = _cv_timeout_sec()
-        # Send a placeholder immediately so the request is visibly acknowledged
-        # even while an earlier CV op is still holding the semaphore / cold-loading.
+        #Acknowledge immediately: an earlier request may still hold the
+        #semaphore, or the models may be cold-loading.
         reply_msg = await ch.send("Processing image...")
-        path = await _download_attachment(att); tmp.append(path)
+        path = await _download_attachment(att)
+        tmp.append(path)
         data = await _read_bytes(path)
         heads_up = _maybe_cold_start_notice(reply_msg)
 
         async with _CV_SEM:
-            out = await asyncio.wait_for(
-                _run_cv(V.detect, data),
-                timeout=timeout,
-            )
+            out = await asyncio.wait_for(_run_cv(cv.operation, data), timeout=timeout)
         _mark_cv_success()
+        #Cancel the cold-start notice before rendering so it cannot race with
+        #the result and overwrite it. The finally block covers the error paths.
         if heads_up is not None and not heads_up.done():
             heads_up.cancel()
 
-        file = discord.File(io.BytesIO(out.boxed_jpeg), filename="detected.jpg")
-        count = len(out.results)
-        msg = f"Found {count} object{'s' if count != 1 else ''}."
-        await reply_msg.edit(content=msg, attachments=[file])
+        await render(_CvRun(
+            message=message, channel=ch, reply=reply_msg,
+            attachment=att, source=source, data=data, out=out,
+        ))
 
     except asyncio.TimeoutError:
-        log_action("viz_detect_error", "err=TimeoutError", f"cap={timeout:.1f}s")
-        await _edit_or_send(reply_msg, ch, "Sorry, detection timed out. Try again in a moment.")
+        log_action(f"viz_{cv.label}_error", "err=TimeoutError", f"cap={timeout:.1f}s")
+        await _edit_or_send(reply_msg, ch, f"Sorry, {cv.noun} timed out. Try again in a moment.")
     except ValueError as ve:
         await _edit_or_send(reply_msg, ch, str(ve))
     except Exception as e:
-        log_action("viz_detect_error", f"err={type(e).__name__}", str(e))
-        await _edit_or_send(reply_msg, ch, "Sorry, detection failed.")
+        log_action(f"viz_{cv.label}_error", f"err={type(e).__name__}", str(e))
+        await _edit_or_send(reply_msg, ch, f"Sorry, {cv.noun} failed.")
     finally:
         if heads_up is not None and not heads_up.done():
             heads_up.cancel()
         await _cleanup(tmp)
+
+
+_DETECT = _CvCommand(label="detect", noun="detection", operation=V.detect)
+_CROP = _CvCommand(label="crop", noun="crop", operation=V.crop)
+_IDENTIFY = _CvCommand(label="identify", noun="identify", operation=V.identify)
+
+
+async def handle_cv_detect(intent: 'Intent', ctx: Dict[str, Any]) -> None:
+    """Run object detection on an image and report bounding boxes."""
+
+    async def render(run: _CvRun) -> None:
+        file = discord.File(io.BytesIO(run.out.boxed_jpeg), filename="detected.jpg")
+        count = len(run.out.results)
+        await run.reply.edit(
+            content=f"Found {count} object{'s' if count != 1 else ''}.",
+            attachments=[file],
+        )
+
+    await _run_cv_command(_DETECT, ctx, render)
+
 
 async def handle_cv_crop(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     """Crop detected cats and send each crop as a separate attachment."""
-    message: discord.Message = ctx["message"]
-    ch: discord.abc.MessageableChannel = ctx["channel"]
 
-    att = _first_image(message)
-    if not att:
-        if not ctx.get("silent_on_no_image"):
-            await ch.send("Attach an image or reply to one, then say `TomCat, crop`.")
-        return
+    async def render(run: _CvRun) -> None:
+        crop_bytes = list(getattr(run.out, "crops", []) or [])
+        if not crop_bytes:
+            file = discord.File(io.BytesIO(run.out.boxed_jpeg), filename="crop.jpg")
+            await run.reply.edit(content="Cropped view:", attachments=[file])
+            return
+        files = [
+            discord.File(io.BytesIO(crop), filename=f"crop_{i + 1}.jpg")
+            for i, crop in enumerate(crop_bytes)
+        ]
+        content = "Cropped view:" if len(files) == 1 else f"Cropped views ({len(files)} cats):"
+        #Discord allows <=10 attachments per message: put the first batch on the
+        #placeholder, send any overflow as follow-up messages.
+        await run.reply.edit(content=content, attachments=files[:10])
+        for start in range(10, len(files), 10):
+            await run.channel.send(files=files[start:start + 10])
 
-    # detect/crop also hit the GPU — keep the Modal container warm like identify.
-    await _notify_modal_activity_safe()
+    await _run_cv_command(_CROP, ctx, render)
 
-    tmp = []
-    reply_msg: Optional[discord.Message] = None
-    heads_up: Optional[asyncio.Task] = None
-    try:
-        timeout = _cv_timeout_sec()
-        reply_msg = await ch.send("Processing image...")
-        path = await _download_attachment(att); tmp.append(path)
-        data = await _read_bytes(path)
-        heads_up = _maybe_cold_start_notice(reply_msg)
-
-        async with _CV_SEM:
-            out = await asyncio.wait_for(
-                _run_cv(V.crop, data),
-                timeout=timeout,
-            )
-        _mark_cv_success()
-        if heads_up is not None and not heads_up.done():
-            heads_up.cancel()
-
-        crop_bytes = list(getattr(out, "crops", []) or [])
-        if crop_bytes:
-            files = [
-                discord.File(io.BytesIO(crop_bytes[i]), filename=f"crop_{i + 1}.jpg")
-                for i in range(len(crop_bytes))
-            ]
-            content = "Cropped view:" if len(files) == 1 else f"Cropped views ({len(files)} cats):"
-            # Discord allows <=10 attachments per message: put the first batch on
-            # the placeholder, send any overflow as follow-up messages.
-            await reply_msg.edit(content=content, attachments=files[:10])
-            for start in range(10, len(files), 10):
-                await ch.send(files=files[start:start + 10])
-        else:
-            file = discord.File(io.BytesIO(out.boxed_jpeg), filename="crop.jpg")
-            await reply_msg.edit(content="Cropped view:", attachments=[file])
-
-    except asyncio.TimeoutError:
-        log_action("viz_crop_error", "err=TimeoutError", f"cap={timeout:.1f}s")
-        await _edit_or_send(reply_msg, ch, "Sorry, crop timed out. Try again in a moment.")
-    except ValueError as ve:
-        await _edit_or_send(reply_msg, ch, str(ve))
-    except Exception as e:
-        log_action("viz_crop_error", f"err={type(e).__name__}", str(e))
-        await _edit_or_send(reply_msg, ch, "Sorry, crop failed.")
-    finally:
-        if heads_up is not None and not heads_up.done():
-            heads_up.cancel()
-        await _cleanup(tmp)
 
 async def handle_cv_identify(intent: 'Intent', ctx: Dict[str, Any]) -> None:
     """Identify which known cat appears in an uploaded photo."""
-    message: discord.Message = ctx["message"]
-    ch: discord.abc.MessageableChannel = ctx["channel"]
 
-    att, source_msg = _first_image_with_source(message)
-    if not att:
-        if not ctx.get("silent_on_no_image"):
-            await ch.send("Attach an image or reply to one, then say `TomCat, identify`.")
-        return
-
-    # Bump the Modal keep-warm window on every identify request. No-op when
-    # CV_BACKEND=local or when keep-warm is disabled in settings.
-    await _notify_modal_activity_safe()
-
-    tmp = []
-    reply_msg: Optional[discord.Message] = None
-    heads_up: Optional[asyncio.Task] = None
-    try:
-        timeout = _cv_timeout_sec()
-        reply_msg = await ch.send("Processing image...")
-        path = await _download_attachment(att); tmp.append(path)
-        data = await _read_bytes(path)
-        heads_up = _maybe_cold_start_notice(reply_msg)
-
-        async with _CV_SEM:
-            out = await asyncio.wait_for(
-                _run_cv(V.identify, data),
-                timeout=timeout,
-            )
-        _mark_cv_success()
-
-        # Cancel the cold-start notice immediately on success so it can't
-        # race with the embed edit below. The finally block handles error paths.
-        if heads_up is not None and not heads_up.done():
-            heads_up.cancel()
-
-        # Build initial Description
-        lines = []
-        for r in out.results:
-            name = r["name"]
-            conf = r["conf"]
-            idx = r["index"]
-            lines.append(f"{idx}. **{name}** ({_format_confidence_pct(conf)})")
-
-        desc = ("\n".join(lines) if lines else "_no cat detected_")
-        
+    async def render(run: _CvRun) -> None:
+        lines = [
+            f"{r['index']}. **{r['name']}** ({_format_confidence_pct(r['conf'])})"
+            for r in run.out.results
+        ]
         embed = discord.Embed(
-            description=desc,
-            color=0x2F3136
+            description="\n".join(lines) if lines else "_no cat detected_",
+            color=0x2F3136,
         )
-        # INSTRUCTIONAL FOOTER
-        if out.results:
-            embed.set_footer(text="Was I right? React \u2705/\u274c. React \u2753 to see top 5 guesses.")
-        
+        if run.out.results:
+            embed.set_footer(text="Was I right? React ✅/❌. React ❓ to see top 5 guesses.")
         embed.set_image(url="attachment://identified.jpg")
-        file = discord.File(io.BytesIO(out.boxed_jpeg), filename="identified.jpg")
+        file = discord.File(io.BytesIO(run.out.boxed_jpeg), filename="identified.jpg")
 
-        await reply_msg.edit(content=None, attachments=[file], embed=embed)
-        if out.results:
+        await run.reply.edit(content=None, attachments=[file], embed=embed)
+        if run.out.results:
             try:
-                await reply_msg.add_reaction("\u2705")
-                await reply_msg.add_reaction("\u274c")
-                await reply_msg.add_reaction("\u2753")
+                for emoji in ("✅", "❌", "❓"):
+                    await run.reply.add_reaction(emoji)
             except Exception:
                 pass
+
+        origin = run.source or run.message
         try:
             await asyncio.to_thread(
                 register_identify_feedback,
-                reply_message_id=int(reply_msg.id),
-                reply_channel_id=int(getattr(ch, "id", 0) or 0),
-                source_message_id=int(getattr(source_msg or message, "id", 0) or 0),
-                source_channel_id=int(getattr(getattr(source_msg or message, "channel", None), "id", 0) or 0),
-                guild_id=int(getattr(getattr(source_msg or message, "guild", None), "id", 0) or 0),
-                image_bytes=data,
-                results=list(out.results or []),
-                source_image_url=str(getattr(att, "url", "") or ""),
-                source_author_id=str(getattr(getattr(source_msg or message, "author", None), "id", "") or ""),
-                source_username=str(getattr(getattr(source_msg, "author", None), "name", "") or ""),
+                reply_message_id=int(run.reply.id),
+                reply_channel_id=int(getattr(run.channel, "id", 0) or 0),
+                source_message_id=int(getattr(origin, "id", 0) or 0),
+                source_channel_id=int(getattr(getattr(origin, "channel", None), "id", 0) or 0),
+                guild_id=int(getattr(getattr(origin, "guild", None), "id", 0) or 0),
+                image_bytes=run.data,
+                results=list(run.out.results or []),
+                source_image_url=str(getattr(run.attachment, "url", "") or ""),
+                source_author_id=str(getattr(getattr(origin, "author", None), "id", "") or ""),
+                source_username=str(getattr(getattr(run.source, "author", None), "name", "") or ""),
                 source_created_at=str(
                     (
-                        getattr(source_msg, "created_at", None) or message.created_at
+                        getattr(run.source, "created_at", None) or run.message.created_at
                     ).astimezone(timezone.utc).isoformat()
                 ),
-                source_filename=str(getattr(att, "filename", "") or ""),
-                source_content_type=str(getattr(att, "content_type", "") or ""),
+                source_filename=str(getattr(run.attachment, "filename", "") or ""),
+                source_content_type=str(getattr(run.attachment, "content_type", "") or ""),
             )
         except Exception as e:
-            log_action("viz_feedback_register_error", f"msg={getattr(reply_msg, 'id', 0)}", str(e))
-        
-        if not out.results:
+            log_action("viz_feedback_register_error", f"msg={getattr(run.reply, 'id', 0)}", str(e))
+
+        if not run.out.results:
             return
+        #Register for the '?' reaction (see _register_top5_listener). This replaces
+        #an earlier client.wait_for() task that silently no-op'd once reply_msg had
+        #aged out of discord.py's message cache.
+        _register_top5_listener(run.reply, embed, run.out.results)
 
-        # Register for '?' reaction dispatch (see _register_top5_listener).
-        # Replaces an earlier client.wait_for() background task that silently
-        # no-op'd whenever reply_msg had aged out of discord.py's message cache.
-        _register_top5_listener(reply_msg, embed, out.results)
-
-    except asyncio.TimeoutError:
-        log_action("viz_identify_error", "err=TimeoutError", f"cap={timeout:.1f}s")
-        if reply_msg:
-            await reply_msg.edit(content="Sorry, identify timed out. Try again in a moment.", attachments=[], embed=None)
-        else:
-            await ch.send("Sorry, identify timed out. Try again in a moment.")
-    except ValueError as ve:
-        if reply_msg:
-            await reply_msg.edit(content=str(ve), attachments=[], embed=None)
-        else:
-            await ch.send(str(ve))
-    except Exception as e:
-        log_action("viz_identify_error", f"err={type(e).__name__}", str(e))
-        if reply_msg:
-            await reply_msg.edit(content="Sorry, identify failed.", attachments=[], embed=None)
-        else:
-            await ch.send("Sorry, identify failed.")
-    finally:
-        # Cancel the cold-start notice if still pending so it doesn't race
-        # with the success/error edit and overwrite the user-visible result.
-        if heads_up is not None and not heads_up.done():
-            heads_up.cancel()
-        await _cleanup(tmp)
+    await _run_cv_command(_IDENTIFY, ctx, render)

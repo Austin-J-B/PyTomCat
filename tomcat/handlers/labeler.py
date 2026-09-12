@@ -1,4 +1,4 @@
-"""API endpoints for the web-based image labeling tool.
+﻿"""API endpoints for the web-based image labeling tool.
 
 Routes:
   GET  /api/labeler/queue/detect    - Serials needing detector labels
@@ -977,8 +977,53 @@ _ref_crop_result_cache: Dict[str, Tuple[float, bytes]] = {}
 #serial -> rendered ref-crop cache keys, so a save can drop just the crops it
 #touched instead of throwing away every rendered thumbnail in the process.
 _ref_crop_cache_keys_by_serial: Dict[int, Set[str]] = {}
+#(serial, crop) -> monotonic time after which the crop is worth trying again.
+#Entries always carried their own expiry, but nothing ever removed them, so the
+#dict grew for the life of the process: one entry per crop that ever failed,
+#across a photo table of ~12,000 rows.
 _ref_crop_negative_cache: Dict[Tuple[int, int], float] = {}
+_REF_CROP_NEGATIVE_CACHE_MAX = max(
+    500, int(os.getenv("LABELER_REF_CROP_NEGATIVE_CACHE_MAX", "5000") or "5000")
+)
+
+
+def _ref_crop_unavailable_until(serial: int, crop_num: int) -> float:
+    """When this crop becomes worth retrying, or 0 if it is not known bad."""
+    return float(_ref_crop_negative_cache.get((int(serial), int(crop_num)), 0.0))
+
+
+def _ref_crop_recently_failed(serial: int, crop_num: int) -> bool:
+    """Whether this crop failed recently enough that retrying is pointless."""
+    until = _ref_crop_unavailable_until(serial, crop_num)
+    return bool(until) and time.monotonic() < until
+
+
+def _mark_ref_crop_failed(serial: int, crop_num: int, retry_after_sec: float) -> None:
+    """Hold off on this crop for a while, and keep the record from growing."""
+    _ref_crop_negative_cache[(int(serial), int(crop_num))] = (
+        time.monotonic() + float(retry_after_sec)
+    )
+    if len(_ref_crop_negative_cache) <= _REF_CROP_NEGATIVE_CACHE_MAX:
+        return
+    now = time.monotonic()
+    for key in [k for k, until in _ref_crop_negative_cache.items() if until <= now]:
+        _ref_crop_negative_cache.pop(key, None)
+    #Still over the cap with nothing expired: drop the entries closest to
+    #expiring, which are the ones whose retry is due soonest anyway.
+    excess = len(_ref_crop_negative_cache) - _REF_CROP_NEGATIVE_CACHE_MAX
+    if excess > 0:
+        for key, _until in sorted(_ref_crop_negative_cache.items(), key=lambda kv: kv[1])[:excess]:
+            _ref_crop_negative_cache.pop(key, None)
 _REF_CROP_RESULT_CACHE_MAX = max(200, int(os.getenv("LABELER_REF_CROP_RESULT_CACHE_MAX", "3000") or "3000"))
+#The count cap above says nothing about size: a rendered crop at the default
+#warm size of 480px is tens of kilobytes, so three thousand of them can reach
+#a couple of hundred megabytes on a host with four gigabytes total. The runtime
+#snapshot has always reported ref_crop_bytes; this is the bound on it.
+_REF_CROP_RESULT_CACHE_MAX_BYTES = max(
+    8 * 1024 * 1024,
+    int(os.getenv("LABELER_REF_CROP_RESULT_CACHE_MAX_BYTES", str(96 * 1024 * 1024))
+        or str(96 * 1024 * 1024)),
+)
 #Floor on the box fraction used to size a draft decode. A degenerate box
 #would otherwise ask for an enormous decode target and defeat the draft.
 _MIN_REF_CROP_FRACTION = 0.01
@@ -2284,14 +2329,18 @@ def _actor_from_request(request: web.Request) -> Tuple[str, str]:
 
 
 def _kick_detector_warm_task() -> None:
-    """Fire-and-forget detector warmup once per process."""
-    global _detector_warm_task, _detector_warm_done
+    """Fire-and-forget detector warmup, once per process."""
+    global _detector_warm_task
     if _detector_warm_done:
         return
     if _detector_warm_task and not _detector_warm_task.done():
         return
 
     async def _runner() -> None:
+        #Without this global the flag below became a local of _runner, so
+        #_detector_warm_done never turned true and every poll of the detect
+        #queue started another full detector + SAM pass.
+        global _detector_warm_done
         try:
             await asyncio.to_thread(V.warm_labeler_detector)
         except Exception as e:
@@ -2405,21 +2454,57 @@ def _parse_yolo_box_str(box_str: str) -> Optional[Tuple[float, float, float, flo
     return parts[0], parts[1], parts[2], parts[3]
 
 
+#(profile cache generation, gallery bucket) -> the built catalog. Building it
+#walks every cat in the CatDatabase cache and reads each one's profile, and the
+#manual-review status endpoint used to rebuild the whole thing just to count
+#them. The bucket bounds how long a gallery-only cat can take to show up; the
+#CatDatabase side is exact.
+_profile_catalog_cache: Optional[Tuple[Tuple[int, int], Tuple[Any, Any, Any]]] = None
+_PROFILE_CATALOG_GALLERY_TTL_SEC = 60.0
+
+
 def _load_profile_catalog() -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
-    """Return alias lookup + ordered cats + canonical-key map from CatDatabase cache."""
+    """Alias lookup, ordered cats, and canonical-key map from the CatDatabase cache.
+
+    The returned structures are shared; treat them as read-only.
+    """
+    global _profile_catalog_cache
+    _refresh_profile_cache_if_due()
+    try:
+        from ..services import profile_cache
+        generation = (
+            profile_cache.generation(),
+            int(time.monotonic() // _PROFILE_CATALOG_GALLERY_TTL_SEC),
+        )
+    except Exception:
+        generation = (0, int(time.monotonic() // _PROFILE_CATALOG_GALLERY_TTL_SEC))
+    if _profile_catalog_cache is not None and _profile_catalog_cache[0] == generation:
+        return _profile_catalog_cache[1]
+    built = _build_profile_catalog()
+    _profile_catalog_cache = (generation, built)
+    return built
+
+
+def _refresh_profile_cache_if_due() -> None:
+    """Pull the CatDatabase sheet again, at most once per refresh window."""
     global _profile_refresh_mono
+    now_mono = time.monotonic()
+    if (now_mono - float(_profile_refresh_mono or 0.0)) < _PROFILE_REFRESH_MIN_SEC:
+        return
+    try:
+        from ..services import profile_cache
+        profile_cache.refresh_sync()
+    except Exception:
+        pass
+    _profile_refresh_mono = now_mono
+
+
+def _build_profile_catalog() -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
     alias_lookup: Dict[str, Dict[str, Any]] = {}
     ordered: List[Dict[str, Any]] = []
     by_key: Dict[str, Dict[str, Any]] = {}
     try:
         from ..services import profile_cache
-        now_mono = time.monotonic()
-        if (now_mono - float(_profile_refresh_mono or 0.0)) >= _PROFILE_REFRESH_MIN_SEC:
-            try:
-                profile_cache.refresh_sync()
-            except Exception:
-                pass
-            _profile_refresh_mono = now_mono
         full_names = profile_cache.all_actual_names()
         for full in full_names:
             raw = str(full or "").strip()
@@ -2714,7 +2799,7 @@ async def _ensure_photo_crop_index_cache(force: bool = False) -> None:
             and (now2 - float(_photo_crop_index_built_mono)) < _PHOTO_CROP_INDEX_FORCE_COALESCE_SEC
         ):
             return
-        if force and float(_photo_crop_index_built_mono) > requested_mono:
+        if force and _photo_crop_index_generation > requested_generation:
             #Somebody else rebuilt while this caller waited for the lock, so the
             #index is already newer than the miss that triggered this call.
             return
@@ -2768,8 +2853,7 @@ def _map_identify_candidate_refs_to_metadata(
         if key in seen:
             continue
         # Skip known-bad refs to avoid repeated fetch errors and log spam.
-        bad_until = _ref_crop_negative_cache.get(key, 0.0)
-        if bad_until and time.monotonic() < float(bad_until):
+        if _ref_crop_recently_failed(key[0], key[1]):
             continue
         entry = _photo_crop_index_cache.get(key) or {}
         if not entry:
@@ -2997,18 +3081,6 @@ def _supplement_candidate_refs_with_fallback(
     return out, added
 
 
-def _thumb_b64_from_crop(crop: Image.Image, size: int = 128) -> Optional[str]:
-    try:
-        out = crop.copy()
-        out.thumbnail((int(size), int(size)))
-        buf = io.BytesIO()
-        out.save(buf, format="JPEG", quality=82)
-        return base64.b64encode(buf.getvalue()).decode("ascii")
-    except Exception:
-        return None
-
-
-
 def _enrich_manual_candidates(
     candidates: List[Dict[str, Any]],
     alias_lookup: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -3035,12 +3107,16 @@ def _manual_ref_cache_status_payload(
     *,
     total_hint: int = 0,
 ) -> Dict[str, Any]:
+    """Describe the manual-review ref caches. Reads module state only.
+
+    Callers pass the cat count they already know. Without one this reports what
+    the caches hold rather than loading the profile catalog to count: that
+    pulls the CatDatabase sheet again once the refresh window is up, and this
+    ran on the event loop.
+    """
     total = max(0, int(total_hint or 0))
     if total <= 0:
-        try:
-            total = len(_load_profile_catalog()[1])
-        except Exception:
-            total = max(len(_manual_metadata_ref_cache), len(_photo_crop_index_cache))
+        total = max(len(_manual_metadata_ref_cache), len(_photo_crop_index_cache))
     built = int(len(_manual_metadata_ref_cache or {}))
     ready = bool(_manual_metadata_ref_cache) and bool(_photo_crop_index_cache)
     return {
@@ -3206,9 +3282,7 @@ async def _warm_single_ref_crop(
     ):
         return "cached"
 
-    neg_key = (int(serial), int(crop_num))
-    bad_until = _ref_crop_negative_cache.get(neg_key, 0.0)
-    if bad_until and time.monotonic() < float(bad_until):
+    if _ref_crop_recently_failed(serial, crop_num):
         return "negative"
 
     entry = _photo_crop_index_cache.get((int(serial), int(crop_num)))
@@ -3257,7 +3331,7 @@ async def _warm_single_ref_crop(
 
     if not payload:
         if str(crop_err or "") == "invalid_bounds":
-            _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
+            _mark_ref_crop_failed(serial, crop_num, 600.0)
             return "invalid_bounds"
         return "render_failed"
 
@@ -3266,6 +3340,7 @@ async def _warm_single_ref_crop(
         cache_key,
         payload,
         max_items=_REF_CROP_RESULT_CACHE_MAX,
+        max_bytes=_REF_CROP_RESULT_CACHE_MAX_BYTES,
         ttl_sec=_REF_CROP_RESULT_TTL_SEC,
     )
     _remember_ref_crop_cache_key(int(serial), cache_key)
@@ -4085,8 +4160,16 @@ def _cache_set_bytes(
     payload: bytes,
     *,
     max_items: int,
+    max_bytes: Optional[int] = None,
     ttl_sec: Optional[float] = None,
 ) -> None:
+    """Store bytes under a count cap and, for image payloads, a byte budget.
+
+    A count alone is the wrong bound for rendered crops: at the default warm
+    size they are hundreds of kilobytes each in the worst case, so 3000 entries
+    is a cache that can outgrow the whole host. Oldest entries go first, which
+    is also what the count cap does.
+    """
     now = time.monotonic()
     cache[str(key)] = (now, bytes(payload))
 
@@ -4096,15 +4179,22 @@ def _cache_set_bytes(
         if float(ts) < expiry:
             cache.pop(k, None)
 
-    if len(cache) <= max_items:
+    over_count = len(cache) - int(max_items)
+    budget = None if max_bytes is None else max(1, int(max_bytes))
+    total = sum(len(v[1]) for v in cache.values()) if budget is not None else 0
+    if over_count <= 0 and (budget is None or total <= budget):
         return
 
-    overflow = len(cache) - int(max_items)
-    if overflow <= 0:
-        return
-    oldest = sorted(cache.items(), key=lambda kv: float(kv[1][0]))[:overflow]
-    for k, _ in oldest:
-        cache.pop(k, None)
+    oldest = sorted(cache.items(), key=lambda kv: float(kv[1][0]))
+    for k, (_ts, value) in oldest:
+        if over_count <= 0 and (budget is None or total <= budget):
+            break
+        #Never evict the entry just written; the caller is about to serve it.
+        if k == str(key):
+            continue
+        if cache.pop(k, None) is not None:
+            over_count -= 1
+            total -= len(value)
 
 
 def _log_ref_crop_miss(sn: int, crop_num: int, reason: str, extra: str = "") -> None:
@@ -4347,11 +4437,74 @@ def _compute_blur_score(img: Image.Image) -> float:
 
 
 def _decode_classify_quality_metrics(data: bytes) -> Tuple[int, int, float]:
-    """Decode image bytes and compute width/height/blur off the event loop."""
-    img = _open_rgb_image(io.BytesIO(data))
-    width, height = [int(x) for x in img.size]
-    blur = _compute_blur_score(img)
-    return int(width), int(height), float(blur)
+    """Decode image bytes and compute width/height/blur off the event loop.
+
+    Reserved against the shared image budget, like the crop renderer. This is a
+    full-resolution RGB decode -- about 45MB for one of our photos -- and the
+    classify prefilter runs several at once, so without a reservation it was the
+    one decode path invisible to the ceiling meant to keep the host out of the
+    OOM killer.
+
+    It cannot be drafted the way the crop renderer is: the pixel and minimum-
+    dimension gates need the true size, and the blur score is measured from the
+    full image, so decoding smaller would move the sharpness gate and disagree
+    with every score already cached.
+    """
+    src_w, src_h = _oriented_image_size(data)
+    with image_budget.BUDGET.reserve(image_budget.estimate_decode_bytes(src_w, src_h)):
+        img = _open_rgb_image(io.BytesIO(data))
+        width, height = [int(x) for x in img.size]
+        blur = _compute_blur_score(img)
+        return int(width), int(height), float(blur)
+
+
+def _classify_quality_report(
+    width: Any, height: Any, blur: Any, reasons: List[str], *, hard_fail: Optional[bool] = None
+) -> Dict[str, Any]:
+    """The measurement the classify queue reports for one image."""
+    width, height = int(width), int(height)
+    return {
+        "width": width,
+        "height": height,
+        "pixels": int(width * height),
+        "blur": float(blur),
+        "reasons": list(reasons),
+        "hard_fail": bool(reasons) if hard_fail is None else bool(hard_fail),
+    }
+
+
+def _classify_quality_reasons(width: int, height: int, blur: float) -> List[str]:
+    """Which classify gates this measurement fails, in report order."""
+    reasons: List[str] = []
+    if _CLASSIFY_MIN_PIXELS > 0 and int(width) * int(height) < _CLASSIFY_MIN_PIXELS:
+        reasons.append("pixels")
+    if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
+        reasons.append("min_dim")
+    if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
+        reasons.append("blur")
+    return reasons
+
+
+def _classify_quality_from_cached(
+    cached: Tuple[bool, int, int, float]
+) -> Tuple[bool, Dict[str, Any]]:
+    """Re-apply the gates to a stored measurement.
+
+    The thresholds come from the environment at import, so a score cached by an
+    earlier run may have been taken under different ones. The measurement is
+    what gets stored; the gates are re-checked here.
+    """
+    ok, width, height, blur = cached
+    reasons = _classify_quality_reasons(width, height, blur)
+    return bool(ok and not reasons), _classify_quality_report(width, height, blur, reasons)
+
+
+def _classify_quality_soft_fail(reason: str) -> Tuple[bool, Dict[str, Any]]:
+    """A measurement that could not be taken at all — a failed fetch or decode.
+
+    Not a hard fail: the image may be fine, so it is worth another look later.
+    """
+    return False, _classify_quality_report(0, 0, 0.0, [reason], hard_fail=False)
 
 
 async def _evaluate_classify_quality_uncached(
@@ -4364,49 +4517,18 @@ async def _evaluate_classify_quality_uncached(
     data = await _fetch_image_bytes_for_labeler(int(serial), str(url or "").strip())
     if not data:
         _cache_set_classify_quality_soft_fail(int(serial), "fetch")
-        return False, {
-            "width": 0,
-            "height": 0,
-            "pixels": 0,
-            "blur": 0.0,
-            "reasons": ["fetch"],
-            "hard_fail": False,
-        }
+        return _classify_quality_soft_fail("fetch")
 
-    width = 0
-    height = 0
-    blur = 0.0
     try:
         width, height, blur = await asyncio.to_thread(_decode_classify_quality_metrics, data)
     except Exception:
         _cache_set_classify_quality_soft_fail(int(serial), "decode")
-        return False, {
-            "width": 0,
-            "height": 0,
-            "pixels": 0,
-            "blur": 0.0,
-            "reasons": ["decode"],
-            "hard_fail": False,
-        }
+        return _classify_quality_soft_fail("decode")
 
-    pixels = int(width * height)
-    reasons: List[str] = []
-    if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
-        reasons.append("pixels")
-    if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
-        reasons.append("min_dim")
-    if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
-        reasons.append("blur")
+    reasons = _classify_quality_reasons(width, height, blur)
     ok = not reasons
     _cache_set_classify_quality(int(serial), ok, width, height, blur)
-    return ok, {
-        "width": int(width),
-        "height": int(height),
-        "pixels": int(pixels),
-        "blur": float(blur),
-        "reasons": reasons,
-        "hard_fail": bool(reasons),
-    }
+    return ok, _classify_quality_report(width, height, blur, reasons)
 
 
 async def _evaluate_classify_quality(
@@ -4419,35 +4541,9 @@ async def _evaluate_classify_quality(
     if _CLASSIFY_MIN_PIXELS <= 0 and _CLASSIFY_MIN_DIM <= 0 and _CLASSIFY_MIN_BLUR <= 0:
         return True, {"width": 0, "height": 0, "pixels": 0, "blur": 0.0, "reasons": []}
     sn = int(serial)
-    cached = _cache_get_classify_quality(sn)
+    cached = _evaluate_cached_classify_quality(sn)
     if cached is not None:
-        ok, width, height, blur = cached
-        pixels = int(width * height)
-        reasons: List[str] = []
-        if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
-            reasons.append("pixels")
-        if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
-            reasons.append("min_dim")
-        if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
-            reasons.append("blur")
-        return bool(ok and not reasons), {
-            "width": int(width),
-            "height": int(height),
-            "pixels": int(pixels),
-            "blur": float(blur),
-            "reasons": reasons,
-            "hard_fail": bool(reasons),
-        }
-    soft_fail_reason = _cache_get_classify_quality_soft_fail(sn)
-    if soft_fail_reason:
-        return False, {
-            "width": 0,
-            "height": 0,
-            "pixels": 0,
-            "blur": 0.0,
-            "reasons": [soft_fail_reason],
-            "hard_fail": False,
-        }
+        return cached
 
     fut, is_owner = await _classify_quality_singleflight_enter(sn)
     if not is_owner:
@@ -4457,36 +4553,10 @@ async def _evaluate_classify_quality(
                 return shared  # type: ignore[return-value]
         except Exception:
             pass
-        # If the owner lookup fails, try the cached score once more before recomputing.
-        cached = _cache_get_classify_quality(sn)
+        #If the owner's lookup failed, the score may still have landed.
+        cached = _evaluate_cached_classify_quality(sn)
         if cached is not None:
-            ok, width, height, blur = cached
-            pixels = int(width * height)
-            reasons: List[str] = []
-            if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
-                reasons.append("pixels")
-            if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
-                reasons.append("min_dim")
-            if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
-                reasons.append("blur")
-            return bool(ok and not reasons), {
-                "width": int(width),
-                "height": int(height),
-                "pixels": int(pixels),
-                "blur": float(blur),
-                "reasons": reasons,
-                "hard_fail": bool(reasons),
-            }
-        soft_fail_reason = _cache_get_classify_quality_soft_fail(sn)
-        if soft_fail_reason:
-            return False, {
-                "width": 0,
-                "height": 0,
-                "pixels": 0,
-                "blur": 0.0,
-                "reasons": [soft_fail_reason],
-                "hard_fail": False,
-            }
+            return cached
 
     try:
         result = await _evaluate_classify_quality_uncached(sn, str(url or "").strip(), source=source)
@@ -4498,37 +4568,14 @@ async def _evaluate_classify_quality(
 
 
 def _evaluate_cached_classify_quality(serial: int) -> Optional[Tuple[bool, Dict[str, Any]]]:
+    """The stored verdict for an image, or None if it has never been measured."""
     cached = _cache_get_classify_quality(int(serial))
-    if cached is None:
-        soft_fail_reason = _cache_get_classify_quality_soft_fail(int(serial))
-        if not soft_fail_reason:
-            return None
-        return False, {
-            "width": 0,
-            "height": 0,
-            "pixels": 0,
-            "blur": 0.0,
-            "reasons": [soft_fail_reason],
-            "hard_fail": False,
-        }
-    ok, width, height, blur = cached
-    pixels = int(width * height)
-    reasons: List[str] = []
-    if _CLASSIFY_MIN_PIXELS > 0 and pixels < _CLASSIFY_MIN_PIXELS:
-        reasons.append("pixels")
-    if _CLASSIFY_MIN_DIM > 0 and (width < _CLASSIFY_MIN_DIM or height < _CLASSIFY_MIN_DIM):
-        reasons.append("min_dim")
-    if _CLASSIFY_MIN_BLUR > 0 and float(blur) < _CLASSIFY_MIN_BLUR:
-        reasons.append("blur")
-    passes = bool(ok and not reasons)
-    return passes, {
-        "width": int(width),
-        "height": int(height),
-        "pixels": int(pixels),
-        "blur": float(blur),
-        "reasons": reasons,
-        "hard_fail": bool(reasons),
-    }
+    if cached is not None:
+        return _classify_quality_from_cached(cached)
+    soft_fail_reason = _cache_get_classify_quality_soft_fail(int(serial))
+    if soft_fail_reason:
+        return _classify_quality_soft_fail(soft_fail_reason)
+    return None
 
 
 def _build_rejected_labels(num_boxes: int) -> str:
@@ -4804,6 +4851,119 @@ async def _get_photo_metadata_rows_async(*, force: bool = False, ttl_sec: Option
     return await asyncio.to_thread(get_photo_metadata_rows, ttl)
 
 
+#---------- Queue scans ----------
+#Each of these walks every row of the photo metadata table, which the labeler UI
+#polls, so all three run in a thread. They take their inputs as arguments and
+#touch no module state, which is what makes that safe.
+
+
+def _parse_queue_detect_candidates(
+    in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
+) -> List[Dict[str, Any]]:
+    """Photos with no boxes yet: the detector has not run on them."""
+    out_queue: List[Dict[str, Any]] = []
+    for row in in_rows[1:]:  #Skip header
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+        if sn is None:
+            continue
+        claim = in_claims.get(("detect", int(sn)))
+        if claim and str(claim.get("user_id") or "") != in_user_id:
+            continue
+        box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
+        if not box_coords.strip():
+            url = row[COL_URL] if len(row) > COL_URL else ""
+            out_queue.append({"serial": sn, "url": url})
+    out_queue.sort(key=lambda item: int(item.get("serial") or 0))
+    return out_queue
+
+
+def _parse_queue_classify_candidates(
+    in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
+) -> List[Dict[str, Any]]:
+    """Photos with boxes but at least one box still unnamed."""
+    out_candidates: List[Dict[str, Any]] = []
+    for row in in_rows[1:]:
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+        if sn is None:
+            continue
+        claim = in_claims.get(("classify", int(sn)))
+        if claim and str(claim.get("user_id") or "") != in_user_id:
+            continue
+        box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
+        box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
+        
+        if not box_coords.strip() or box_coords.strip().lower() == "rejected":
+            continue
+        
+        # Queue parsing must stay cheap; full box validation happens in identify/refine paths.
+        num_boxes = len([b for b in str(box_coords).split("|") if str(b).strip()])
+        if num_boxes <= 0:
+            continue
+        labels = box_cat_ids.split("|") if box_cat_ids else []
+        num_labeled = 0
+        for idx in range(min(num_boxes, len(labels))):
+            if str(labels[idx] or "").strip():
+                num_labeled += 1
+        
+        if num_labeled < num_boxes:
+            url = row[COL_URL] if len(row) > COL_URL else ""
+            out_candidates.append({
+                "serial": sn,
+                "url": url,
+                "boxes": box_coords,
+                "labels": box_cat_ids,
+                "num_boxes": num_boxes,
+                "num_labeled": num_labeled,
+            })
+    return out_candidates
+
+
+def _parse_queue_manual_candidates(
+    in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
+) -> List[Dict[str, Any]]:
+    """Photos with at least one box a labeler marked for review."""
+    out_queue: List[Dict[str, Any]] = []
+    for row in in_rows[1:]:
+        if len(row) <= COL_SERIAL:
+            continue
+        sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
+        if sn is None:
+            continue
+        claim = in_claims.get(("manual", int(sn)))
+        if claim and str(claim.get("user_id") or "") != in_user_id:
+            continue
+        box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
+        box_cat_ids = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
+        if not box_coords or box_coords.lower() == "rejected" or not box_cat_ids:
+            continue
+        coords = [c.strip() for c in box_coords.split("|")]
+        labels = [l.strip() for l in box_cat_ids.split("|")]
+        if not coords or not labels:
+            continue
+        review_indices = [
+            idx for idx in range(min(len(coords), len(labels)))
+            if _is_needs_review_label(labels[idx])
+        ]
+        if not review_indices:
+            continue
+        url = row[COL_URL] if len(row) > COL_URL else ""
+        out_queue.append({
+            "serial": sn,
+            "url": url,
+            "boxes": box_coords,
+            "labels": box_cat_ids,
+            "num_boxes": len(coords),
+            "review_indices": review_indices,
+            "num_review": len(review_indices),
+        })
+    out_queue.sort(key=lambda item: int(item.get("serial") or 0))
+    return out_queue
+
+
 async def get_queue_detect(request: web.Request) -> web.Response:
     """Return list of serials needing detector labels (empty BoxCoordinates)."""
     try:
@@ -4815,27 +4975,10 @@ async def get_queue_detect(request: web.Request) -> web.Response:
         local_serials_snapshot = await _local_serials_async(force_refresh=force)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
-        def _parse_queue_detect_candidates(
-            in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
-        ) -> List[Dict[str, Any]]:
-            out_queue: List[Dict[str, Any]] = []
-            for row in in_rows[1:]:  #Skip header
-                if len(row) <= COL_SERIAL:
-                    continue
-                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-                if sn is None:
-                    continue
-                claim = in_claims.get(("detect", int(sn)))
-                if claim and str(claim.get("user_id") or "") != in_user_id:
-                    continue
-                box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
-                if not box_coords.strip():
-                    url = row[COL_URL] if len(row) > COL_URL else ""
-                    out_queue.append({"serial": sn, "url": url})
-            out_queue.sort(key=lambda item: int(item.get("serial") or 0))
-            return out_queue
-
-        queue = _parse_queue_detect_candidates(rows, claims, user_id)
+        #Off the loop: this walks every photo metadata row, and the UI polls
+        #this endpoint. The scan takes its inputs as arguments so it can run in
+        #a thread without touching module state.
+        queue = await asyncio.to_thread(_parse_queue_detect_candidates, rows, claims, user_id)
         queue, local_excluded, local_sample = _filter_queue_to_local(
             "detect",
             queue,
@@ -4871,48 +5014,10 @@ async def get_queue_classify(request: web.Request) -> web.Response:
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
 
-        def _parse_queue_classify_candidates(
-            in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
-        ) -> List[Dict[str, Any]]:
-            out_candidates: List[Dict[str, Any]] = []
-            for row in in_rows[1:]:
-                if len(row) <= COL_SERIAL:
-                    continue
-                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-                if sn is None:
-                    continue
-                claim = in_claims.get(("classify", int(sn)))
-                if claim and str(claim.get("user_id") or "") != in_user_id:
-                    continue
-                box_coords = row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else ""
-                box_cat_ids = row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else ""
-                
-                if not box_coords.strip() or box_coords.strip().lower() == "rejected":
-                    continue
-                
-                # Queue parsing must stay cheap; full box validation happens in identify/refine paths.
-                num_boxes = len([b for b in str(box_coords).split("|") if str(b).strip()])
-                if num_boxes <= 0:
-                    continue
-                labels = box_cat_ids.split("|") if box_cat_ids else []
-                num_labeled = 0
-                for idx in range(min(num_boxes, len(labels))):
-                    if str(labels[idx] or "").strip():
-                        num_labeled += 1
-                
-                if num_labeled < num_boxes:
-                    url = row[COL_URL] if len(row) > COL_URL else ""
-                    out_candidates.append({
-                        "serial": sn,
-                        "url": url,
-                        "boxes": box_coords,
-                        "labels": box_cat_ids,
-                        "num_boxes": num_boxes,
-                        "num_labeled": num_labeled,
-                    })
-            return out_candidates
-
-        candidates = _parse_queue_classify_candidates(rows, claims, user_id)
+        #Off the loop, as in get_queue_detect: a full metadata scan per poll.
+        candidates = await asyncio.to_thread(
+            _parse_queue_classify_candidates, rows, claims, user_id
+        )
 
         local_only_mode = local_photos.is_local_only()
         queue: List[Dict[str, Any]] = []
@@ -5051,47 +5156,8 @@ async def get_queue_manual(request: web.Request) -> web.Response:
         local_serials_snapshot = await _local_serials_async(force_refresh=force)
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
-        def _parse_queue_manual_candidates(
-            in_rows: List[List[str]], in_claims: Dict[Tuple[str, int], Dict[str, Any]], in_user_id: str
-        ) -> List[Dict[str, Any]]:
-            out_queue: List[Dict[str, Any]] = []
-            for row in in_rows[1:]:
-                if len(row) <= COL_SERIAL:
-                    continue
-                sn = _parse_serial(row[COL_SERIAL] if len(row) > COL_SERIAL else "")
-                if sn is None:
-                    continue
-                claim = in_claims.get(("manual", int(sn)))
-                if claim and str(claim.get("user_id") or "") != in_user_id:
-                    continue
-                box_coords = str(row[COL_BOX_COORDS] if len(row) > COL_BOX_COORDS else "").strip()
-                box_cat_ids = str(row[COL_BOX_CAT_IDS] if len(row) > COL_BOX_CAT_IDS else "").strip()
-                if not box_coords or box_coords.lower() == "rejected" or not box_cat_ids:
-                    continue
-                coords = [c.strip() for c in box_coords.split("|")]
-                labels = [l.strip() for l in box_cat_ids.split("|")]
-                if not coords or not labels:
-                    continue
-                review_indices = [
-                    idx for idx in range(min(len(coords), len(labels)))
-                    if _is_needs_review_label(labels[idx])
-                ]
-                if not review_indices:
-                    continue
-                url = row[COL_URL] if len(row) > COL_URL else ""
-                out_queue.append({
-                    "serial": sn,
-                    "url": url,
-                    "boxes": box_coords,
-                    "labels": box_cat_ids,
-                    "num_boxes": len(coords),
-                    "review_indices": review_indices,
-                    "num_review": len(review_indices),
-                })
-            out_queue.sort(key=lambda item: int(item.get("serial") or 0))
-            return out_queue
-
-        queue = _parse_queue_manual_candidates(rows, claims, user_id)
+        #Off the loop, as in get_queue_detect: a full metadata scan per poll.
+        queue = await asyncio.to_thread(_parse_queue_manual_candidates, rows, claims, user_id)
         queue, local_excluded, local_sample = _filter_queue_to_local(
             "manual",
             queue,
@@ -5275,9 +5341,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
         image_source = "none"
 
         # Avoid spamming downstream storage/network and logs for known-bad refs.
-        neg_key = (int(sn), int(crop_num))
-        bad_until = _ref_crop_negative_cache.get(neg_key, 0.0)
-        if bad_until and time.monotonic() < float(bad_until):
+        if _ref_crop_recently_failed(sn, crop_num):
             return _with_cors(web.Response(status=404, text="Crop not found"), request)
 
         await _ensure_photo_crop_index_cache(force=False)
@@ -5287,13 +5351,13 @@ async def get_ref_crop(request: web.Request) -> web.Response:
             entry = _photo_crop_index_cache.get((int(sn), int(crop_num)))
         if not entry:
             _log_ref_crop_miss(int(sn), int(crop_num), "photo_entry_missing")
-            _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
+            _mark_ref_crop_failed(sn, crop_num, 600.0)
             return _with_cors(web.Response(status=404, text="Crop not found"), request)
 
         box = _parse_yolo_box_str(str(entry.get("box") or "").strip())
         if box is None:
             _log_ref_crop_miss(int(sn), int(crop_num), "box_missing")
-            _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
+            _mark_ref_crop_failed(sn, crop_num, 600.0)
             return _with_cors(web.Response(status=404, text="Crop coordinates missing"), request)
 
         t_image = time.perf_counter()
@@ -5312,7 +5376,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
         if not image_bytes:
             _log_ref_crop_miss(int(sn), int(crop_num), "image_unavailable")
             # Treat source-image fetch failures as transient; avoid long false negatives.
-            _ref_crop_negative_cache[neg_key] = time.monotonic() + 20.0
+            _mark_ref_crop_failed(sn, crop_num, 20.0)
             return _with_cors(web.Response(status=502, text="Source image unavailable"), request)
 
         acquired = False
@@ -5341,7 +5405,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
                     "invalid_bounds",
                     str(crop_detail or ""),
                 )
-                _ref_crop_negative_cache[neg_key] = time.monotonic() + 600.0
+                _mark_ref_crop_failed(sn, crop_num, 600.0)
                 return _with_cors(web.Response(status=422, text="Invalid crop bounds"), request)
             return _with_cors(web.Response(status=500, text="Failed to render reference crop"), request)
 
@@ -5350,6 +5414,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
             cache_key,
             payload,
             max_items=_REF_CROP_RESULT_CACHE_MAX,
+            max_bytes=_REF_CROP_RESULT_CACHE_MAX_BYTES,
             ttl_sec=_REF_CROP_RESULT_TTL_SEC,
         )
         _remember_ref_crop_cache_key(int(sn), cache_key)
@@ -5702,8 +5767,6 @@ async def post_detect(request: web.Request) -> web.Response:
             if acquired:
                 _detect_sem.release()
         
-        #Encode boxed image as base64
-        import base64
         boxed_b64 = base64.b64encode(boxed_jpeg).decode("ascii") if boxed_jpeg else ""
         
         #Convert boxes to YOLO normalized format (cx, cy, w, h)
@@ -6832,7 +6895,11 @@ async def post_manual_refs_warm(request: web.Request) -> web.Response:
 async def get_manual_refs_status(request: web.Request) -> web.Response:
     """Get manual-review metadata-ref cache status."""
     try:
-        return _with_cors(web.json_response(_manual_ref_cache_status_payload()), request)
+        #The catalog load is what knows how many cats there are, and it can pull
+        #the CatDatabase sheet, so it goes in a thread.
+        _alias_lookup, ordered_profile, _by_key = await asyncio.to_thread(_load_profile_catalog)
+        status = _manual_ref_cache_status_payload(total_hint=len(ordered_profile))
+        return _with_cors(web.json_response(status), request)
     except Exception as e:
         log_action("labeler_manual_refs_status_error", "error", str(e))
         return _internal_error_response(request)

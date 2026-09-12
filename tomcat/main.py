@@ -11,9 +11,9 @@ import secrets
 import socket
 import threading
 import re
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import os
 import json
@@ -22,6 +22,7 @@ import aiohttp
 from aiohttp import web
 import logging
 from .config import settings
+from .services import schedule_store
 from .web_security import (
     oauth_redirect_is_allowed,
     origin_is_allowed,
@@ -103,10 +104,8 @@ def _debug(msg: str) -> None:
         print(f"[UI-AUTH] {_redact_sensitive_log_text(msg)}")
 
 # The UI stores schedules in NDJSON and can still read the older JSON file.
-SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.ndjson"
-LEGACY_SCHEDULE_PATH = Path(__file__).resolve().parent.parent / "cache" / "feeding_schedule.json"
 #Versioned schedule helpers
-_DEFAULT_SCHED_EFFECTIVE = "1970-01-01"
+_DEFAULT_SCHED_EFFECTIVE = schedule_store.DEFAULT_EFFECTIVE
 
 def _week_start_iso(dt: datetime | None = None) -> str:
     d = (dt or datetime.now()).date()
@@ -359,115 +358,15 @@ def _issue_session_response(user_info: dict, permissions: dict, request: web.Req
 
 
 #--- schedule version helpers ---
-def _read_schedule_ndjson(path: Path) -> list:
-    versions: list = []
-    if not path.exists():
-        return versions
-    try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except Exception:
-                continue
-            if isinstance(obj, dict) and obj.get("effective_from"):
-                versions.append({
-                    "effective_from": obj.get("effective_from"),
-                    "schedule": obj.get("schedule") or {},
-                    "meta": obj.get("meta") or {}
-                })
-    except Exception:
-        return versions
-    return versions
-
-
-def _load_schedule_versions() -> list:
-    versions = _read_schedule_ndjson(SCHEDULE_PATH)
-    if versions:
-        return versions
-
-    #Legacy JSON fallback (migrates forward to ndjson)
-    if not LEGACY_SCHEDULE_PATH.exists():
-        return []
-    try:
-        data = json.loads(LEGACY_SCHEDULE_PATH.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and "versions" in data:
-            versions = data.get("versions") or []
-        elif isinstance(data, dict) and "schedule" in data:
-            versions = [{"effective_from": _DEFAULT_SCHED_EFFECTIVE, "schedule": data.get("schedule") or {}, "meta": data.get("meta") or {}}]
-        elif isinstance(data, list):
-            versions = data
-        if versions:
-            _save_schedule_versions(versions)
-        return versions
-    except Exception:
-        return []
-    return []
-
-
-def _save_schedule_versions(versions: list):
-    meta = {"updated_at": int(time.time())}
-    SCHEDULE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = SCHEDULE_PATH.with_name(SCHEDULE_PATH.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        for v in versions:
-            f.write(json.dumps(v, separators=(",", ":")) + "\n")
-        f.write(json.dumps({"meta": meta}, separators=(",", ":")) + "\n")
-    tmp.replace(SCHEDULE_PATH)
-
-
 def _resolve_schedule_for_date(target_iso: Optional[str]) -> dict:
-    """Return schedule and effective_from for the given date (YYYY-MM-DD)."""
-    versions = _load_schedule_versions()
-    if not versions:
-        return {"schedule": {}, "effective_from": _DEFAULT_SCHED_EFFECTIVE, "meta": {}}
-    target_date = None
+    """Schedule in force on an ISO date, defaulting to the server's today."""
+    target = None
     if target_iso:
         try:
-            target_date = datetime.fromisoformat(target_iso).date()
-        except Exception:
-            target_date = None
-    if not target_date:
-        target_date = datetime.now().date()
-
-    best = None
-    for v in versions:
-        try:
-            eff = datetime.fromisoformat(str(v.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date()
-        except Exception:
-            continue
-        if eff <= target_date and (best is None or datetime.fromisoformat(str(best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)).date() < eff):
-            best = v
-    if not best:
-        best = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)[0]
-
-    sched = best.get("schedule") or {}
-    #Filter schedule to known station names for that effective date
-    allowed = set(station_names(best.get("effective_from")))
-    sched = {st: row for st, row in sched.items() if st in allowed}
-    return {"schedule": sched, "effective_from": best.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE, "meta": best.get("meta") or {}}
-
-
-def _upsert_schedule_version(schedule: dict, effective_from: str, meta: dict | None = None) -> list:
-    try:
-        eff = datetime.fromisoformat(str(effective_from)).date().isoformat()
-    except Exception:
-        eff = _DEFAULT_SCHED_EFFECTIVE
-    versions = _load_schedule_versions()
-    replaced = False
-    for v in versions:
-        if str(v.get("effective_from")) == eff:
-            v["schedule"] = schedule
-            v["meta"] = meta or v.get("meta") or {}
-            replaced = True
-            break
-    if not replaced:
-        versions.append({"effective_from": eff, "schedule": schedule, "meta": meta or {}})
-    versions = sorted(versions, key=lambda x: x.get("effective_from") or _DEFAULT_SCHED_EFFECTIVE)
-    _save_schedule_versions(versions)
-    return versions
+            target = datetime.fromisoformat(target_iso).date()
+        except ValueError:
+            target = None
+    return schedule_store.resolve_for_date(target or datetime.now().date())
 
 
 async def _resolve_member_once(
@@ -702,19 +601,438 @@ async def get_session(request: web.Request):
 
     return _issue_session_response(user_info, permissions, request)
 
+#A sub request may cover a month of dates at most; the form cannot ask for more.
+_MAX_SUBREQUEST_DATES = 31
+
+
+def _coerce_iso_date(value: Any) -> Optional[str]:
+    """An ISO date string from a form value, or None if it will not parse."""
+    try:
+        return datetime.fromisoformat(str(value)).date().isoformat()
+    except ValueError:
+        return None
+
+
+def _acting_identity(session: dict, data: dict) -> Tuple[Optional[str], Optional[str]]:
+    """Who a sub request or claim is made for: (user_id, user_name).
+
+    An officer may act on someone else's behalf, so the body is allowed to name
+    them. Everyone else is pinned to their own session identity whatever the
+    body asks for — this is the only thing between the form and impersonation.
+    """
+    permissions = session.get("permissions") or {}
+    user_id = data.get("user_id")
+    user_name = data.get("user_name")
+    if not permissions.get("is_officer"):
+        user_id = session.get("user_id")
+        user_name = session.get("username")
+    #An officer filing for themselves sends neither field.
+    return user_id or session.get("user_id"), user_name or session.get("username")
+
+
+def _clean_subrequest_stations(
+    date_iso: str, stations: Any
+) -> Tuple[Optional[List[str]], Optional[str]]:
+    """Station names from a submission, checked against that date's roster.
+
+    Returns (stations, None) or (None, error). A submission naming a station
+    that does not exist on that date is refused rather than quietly trimmed, so
+    a stale or tampered form cannot file a request against nothing.
+    """
+    submitted = list(dict.fromkeys(str(s).strip() for s in stations if str(s).strip()))
+    allowed = set(station_names(date_iso))
+    clean = [name for name in submitted if name in allowed]
+    if len(clean) != len(submitted):
+        return None, "Invalid station"
+    return clean, None
+
+
+def _parse_subrequest_dates(data: dict) -> Tuple[List[dict], Optional[str]]:
+    """The date/station pairs a submission asks for, or an error message.
+
+    Two body shapes are accepted: a `requests` list of {date, stations} for the
+    multi-date form, and a flat {date, stations} for the single-date one. In the
+    list form an entry naming no usable date or station is skipped, since the
+    rest of the batch still stands; in the flat form there is nothing else being
+    asked for, so it is an error.
+    """
+    raw = data.get("requests")
+    if isinstance(raw, list) and raw:
+        if len(raw) > _MAX_SUBREQUEST_DATES:
+            return [], "Too many requests"
+        parsed: List[dict] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                return [], "Invalid request entry"
+            stations = entry.get("stations") or []
+            date_iso = _coerce_iso_date(entry.get("date")) if entry.get("date") else None
+            if not date_iso or not isinstance(stations, list) or not stations:
+                continue
+            clean, error = _clean_subrequest_stations(date_iso, stations)
+            if error:
+                return [], error
+            if clean:
+                parsed.append({"date": date_iso, "stations": clean})
+        return parsed, None
+
+    stations = data.get("stations") or []
+    if not data.get("date") or not isinstance(stations, list) or not stations:
+        return [], "Missing required fields"
+    date_iso = _coerce_iso_date(data.get("date"))
+    if not date_iso:
+        return [], "Invalid date format"
+    clean, error = _clean_subrequest_stations(date_iso, stations)
+    if error:
+        return [], error
+    return [{"date": date_iso, "stations": clean}], None
+
+
+def _may_delete_sub_record(record: dict, user_id: str, is_officer: bool) -> bool:
+    """Whether this user may remove one entry from the sub log.
+
+    Officers may remove anything. Everyone else only entries they are party to:
+    the person who asked for the substitute, or the person who took it. Ids
+    compare as strings because the log has carried both numbers and strings
+    over its life.
+
+    An empty user id matches nobody. Without that, a session with no user id
+    would have matched any entry that recorded no requester.
+    """
+    if is_officer:
+        return True
+    if not user_id:
+        return False
+    return user_id in {str(record.get("requester") or ""), str(record.get("assignee") or "")}
+
+
+def _remove_sub_record(
+    lines: Any, target_id: Any, *, user_id: str, is_officer: bool
+) -> Tuple[Optional[dict], List[str], bool]:
+    """Split a sub log into the entry to remove and the lines to keep.
+
+    Returns (removed, kept, forbidden). A line that will not parse is kept
+    untouched: this removes one known entry, it does not tidy the file.
+    """
+    kept: List[str] = []
+    removed: Optional[dict] = None
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except Exception:
+            kept.append(line)
+            continue
+        if record.get("id") != target_id:
+            kept.append(line)
+            continue
+        if not _may_delete_sub_record(record, user_id, is_officer):
+            return None, [], True
+        removed = record
+    return removed, kept, False
+
+
+def _deletion_announcement(record: dict, date_iso: str, actor_label: str) -> str:
+    """The line posted when somebody removes a sub request or a claim."""
+    kind = "Request" if record.get("kind") == "sub_request" else "Claim"
+    station = record.get("station") or "Unknown"
+    pretty_date = _format_date_for_notification(date_iso)
+    return f"**{kind} Deleted**: {actor_label} removed the item for **{station}** on {pretty_date}."
+
+
+def _join_stations(names: List[str]) -> str:
+    """"Lot 50", "Lot 50 and HOP", "Lot 50, HOP, and West Hall"."""
+    if len(names) >= 3:
+        return ", ".join(names[:-1]) + f", and {names[-1]}"
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return names[0] if names else ""
+
+
+def _requester_mention(requester: Any, requester_name: str) -> str:
+    """A mention for whoever asked for the substitute, or a readable stand-in."""
+    if requester and str(requester).isdigit():
+        return f"<@{requester}>"
+    return requester_name or "someone"
+
+
+def _claim_announcement(claimer_id: Any, claims_by_date: Dict[str, List[tuple]]) -> str:
+    """The single line posted to the feeding channel for a batch of claims.
+
+    One line per batch rather than one per shift: a volunteer picking up four
+    days of a request should not produce four pings.
+    """
+    mentions: List[str] = []
+    date_bits: List[str] = []
+    for date_iso, items in claims_by_date.items():
+        for _station, requester, requester_name in items:
+            mention = _requester_mention(requester, requester_name)
+            #First-seen order. This was a set, so with two requesters the line
+            #read differently from one run to the next.
+            if mention not in mentions:
+                mentions.append(mention)
+        stations_text = _join_stations([station for station, _req, _name in items])
+        try:
+            when = datetime.fromisoformat(date_iso)
+            day_prefix = f"{when.strftime('%A')}, "
+            pretty_date = when.strftime("%m/%d/%Y")
+        except (TypeError, ValueError):
+            day_prefix = ""
+            pretty_date = date_iso
+        date_bits.append(f"{stations_text} on {day_prefix}{pretty_date}")
+
+    whose = " and ".join(mentions) if mentions else "someone"
+    return (
+        f"<@{claimer_id}> picked up {whose}'s substitute request for "
+        + " and ".join(date_bits)
+    )
+
+
+def _display_name_for(names: Dict[int, str], raw: Any) -> str:
+    """Resolved display name for a Discord id, which may not be numeric."""
+    try:
+        return names.get(int(raw), "")
+    except (TypeError, ValueError):
+        return ""
+
+
+def _collect_sub_request_items(files: Any) -> Tuple[Dict[tuple, Any], List[dict], set, set]:
+    """Read the sub logs into the shape the open-requests view needs.
+
+    Returns the claims made against each (request, station, date), one item per
+    requested station, and the requester and assignee ids that still need a
+    display name looked up. A row the log cannot parse is skipped rather than
+    failing the whole listing.
+    """
+    accepted_map: Dict[tuple, Any] = {}
+    items: List[dict] = []
+    requester_ids: set = set()
+    assignee_ids: set = set()
+
+    for _path, rows in files:
+        try:
+            for record in rows:
+                status = record.get("status")
+                stations = record.get("stations") or (
+                    [record.get("station")] if record.get("station") else []
+                )
+                dates = record.get("dates") or []
+                date_iso = dates[0] if dates else None
+                record_id = record.get("id")
+                if status == "accepted":
+                    assignee = record.get("assignee")
+                    if assignee:
+                        try:
+                            assignee_ids.add(int(assignee))
+                        except ValueError:
+                            pass
+                    for station in stations:
+                        accepted_map[
+                            (record.get("parent_id") or record_id, station, date_iso)
+                        ] = assignee
+                elif status == "requested":
+                    requester = record.get("requester")
+                    requester_name = record.get("requester_name") or ""
+                    if requester and not requester_name:
+                        try:
+                            requester_ids.add(int(requester))
+                        except ValueError:
+                            pass
+                    for station in stations:
+                        items.append({
+                            "id": record_id,
+                            "station": station,
+                            "date": date_iso,
+                            #Strings, so the UI gets stable JSON rather than
+                            #numbers it might round.
+                            "requester_id": str(requester) if requester else "",
+                            "requester_name": requester_name,
+                            "assignee_id": None,
+                            "assignee_name": record.get("assignee_name") or "",
+                        })
+        except Exception:
+            #A malformed line in one month's log should not hide the others.
+            continue
+    return accepted_map, items, requester_ids, assignee_ids
+
+
+def _bucket_sub_requests(
+    items: List[dict],
+    accepted_map: Dict[tuple, Any],
+    *,
+    today: date,
+    requester_names: Dict[int, str],
+    assignee_names: Dict[int, str],
+) -> Dict[str, List[dict]]:
+    """Split sub requests into available, upcoming filled, and past.
+
+    A date in the past goes to `past` whether or not anybody took it; everything
+    else is `upcoming_filled` if claimed and `available` if not.
+    """
+    buckets: Dict[str, List[dict]] = {"available": [], "upcoming_filled": [], "past": []}
+    for item in items:
+        date_iso = item.get("date")
+        try:
+            when = datetime.fromisoformat(date_iso).date() if date_iso else None
+        except (TypeError, ValueError):
+            when = None
+        assignee = accepted_map.get((item.get("id"), item.get("station"), date_iso))
+
+        out = dict(item)
+        if item.get("requester_id") and not item.get("requester_name"):
+            out["requester_name"] = _display_name_for(requester_names, item["requester_id"])
+        if assignee:
+            out["assignee_id"] = str(assignee)
+            if not out.get("assignee_name"):
+                out["assignee_name"] = _display_name_for(assignee_names, assignee)
+
+        out["date_raw"] = date_iso
+        #Anchor a bare date to noon so a browser west of UTC does not render it
+        #as the day before.
+        if date_iso and len(str(date_iso)) == 10 and "T" not in str(date_iso):
+            out["date"] = f"{date_iso}T12:00:00"
+
+        if when and when < today:
+            buckets["past"].append(out)
+        elif assignee:
+            buckets["upcoming_filled"].append(out)
+        else:
+            buckets["available"].append(out)
+    return buckets
+
+
+def _index_sub_records(
+    files: Any,
+) -> Tuple[Dict[str, dict], set]:
+    """Open sub requests by id, and the claims already taken.
+
+    Both come from the server's own logs, never from the request body: a claim
+    names an id and nothing else is trusted, so a client cannot turn its own
+    strings into a Discord mention. Taken claims are keyed by
+    (request id, station, date), which is the granularity a claim covers.
+    """
+    requested: Dict[str, dict] = {}
+    accepted = set()
+    for _path, rows in files:
+        for record in rows:
+            record_id = str(record.get("id") or "")
+            dates = record.get("dates") or []
+            date_iso = str(dates[0]) if dates else ""
+            stations = record.get("stations") or (
+                [record.get("station")] if record.get("station") else []
+            )
+            if record.get("status") == "requested" and record_id:
+                requested[record_id] = record
+            elif record.get("status") == "accepted":
+                parent = str(record.get("parent_id") or record_id)
+                for station in stations:
+                    accepted.add((parent, str(station), date_iso))
+    return requested, accepted
+
+
+def _validate_sub_claims(
+    picks: Any,
+    requested: Dict[str, dict],
+    accepted: set,
+) -> Tuple[List[tuple], Optional[Tuple[int, str]]]:
+    """Check every claim before any of them is written.
+
+    Returns (validated, None) or ([], (status, message)). All-or-nothing on
+    purpose: a malformed later pick must not leave an earlier one half-applied
+    in the log. Each validated entry carries the station, date, requester and
+    requester name read off the stored request rather than off the body.
+    """
+    if not isinstance(picks, list) or len(picks) > _MAX_SUBREQUEST_DATES:
+        return [], (400, "Invalid picks")
+
+    validated: List[tuple] = []
+    pending = set()
+    for pick in picks:
+        if not isinstance(pick, dict):
+            return [], (400, "Invalid claim")
+        parent_id = str(pick.get("id") or "")
+        source = requested.get(parent_id)
+        if not source:
+            return [], (404, "Substitute request not found")
+        station = str(pick.get("station") or "").strip()
+        date_iso = _coerce_iso_date(pick.get("date") or "")
+        if not date_iso:
+            return [], (400, "Invalid date")
+        source_dates = [str(v) for v in (source.get("dates") or [])]
+        source_stations = [
+            str(v) for v in (
+                source.get("stations")
+                or ([source.get("station")] if source.get("station") else [])
+            )
+        ]
+        #The claim has to name a station and date the request actually asked
+        #for, not just a request id that exists.
+        if date_iso not in source_dates or station not in source_stations:
+            return [], (400, "Claim does not match request")
+        claim_key = (parent_id, station, date_iso)
+        if claim_key in accepted or claim_key in pending:
+            return [], (409, "Request already claimed")
+        pending.add(claim_key)
+        validated.append((
+            parent_id, station, date_iso,
+            source.get("requester"), source.get("requester_name") or "",
+        ))
+    return validated, None
+
+
+async def _authorized(
+    request: web.Request,
+    *,
+    require_view: bool = False,
+    require_edit: bool = False,
+) -> Tuple[Optional[dict], Optional[web.Response]]:
+    """Authorize a request that changes something: permissions, then CSRF.
+
+    Returns (session, None) or (None, response). Having this in one place is
+    the point: a CSRF token only means anything once the session is known good,
+    and a new write endpoint cannot quietly skip the check by forgetting to
+    copy it in.
+    """
+    session, error = await _require_permissions(
+        request, require_view=require_view, require_edit=require_edit
+    )
+    if error:
+        return None, error
+    csrf_error = _require_csrf(request, session)
+    if csrf_error:
+        return None, csrf_error
+    return session, None
+
+
+async def _authorized_json(
+    request: web.Request,
+    *,
+    require_view: bool = False,
+    require_edit: bool = False,
+) -> Tuple[Optional[dict], Optional[dict], Optional[web.Response]]:
+    """_authorized, plus the request's parsed JSON body.
+
+    Returns (session, payload, None), or (None, None, response) as soon as a
+    step fails. Only a body that will not parse is refused here; handlers still
+    check the shape of what they were given.
+    """
+    session, error = await _authorized(
+        request, require_view=require_view, require_edit=require_edit
+    )
+    if error:
+        return None, None, error
+    try:
+        return session, await request.json(), None
+    except Exception:
+        return None, None, _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
+
 #--- The Secure Save Endpoint ---
 async def save_schedule(request):
     """Persist the feeding schedule to a local JSON file."""
-    session, error = await _require_permissions(request, require_view=True, require_edit=True)
+    _session, data, error = await _authorized_json(
+        request, require_view=True, require_edit=True
+    )
     if error:
         return error
-    csrf_error = _require_csrf(request, session)
-    if csrf_error:
-        return csrf_error
-    try:
-        data = await request.json()
-    except Exception:
-        return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
     schedule = data.get("schedule", {})
     meta = data.get("meta", {})
@@ -726,7 +1044,7 @@ async def save_schedule(request):
 
     try:
         meta_out = {**meta, "saved_at": int(time.time())}
-        _upsert_schedule_version(schedule, effective_from, meta_out)
+        schedule_store.upsert_version(schedule, effective_from, meta_out)
     except Exception:
         logging.exception("Unexpected error when saving schedule")
         return _with_cors(web.Response(status=500, text="Failed to save schedule."), request)
@@ -753,7 +1071,7 @@ async def get_schedule(request):
     resolved = _resolve_schedule_for_date(week_param)
     sched = stringify_schedule(resolved.get("schedule", {}))
     stations = station_names(week_param)
-    versions = _load_schedule_versions()
+    versions = schedule_store.load_versions()
     weeks = sorted([v.get("effective_from") for v in versions if v.get("effective_from") and v.get("effective_from") != _DEFAULT_SCHED_EFFECTIVE], reverse=True)
     if not weeks:
         weeks = [_week_start_iso()]
@@ -790,7 +1108,7 @@ def _allowed_user_mentions(*user_ids: Any) -> discord.AllowedMentions:
         users=users,
         replied_user=False,
     )
-from datetime import datetime, timezone
+
 
 from .config import settings
 from .logger import log_event, log_action  #noqa: F401  #imported for shared use
@@ -1151,6 +1469,97 @@ def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResp
     return resp
 
 
+#Static assets are read from disk only when the file changes. They were being
+#read and decoded inside the request handler on every hit, and labeler.js alone
+#is ~340KB -- enough synchronous work to stall the event loop on each page load.
+#Bytes are cached rather than text so responses skip the encode as well.
+#(filename, prefix) -> (file stamp, response body, ETag). The prefix is part of
+#the key because it is part of the payload: labeler.js is served with its
+#feature flags prepended.
+_static_asset_cache: Dict[tuple[str, bytes], tuple[tuple[float, int], bytes, str]] = {}
+
+
+def _static_asset(filename: str, prefix: bytes = b"") -> tuple[bytes, str]:
+    """Repo-root asset as response-ready bytes plus its ETag.
+
+    Cached against the file's mtime and size, so a deploy is picked up without a
+    request costing a read.
+    """
+    stat = os.stat(filename)
+    stamp = (stat.st_mtime, stat.st_size)
+    key = (filename, prefix)
+    cached = _static_asset_cache.get(key)
+    if cached is not None and cached[0] == stamp:
+        return cached[1], cached[2]
+    #Text mode on purpose: labeler.js is stored with CRLF endings and has always
+    #gone out with them translated. Reading it as bytes would change the payload.
+    with open(filename, "r", encoding="utf-8") as handle:
+        body = prefix + handle.read().encode("utf-8")
+    etag = f'"{hashlib.sha256(body).hexdigest()[:32]}"'
+    _static_asset_cache[key] = (stamp, body, etag)
+    return body, etag
+
+
+def _if_none_match_has(request: web.Request, etag: str) -> bool:
+    """Whether the client already holds this exact version."""
+    header = request.headers.get("If-None-Match", "")
+    if not header:
+        return False
+    if header.strip() == "*":
+        return True
+    #A browser may send several, and may weaken them with a W/ prefix.
+    return any(
+        candidate.strip().removeprefix("W/") == etag
+        for candidate in header.split(",")
+    )
+
+
+def _static_asset_route(
+    filename: str,
+    content_type: str,
+    *,
+    prefix: bytes = b"",
+    missing_text: Optional[str] = None,
+):
+    """Build a revalidating handler that serves one repo-root file.
+
+    These were sent with no-store, so every page load re-downloaded all of them
+    -- ~540KB, of which labeler.js is 340KB, over whatever connection a
+    volunteer is on. "no-cache" keeps the same guarantee that matters, which is
+    that a browser never shows a stale labeler after a deploy: it still asks on
+    every load. It just gets a 304 and no body when the file has not changed.
+    """
+    not_found = missing_text or f"{filename} not found"
+
+    async def handler(request: web.Request) -> web.Response:
+        try:
+            body, etag = _static_asset(filename, prefix)
+        except OSError:
+            return web.Response(text=not_found, status=404)
+        if _if_none_match_has(request, etag):
+            resp = web.Response(status=304)
+        else:
+            resp = web.Response(body=body, content_type=content_type, charset="utf-8")
+        resp.headers["ETag"] = etag
+        resp.headers["Cache-Control"] = "no-cache"
+        return _with_cors(resp, request)
+
+    handler.__name__ = "get_" + filename.replace("-", "_").replace(".", "_")
+    return handler
+
+
+def _labeler_feature_prefix() -> bytes:
+    """Frontend feature flags, so rollouts can be toggled without editing JS."""
+    flags = {
+        "prefetchRetryFix": bool(LABELER_PREFETCH_RETRY_FIX),
+        "classifyReadyRelax": bool(LABELER_CLASSIFY_READY_RELAX),
+    }
+    return (
+        "globalThis.__LABELER_FEATURES = Object.assign({}, globalThis.__LABELER_FEATURES || {}, "
+        f"{json.dumps(flags, separators=(',', ':'))});\n"
+    ).encode("utf-8")
+
+
 _CONTENT_SECURITY_POLICY = "; ".join([
     "default-src 'self'",
     "base-uri 'self'",
@@ -1317,18 +1726,17 @@ async def start_web_server(bot):
         if h.strip()
     }
 
+    _serve_index = _static_asset_route(
+        "index.html", "text/html",
+        missing_text="index.html not found. Please upload it to the bot root.",
+    )
+
     async def get_index(request):
         """Serve the labeler UI, or the app description on an info hostname."""
         host = (request.headers.get("Host") or "").split(":")[0].strip().lower()
         if host in _APP_INFO_HOSTS:
             return _render_doc(request, "ABOUT.md", "TomCatBot", "About page")
-        try:
-            with open("index.html", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="text/html")
-                resp.headers["Cache-Control"] = "no-store"
-                return _with_cors(resp, request)
-        except FileNotFoundError:
-            return web.Response(text="index.html not found. Please upload it to the bot root.", status=404)
+        return await _serve_index(request)
 
     def _render_doc(request, filename: str, title: str, label: str):
         """Serve a docs/*.md file as HTML.
@@ -1358,55 +1766,16 @@ async def start_web_server(bot):
         the app exactly as the consent screen does and states its purpose."""
         return _render_doc(request, "ABOUT.md", "TomCatBot", "About page")
 
-    async def get_labeler_js(request):
-        """Serve the labeler.js file."""
-        try:
-            with open("labeler.js", "r", encoding="utf-8") as f:
-                raw_js = f.read()
-                # Serve frontend feature flags from env so rollouts can be toggled without JS edits.
-                flags = {
-                    "prefetchRetryFix": bool(LABELER_PREFETCH_RETRY_FIX),
-                    "classifyReadyRelax": bool(LABELER_CLASSIFY_READY_RELAX),
-                }
-                injected = (
-                    "globalThis.__LABELER_FEATURES = Object.assign({}, globalThis.__LABELER_FEATURES || {}, "
-                    f"{json.dumps(flags, separators=(',', ':'))});\n"
-                )
-                resp = web.Response(text=f"{injected}{raw_js}", content_type="application/javascript")
-                resp.headers["Cache-Control"] = "no-store"
-                return _with_cors(resp, request)
-        except FileNotFoundError:
-            return web.Response(text="labeler.js not found", status=404)
-
-    async def get_labeler_save_queue_js(request):
-        """Serve the labeler's standalone pending-save queue."""
-        try:
-            with open("labeler-save-queue.js", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="application/javascript")
-                resp.headers["Cache-Control"] = "no-store"
-                return _with_cors(resp, request)
-        except FileNotFoundError:
-            return web.Response(text="labeler-save-queue.js not found", status=404)
-
-    async def get_labeler_api_js(request):
-        """Serve the labeler's standalone HTTP client."""
-        try:
-            with open("labeler-api.js", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="application/javascript")
-                resp.headers["Cache-Control"] = "no-store"
-                return _with_cors(resp, request)
-        except FileNotFoundError:
-            return web.Response(text="labeler-api.js not found", status=404)
-
-    async def get_labeler_theme_css(request):
-        """Serve the labeler's standalone visual theme."""
-        try:
-            with open("labeler-theme.css", "r", encoding="utf-8") as f:
-                resp = web.Response(text=f.read(), content_type="text/css")
-                resp.headers["Cache-Control"] = "no-store"
-                return _with_cors(resp, request)
-        except FileNotFoundError:
-            return web.Response(text="labeler-theme.css not found", status=404)
+    #The labeler UI's own assets: the bundle, its save queue, its HTTP client
+    #and its theme.
+    get_labeler_js = _static_asset_route(
+        "labeler.js", "application/javascript", prefix=_labeler_feature_prefix()
+    )
+    get_labeler_save_queue_js = _static_asset_route(
+        "labeler-save-queue.js", "application/javascript"
+    )
+    get_labeler_api_js = _static_asset_route("labeler-api.js", "application/javascript")
+    get_labeler_theme_css = _static_asset_route("labeler-theme.css", "text/css")
 
     async def get_members(request):
         """Return JSON list of members allowed to be scheduled."""
@@ -1463,16 +1832,11 @@ async def start_web_server(bot):
 
     async def save_stations_api(request):
         """Replace station definitions for an effective date; officer only."""
-        session, error = await _require_permissions(request, require_view=True, require_edit=True)
+        _session, data, error = await _authorized_json(
+            request, require_view=True, require_edit=True
+        )
         if error:
             return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
-        try:
-            data = await request.json()
-        except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
         stations_payload = data.get("stations")
         effective_from = data.get("effective_from") or data.get("date")
         if not isinstance(stations_payload, list):
@@ -1502,16 +1866,9 @@ async def start_web_server(bot):
 
     async def save_feeding_checklist(request):
         """Officer-only: replace station fed/unfed state for a date."""
-        session, error = await _require_permissions(request, require_edit=True)
+        _session, data, error = await _authorized_json(request, require_edit=True)
         if error:
             return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
-        try:
-            data = await request.json()
-        except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
         date_iso = data.get("date")
         status_map = data.get("status") or {}
@@ -1531,82 +1888,20 @@ async def start_web_server(bot):
 
     async def submit_subrequest(request):
         """Record a manual sub request."""
-        session, error = await _require_permissions(request, require_view=True)
-        if error: return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
-        
-        try:
-            data = await request.json()
-        except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+        session, data, error = await _authorized_json(request, require_view=True)
+        if error:
+            return error
 
-        #--- SECURITY / IMPERSONATION LOGIC ---
-        req_user_id = data.get("user_id")
-        req_user_name = data.get("user_name")
-        
-        #If user is NOT an officer, force them to use their own identity
-        permissions = session.get("permissions", {})
-        if not permissions.get("is_officer"):
-            req_user_id = session.get("user_id")
-            req_user_name = session.get("username") #fallback
-        
-        #If officer didn't provide a specific user (standard submit), default to self
+        req_user_id, req_user_name = _acting_identity(session, data)
+        #No requester means nothing to file, so that is settled before the
+        #payload is examined. The single-date form used to check this first and
+        #the multi-date form last; there is no reason for them to differ.
         if not req_user_id:
-            req_user_id = session.get("user_id")
-        if not req_user_name:
-            req_user_name = session.get("username")
-
-        raw_requests = data.get("requests")
-        parsed_requests = []
-
-        if isinstance(raw_requests, list) and raw_requests:
-            if len(raw_requests) > 31:
-                return _with_cors(web.Response(status=400, text="Too many requests"), request)
-            for entry in raw_requests:
-                if not isinstance(entry, dict):
-                    return _with_cors(web.Response(status=400, text="Invalid request entry"), request)
-                date_iso = entry.get("date")
-                stations = entry.get("stations") or []
-                if not date_iso or not isinstance(stations, list) or not stations:
-                    continue
-                try:
-                    date_obj = datetime.fromisoformat(str(date_iso))
-                    date_iso_clean = date_obj.date().isoformat()
-                except ValueError:
-                    continue
-                submitted_stations = list(dict.fromkeys(str(s).strip() for s in stations if str(s).strip()))
-                allowed_stations = set(station_names(date_iso_clean))
-                stations_clean = [s for s in submitted_stations if s in allowed_stations]
-                if len(stations_clean) != len(submitted_stations):
-                    return _with_cors(web.Response(status=400, text="Invalid station"), request)
-                if stations_clean:
-                    parsed_requests.append({
-                        "date": date_iso_clean,
-                        "stations": list(dict.fromkeys(stations_clean)),
-                    })
-        else:
-            date_iso = data.get("date")
-            stations = data.get("stations") or []
-            if not req_user_id or not date_iso or not isinstance(stations, list) or not stations:
-                return _with_cors(web.Response(status=400, text="Missing required fields"), request)
-            try:
-                date_obj = datetime.fromisoformat(str(date_iso))
-                date_iso_clean = date_obj.date().isoformat()
-            except ValueError:
-                return _with_cors(web.Response(status=400, text="Invalid date format"), request)
-            submitted_stations = list(dict.fromkeys(str(s).strip() for s in stations if str(s).strip()))
-            allowed_stations = set(station_names(date_iso_clean))
-            stations_clean = [s for s in submitted_stations if s in allowed_stations]
-            if len(stations_clean) != len(submitted_stations):
-                return _with_cors(web.Response(status=400, text="Invalid station"), request)
-            parsed_requests.append({
-                "date": date_iso_clean,
-                "stations": list(dict.fromkeys(stations_clean)),
-            })
-
-        if not req_user_id or not parsed_requests:
+            return _with_cors(web.Response(status=400, text="Missing required fields"), request)
+        parsed_requests, parse_error = _parse_subrequest_dates(data)
+        if parse_error:
+            return _with_cors(web.Response(status=400, text=parse_error), request)
+        if not parsed_requests:
             return _with_cors(web.Response(status=400, text="Missing required fields"), request)
 
         batch_id = f"sub-{int(datetime.now().timestamp()*1000)}"
@@ -1669,16 +1964,9 @@ async def start_web_server(bot):
     
     async def delete_subrequest(request):
         """Physically remove a request from the log file."""
-        session, error = await _require_permissions(request, require_view=True)
-        if error: return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
-
-        try:
-            data = await request.json()
-        except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+        session, data, error = await _authorized_json(request, require_view=True)
+        if error:
+            return error
 
         target_id = data.get("id")
         date_iso = data.get("date")
@@ -1699,63 +1987,44 @@ async def start_web_server(bot):
         if not os.path.exists(path):
             return _with_cors(web.Response(status=404, text="Record not found"), request)
 
-        #Re-write file excluding the item
-        new_lines = []
-        deleted_item = None
-        user_id_str = str(session.get("user_id"))
-        is_officer = session.get("permissions", {}).get("is_officer")
+        user_id_str = str(session.get("user_id") or "")
+        is_officer = bool((session.get("permissions") or {}).get("is_officer"))
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        rec = json.loads(line)
-                        if rec.get("id") == target_id:
-                            #Permission check with strict ID comparison
-                            requester_id = str(rec.get("requester") or "")
-                            assignee_id = str(rec.get("assignee") or "")
-                            is_owner = (user_id_str == requester_id) or (user_id_str == assignee_id)
-
-                            if not is_officer and not is_owner:
-                                return _with_cors(web.Response(status=403, text="You can only delete your own items."), request)
-                            deleted_item = rec
-                            continue #Skip this line (Delete)
-                        new_lines.append(line)
-                    except Exception: # Catch JSON parsing errors for malformed lines
-                        new_lines.append(line)
-            
-            if deleted_item:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.writelines(new_lines)
-                
-                #Notify Discord
-                ch_id = getattr(settings, "ch_feeding_team", None)
-                if ch_id:
-                    ch = bot.get_channel(int(ch_id))
-                    if hasattr(ch, 'send'):
-                        actor_id = session.get("user_id")
-                        actor_name = session.get("username", "Unknown")
-                        actor_label = f"<@{actor_id}>" if actor_id else actor_name
-                        kind = "Request" if deleted_item.get("kind") == "sub_request" else "Claim"
-                        st = deleted_item.get("station") or "Unknown"
-                        pretty_date = _format_date_for_notification(date_iso)
-                        await ch.send(f"**{kind} Deleted**: {actor_label} removed the item for **{st}** on {pretty_date}.")
-
-                return _with_cors(web.json_response({"status": "ok"}), request)
-            else:
+            with open(path, "r", encoding="utf-8") as handle:
+                deleted_item, new_lines, forbidden = _remove_sub_record(
+                    handle, target_id, user_id=user_id_str, is_officer=is_officer
+                )
+            if forbidden:
+                return _with_cors(
+                    web.Response(status=403, text="You can only delete your own items."),
+                    request,
+                )
+            if not deleted_item:
                 return _with_cors(web.Response(status=404, text="Item ID not found in log"), request)
 
-        except Exception as e:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.writelines(new_lines)
+
+            ch_id = getattr(settings, "ch_feeding_team", None)
+            if ch_id:
+                ch = bot.get_channel(int(ch_id))
+                if hasattr(ch, 'send'):
+                    actor_id = session.get("user_id")
+                    actor_label = f"<@{actor_id}>" if actor_id else session.get("username", "Unknown")
+                    await ch.send(_deletion_announcement(deleted_item, date_iso, actor_label))
+
+            return _with_cors(web.json_response({"status": "ok"}), request)
+
+        except Exception:
             logging.exception("Error deleting subrequest")
             return _with_cors(web.Response(status=500, text="An internal error has occurred."), request)
-    
+
     async def leave_activity(request):
         """Disconnects the requesting user from their voice channel."""
-        session, error = await _require_permissions(request, require_view=True)
-        if error: return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
+        session, error = await _authorized(request, require_view=True)
+        if error:
+            return error
         
         user_id = session.get("user_id")
         if not user_id:
@@ -1779,59 +2048,16 @@ async def start_web_server(bot):
         _, error = await _require_permissions(request, require_view=True)
         if error:
             return error
-        import json
-        from datetime import datetime
         from .handlers import feeding as _feed
         today = datetime.now().date()
 
-        accepted_map = {}  #(parent_id, station, date_iso) -> assignee_id
-        accepted_meta = {}  #(parent_id, station, date_iso) -> requester_name
-        requested_items = []
-        missing_requester_ids = set()
-        missing_assignee_ids = set()
-
-        #Load using the shared feeding helpers so paths are consistent with the bot
-        files = _feed._load_sub_files(
-            month_keys=None,
-            include_legacy=_feed.SUBS_LEGACY_FILE.exists(),
+        #Load using the shared feeding helpers so paths match the bot's.
+        accepted_map, requested_items, missing_requester_ids, missing_assignee_ids = (
+            _collect_sub_request_items(_feed._load_sub_files(
+                month_keys=None,
+                include_legacy=_feed.SUBS_LEGACY_FILE.exists(),
+            ))
         )
-        for path, rows in files:
-            try:
-                for rec in rows:
-                    status = rec.get("status")
-                    stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
-                    dates = rec.get("dates") or []
-                    date_iso = dates[0] if dates else None
-                    parent_id = rec.get("id")
-                    if status == "accepted":
-                        assignee = rec.get("assignee")
-                        if assignee:
-                            try:
-                                missing_assignee_ids.add(int(assignee))
-                            except ValueError: # Catch non-integer assignee IDs
-                                pass
-                        for st in stations:
-                            accepted_map[(rec.get("parent_id") or parent_id, st, date_iso)] = assignee
-                    elif status == "requested":
-                        requester = rec.get("requester")
-                        requester_name = rec.get("requester_name") or ""
-                        if requester and not requester_name:
-                            try:
-                                missing_requester_ids.add(int(requester))
-                            except ValueError: # Catch non-integer requester IDs
-                                pass
-                        for st in stations:
-                            requested_items.append({
-                                "id": parent_id,
-                                "station": st,
-                                "date": date_iso,
-                                "requester_id": str(requester) if requester else "", #Ensure string
-                                "requester_name": requester_name,
-                                "assignee_id": None,
-                                "assignee_name": rec.get("assignee_name") or "",
-                            })
-            except Exception: # Catch JSON parsing errors for malformed lines
-                continue
 
         #Resolve display names via the process-wide username cache so repeat
         #lookups across boot sync / catabase sync don't burn through the
@@ -1852,148 +2078,43 @@ async def start_web_server(bot):
                 if display:
                     assignee_name_cache[uid] = display
 
-        # Fill requester and assignee details from the acceptance map built above.
-        for item in requested_items:
-            key = (item.get("id"), item.get("station"), item.get("date"))
-            assignee = accepted_map.get(key)
-            if assignee:
-                item["assignee_id"] = str(assignee) #Ensure string
-                if not item.get("assignee_name"):
-                    try:
-                        item["assignee_name"] = assignee_name_cache.get(int(assignee), "")
-                    except ValueError: # Catch non-integer assignee IDs
-                        item["assignee_name"] = ""
-            if item.get("requester_id") and not item.get("requester_name"):
-                try:
-                    item["requester_name"] = name_cache.get(int(item["requester_id"]), "")
-                except ValueError: # Catch non-integer requester IDs
-                    item["requester_name"] = ""
+        buckets = _bucket_sub_requests(
+            requested_items,
+            accepted_map,
+            today=today,
+            requester_names=name_cache,
+            assignee_names=assignee_name_cache,
+        )
 
-        available = []
-        upcoming_filled = []
-        past = []
-
-        for item in requested_items:
-            date_iso = item.get("date")
-            try:
-                d = datetime.fromisoformat(date_iso).date() if date_iso else None
-            except Exception:
-                d = None
-            assignee = accepted_map.get((item["id"], item["station"], date_iso))
-            target_list = None
-            if d and d < today:
-                target_list = past
-            else:
-                target_list = upcoming_filled if assignee else available
-
-            #Avoid timezone-induced date shifting in browsers: anchor date to noon
-            safe_date = date_iso
-            if date_iso and len(str(date_iso)) == 10 and "T" not in str(date_iso):
-                safe_date = f"{date_iso}T12:00:00"
-
-            out = dict(item)
-            out["date_raw"] = date_iso
-            out["date"] = safe_date
-            # Serialize IDs as strings so the UI receives stable JSON values.
-            if out.get("requester_id"):
-                out["requester_id"] = str(out["requester_id"])
-            if out.get("requester"):
-                out["requester"] = str(out["requester"])
-                
-            if assignee:
-                out["assignee_id"] = str(assignee)
-                if not out.get("assignee_name"):
-                    try:
-                        out["assignee_name"] = assignee_name_cache.get(int(assignee), "")
-                    except ValueError: # Catch non-integer assignee IDs
-                        out["assignee_name"] = ""
-            
-            target_list.append(out)
-
-        resp = web.json_response({
-            "available": available,
-            "upcoming_filled": upcoming_filled,
-            "past": past,
-        })
+        resp = web.json_response(buckets)
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         return _with_cors(resp, request)
 
     async def claim_subs(request):
         """Mark sub requests as accepted by a user."""
-        session, error = await _require_permissions(request, require_view=True)
+        session, data, error = await _authorized_json(request, require_view=True)
         if error:
             return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
-        try:
-            data = await request.json()
-        except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
-        permissions = session.get("permissions", {})
-        user_id = data.get("user_id") or session.get("user_id")
-        if not permissions.get("is_officer"):
-            user_id = session.get("user_id")
+        user_id, _user_name = _acting_identity(session, data)
         picks = data.get("picks") or []
-        if not isinstance(picks, list) or len(picks) > 31:
+        if not isinstance(picks, list) or len(picks) > _MAX_SUBREQUEST_DATES:
             return _with_cors(web.Response(status=400, text="Invalid picks"), request)
         if not user_id or not picks:
             return _with_cors(web.Response(status=400, text="Missing user_id or picks"), request)
 
-        from datetime import datetime
         now_iso = datetime.now().isoformat()
         messages_by_date = {}  #date_iso -> list of (station, requester_id, requester_name)
 
-        # Rebuild claim details from server-side request logs. Client-supplied
-        # requester names/IDs must never become trusted Discord mentions.
-        requested_by_id = {}
-        accepted_keys = set()
-        for _path, rows in _feed._load_sub_files(
+        requested_by_id, accepted_keys = _index_sub_records(_feed._load_sub_files(
             month_keys=None,
             include_legacy=_feed.SUBS_LEGACY_FILE.exists(),
-        ):
-            for rec in rows:
-                rec_id = str(rec.get("id") or "")
-                rec_dates = rec.get("dates") or []
-                rec_date = str(rec_dates[0]) if rec_dates else ""
-                rec_stations = rec.get("stations") or ([rec.get("station")] if rec.get("station") else [])
-                if rec.get("status") == "requested" and rec_id:
-                    requested_by_id[rec_id] = rec
-                elif rec.get("status") == "accepted":
-                    parent = str(rec.get("parent_id") or rec_id)
-                    for rec_station in rec_stations:
-                        accepted_keys.add((parent, str(rec_station), rec_date))
-
-        validated_picks = []
-        pending_keys = set()
-        for pick in picks:
-            if not isinstance(pick, dict):
-                return _with_cors(web.Response(status=400, text="Invalid claim"), request)
-            parent_id = str(pick.get("id") or "")
-            source = requested_by_id.get(parent_id)
-            if not source:
-                return _with_cors(web.Response(status=404, text="Substitute request not found"), request)
-            station = str(pick.get("station") or "").strip()
-            try:
-                date_iso = datetime.fromisoformat(str(pick.get("date") or "")).date().isoformat()
-            except ValueError:
-                return _with_cors(web.Response(status=400, text="Invalid date"), request)
-            source_dates = [str(v) for v in (source.get("dates") or [])]
-            source_stations = [
-                str(v) for v in (
-                    source.get("stations")
-                    or ([source.get("station")] if source.get("station") else [])
-                )
-            ]
-            if date_iso not in source_dates or station not in source_stations:
-                return _with_cors(web.Response(status=400, text="Claim does not match request"), request)
-            claim_key = (parent_id, station, date_iso)
-            if claim_key in accepted_keys or claim_key in pending_keys:
-                return _with_cors(web.Response(status=409, text="Request already claimed"), request)
-            requester = source.get("requester")
-            requester_name = source.get("requester_name") or ""
-            pending_keys.add(claim_key)
-            validated_picks.append((parent_id, station, date_iso, requester, requester_name))
+        ))
+        validated_picks, claim_error = _validate_sub_claims(
+            picks, requested_by_id, accepted_keys
+        )
+        if claim_error:
+            status, message = claim_error
+            return _with_cors(web.Response(status=status, text=message), request)
 
         # Only append after every submitted claim has passed validation so a
         # malformed later item cannot leave a partially applied request.
@@ -2031,63 +2152,23 @@ async def start_web_server(bot):
             except Exception:
                 continue
 
-        #Notify feeding team channel
+        #Notify the feeding team channel, once for the whole batch.
         try:
             channel_id = getattr(settings, "ch_feeding_team", None)
             if channel_id and messages_by_date:
                 ch = bot.get_channel(int(channel_id))
                 from discord.abc import Messageable
                 if isinstance(ch, Messageable):
-                    #Build a single aggregated message
-                    try:
-                        req_mentions_set = set()
-                        date_bits = []
-                        for date_iso, items in messages_by_date.items():
-                            stations = [st for st, _, _ in items]
-                            reqs = [(req, req_name) for _, req, req_name in items]
-                            for req, req_name in reqs:
-                                mention = None
-                                if req and str(req).isdigit():
-                                    mention = f"<@{req}>"
-                                elif req_name:
-                                    mention = req_name
-                                else:
-                                    mention = "someone"
-                                req_mentions_set.add(mention)
-                            if len(stations) >= 3:
-                                stations_text = ", ".join(stations[:-1]) + f", and {stations[-1]}"
-                            elif len(stations) == 2:
-                                stations_text = f"{stations[0]} and {stations[1]}"
-                            else:
-                                stations_text = stations[0]
-                            try:
-                                dt = datetime.fromisoformat(date_iso)
-                                dow = dt.strftime("%A")
-                                date_pretty = dt.strftime("%m/%d/%Y")
-                            except Exception:
-                                dow = ""
-                                date_pretty = date_iso
-                            date_bits.append(f"{stations_text} on {dow + ', ' if dow else ''}{date_pretty}")
-                        req_mentions = ""
-                        if len(req_mentions_set) >= 2:
-                            req_mentions = " and ".join(req_mentions_set)
-                        elif len(req_mentions_set) == 1:
-                            req_mentions = next(iter(req_mentions_set))
-                        else:
-                            req_mentions = "someone"
-                        msg = f"<@{user_id}> picked up {req_mentions}'s substitute request for " + " and ".join(date_bits)
-                        mention_ids = [user_id]
-                        mention_ids.extend(
-                            req
-                            for items in messages_by_date.values()
-                            for _, req, _ in items
-                        )
-                        await ch.send(
-                            msg,
-                            allowed_mentions=_allowed_user_mentions(*mention_ids),
-                        )
-                    except Exception:
-                        pass
+                    mention_ids = [user_id]
+                    mention_ids.extend(
+                        requester
+                        for items in messages_by_date.values()
+                        for _station, requester, _name in items
+                    )
+                    await ch.send(
+                        _claim_announcement(user_id, messages_by_date),
+                        allowed_mentions=_allowed_user_mentions(*mention_ids),
+                    )
         except Exception:
             pass
 

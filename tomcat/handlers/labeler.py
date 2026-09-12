@@ -1,4 +1,4 @@
-"""API endpoints for the web-based image labeling tool.
+﻿"""API endpoints for the web-based image labeling tool.
 
 Routes:
   GET  /api/labeler/queue/detect    - Serials needing detector labels
@@ -3107,12 +3107,16 @@ def _manual_ref_cache_status_payload(
     *,
     total_hint: int = 0,
 ) -> Dict[str, Any]:
+    """Describe the manual-review ref caches. Reads module state only.
+
+    Callers pass the cat count they already know. Without one this reports what
+    the caches hold rather than loading the profile catalog to count: that
+    pulls the CatDatabase sheet again once the refresh window is up, and this
+    ran on the event loop.
+    """
     total = max(0, int(total_hint or 0))
     if total <= 0:
-        try:
-            total = len(_load_profile_catalog()[1])
-        except Exception:
-            total = max(len(_manual_metadata_ref_cache), len(_photo_crop_index_cache))
+        total = max(len(_manual_metadata_ref_cache), len(_photo_crop_index_cache))
     built = int(len(_manual_metadata_ref_cache or {}))
     ready = bool(_manual_metadata_ref_cache) and bool(_photo_crop_index_cache)
     return {
@@ -6891,7 +6895,11 @@ async def post_manual_refs_warm(request: web.Request) -> web.Response:
 async def get_manual_refs_status(request: web.Request) -> web.Response:
     """Get manual-review metadata-ref cache status."""
     try:
-        return _with_cors(web.json_response(_manual_ref_cache_status_payload()), request)
+        #The catalog load is what knows how many cats there are, and it can pull
+        #the CatDatabase sheet, so it goes in a thread.
+        _alias_lookup, ordered_profile, _by_key = await asyncio.to_thread(_load_profile_catalog)
+        status = _manual_ref_cache_status_payload(total_hint=len(ordered_profile))
+        return _with_cors(web.json_response(status), request)
     except Exception as e:
         log_action("labeler_manual_refs_status_error", "error", str(e))
         return _internal_error_response(request)

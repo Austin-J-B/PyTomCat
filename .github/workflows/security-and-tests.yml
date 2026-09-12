@@ -77,6 +77,7 @@ jobs:
           python scripts/test_profile_cache.py
           python scripts/test_image_budget.py
           python scripts/test_gallery_file.py
+          python scripts/test_no_torch_import.py
 
       - name: Run JavaScript regression scripts
         run: |

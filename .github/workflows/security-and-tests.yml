@@ -46,6 +46,7 @@ jobs:
           python scripts/test_static_assets.py
           python scripts/test_authorized_json.py
           python scripts/test_subrequest_parsing.py
+          python scripts/test_sub_claims.py
           python scripts/test_finance_dedup.py
           python scripts/test_finance_classifiers.py
           python scripts/test_finance_append.py

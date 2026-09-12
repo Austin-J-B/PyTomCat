@@ -50,6 +50,7 @@ jobs:
           python scripts/test_logger.py
           python scripts/test_schedule_store.py
           python scripts/test_vision_handlers.py
+          python scripts/test_profile_cache.py
           python scripts/test_image_budget.py
 
       - name: Run JavaScript regression scripts

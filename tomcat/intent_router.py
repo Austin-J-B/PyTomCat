@@ -10,7 +10,7 @@ import os
 from collections import deque, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 import discord
 
@@ -351,6 +351,144 @@ except Exception:
         #difflib ratio ~ [0,1]
         return (name[0], difflib.SequenceMatcher(None, q, name[0]).ratio())
 
+def _event(row: MachineRow, type: str, confidence: float, **slots: Any) -> IntentEvent:
+    """Build an IntentEvent for a buffered row. Keyword slots override defaults."""
+    fields: Dict[str, Any] = {
+        "channel_id": row["channel_id"],
+        "user_id": row["user_id"],
+        "message_id": row["message_id"],
+        "text": row["text"],
+        "has_image": row["has_image"],
+        "attachment_ids": row["attachment_ids"],
+    }
+    fields.update(slots)
+    return IntentEvent(type=type, confidence=confidence, **fields)
+
+
+@dataclass(frozen=True)
+class _CommandRule:
+    """One addressed-message command: match the text, emit this intent.
+
+    Most commands are exactly this — a pattern, sometimes a fuzzy spelling net,
+    sometimes an officer gate — so they live in the two tables below instead of
+    as near-identical fifteen-line blocks. `slots` is for the handful that also
+    read something out of the message; returning None from it declines the rule
+    and lets matching continue.
+    """
+
+    intent: str
+    pattern: Optional[re.Pattern[str]] = None
+    fuzzy: Tuple[str, ...] = ()
+    fuzzy_threshold: int = 82
+    confidence: float = 0.99
+    officer_only: bool = False
+    trace: Optional[str] = None
+    slots: Optional[Callable[["IntentRouter", MachineRow, str], Optional[Dict[str, Any]]]] = None
+
+    def matches(self, text: str) -> bool:
+        if self.pattern is not None and self.pattern.search(text):
+            return True
+        return bool(self.fuzzy) and _fuzzy_command_present(
+            text, list(self.fuzzy), self.fuzzy_threshold
+        )
+
+
+def _timeout_target(
+    _router: "IntentRouter", row: MachineRow, _text: str
+) -> Optional[Dict[str, Any]]:
+    """First mentioned user that is not the bot itself."""
+    for uid_str in USER_MENTION_RE.findall(row["text"]):
+        uid = int(uid_str)
+        if uid != _BOT_ID_INT:
+            return {"target_user_id": uid}
+    return {}
+
+
+def _schedule_date(
+    router: "IntentRouter", _row: MachineRow, text: str
+) -> Optional[Dict[str, Any]]:
+    """Decline unless the message names a date we can resolve."""
+    target_iso = router._parse_schedule_date(text)
+    if not target_iso:
+        return None
+    return {"dates": [target_iso], "_trace": f"rule:feeding_schedule={target_iso}"}
+
+
+#Checked in order for every addressed message, before the free-form parsers.
+_COMMAND_RULES: Tuple[_CommandRule, ...] = (
+    _CommandRule("silent_mode", SILENT_CMD, confidence=1.0),
+    _CommandRule("gmail_check_last", CHECK_LAST_EMAIL_RE, officer_only=True),
+    _CommandRule("gmail_log_recent", LOG_PAST_EMAILS_RE, officer_only=True),
+    _CommandRule(
+        "gmail_check_emails", CHECK_EMAILS_RE, officer_only=True,
+        fuzzy=("check emails", "check our email", "log emails", "scan emails", "read emails"),
+    ),
+    _CommandRule("finance_log_recent", LOG_LAST_FINANCES_RE, officer_only=True),
+    _CommandRule("gmail_auth_code", AUTH_CODE_RE, officer_only=True),
+    _CommandRule("dues_check", DUE_CHECK_RE, officer_only=True),
+    _CommandRule("dues_perks", DUES_PERKS_RE, officer_only=True),
+    _CommandRule("dues_update", DUES_UPDATE_RE, officer_only=True),
+    _CommandRule("dues_run_job", RUN_DUES_JOB_RE, officer_only=True),
+    _CommandRule("role_remove_all", REMOVE_ROLE_RE, officer_only=True),
+    _CommandRule("timeout_user", TIMEOUT_RE, officer_only=True, slots=_timeout_target),
+    #Ahead of the generic photo recache path so "recache catabase" does not fall
+    #through to the photo-cache commands.
+    _CommandRule(
+        "recache_catabase", RECACHE_CATABASE_RE, officer_only=True, fuzzy_threshold=84,
+        fuzzy=("recache catabase", "recache cat database", "recache names"),
+    ),
+    _CommandRule("feeding_schedule_link", FEEDING_SCHEDULE_LINK_RE),
+    _CommandRule("sub_request_link", SUB_REQUEST_LINK_RE),
+    _CommandRule(
+        "function_glossary", FUNCTIONS_RE,
+        fuzzy=("functions", "commands", "help", "glossary"),
+    ),
+)
+
+
+@dataclass(frozen=True)
+class _CvCommand:
+    """A vision command and how its trace is recorded."""
+
+    intent: str
+    pattern: "re.Pattern[str]"
+    fuzzy: Tuple[str, ...]
+    #cv_identify predates the other two and records nothing for the reply case.
+    #Kept as-is so the decision traces stay comparable across old log files.
+    trace_reply: bool
+
+
+_CV_COMMANDS: Tuple[_CvCommand, ...] = (
+    _CvCommand("cv_identify", IDENT_PAT, ("identify", "id", "classify"), trace_reply=False),
+    _CvCommand("cv_detect", DETECT_PAT, ("detect",), trace_reply=True),
+    _CvCommand("cv_crop", CROP_PAT, ("crop",), trace_reply=True),
+)
+
+
+#Checked after the "who is this?" image pairing, which has to run first.
+_FEEDING_AND_PROFILE_RULES: Tuple[_CommandRule, ...] = (
+    _CommandRule(
+        "feeding_status", FEEDING_UPDATE_RE, confidence=0.95,
+        fuzzy=("feeding update",), trace="rule:feeding_status",
+    ),
+    _CommandRule(
+        "feeding_today", FEEDING_WHO_TODAY_RE, confidence=0.95,
+        fuzzy=("who is feeding today", "who feeds today", "who's feeding tonight"),
+        trace="rule:feeding_today",
+    ),
+    _CommandRule(
+        "feeding_schedule", FEEDING_WHO_ANY_RE, confidence=0.9,
+        fuzzy=("who is feeding", "who's feeding", "who feeds"), slots=_schedule_date,
+    ),
+    _CommandRule(
+        "manual_8pm", MANUAL_8PM_RE,
+        fuzzy=("manual 8 pm update", "preview 8 pm"), trace="rule:manual_8pm",
+    ),
+    _CommandRule("profiles_create", CREATE_PROFILES_RE),
+    _CommandRule("profile_update_one", UPDATE_PROFILE_RE),
+    _CommandRule("profiles_update_all", UPDATE_ALL_PROFILES_RE),
+)
+
 #------------------------------------------------------------------------------
 #Clarification UI: Yes/No that only the original author can click
 #------------------------------------------------------------------------------
@@ -553,6 +691,95 @@ class IntentRouter:
             "attachment_ids": att_ids,
         }
 
+    def _decided(
+        self,
+        row: MachineRow,
+        trace: List[str],
+        steps: List[str],
+        intent: str,
+        confidence: float,
+        **slots: Any,
+    ) -> IntentEvent:
+        """Record the steps that settled this message, then return the intent."""
+        trace.extend(steps)
+        self._traces[row["message_id"]] = trace
+        return _event(row, intent, confidence, **slots)
+
+    def _quiet(self, row: MachineRow, trace: List[str], step: str, **slots: Any) -> IntentEvent:
+        """Say nothing, but record why: silence and a bot failure look alike in logs."""
+        return self._decided(row, trace, [step], "none", 0.0, **slots)
+
+    def _stations_in(self, text: str, *, allow_stopword_aliases: bool = False) -> List[str]:
+        """Stations named in the text, falling back to the single best guess."""
+        stations = self._extract_all_entities(
+            text, want="station", allow_stopword_aliases=allow_stopword_aliases
+        )
+        if stations:
+            return stations
+        best = self._extract_best_entity(
+            text, want="station", allow_stopword_aliases=allow_stopword_aliases
+        )
+        return [best] if best else []
+
+    def _apply_command_rule(
+        self,
+        rule: _CommandRule,
+        row: MachineRow,
+        text: str,
+        message: discord.Message,
+        trace: List[str],
+    ) -> Optional[IntentEvent]:
+        """Run one table rule. None means it did not apply; keep matching."""
+        if not rule.matches(text):
+            return None
+        if rule.officer_only and not is_officer(message.author, settings):
+            return self._quiet(row, list(trace), "deny:not_officer")
+        slots = rule.slots(self, row, text) if rule.slots else {}
+        if slots is None:
+            return None
+        step = slots.pop("_trace", rule.trace)
+        if step:
+            return self._decided(row, trace, [step], rule.intent, rule.confidence, **slots)
+        return _event(row, rule.intent, rule.confidence, **slots)
+
+    def _cv_event(
+        self,
+        cv: _CvCommand,
+        row: MachineRow,
+        message: discord.Message,
+        trace: List[str],
+    ) -> IntentEvent:
+        """Point a vision command at an image, or wait quietly for one.
+
+        Accept an attachment, a reply (the handler resolves the referenced
+        image), or the author's own recent image in this channel. With none of
+        those, record a pending request and stay silent until an image arrives.
+        """
+        if row["has_image"]:
+            return self._decided(row, trace, [f"intent:{cv.intent}"], cv.intent, 1.0)
+        #Replies may point at someone else's image of any age; the handler checks.
+        if getattr(message, "reference", None):
+            if not cv.trace_reply:
+                return _event(row, cv.intent, 0.95)
+            return self._decided(
+                row, trace, ["context:reply_image", f"intent:{cv.intent}"], cv.intent, 0.95
+            )
+        pm = self._last_image_for_user_seconds(
+            row["channel_id"], row["user_id"],
+            within_seconds=int(getattr(settings, "cv_lookback_seconds_before", 30) or 30),
+        )
+        if pm:
+            return self._decided(
+                row, trace, ["context:image_user_30s", f"intent:{cv.intent}"],
+                cv.intent, 0.95,
+                has_image=True, attachment_ids=pm.get("attachment_ids", []),
+                paired_messages=[pm["message_id"]],
+            )
+        self._set_pending_cv(row["channel_id"], row["user_id"], cv.intent, row["message_id"])
+        return self._quiet(
+            row, trace, f"pending:{cv.intent}", has_image=False, attachment_ids=[]
+        )
+
     #---------- core analysis pipeline ----------
     async def _analyze_with_context(self, row: MachineRow, message: discord.Message) -> Optional[IntentEvent]:
         trace: List[str] = []
@@ -582,588 +809,137 @@ class IntentRouter:
         if addressed:
             #strip wake tokens
             text_wo = self._strip_wake_tokens(raw_text, message)
-            #Silent mode command: requires TomCat prefix
-            m = SILENT_CMD.search(text_wo)
-            if m:
-                return IntentEvent(
-                    type="silent_mode", confidence=1.0,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
+            #Commands that only need a pattern match plus, for some, an officer
+            #check. Declared in _COMMAND_RULES; order there is load-bearing.
+            for rule in _COMMAND_RULES:
+                event = self._apply_command_rule(rule, row, text_wo, message, trace)
+                if event is not None:
+                    return event
 
-            #Officer-only: "check the last email"
-            if CHECK_LAST_EMAIL_RE.search(text_wo):
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="gmail_check_last", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #Officer-only: "log the past N emails"
-            m_log = LOG_PAST_EMAILS_RE.search(text_wo)
-            if m_log:
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="gmail_log_recent", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #Officer-only: "check emails" / "log emails" / "scan emails" (default 99)
-            if CHECK_EMAILS_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["check emails", "check our email", "log emails", "scan emails", "read emails"]):
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="gmail_check_emails", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #Officer-only: "log last N finances"
-            m_fin = LOG_LAST_FINANCES_RE.search(text_wo)
-            if m_fin:
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="finance_log_recent", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-
-            m_auth = AUTH_CODE_RE.search(text_wo)
-            if m_auth:
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="gmail_auth_code", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                    #slot: reuse cat_name to carry code? better: we don't change dataclass, pass via text, we can reparse in handler
-                )
-
-            #Officer-only dues check
-            if DUE_CHECK_RE.search(text_wo):
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="dues_check", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #Dues perks: run perks (emails + usernames)
-            if DUES_PERKS_RE.search(text_wo):
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="dues_perks", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #Officer-only: update due paying members (check + auto-verify + perks)
-            if DUES_UPDATE_RE.search(text_wo):
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="dues_update", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #Officer-only: run dues job (manual trigger for daily scheduler)
-            if RUN_DUES_JOB_RE.search(text_wo):
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="dues_run_job", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #Officer-only: remove a specific role from everyone
-            m_role = REMOVE_ROLE_RE.search(text_wo)
-            if m_role:
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="role_remove_all", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #Officer-only: timeout a user
-            if TIMEOUT_RE.search(text_wo):
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                # Extract target mention (first non-bot user mention)
-                mentions = USER_MENTION_RE.findall(row["text"])
-                target_uid = None
-                for uid_str in mentions:
-                    uid = int(uid_str)
-                    if uid != _BOT_ID_INT:
-                        target_uid = uid
-                        break
-                return IntentEvent(
-                    type="timeout_user", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                    target_user_id=target_uid,
-                )
-
-            # Check this branch ahead of the generic photo recache path so
-            # "recache catabase" does not fall through to photo-cache commands.
-            recache_catabase_like = bool(
-                RECACHE_CATABASE_RE.search(text_wo)
-                or _fuzzy_command_present(
-                    text_wo,
-                    ["recache catabase", "recache cat database", "recache names"],
-                    threshold=84,
-                )
-            )
-            if recache_catabase_like:
-                author = message.author
-                is_admin = is_officer(author, settings)
-                if not is_admin:
-                    self._traces[row["message_id"]] = trace + ["deny:not_officer"]
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-                return IntentEvent(
-                    type="recache_catabase", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            if FEEDING_SCHEDULE_LINK_RE.search(text_wo):
-                return IntentEvent(
-                    type="feeding_schedule_link", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            if SUB_REQUEST_LINK_RE.search(text_wo):
-                return IntentEvent(
-                    type="sub_request_link", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #Function glossary: "functions", "commands", "help", "glossary"
-            if FUNCTIONS_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["functions", "commands", "help", "glossary"]):
-                return IntentEvent(
-                    type="function_glossary", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-
-            #"who is this?" ? prefer attached/reply image; else last 30s; else set pending and stay quiet
+            #"who is this?" -> prefer attached/reply image; else last 30s; else set pending and stay quiet
             if WHO_THIS_RE.search(text_wo):
                 if has_image or getattr(message, "reference", None):
-                    ev = IntentEvent(
-                       type="cv_identify", confidence=0.95,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                    )
                     trace.append("rule:who_is_this")
                     self._traces[row["message_id"]] = trace
-                    return ev
+                    return _event(row, "cv_identify", 0.95)
                 pm = self._last_image_for_user_seconds(row["channel_id"], row["user_id"], within_seconds=30)
                 if pm:
-                    ev = IntentEvent(
-                       type="cv_identify", confidence=0.95,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=True, attachment_ids=pm.get("attachment_ids", []),
-                        paired_messages=[pm["message_id"]]
-                    )
-                    trace.append("context:image_user_30s")
-                    trace.append("rule:who_is_this")
+                    trace += ["context:image_user_30s", "rule:who_is_this"]
                     self._traces[row["message_id"]] = trace
-                    return ev
+                    return _event(
+                        row, "cv_identify", 0.95,
+                        has_image=True, attachment_ids=pm.get("attachment_ids", []),
+                        paired_messages=[pm["message_id"]],
+                    )
                 #Set pending and be quiet until an image arrives
                 self._set_pending_cv(row["channel_id"], row["user_id"], "cv_identify", row["message_id"])
                 self._traces[row["message_id"]] = trace + ["pending:cv_identify"]
-                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
+                return _event(row, "none", 0.0, has_image=False, attachment_ids=[])
 
-            #"feeding update" ? status listing (requires addressing)
-            if FEEDING_UPDATE_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["feeding update"]):
-                ev = IntentEvent(
-                    type="feeding_status", confidence=0.95,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-                trace.append("rule:feeding_status")
-                self._traces[row["message_id"]] = trace
-                return ev
+            for rule in _FEEDING_AND_PROFILE_RULES:
+                event = self._apply_command_rule(rule, row, text_wo, message, trace)
+                if event is not None:
+                    return event
 
-            if FEEDING_WHO_TODAY_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["who is feeding today", "who feeds today", "who's feeding tonight"]):
-                ev = IntentEvent(
-                    type="feeding_today", confidence=0.95,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-                trace.append("rule:feeding_today")
-                self._traces[row["message_id"]] = trace
-                return ev
-
-            if FEEDING_WHO_ANY_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["who is feeding", "who's feeding", "who feeds"]):
-                target_iso = self._parse_schedule_date(text_wo)
-                if target_iso:
-                    ev = IntentEvent(
-                        type="feeding_schedule", confidence=0.9,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        dates=[target_iso]
-                    )
-                    trace.append(f"rule:feeding_schedule={target_iso}")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-
-            #Officer-only manual 8pm preview
-            if MANUAL_8PM_RE.search(text_wo) or _fuzzy_command_present(text_wo, ["manual 8 pm update", "preview 8 pm"]):
-                ev = IntentEvent(
-                    type="manual_8pm", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
-                trace.append("rule:manual_8pm")
-                self._traces[row["message_id"]] = trace
-                return ev
-
-            #Profile management (admin-only later in handler)
-            m = CREATE_PROFILES_RE.search(text_wo)
-            if m:
-                return IntentEvent(
-                    type="profiles_create", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                    cat_name=None, station=None,
-                    dates=None, paired_messages=None
-                )
-            m = UPDATE_PROFILE_RE.search(text_wo)
-            if m:
-                return IntentEvent(
-                    type="profile_update_one", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                    cat_name=None, station=None
-                )
-
-            if UPDATE_ALL_PROFILES_RE.search(text_wo):
-                return IntentEvent(
-                   type="profiles_update_all", confidence=0.99,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
             #Deterministic cat-query parser for catabase questions.
             q_direct = infer_query_from_text(text_wo)
             if q_direct:
-                q_conf = _deterministic_cat_query_confidence(text_wo, q_direct)
-                trace.append("intent:cat_query(deterministic)")
-                self._traces[row["message_id"]] = trace
-                return IntentEvent(
-                    type="cat_query", confidence=q_conf,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
+                return self._decided(
+                    row, trace, ["intent:cat_query(deterministic)"],
+                    "cat_query", _deterministic_cat_query_confidence(text_wo, q_direct),
                     trigger_phrase="deterministic_parser",
                     query={**q_direct, "source_text": text_wo},
                 )
-            # If we can tell it's a catabase question but slot extraction is unclear,
-            # route with source_text for the generic CSV plan.
+            #Recognizably a catabase question, but the slots are unclear: route it
+            #with the raw text so the generic CSV plan can have a go.
             if looks_like_cat_query_text(text_wo):
-                trace.append("intent:cat_query(source_text_fallback)")
-                self._traces[row["message_id"]] = trace
-                return IntentEvent(
-                    type="cat_query",
-                    confidence=0.72,
-                    channel_id=row["channel_id"],
-                    user_id=row["user_id"],
-                    message_id=row["message_id"],
-                    text=row["text"],
-                    has_image=has_image,
-                    attachment_ids=row["attachment_ids"],
+                return self._decided(
+                    row, trace, ["intent:cat_query(source_text_fallback)"],
+                    "cat_query", 0.72,
                     trigger_phrase="source_text_fallback",
                     query={"op": "list_names_by_filters", "source_text": text_wo},
                 )
 
             if FEEDING_CHECK_RE.search(text_wo):
-                return IntentEvent(
-                    type="feeding_status", confidence=0.95,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                )
+                return _event(row, "feeding_status", 0.95)
 
             show_like = bool(SHOW_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["show me", "show"]))
             photo_like = bool(PHOTO_PAT.search(text_wo))
             if show_like or photo_like:
                 cat = self._extract_best_entity(text_wo, want="cat")
                 if cat:
-                    ev = IntentEvent(
-                        type="show_photo", confidence=1.0,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        cat_name=cat
+                    return self._decided(
+                        row, trace, [f"slot:cat={cat}", "intent:show_photo"],
+                        "show_photo", 1.0, cat_name=cat,
                     )
-                    trace.append(f"slot:cat={cat}")
-                    trace.append("intent:show_photo")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                #If this was an explicit "show" command with no cat, suppress noise.
-                #For generic photo mentions (e.g., "photo of X") keep parsing so fallback can help.
+                #An explicit "show" with no cat is noise, so stay quiet. A generic
+                #photo mention ("photo of X") keeps parsing so the fallback can help.
                 if show_like:
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
-                                       message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                    return _event(row, "none", 0.0)
 
             if WHO_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["who is", "who's", "who is this", "who is that"]):
                 cat = self._extract_best_entity(text_wo, want="cat")
                 if cat:
-                    ev = IntentEvent(
-                        type="who_is", confidence=1.0,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        cat_name=cat
+                    return self._decided(
+                        row, trace, [f"slot:cat={cat}", "intent:who_is"],
+                        "who_is", 1.0, cat_name=cat,
                     )
-                    trace.append(f"slot:cat={cat}")
-                    trace.append("intent:who_is")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
-                                   message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return _event(row, "none", 0.0)
 
-            #cv: identify
-            if IDENT_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["identify", "id", "classify"]):
-                #cv identify/detect/crop need an image. Accept if:
-                #- attachment already present
-                #- message is a reply (handler will resolve image from the referenced message)
-                #- last image by same user in the same channel within 30 seconds
-                if has_image:
-                    ev = IntentEvent(
-                        type="cv_identify", confidence=1.0,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=True, attachment_ids=row["attachment_ids"]
-                    )
-                    trace.append("intent:cv_identify")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                #allow replies to other people's images regardless of age (handler enforces image presence)
-                if getattr(message, "reference", None):
-                    return IntentEvent(
-                        type="cv_identify", confidence=0.95,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                    )
-                #look back for user's own image within the last 30 seconds
-                pm = self._last_image_for_user_seconds(
-                    row["channel_id"], row["user_id"], within_seconds=int(getattr(settings, "cv_lookback_seconds_before", 30) or 30)
-                )
-                if pm:
-                    ev = IntentEvent(
-                        type="cv_identify", confidence=0.95,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=True, attachment_ids=pm.get("attachment_ids", []),
-                        paired_messages=[pm["message_id"]]
-                    )
-                    trace.append("context:image_user_30s")
-                    trace.append("intent:cv_identify")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                #otherwise, create a pending CV follow-up (5 minutes window) and stay silent
-                self._set_pending_cv(row["channel_id"], row["user_id"], "cv_identify", row["message_id"])
-                trace.append("pending:cv_identify")
-                self._traces[row["message_id"]] = trace
-                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
-                                   message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
-
-            #cv: detect
-            if DETECT_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["detect"]):
-                if has_image:
-                    ev = IntentEvent(
-                        type="cv_detect", confidence=1.0,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=True, attachment_ids=row["attachment_ids"]
-                    )
-                    trace.append("intent:cv_detect")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                if getattr(message, "reference", None):
-                    ev = IntentEvent(
-                        type="cv_detect", confidence=0.95,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                    )
-                    trace.append("context:reply_image")
-                    trace.append("intent:cv_detect")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                pm = self._last_image_for_user_seconds(
-                    row["channel_id"], row["user_id"], within_seconds=int(getattr(settings, "cv_lookback_seconds_before", 30) or 30)
-                )
-                if pm:
-                    ev = IntentEvent(
-                        type="cv_detect", confidence=0.95,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=True, attachment_ids=pm.get("attachment_ids", []),
-                        paired_messages=[pm["message_id"]]
-                    )
-                    trace.append("context:image_user_30s")
-                    trace.append("intent:cv_detect")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                self._set_pending_cv(row["channel_id"], row["user_id"], "cv_detect", row["message_id"])
-                trace.append("pending:cv_detect")
-                self._traces[row["message_id"]] = trace
-                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
-                                   message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
-
-            #cv: crop
-            if CROP_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["crop"]):
-                if has_image:
-                    ev = IntentEvent(
-                        type="cv_crop", confidence=1.0,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=True, attachment_ids=row["attachment_ids"]
-                    )
-                    trace.append("intent:cv_crop")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                if getattr(message, "reference", None):
-                    ev = IntentEvent(
-                        type="cv_crop", confidence=0.95,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"]
-                    )
-                    trace.append("context:reply_image")
-                    trace.append("intent:cv_crop")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                pm = self._last_image_for_user_seconds(
-                    row["channel_id"], row["user_id"], within_seconds=int(getattr(settings, "cv_lookback_seconds_before", 30) or 30)
-                )
-                if pm:
-                    ev = IntentEvent(
-                        type="cv_crop", confidence=0.95,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=True, attachment_ids=pm.get("attachment_ids", []),
-                        paired_messages=[pm["message_id"]]
-                    )
-                    trace.append("context:image_user_30s")
-                    trace.append("intent:cv_crop")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                self._set_pending_cv(row["channel_id"], row["user_id"], "cv_crop", row["message_id"])
-                trace.append("pending:cv_crop")
-                self._traces[row["message_id"]] = trace
-                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"],
-                                   message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
+            #cv: identify / detect / crop all resolve an image the same way
+            for cv in _CV_COMMANDS:
+                if cv.pattern.search(text_wo) or _fuzzy_command_present(text_wo, list(cv.fuzzy)):
+                    return self._cv_event(cv, row, message, trace)
 
         #3) Feeding-team flows (high traffic). Feed updates only; subs are UI-only.
         #Case A: feed verb with possibly multiple stations
         if FEED_VERB.search(text):
             if FEED_NEGATION_RE.search(text):
-                trace.append("skip:negated_feed")
-                self._traces[row["message_id"]] = trace
-                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-            elif "?" in text and not has_image:
-                trace.append("skip:question_feed")
-                self._traces[row["message_id"]] = trace
-                return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
-            else:
-                stations = self._extract_all_entities(text, want="station", allow_stopword_aliases=True)
-                if not stations:
-                    best = self._extract_best_entity(text, want="station", allow_stopword_aliases=True)
-                    if best:
-                        stations = [best]
-                if stations:
-                    dates = self._extract_dates(text)
-                    if not dates:
-                        dates = [self._today()]
-                    ev = IntentEvent(
-                        type="feed_update", confidence=0.95,
-                        channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                        text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"],
-                        station=stations[0], stations=stations, dates=dates
-                    )
-                    trace.append(f"slot:stations={','.join(stations)}")
-                    trace.append("intent:feed_update")
-                    self._traces[row["message_id"]] = trace
-                    return ev
-                else:
-                    #Feed verb with no identifiable station; avoid false positives from fuzzy token matches
-                    trace.append("skip:feed_no_station")
-                    self._traces[row["message_id"]] = trace
-                    return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=has_image, attachment_ids=row["attachment_ids"])
+                return self._quiet(row, trace, "skip:negated_feed")
+            if "?" in text and not has_image:
+                return self._quiet(row, trace, "skip:question_feed")
+            stations = self._stations_in(text, allow_stopword_aliases=True)
+            if not stations:
+                #Feed verb with no identifiable station; avoid false positives
+                #from fuzzy token matches.
+                return self._quiet(row, trace, "skip:feed_no_station")
+            return self._decided(
+                row, trace,
+                [f"slot:stations={','.join(stations)}", "intent:feed_update"],
+                "feed_update", 0.95,
+                station=stations[0], stations=stations,
+                dates=self._extract_dates(text) or [self._today()],
+            )
 
         #Case B: only station name(s), use image context if needed
-        station_only_list = self._extract_all_entities(text, want="station")
-        if not station_only_list:
-            best = self._extract_best_entity(text, want="station")
-            if best:
-                station_only_list = [best]
+        station_only_list = self._stations_in(text)
         if station_only_list and in_feeding and not addressed:
-            #If they included "fed" above we already returned. This is the â€œmikeâ€ alone case.
-            #If an image is attached, accept. Else, look back (5m). Else set pending.
+            #A "fed" anywhere in the text already returned above, so this is the
+            #bare "mike" case. Take an attachment, else look back five minutes,
+            #else remember the station and wait for a photo.
+            feed_slots = {
+                "station": station_only_list[0],
+                "stations": station_only_list,
+                "dates": [self._today()],
+            }
             if has_image:
-                return IntentEvent(
-                    type="feed_update", confidence=0.9,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=True, attachment_ids=row["attachment_ids"],
-                    station=station_only_list[0], stations=station_only_list, dates=[self._today()]
-                )
-            pm = self._last_image_for_user(row["channel_id"], row["user_id"], within_minutes=int(getattr(settings, "feed_lookback_minutes_before", 5) or 5))
+                return _event(row, "feed_update", 0.9, has_image=True, **feed_slots)
+            pm = self._last_image_for_user(
+                row["channel_id"], row["user_id"],
+                within_minutes=int(getattr(settings, "feed_lookback_minutes_before", 5) or 5),
+            )
             if pm:
-                return IntentEvent(
-                    type="feed_update", confidence=0.85,
-                    channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                    text=row["text"], has_image=True, attachment_ids=pm.get("attachment_ids", []),
-                    station=station_only_list[0], stations=station_only_list, dates=[self._today()],
-                    paired_messages=[pm["message_id"]]
+                return _event(
+                    row, "feed_update", 0.85, has_image=True,
+                    attachment_ids=pm.get("attachment_ids", []),
+                    paired_messages=[pm["message_id"]], **feed_slots,
                 )
-            #Set pending and stay silent
             self._set_pending_feed(row["channel_id"], row["user_id"], station_only_list, row["message_id"], row["text"])
-            trace.append("pending:feed_update")
-            self._traces[row["message_id"]] = trace
-            return IntentEvent(type="none", confidence=0.0, channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"], text=row["text"], has_image=False, attachment_ids=[])
+            return self._quiet(row, trace, "pending:feed_update", has_image=False, attachment_ids=[])
 
         #Default: none
         self._traces[row["message_id"]] = trace
-        return IntentEvent(type="none", confidence=0.0,
-                           channel_id=row["channel_id"], user_id=row["user_id"], message_id=row["message_id"],
-                           text=row["text"], has_image=row["has_image"], attachment_ids=row["attachment_ids"])
+        return _event(row, "none", 0.0)
 
     #---------- dispatch ----------
     async def _dispatch(self, event: IntentEvent, message: discord.Message, ctx: Dict[str, Any]) -> None:

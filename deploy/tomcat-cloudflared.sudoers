@@ -4,3 +4,8 @@
 #       /etc/sudoers.d/tomcat-cloudflared
 #   sudo visudo -cf /etc/sudoers.d/tomcat-cloudflared   # validate
 tomcat ALL=(root) NOPASSWD: /usr/bin/systemctl start tomcat, /usr/bin/systemctl stop tomcat, /usr/bin/systemctl restart tomcat, /usr/bin/systemctl start cloudflared, /usr/bin/systemctl stop cloudflared, /usr/bin/systemctl restart cloudflared
+# Lets deploy.sh apply unit changes from main on its own, so edits to
+# tomcat.service (memory caps, ordering) no longer need a manual reinstall.
+# Scoped to one root-owned script that takes no arguments -- granting `install`
+# or `daemon-reload` directly would let tomcat write arbitrary root files.
+tomcat ALL=(root) NOPASSWD: /usr/local/sbin/tomcat-sync-units

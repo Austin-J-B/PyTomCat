@@ -1,6 +1,6 @@
 # TomCat VI
 
-**A Discord bot for the people looking after the cats at UT Arlington.**
+**A Discord bot for the Campus Cat Coalition at UT Arlington**
 
 TomCat helps Campus Cat Coalition keep track of feeding rounds, find photos of familiar cats, identify animals in new pictures, and keep the club's records in order. It grew out of the day-to-day work of running a campus cat rescue: remembering who fed which station, finding a substitute, and figuring out whether the cat in someone's photo is Microwave.
 

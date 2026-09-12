@@ -871,262 +871,205 @@ def _fingerprint(ev: "FinanceEvent") -> str:
 
 #--- Venmo-specific parsing of payment notifications ---
 
-def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
+#Every provider pulls the same fields off a notification email and then builds
+#one of two events from them. The shape below is shared so each classifier is
+#only its own pattern matching.
+@dataclass(frozen=True)
+class _EmailFacts:
+    """The provider-independent fields of one notification email."""
+
+    email_id: str
+    subject: str
+    content: str
+    ts: datetime
+    message_id: Optional[str]
+    txn_id: Optional[str]
+
+
+def _email_facts(email: dict) -> _EmailFacts:
     subject = email.get("subject", "")
     content = email.get("content", "")
+    return _EmailFacts(
+        email_id=email.get("id", ""),
+        subject=subject,
+        content=content,
+        ts=_parse_timestamp(email),
+        message_id=email.get("message_id"),
+        txn_id=_extract_txn_id(subject, content),
+    )
+
+
+def _event(
+    facts: _EmailFacts, provider: str, name: str, note: str, amount: float,
+    direction: str, category: Optional[str],
+) -> FinanceEvent:
+    return FinanceEvent(
+        email_id=facts.email_id, provider=provider, counterparty=name, note=note,
+        amount=amount, direction=direction, category=category, ts=facts.ts,
+        raw_subject=facts.subject, raw_content=facts.content,
+        message_blank=not bool(note.strip()),
+        message_id=facts.message_id, txn_id=facts.txn_id,
+    )
+
+
+def _income(
+    facts: _EmailFacts, provider: str, name: str, note: str, amount: float,
+    *, fallback_category: Optional[str] = None,
+) -> Tuple[Optional[FinanceEvent], str]:
+    """Money in — unless the amount and note say it is a dues payment.
+
+    Dues belong to handlers/dues.py, so they leave here as "dues" with no event
+    rather than being booked as income as well.
+    """
+    if _is_dues_email(amount, f"{facts.subject} {note}", facts.message_id):
+        return (None, "dues")
+    category = _categorize_income(note or facts.subject, facts.subject)
+    if fallback_category is not None:
+        category = category or fallback_category
+    return (_event(facts, provider, name, note, amount, "income", category), "income")
+
+
+def _expense(
+    facts: _EmailFacts, provider: str, name: str, note: str, amount: float,
+    category_text: str,
+) -> Tuple[Optional[FinanceEvent], str]:
+    """Money out. `category_text` is what the expense categorizer reads."""
+    category = _categorize_expense(name, category_text)
+    return (_event(facts, provider, name, note, amount, "expense", category), "expense")
+
+
+IGNORED: Tuple[None, str] = (None, "ignore")
+
+#Venmo and Cash App announce an incoming person-to-person payment with the same
+#subject line, so both read it with this.
+_P2P_RECEIVED_SUBJECT = re.compile(
+    r"^(?P<name>.+?)\s+(?:paid|sent)\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", re.I
+)
+
+#--- Venmo: person-to-person only, and the subject carries everything ---
+_VENMO_SENT = re.compile(
+    r"^you\s+paid\s+(?P<name>.+?)\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", re.I
+)
+
+
+def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
+    facts = _email_facts(email)
+    subject, body = facts.subject, facts.content
     text = subject.strip()
-    body = content
-    ts = _parse_timestamp(email)
-    message_id = email.get("message_id")
-    txn_id = _extract_txn_id(subject, content)
 
-    # Match person-to-person payments received.
-    m = re.match(r"^(?P<name>.+?)\s+(?:paid|sent)\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
+    def note_for(match: "re.Match[str]") -> str:
+        return _extract_note(_extract_venmo_note(subject, body, match.groupdict().get("note")))
+
+    m = _P2P_RECEIVED_SUBJECT.match(text)
     if m:
-        name = _clean_counterparty(m.group("name"))
-        amount = _coerce_amount(m.group("amount"), subject, body)
-        note = _extract_venmo_note(subject, body, m.group("note"))
-        note = _extract_note(note)
-        blank = not bool(note.strip())
-        if _is_dues_email(amount, f"{subject} {note}", message_id):
-            return (None, "dues")
-        category = _categorize_income(note or subject, subject)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="venmo",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="income",
-            category=category,
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=blank,
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "income")
+        return _income(facts, "venmo", _clean_counterparty(m.group("name")), note_for(m),
+                       _coerce_amount(m.group("amount"), subject, body))
 
-    # Match person-to-person payments sent.
-    m = re.match(r"^you\s+paid\s+(?P<name>.+?)\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
+    m = _VENMO_SENT.match(text)
     if m:
-        name = _clean_counterparty(m.group("name"))
-        amount = _coerce_amount(m.group("amount"), subject, body)
-        note = _extract_venmo_note(subject, body, m.group("note"))
-        note = _extract_note(note)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="venmo",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="expense",
-            category=_categorize_expense(name, note or subject),
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=not bool(note.strip()),
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "expense")
+        note = note_for(m)
+        return _expense(facts, "venmo", _clean_counterparty(m.group("name")), note,
+                        _coerce_amount(m.group("amount"), subject, body), note or subject)
 
-    return (None, "ignore")
+    return IGNORED
 
 
+#--- Cash App parsing mirrors Venmo but also handles spending receipts ---
+_CASHAPP_RECEIVED_BODY = re.compile(
+    r"You\s+were\s+sent\s+\$?(?P<amount>[0-9.,]+)\s+by\s+(?P<name>.+?)(?:[.]\s*|\s+for\s+(?P<note>.+))", re.I
+)
+_CASHAPP_SENT_SUBJECT = re.compile(
+    r"^You sent \$?(?P<amount>[0-9.,]+)\s+to\s+(?P<name>.+?)(?:\s+for\s+(?P<note>.+))?$", re.I
+)
+_CASHAPP_SENT_BODY = re.compile(
+    r"You\s+(?:paid\s+(?P<name_paid>.+?)\s+\$?(?P<amount_paid>[0-9.,]+)"
+    r"|sent\s+\$?(?P<amount_sent>[0-9.,]+)\s+to\s+(?P<name_sent>.+?))"
+    r"(?:\s+for\s+(?P<note>.+))?(?:[.,]|$)", re.I
+)
+_CASHAPP_SPENT = re.compile(r"You spent \$([0-9.,]+)\s+at\s+([^\n]+)", re.I)
 
-#--- Cash App parsing logic mirrors Venmo but handles spending receipts ---
 
 def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
-    subject = email.get("subject", "")
-    content = email.get("content", "")
+    facts = _email_facts(email)
+    subject, body = facts.subject, facts.content
     text = subject.strip()
-    body = content
-    ts = _parse_timestamp(email)
-    message_id = email.get("message_id")
-    txn_id = _extract_txn_id(subject, content)
 
-    m = re.match(r"^(?P<name>.+?)\s+(?:paid|sent)\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
-    if not m:
-        m = re.search(r"You\s+were\s+sent\s+\$?(?P<amount>[0-9.,]+)\s+by\s+(?P<name>.+?)(?:[.]\s*|\s+for\s+(?P<note>.+))", body, re.I)
+    def note_for(raw: Optional[str]) -> str:
+        return _extract_note(_extract_cashapp_note(subject, body, raw))
+
+    m = _P2P_RECEIVED_SUBJECT.match(text) or _CASHAPP_RECEIVED_BODY.search(body)
     if m:
-        groups = m.groupdict()
-        name = _clean_counterparty(groups.get("name") or "")
-        amount = _coerce_amount(groups.get("amount") or "", subject, body)
-        note = _extract_cashapp_note(subject, body, groups.get("note"))
-        note = _extract_note(note)
-        blank = not bool(note.strip())
-        if _is_dues_email(amount, f"{subject} {note}", message_id):
-            return (None, "dues")
-        category = _categorize_income(note or subject, subject)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="cashapp",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="income",
-            category=category,
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=blank,
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "income")
+        g = m.groupdict()
+        return _income(facts, "cashapp", _clean_counterparty(g.get("name") or ""),
+                       note_for(g.get("note")),
+                       _coerce_amount(g.get("amount") or "", subject, body))
 
-    # Match Cash App transfers sent from the account holder.
-    m = re.match(r"^You sent \$?(?P<amount>[0-9.,]+)\s+to\s+(?P<name>.+?)(?:\s+for\s+(?P<note>.+))?$", text, re.I)
-    if not m:
-        m = re.search(
-            r"You\s+(?:paid\s+(?P<name_paid>.+?)\s+\$?(?P<amount_paid>[0-9.,]+)|sent\s+\$?(?P<amount_sent>[0-9.,]+)\s+to\s+(?P<name_sent>.+?))(?:\s+for\s+(?P<note>.+))?(?:[.,]|$)",
-            body,
-            re.I,
+    #Transfers sent by the account holder. The subject form is tried first
+    #because the body form also matches inside longer receipts.
+    m = _CASHAPP_SENT_SUBJECT.match(text) or _CASHAPP_SENT_BODY.search(body)
+    if m:
+        g = m.groupdict()
+        name = _clean_counterparty(g.get("name") or g.get("name_paid") or g.get("name_sent") or "")
+        note = note_for(g.get("note"))
+        amount = _coerce_amount(
+            g.get("amount") or g.get("amount_paid") or g.get("amount_sent") or "", subject, body
         )
+        return _expense(facts, "cashapp", name, note, amount, note or subject)
+
+    #Debit-card style purchases at merchants.
+    m = _CASHAPP_SPENT.search(facts.content)
     if m:
-        groups = m.groupdict()
-        name = _clean_counterparty(groups.get("name") or groups.get("name_paid") or groups.get("name_sent") or "")
-        amount = _coerce_amount(groups.get("amount") or groups.get("amount_paid") or groups.get("amount_sent") or "", subject, body)
-        note = _extract_cashapp_note(subject, body, groups.get("note"))
-        note = _extract_note(note)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="cashapp",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="expense",
-            category=_categorize_expense(name, note or subject),
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=not bool(note.strip()),
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "expense")
+        return _expense(facts, "cashapp", _clean_counterparty(m.group(2)), note_for(None),
+                        _coerce_amount(m.group(1), subject, facts.content), subject)
 
-    #Spending via Cash App (debit card style purchases at merchants)
-    m = re.search(r"You spent \$([0-9.,]+)\s+at\s+([^\n]+)", content, re.I)
-    if m:
-        amount = _coerce_amount(m.group(1), subject, content)
-        name = _clean_counterparty(m.group(2))
-        note = _extract_cashapp_note(subject, body, None)
-        note = _extract_note(note)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="cashapp",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="expense",
-            category=_categorize_expense(name, subject),
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=not bool(note.strip()),
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "expense")
-
-    return (None, "ignore")
+    return IGNORED
 
 
+#--- PayPal notifications: more varied subjects and receipt layouts ---
+_PAYPAL_RECEIVED_BODY = re.compile(r"([A-Za-z][A-Za-z '\.-]+)\s+sent\s+you\s+\$([0-9.,]+)")
+_PAYPAL_RECEIVED_ALT = re.compile(r"Money received\s+from\s+([^\n]+)\s+\$([0-9.,]+)")
+_PAYPAL_SENT = re.compile(
+    r"You\s+sent\s+a?\s*\$([0-9.,]+)\s*(?:usd)?\s+payment\s+to\s+([^\n]+)", re.I
+)
+_PAYPAL_STATEMENT = re.compile(r"statement", re.I)
+_PAYPAL_COMPACT = re.compile(r"^(?P<name>.+?):\s*\$?(?P<amount>[0-9.,]+)\s*(?:usd)?", re.I)
+_PAYPAL_SUBJECT_RECEIVED = re.compile(r"^(?P<name>.+?)\s+sent\s+you\s+\$?(?P<amount>[0-9.,]+)", re.I)
+_PAYPAL_MONEY_IN_SUBJECTS = ("you've got money", "money received")
 
-#--- PayPal notifications: more varied subjects/receipts ---
 
 def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
-    subject = email.get("subject", "")
-    content = email.get("content", "")
+    facts = _email_facts(email)
+    subject, content = facts.subject, facts.content
     text = subject.strip()
-    body = content
-    ts = _parse_timestamp(email)
-    message_id = email.get("message_id")
-    txn_id = _extract_txn_id(subject, content)
 
-    if "you've got money" in text.lower() or "money received" in text.lower():
-        m = re.search(r"([A-Za-z][A-Za-z '\.-]+)\s+sent\s+you\s+\$([0-9.,]+)", content)
-        if not m:
-            m = re.search(r"Money received\s+from\s+([^\n]+)\s+\$([0-9.,]+)", content)
+    def note_for() -> str:
+        return _extract_note(_extract_paypal_note(subject, content, None))
+
+    if any(marker in text.lower() for marker in _PAYPAL_MONEY_IN_SUBJECTS):
+        m = _PAYPAL_RECEIVED_BODY.search(content) or _PAYPAL_RECEIVED_ALT.search(content)
         if m:
-            name = _clean_counterparty(m.group(1))
-            amount = _coerce_amount(m.group(2), subject, content)
-            note = _extract_paypal_note(subject, content, None)
-            note = _extract_note(note)
-            blank = not bool(note.strip())
-            if _is_dues_email(amount, f"{subject} {note}", message_id):
-                return (None, "dues")
-            category = _categorize_income(note or subject, subject) or _DONATION_DEFAULT
-            return (FinanceEvent(
-                email_id=email.get("id", ""),
-                provider="paypal",
-                counterparty=name,
-                note=note,
-                amount=amount,
-                direction="income",
-                category=category,
-                ts=ts,
-                raw_subject=subject,
-                raw_content=content,
-                message_blank=blank,
-                message_id=message_id,
-                txn_id=txn_id,
-            ), "income")
+            #A payment announced this way with no recognizable purpose is a
+            #donation; the other PayPal shapes leave it uncategorized.
+            return _income(facts, "paypal", _clean_counterparty(m.group(1)), note_for(),
+                           _coerce_amount(m.group(2), subject, content),
+                           fallback_category=_DONATION_DEFAULT)
 
-    m = re.search(r"You\s+sent\s+a?\s*\$([0-9.,]+)\s*(?:usd)?\s+payment\s+to\s+([^\n]+)", content, re.I)
+    m = _PAYPAL_SENT.search(content)
     if m:
-        amount = _coerce_amount(m.group(1), subject, content)
-        name = _clean_counterparty(m.group(2))
-        note = _extract_paypal_note(subject, content, None)
-        note = _extract_note(note)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="paypal",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="expense",
-            category=_categorize_expense(name, note or subject),
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=not bool(note.strip()),
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "expense")
+        note = note_for()
+        return _expense(facts, "paypal", _clean_counterparty(m.group(2)), note,
+                        _coerce_amount(m.group(1), subject, content), note or subject)
 
-    if re.search(r"statement", text, re.I):
-        return (None, "ignore")
+    if _PAYPAL_STATEMENT.search(text):
+        return IGNORED
 
-    # Fallback for compact "[Name]: $Amount" style lines.
-    m = re.match(r"^(?P<name>.+?):\s*\$?(?P<amount>[0-9.,]+)\s*(?:usd)?", text, re.I)
-    if not m:
-         m = re.match(r"^(?P<name>.+?)\s+sent\s+you\s+\$?(?P<amount>[0-9.,]+)", text, re.I)
-
+    #Fallback for compact "[Name]: $Amount" subject lines.
+    m = _PAYPAL_COMPACT.match(text) or _PAYPAL_SUBJECT_RECEIVED.match(text)
     if m:
-        name = _clean_counterparty(m.group("name"))
-        amount = _coerce_amount(m.group("amount"), subject, body)
-        note = _extract_paypal_note(subject, content, None)
-        note = _extract_note(note)
-        blank = not bool(note.strip())
-        if _is_dues_email(amount, f"{subject} {note}", message_id):
-            return (None, "dues")
-        category = _categorize_income(note or subject, subject)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="paypal",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="income",
-            category=category,
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=blank,
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "income")
+        return _income(facts, "paypal", _clean_counterparty(m.group("name")), note_for(),
+                       _coerce_amount(m.group("amount"), subject, facts.content))
 
-    return (None, "ignore")
+    return IGNORED
 
 
 def _parse_timestamp(email: dict) -> datetime:

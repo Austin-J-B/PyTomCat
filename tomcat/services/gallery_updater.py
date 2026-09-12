@@ -471,6 +471,26 @@ def _load_rows() -> List[List[str]]:
     return local_photos.read_metadata_table()
 
 
+def _as_cpu_tensor(emb: Any) -> "torch.Tensor":
+    """Embeddings as a CPU float32 torch tensor, whichever backend produced them.
+
+    LocalBackend has just run the encoder and returns tensors, possibly on the
+    GPU and possibly fp16 under autocast. ModalBackend returns numpy: on Modal
+    nothing in this process runs a model, so it has no reason to import torch
+    just to wrap a list of floats.
+
+    The retrain accumulates in torch because it still writes a .pt, so this is
+    where the two meet. Without it a Modal retrain died on the next line --
+    torch.nn.functional.normalize has no idea what a numpy array is.
+    """
+    import numpy as np
+    import torch
+
+    if hasattr(emb, "detach"):
+        return emb.detach().float().cpu()
+    return torch.from_numpy(np.ascontiguousarray(np.asarray(emb, dtype=np.float32)))
+
+
 def _initial_embed_batch_size(device: "torch.device", base_batch: int) -> int:
     import torch
 
@@ -795,8 +815,8 @@ def _run_gallery_update_impl(
                             emb = (embs_all[:n] + embs_all[n:]) / 2.0
                         else:
                             emb = backend.embed_crops(crops)
+                        emb = _as_cpu_tensor(emb)
                         emb = torch.nn.functional.normalize(emb, p=2, dim=1)
-                        emb = emb.detach().float().cpu()
                         break
                     except RuntimeError as e:
                         # OOM retry only makes sense on local CUDA.

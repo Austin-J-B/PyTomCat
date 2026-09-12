@@ -21,6 +21,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -389,6 +390,56 @@ def test_failed_ref_crops_do_not_accumulate() -> None:
         labeler._ref_crop_negative_cache.clear()
 
 
+def test_rendered_crop_cache_has_a_byte_budget() -> None:
+    """Rendered crops are bounded by size, not just by count.
+
+    A count cap says nothing about memory when the payloads are JPEGs: at the
+    default warm size of 480px, three thousand of them can reach a couple of
+    hundred megabytes on a host with four gigabytes in total.
+    """
+    from tomcat.handlers import labeler
+
+    def total(cache) -> int:
+        return sum(len(value) for _ts, value in cache.values())
+
+    cache: dict = {}
+    for i in range(200):
+        labeler._cache_set_bytes(cache, "k%d" % i, b"x" * 10_000,
+                                 max_items=10_000, max_bytes=100_000, ttl_sec=600)
+    check("the byte budget is enforced", total(cache) <= 100_000,
+          "%d bytes" % total(cache))
+    check("the newest entry survives eviction", "k199" in cache)
+    check("the oldest entry is the one dropped", "k0" not in cache)
+
+    cache = {}
+    for i in range(50):
+        labeler._cache_set_bytes(cache, "k%d" % i, b"y" * 10, max_items=10, ttl_sec=600)
+    check("the count cap still works without a budget", len(cache) <= 10,
+          "%d entries" % len(cache))
+
+    cache = {}
+    for i in range(50):
+        labeler._cache_set_bytes(cache, "k%d" % i, b"z" * 1000,
+                                 max_items=5, max_bytes=10_000_000, ttl_sec=600)
+    check("the count cap still binds under a generous budget", len(cache) <= 5,
+          "%d entries" % len(cache))
+
+    #A crop larger than the whole budget must still be served, not evicted on
+    #the way in and not looped over forever.
+    cache = {}
+    labeler._cache_set_bytes(cache, "big", b"q" * 500_000,
+                             max_items=100, max_bytes=1000, ttl_sec=600)
+    check("an oversized payload is still stored", "big" in cache)
+
+    cache = {}
+    labeler._cache_set_bytes(cache, "old", b"a" * 10,
+                             max_items=100, max_bytes=10_000, ttl_sec=600)
+    cache["old"] = (time.monotonic() - 10_000, b"a" * 10)
+    labeler._cache_set_bytes(cache, "new", b"b" * 10,
+                             max_items=100, max_bytes=10_000, ttl_sec=600)
+    check("expired entries are still pruned", "old" not in cache and "new" in cache)
+
+
 def main() -> int:
     print("labeler hot paths")
     print("=" * 70)
@@ -408,6 +459,8 @@ def main() -> int:
     test_gallery_rebuild_notification_transport()
     print("failed ref crop record")
     test_failed_ref_crops_do_not_accumulate()
+    print("rendered crop cache budget")
+    test_rendered_crop_cache_has_a_byte_budget()
 
     print("\n" + "=" * 70)
     if FAILURES:

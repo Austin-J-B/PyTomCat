@@ -1015,6 +1015,15 @@ def _mark_ref_crop_failed(serial: int, crop_num: int, retry_after_sec: float) ->
         for key, _until in sorted(_ref_crop_negative_cache.items(), key=lambda kv: kv[1])[:excess]:
             _ref_crop_negative_cache.pop(key, None)
 _REF_CROP_RESULT_CACHE_MAX = max(200, int(os.getenv("LABELER_REF_CROP_RESULT_CACHE_MAX", "3000") or "3000"))
+#The count cap above says nothing about size: a rendered crop at the default
+#warm size of 480px is tens of kilobytes, so three thousand of them can reach
+#a couple of hundred megabytes on a host with four gigabytes total. The runtime
+#snapshot has always reported ref_crop_bytes; this is the bound on it.
+_REF_CROP_RESULT_CACHE_MAX_BYTES = max(
+    8 * 1024 * 1024,
+    int(os.getenv("LABELER_REF_CROP_RESULT_CACHE_MAX_BYTES", str(96 * 1024 * 1024))
+        or str(96 * 1024 * 1024)),
+)
 #Floor on the box fraction used to size a draft decode. A degenerate box
 #would otherwise ask for an enormous decode target and defeat the draft.
 _MIN_REF_CROP_FRACTION = 0.01
@@ -3072,18 +3081,6 @@ def _supplement_candidate_refs_with_fallback(
     return out, added
 
 
-def _thumb_b64_from_crop(crop: Image.Image, size: int = 128) -> Optional[str]:
-    try:
-        out = crop.copy()
-        out.thumbnail((int(size), int(size)))
-        buf = io.BytesIO()
-        out.save(buf, format="JPEG", quality=82)
-        return base64.b64encode(buf.getvalue()).decode("ascii")
-    except Exception:
-        return None
-
-
-
 def _enrich_manual_candidates(
     candidates: List[Dict[str, Any]],
     alias_lookup: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -3339,6 +3336,7 @@ async def _warm_single_ref_crop(
         cache_key,
         payload,
         max_items=_REF_CROP_RESULT_CACHE_MAX,
+        max_bytes=_REF_CROP_RESULT_CACHE_MAX_BYTES,
         ttl_sec=_REF_CROP_RESULT_TTL_SEC,
     )
     _remember_ref_crop_cache_key(int(serial), cache_key)
@@ -4158,8 +4156,16 @@ def _cache_set_bytes(
     payload: bytes,
     *,
     max_items: int,
+    max_bytes: Optional[int] = None,
     ttl_sec: Optional[float] = None,
 ) -> None:
+    """Store bytes under a count cap and, for image payloads, a byte budget.
+
+    A count alone is the wrong bound for rendered crops: at the default warm
+    size they are hundreds of kilobytes each in the worst case, so 3000 entries
+    is a cache that can outgrow the whole host. Oldest entries go first, which
+    is also what the count cap does.
+    """
     now = time.monotonic()
     cache[str(key)] = (now, bytes(payload))
 
@@ -4169,15 +4175,22 @@ def _cache_set_bytes(
         if float(ts) < expiry:
             cache.pop(k, None)
 
-    if len(cache) <= max_items:
+    over_count = len(cache) - int(max_items)
+    budget = None if max_bytes is None else max(1, int(max_bytes))
+    total = sum(len(v[1]) for v in cache.values()) if budget is not None else 0
+    if over_count <= 0 and (budget is None or total <= budget):
         return
 
-    overflow = len(cache) - int(max_items)
-    if overflow <= 0:
-        return
-    oldest = sorted(cache.items(), key=lambda kv: float(kv[1][0]))[:overflow]
-    for k, _ in oldest:
-        cache.pop(k, None)
+    oldest = sorted(cache.items(), key=lambda kv: float(kv[1][0]))
+    for k, (_ts, value) in oldest:
+        if over_count <= 0 and (budget is None or total <= budget):
+            break
+        #Never evict the entry just written; the caller is about to serve it.
+        if k == str(key):
+            continue
+        if cache.pop(k, None) is not None:
+            over_count -= 1
+            total -= len(value)
 
 
 def _log_ref_crop_miss(sn: int, crop_num: int, reason: str, extra: str = "") -> None:
@@ -5383,6 +5396,7 @@ async def get_ref_crop(request: web.Request) -> web.Response:
             cache_key,
             payload,
             max_items=_REF_CROP_RESULT_CACHE_MAX,
+            max_bytes=_REF_CROP_RESULT_CACHE_MAX_BYTES,
             ttl_sec=_REF_CROP_RESULT_TTL_SEC,
         )
         _remember_ref_crop_cache_key(int(sn), cache_key)
@@ -5735,8 +5749,6 @@ async def post_detect(request: web.Request) -> web.Response:
             if acquired:
                 _detect_sem.release()
         
-        #Encode boxed image as base64
-        import base64
         boxed_b64 = base64.b64encode(boxed_jpeg).decode("ascii") if boxed_jpeg else ""
         
         #Convert boxes to YOLO normalized format (cx, cy, w, h)

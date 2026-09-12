@@ -391,6 +391,33 @@ def alias_vocab() -> Dict[str, List[str]]:
     _VOCAB_CACHE = (generation, vocab)
     return vocab
 
+_NAME_SCAN_CACHE: Dict[str, Tuple[Tuple[int, int], Optional["re.Pattern[str]"], List[Tuple["re.Pattern[str]", str]]]] = {}
+
+
+def display_names_in(text: str, want: str) -> List[str]:
+    """Display names of `want` that appear as whole words in the text.
+
+    Catches bare mentions such as "Twix" that the alias resolver skips because
+    it only ever returns one name. Patterns are compiled once per alias-table
+    change: building ~170 of them per call was the cost of this scan.
+    """
+    lowered = (text or "").lower()
+    if not lowered:
+        return []
+    generation = (_DYN_GENERATION, station_generation())
+    cached = _NAME_SCAN_CACHE.get(want)
+    if cached is None or cached[0] != generation:
+        names = alias_vocab().get(f"{want}s", [])
+        patterns = [(re.compile(_boundary(name.lower())), name) for name in names]
+        gate = re.compile("|".join(_boundary(n.lower()) for n in names)) if names else None
+        cached = (generation, gate, patterns)
+        _NAME_SCAN_CACHE[want] = cached
+    _generation, gate, patterns = cached
+    if gate is None or not gate.search(lowered):
+        return []
+    return [name for pattern, name in patterns if pattern.search(lowered)]
+
+
 def refresh_aliases_now() -> None:
     """Force a refresh of dynamic cat aliases from the sheet or CSV."""
     _refresh_dyn_aliases(force=True)
@@ -548,11 +575,38 @@ def _lookup_tokens(text_norm: str, include_stopword_aliases: bool) -> List[str]:
     return [tok for tok in tokens if tok not in STOPWORDS]
 
 
+#Resolution is pure for a given alias table, and resolve_stations() asks about
+#every word of a message, so repeated words (and repeated messages) get answered
+#from here. Keyed on the normalized text so "West Hall" and "west  hall" share
+#an entry; dropped wholesale whenever any alias source changes.
+_RESOLVE_CACHE: Dict[Tuple[str, str, bool], Optional[str]] = {}
+_RESOLVE_CACHE_GENERATION: Optional[Tuple[int, int, float]] = None
+_RESOLVE_CACHE_MAX = 4096
+
+
 def resolve_station_or_cat(text: str, want: str, include_stopword_aliases: bool = False) -> Optional[str]:
+    global _RESOLVE_CACHE_GENERATION
     _refresh_dyn_aliases(force=False)
     text_norm = _normalize(text)
     if text_norm in STOPWORDS:
         return None
+
+    generation = (_DYN_GENERATION, station_generation(), _FALLBACK_CAT_MTIME)
+    if generation != _RESOLVE_CACHE_GENERATION:
+        _RESOLVE_CACHE.clear()
+        _RESOLVE_CACHE_GENERATION = generation
+    ckey = (text_norm, want, include_stopword_aliases)
+    if ckey in _RESOLVE_CACHE:
+        return _RESOLVE_CACHE[ckey]
+
+    found = _resolve_uncached(text_norm, want, include_stopword_aliases)
+    if len(_RESOLVE_CACHE) >= _RESOLVE_CACHE_MAX:
+        _RESOLVE_CACHE.clear()
+    _RESOLVE_CACHE[ckey] = found
+    return found
+
+
+def _resolve_uncached(text_norm: str, want: str, include_stopword_aliases: bool) -> Optional[str]:
     tokens = _lookup_tokens(text_norm, include_stopword_aliases)
 
     index = _alias_index(want, include_stopword_aliases)
@@ -560,7 +614,9 @@ def resolve_station_or_cat(text: str, want: str, include_stopword_aliases: bool 
     if key:
         return _display_for(key)
 
-    for cand in [text_norm] + tokens:
+    #A one-word query yields the same candidate twice; fuzzy scoring the whole
+    #alias table is the expensive part, so ask about each spelling once.
+    for cand in dict.fromkeys([text_norm, *tokens]):
         if not cand:
             continue
         if not include_stopword_aliases and (cand in STOPWORDS or len(cand) < 4):

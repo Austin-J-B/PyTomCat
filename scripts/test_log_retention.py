@@ -15,6 +15,11 @@ import tempfile
 from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+#Sends this process's machine log to a scratch directory, so the tests do
+#not write records into the corpus the real logs are analysed from.
+import _test_support  # noqa: F401
 
 from tomcat.services.log_retention import (  # noqa: E402
     PROTECTED, RETENTION_MONTHS, _cutoff, find_expired, prune_old_logs,

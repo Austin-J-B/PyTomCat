@@ -17,6 +17,11 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+#Sends this process's machine log to a scratch directory, so the test does
+#not write records into the corpus the real logs are analysed from.
+import _test_support  # noqa: F401
 
 from tomcat import aliases as A
 from tomcat.aliases import CAT_NAMES, CAT_NICKNAMES, STOPWORDS

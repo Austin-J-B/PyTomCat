@@ -11,7 +11,7 @@ import secrets
 import socket
 import threading
 import re
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 from collections import deque
 from datetime import datetime, timedelta
 
@@ -601,19 +601,42 @@ async def get_session(request: web.Request):
 
     return _issue_session_response(user_info, permissions, request)
 
+async def _authorized_json(
+    request: web.Request,
+    *,
+    require_view: bool = False,
+    require_edit: bool = False,
+) -> Tuple[Optional[dict], Optional[dict], Optional[web.Response]]:
+    """Authorize a write request and parse its JSON body.
+
+    Returns (session, payload, None), or (None, None, response) as soon as a
+    step fails. Every endpoint that changes something needs the same three
+    checks in the same order, and having them in one place is the point: a CSRF
+    token only means anything once the session is known good, and a new write
+    endpoint cannot quietly skip the check by forgetting to copy it.
+    """
+    session, error = await _require_permissions(
+        request, require_view=require_view, require_edit=require_edit
+    )
+    if error:
+        return None, None, error
+    csrf_error = _require_csrf(request, session)
+    if csrf_error:
+        return None, None, csrf_error
+    try:
+        return session, await request.json(), None
+    except Exception:
+        return None, None, _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+
+
 #--- The Secure Save Endpoint ---
 async def save_schedule(request):
     """Persist the feeding schedule to a local JSON file."""
-    session, error = await _require_permissions(request, require_view=True, require_edit=True)
+    _session, data, error = await _authorized_json(
+        request, require_view=True, require_edit=True
+    )
     if error:
         return error
-    csrf_error = _require_csrf(request, session)
-    if csrf_error:
-        return csrf_error
-    try:
-        data = await request.json()
-    except Exception:
-        return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
     schedule = data.get("schedule", {})
     meta = data.get("meta", {})
@@ -1413,16 +1436,11 @@ async def start_web_server(bot):
 
     async def save_stations_api(request):
         """Replace station definitions for an effective date; officer only."""
-        session, error = await _require_permissions(request, require_view=True, require_edit=True)
+        _session, data, error = await _authorized_json(
+            request, require_view=True, require_edit=True
+        )
         if error:
             return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
-        try:
-            data = await request.json()
-        except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
         stations_payload = data.get("stations")
         effective_from = data.get("effective_from") or data.get("date")
         if not isinstance(stations_payload, list):
@@ -1452,16 +1470,9 @@ async def start_web_server(bot):
 
     async def save_feeding_checklist(request):
         """Officer-only: replace station fed/unfed state for a date."""
-        session, error = await _require_permissions(request, require_edit=True)
+        _session, data, error = await _authorized_json(request, require_edit=True)
         if error:
             return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
-        try:
-            data = await request.json()
-        except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
 
         date_iso = data.get("date")
         status_map = data.get("status") or {}
@@ -1870,16 +1881,9 @@ async def start_web_server(bot):
 
     async def claim_subs(request):
         """Mark sub requests as accepted by a user."""
-        session, error = await _require_permissions(request, require_view=True)
+        session, data, error = await _authorized_json(request, require_view=True)
         if error:
             return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
-        try:
-            data = await request.json()
-        except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
         permissions = session.get("permissions", {})
         user_id = data.get("user_id") or session.get("user_id")
         if not permissions.get("is_officer"):

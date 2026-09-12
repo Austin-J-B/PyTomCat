@@ -1124,25 +1124,25 @@ def _categorize_expense(counterparty: str, text: str) -> str:
     return _EXPENSE_TYPES["misc"]
 
 
+def _row_shared_fields(event: FinanceEvent) -> Tuple[str, str, str, str]:
+    """The timestamp, month, year and name cell both ledger schemas begin with.
+
+    Dates are UTC, matching the stored event, and formatted the way the existing
+    sheet rows are (10/22/2025). The name cell carries the note inline and ends
+    with the bot marker the dedup scan looks for.
+    """
+    ts = (event.provider_ts or event.ts).astimezone(timezone.utc)
+    note = event.note.strip()
+    name_field = (
+        f"{event.counterparty} (Message: {note or 'none'})" + _bot_marker(event.email_id)
+    )
+    return f"{ts.month}/{ts.day}/{ts.year}", ts.strftime('%B'), str(ts.year), name_field
+
+
 def _build_income_row(event: FinanceEvent) -> List[str]:
     """Translate a FinanceEvent into the Income sheet row schema."""
     #Schema: Timestamp, Month, Year, Email Address, Name, Income type, Amount, Payment Type
-    ts = (event.provider_ts or event.ts).astimezone(timezone.utc)
-    #Note: Assuming central/local time might be better for Month/Year, 
-    #but we'll stick to UTC for consistency unless configured otherwise.
-    #For format matching CSV: 10/22/2025
-    timestamp = f"{ts.month}/{ts.day}/{ts.year}" 
-    month = ts.strftime('%B')
-    year = str(ts.year)
-    
-    name_field = f"{event.counterparty}"
-    note = event.note.strip()
-    if note:
-        name_field += f" (Message: {note})"
-    else:
-        name_field += " (Message: none)"
-    name_field += _bot_marker(event.email_id)
-
+    timestamp, month, year, name_field = _row_shared_fields(event)
     return [
         timestamp,
         month,
@@ -1158,19 +1158,7 @@ def _build_income_row(event: FinanceEvent) -> List[str]:
 def _build_expense_row(event: FinanceEvent) -> List[str]:
     """Translate a FinanceEvent into the Expenses sheet row schema."""
     #Schema: Timestamp, Month, Year, Name, Expense Type, Amount
-    ts = (event.provider_ts or event.ts).astimezone(timezone.utc)
-    timestamp = f"{ts.month}/{ts.day}/{ts.year}"
-    month = ts.strftime('%B')
-    year = str(ts.year)
-    
-    name_field = f"{event.counterparty}"
-    note = event.note.strip()
-    if note:
-        name_field += f" (Message: {note})"
-    else:
-        name_field += " (Message: none)"
-    name_field += _bot_marker(event.email_id)
-
+    timestamp, month, year, name_field = _row_shared_fields(event)
     return [
         timestamp,
         month,

@@ -117,6 +117,40 @@ def _default_budget_bytes() -> int:
 #is the lesser failure, and the caller still gets its work done.
 _WAIT_TIMEOUT_SEC = max(1.0, float(os.getenv("LABELER_IMAGE_BUDGET_WAIT_SEC", "20") or "20"))
 
+#---------- What the process actually holds ----------
+#
+#Everything above accounts for what the decode paths *asked* for. The kills
+#happen anyway, so something is holding memory that never went through
+#reserve(). Comparing the two is the whole diagnostic: if resident memory
+#climbs to the ceiling while in_use_mb stays small, the consumer is outside
+#this budget and the numbers here say so instead of looking healthy.
+
+_PAGE_SIZE = getattr(os, "sysconf", lambda _name: 4096)("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
+#Report a new high-water mark only once it has moved this far, so a busy
+#session logs a climb rather than a line per reservation.
+_RSS_LOG_STEP_BYTES = 64 * 1024 * 1024
+_RSS_SAMPLE_MIN_INTERVAL_SEC = 0.5
+
+
+def process_rss_bytes() -> int:
+    """Resident memory for this process, or 0 if it cannot be read.
+
+    /proc/self/statm on Linux, which is where this runs: one small read, no
+    dependency, cheap enough to sample on every reservation. psutil is the
+    fallback for development on other platforms and is not required.
+    """
+    try:
+        with open("/proc/self/statm", "r", encoding="ascii") as handle:
+            resident_pages = int(handle.read().split()[1])
+        return resident_pages * _PAGE_SIZE
+    except Exception:
+        pass
+    try:
+        import psutil
+        return int(psutil.Process().memory_info().rss)
+    except Exception:
+        return 0
+
 
 class ImageMemoryBudget:
     """Admission control for decoded-image memory."""
@@ -129,6 +163,10 @@ class ImageMemoryBudget:
         self._waits = 0
         self._timeouts = 0
         self._peak = 0
+        self._rss_peak = 0
+        self._rss_last = 0
+        self._rss_sampled_mono = 0.0
+        self._rss_reported = 0
 
     @property
     def budget_bytes(self) -> int:
@@ -142,7 +180,73 @@ class ImageMemoryBudget:
                 "peak_mb": int(self._peak / 1048576),
                 "waits": int(self._waits),
                 "timeouts": int(self._timeouts),
+                #What the process actually holds, against what was reserved.
+                "rss_mb": int(self._rss_last / 1048576),
+                "rss_peak_mb": int(self._rss_peak / 1048576),
+                #Resident memory this budget cannot account for. This is the
+                #number to watch: it is what the OOM killer sees.
+                "unaccounted_peak_mb": int(max(0, self._rss_peak - self._peak) / 1048576),
             }
+
+    def _sample_rss_locked(self) -> Optional[tuple]:
+        """Record resident memory. Returns a line to log, or None.
+
+        Called with the lock held, from the reservation paths. Throttled,
+        because a reservation can happen dozens of times a second and a
+        /proc read per decode would show up in the profile.
+        """
+        now = time.monotonic()
+        if (now - self._rss_sampled_mono) < _RSS_SAMPLE_MIN_INTERVAL_SEC:
+            return None
+        self._rss_sampled_mono = now
+        rss = process_rss_bytes()
+        if rss <= 0:
+            return None
+        self._rss_last = rss
+        if rss <= self._rss_peak:
+            return None
+        self._rss_peak = rss
+        if (rss - self._rss_reported) < _RSS_LOG_STEP_BYTES:
+            return None
+        self._rss_reported = rss
+        return (
+            int(rss / 1048576),
+            int(self._in_use / 1048576),
+            int(self._peak / 1048576),
+            int(self._budget / 1048576),
+        )
+
+    def _note_rss(self) -> None:
+        """Sample resident memory and log a new high-water mark.
+
+        The log line is the evidence an OOM kill leaves behind: the last one
+        written before the process dies says how much was resident and how
+        much of it this budget knew about. A large gap means the consumer
+        never called reserve() and the ceiling was never going to stop it.
+
+        This depends on the machine log being line-buffered (logger.py opens it
+        with buffering=1), so each line is handed to the kernel as it is
+        written. A buffered handle would still hold the most interesting lines
+        in userspace when SIGKILL arrives, and they would be lost.
+
+        Takes the lock only to sample, and writes the log line outside it:
+        holding a decode-admission lock across a file write would serialize
+        every reservation in the process behind it.
+        """
+        with self._lock:
+            line = self._sample_rss_locked()
+        if line is None:
+            return
+        rss_mb, in_use_mb, reserved_peak_mb, budget_mb = line
+        try:
+            from ..logger import log_action
+            log_action(
+                "image_budget_rss_high_water",
+                f"rss={rss_mb}MB; reserved={in_use_mb}MB; reserved_peak={reserved_peak_mb}MB",
+                f"budget={budget_mb}MB; unaccounted={max(0, rss_mb - reserved_peak_mb)}MB",
+            )
+        except Exception:
+            pass
 
     def _acquire(self, nbytes: int) -> int:
         #A single request larger than the whole budget must not deadlock waiting
@@ -206,6 +310,9 @@ class ImageMemoryBudget:
             weakref.finalize(obj, self._release, want)
         except TypeError:  #object does not support weak references
             self._release(want)
+        #hold_for is the path that keeps crops alive across a slow remote call,
+        #so it is where resident memory actually piles up.
+        self._note_rss()
 
 
 class _Reservation:
@@ -220,11 +327,14 @@ class _Reservation:
 
     def __enter__(self) -> "_Reservation":
         self._held = self._budget._acquire(self._want)
+        #After the reservation, so the sample includes what was just admitted.
+        self._budget._note_rss()
         return self
 
     def __exit__(self, *exc) -> None:
         self._budget._release(self._held)
         self._held = 0
+        self._budget._note_rss()
         return None
 
 

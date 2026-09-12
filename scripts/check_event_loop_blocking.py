@@ -1,18 +1,22 @@
-"""Fail the build on Google Sheets calls reachable from the event loop.
+"""Fail the build on blocking calls reachable from the event loop.
 
-gspread is synchronous HTTP. A single get_all_values() is a network round trip,
-and on the event loop it stalls every other handler along with the Discord
-gateway heartbeat -- which is how the bot ends up connected but silent. There
-were 27 such calls when this check was added, across the dues sheet writes, the
-member profile commands, the finance ledger and the cat profile lookup.
+One blocking call stalls every other handler along with the Discord gateway
+heartbeat -- which is how the bot ends up connected but silent.
 
-The first pass flags a sheet method called straight from the body of an
+What counts as blocking: a gspread method (synchronous HTTP, and a single
+get_all_values() is a network round trip), time.sleep, a requests call, a
+subprocess, or a torch.load. There were 27 sheet calls on the loop when this
+check was added, across the dues sheet writes, the member profile commands,
+the finance ledger and the cat profile lookup.
+
+The first pass flags one of those called straight from the body of an
 `async def`. The second follows plain `def` helpers: an async frame that calls
-a sync function which reaches a sheet call, however many frames down, is the
-same stall wearing a hat. That pass found five more -- the membership roster
-behind the dues corroboration check and the daily job, the ledger read-back in
-the finance append retry loop, the station resident map, and the labeler's
-manual-ref status endpoints.
+a sync function which blocks, however many frames down, is the same stall
+wearing a hat. That pass found five sheet reads -- the membership roster behind
+the dues corroboration check and the daily job, the ledger read-back in the
+finance append retry loop, the station resident map, and the labeler's
+manual-ref status endpoints -- and then, once torch.load was added to the list,
+the gallery load that ran on the loop through the whole of startup.
 
 A call is fine inside a plain `def` (something else decides how to run it), or
 handed to something that runs it elsewhere -- asyncio.to_thread, create_task, an
@@ -42,6 +46,32 @@ SHEET_CALLS = {
     "add_worksheet", "del_worksheet", "row_values", "col_values",
 }
 
+#Other ways to stop the loop dead, matched on the dotted call target rather
+#than a bare name: "run", "get" and "call" are far too common as method names
+#to match on their own. A pattern matches the end of the chain, so
+#"requests.get" catches an aliased import of the module too.
+BLOCKING_PATTERNS = {
+    #Blocks the thread for its whole duration. The async one is spelled
+    #asyncio.sleep, so a match here is always a mistake.
+    "time.sleep": "time.sleep()",
+    #Synchronous HTTP. aiohttp is what the bot uses on the loop.
+    "requests.get": "a blocking HTTP request",
+    "requests.post": "a blocking HTTP request",
+    "requests.put": "a blocking HTTP request",
+    "requests.patch": "a blocking HTTP request",
+    "requests.delete": "a blocking HTTP request",
+    "requests.head": "a blocking HTTP request",
+    "requests.request": "a blocking HTTP request",
+    "request.urlopen": "a blocking HTTP request",
+    #Waits on another process.
+    "subprocess.run": "a subprocess",
+    "subprocess.call": "a subprocess",
+    "subprocess.check_call": "a subprocess",
+    "subprocess.check_output": "a subprocess",
+    #The encoder is 1.2GB and the gallery 25MB; both take seconds off disk.
+    "torch.load": "a torch.load()",
+}
+
 #Calls whose argument runs somewhere else -- another thread, or a task the
 #loop picks up after this frame has returned. What is inside them is not part
 #of the caller's own work, the same way a lambda body is not.
@@ -61,10 +91,35 @@ BARRIERS = {
 
 
 def _called_name(node: ast.Call) -> str:
+    """The bare name being called, e.g. "get_all_values"."""
     if isinstance(node.func, ast.Attribute):
         return node.func.attr
     if isinstance(node.func, ast.Name):
         return node.func.id
+    return ""
+
+
+def _dotted_name(node: ast.Call) -> str:
+    """The call target as written, e.g. "time.sleep" or "self.ws.append_row"."""
+    parts: List[str] = []
+    current = node.func
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if isinstance(current, ast.Name):
+        parts.append(current.id)
+    return ".".join(reversed(parts))
+
+
+def _blocking_label(node: ast.Call) -> str:
+    """What this call blocks on, or "" if it is not one we know about."""
+    name = _called_name(node)
+    if name in SHEET_CALLS:
+        return f"{name}()"
+    dotted = _dotted_name(node)
+    for pattern, label in BLOCKING_PATTERNS.items():
+        if dotted == pattern or dotted.endswith("." + pattern):
+            return label
     return ""
 
 
@@ -110,11 +165,12 @@ class Visitor(ast.NodeVisitor):
             self.generic_visit(node)
             return
         frame, is_async = self.stack[-1]
-        if name in SHEET_CALLS:
+        label = _blocking_label(node)
+        if label:
             if is_async:
-                self.direct_hits.append((self.relative, node.lineno, frame, name))
+                self.direct_hits.append((self.relative, node.lineno, frame, label))
             else:
-                self.sheet_callers.setdefault(frame, name)
+                self.sheet_callers.setdefault(frame, label)
         elif is_async:
             self.async_calls.append((self.relative, node.lineno, frame, name))
         self.edges.append((frame, name))
@@ -189,16 +245,17 @@ def main() -> int:
     print("=" * 70)
     if direct or indirect:
         print()
-        for relative, lineno, frame, name in sorted(direct):
-            print(f"FAIL {relative}:{lineno}  {frame}() calls {name}() on the event loop")
-        for relative, lineno, frame, callee, method in sorted(indirect):
+        for relative, lineno, frame, label in sorted(direct):
+            print(f"FAIL {relative}:{lineno}  {frame}() calls {label} on the event loop")
+        for relative, lineno, frame, callee, label in sorted(indirect):
             print(f"FAIL {relative}:{lineno}  {frame}() calls {callee}(), "
-                  f"which reaches {method}() on the event loop")
+                  f"which reaches {label} on the event loop")
         total = len(direct) + len(indirect)
-        print(f"\n{total} blocking sheet call(s). Wrap them in asyncio.to_thread.")
+        print(f"\n{total} blocking call(s) on the event loop. "
+              f"Wrap them in asyncio.to_thread.")
         return 1
-    print(f"\nNo Google Sheets calls on the event loop "
-          f"({len(reaches)} sync function(s) that reach one, all called off it).")
+    print(f"\nNothing blocking on the event loop "
+          f"({len(reaches)} sync function(s) that block, all called off it).")
     return 0
 
 

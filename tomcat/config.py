@@ -152,15 +152,27 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _gallery_version_key(path: Path) -> tuple[int, ...] | None:
+def _gallery_version_key(path: Path) -> tuple[tuple[int, ...], int] | None:
+    """Sort key from a gallery filename, or None if it is not one.
+
+    .npz is the current format and .pt the previous one; both are readable, so
+    both are discoverable. The version decides first and the format only breaks
+    a tie, so R6.pt still beats R5.npz while R6.npz beats R6.pt -- reading the
+    .npz costs no torch. Nesting the version keeps that ordering honest: a flat
+    tuple would compare the format rank of one name against a version
+    component of another.
+    """
     name = path.name
-    match = re.match(r"^R(\d+(?:\.\d+)*)_cat_DINOv3_gallery\.pt$", name, re.IGNORECASE)
+    match = re.match(
+        r"^R(\d+(?:\.\d+)*)_cat_DINOv3_gallery\.(pt|npz)$", name, re.IGNORECASE
+    )
     if not match:
         return None
     try:
-        return tuple(int(part) for part in match.group(1).split("."))
+        version = tuple(int(part) for part in match.group(1).split("."))
     except Exception:
         return None
+    return (version, 1 if match.group(2).lower() == "npz" else 0)
 
 
 def _format_repo_relative(path: Path) -> str:
@@ -171,17 +183,26 @@ def _format_repo_relative(path: Path) -> str:
         return str(path)
 
 
-def _find_latest_local_gallery(pattern: str = "R*_cat_DINOv3_gallery.pt") -> str:
+#Both gallery formats, newest format first. A caller that passes an explicit
+#pattern gets only that one.
+_GALLERY_PATTERNS = ("R*_cat_DINOv3_gallery.npz", "R*_cat_DINOv3_gallery.pt")
+
+
+def _find_latest_local_gallery(pattern: str | None = None) -> str:
     weights_dir = _project_root() / "weights"
-    candidates: list[tuple[tuple[int, ...], Path]] = []
+    patterns = (pattern,) if pattern else _GALLERY_PATTERNS
+    candidates: list[tuple[tuple[tuple[int, ...], int], Path]] = []
     if weights_dir.is_dir():
-        for path in weights_dir.glob(pattern):
-            if not path.is_file():
-                continue
-            key = _gallery_version_key(path)
-            if key is None:
-                continue
-            candidates.append((key, path))
+        seen: set[Path] = set()
+        for glob_pattern in patterns:
+            for path in weights_dir.glob(glob_pattern):
+                if not path.is_file() or path in seen:
+                    continue
+                seen.add(path)
+                key = _gallery_version_key(path)
+                if key is None:
+                    continue
+                candidates.append((key, path))
     if not candidates:
         return ""
     candidates.sort(key=lambda item: (item[0], item[1].name.lower()))

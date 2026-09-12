@@ -158,14 +158,9 @@ def _gallery_embedding_count(path: Path) -> Optional[int]:
     try:
         if not path.is_file():
             return None
-        try:
-            gallery = torch.load(path, map_location="cpu", weights_only=False)
-        except TypeError:
-            gallery = torch.load(path, map_location="cpu")
-        embeddings = gallery.get("emb") if isinstance(gallery, dict) else None
-        if embeddings is None or not hasattr(embeddings, "shape"):
-            return None
-        return int(embeddings.shape[0])
+        from ..vision import gallery_file
+
+        return int(gallery_file.embedding_count(path))
     except Exception as exc:
         log_action("gallery_previous_count_error", str(path), f"{type(exc).__name__}: {exc}")
         return None
@@ -427,7 +422,13 @@ def _is_versioned_gallery_path(path: Path) -> bool:
 
 
 def _prune_old_versioned_galleries(weights_dir: Path, keep_version_path: Path) -> int:
-    """Keep only the newest auto-generated patch gallery for the current release line."""
+    """Keep only the newest auto-generated patch gallery for the current release line.
+
+    A retrain writes each gallery in both formats, and the version regex here
+    matches .pt alone, so each pruned .pt takes its .npz sibling with it.
+    Without that the .npz files would accumulate at ~22MB apiece on a box whose
+    disk is not generous.
+    """
     removed = 0
     if not weights_dir.exists():
         return 0
@@ -449,6 +450,13 @@ def _prune_old_versioned_galleries(weights_dir: Path, keep_version_path: Path) -
         try:
             p.unlink(missing_ok=True)
             removed += 1
+        except Exception:
+            pass
+        #The .npz written beside it is the same gallery; it goes too.
+        try:
+            sibling = p.with_suffix(".npz")
+            if sibling.resolve() != keep_version_path.with_suffix(".npz").resolve():
+                sibling.unlink(missing_ok=True)
         except Exception:
             pass
     return removed
@@ -865,7 +873,17 @@ def _run_gallery_update_impl(
             version_path = _next_version_path(weights_dir)
 
         # Write only the versioned gallery; baseline galleries remain untouched.
+        #
+        # Both formats, for one release cycle. .npz is what the bot prefers and
+        # reads without torch; the .pt is what a rolled-back host would find,
+        # since older code globs for .pt alone. Drop the .pt write once a
+        # rollback target that cannot read .npz is no longer a concern.
         torch.save(gallery_obj, version_path)
+        from ..vision import gallery_file
+
+        npz_path = gallery_file.save_npz(version_path.with_suffix(gallery_file.NPZ_SUFFIX),
+                                         gallery_obj)
+        stats["gallery_npz_written"] = Path(npz_path).name
         removed_old_versions = _prune_old_versioned_galleries(weights_dir, version_path)
         stats["old_versions_pruned"] = int(removed_old_versions)
         stats["overwrite_active_version"] = int(overwrite_active_version)

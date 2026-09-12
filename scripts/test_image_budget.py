@@ -5,10 +5,14 @@ allowed ~1.7GB of decoded images on top of the ~1.4GB the process already needs
 for torch, the gallery and the labeler caches, so it climbed to ~3.4GB and the
 kernel OOM-killed it -- repeatedly, taking sshd and the tunnel with it.
 
-Two things have to hold now:
+Three things have to hold now:
   * the ceiling follows the cgroup limit, because /proc/meminfo reports host RAM
     even when systemd caps the unit with MemoryMax;
-  * the budget leaves the process's own baseline out of its share.
+  * the budget leaves the process's own baseline out of its share;
+  * resident memory is recorded next to what was reserved. The kills continued
+    after the ceiling shipped, so something holds memory that never calls
+    reserve(); the gap between the two is what identifies it, and it has to
+    reach the log before the kernel kills the process.
 
 Run:  python scripts/test_image_budget.py
 """
@@ -112,6 +116,111 @@ def test_env_overrides():
           == int(2800 * MB * 0.10))
 
 
+def test_rss_tracking():
+    """Resident memory is recorded against what was reserved.
+
+    The ceiling bounds what the decode paths ask for, and the box still gets
+    OOM-killed -- so something holds memory that never calls reserve(). These
+    numbers are the evidence: a large unaccounted figure says the consumer is
+    outside this budget and no ceiling here would have stopped it.
+    """
+    print("\n[5] resident memory tracking")
+
+    budget = IB.ImageMemoryBudget(budget_bytes=512 * MB)
+    fake_rss = {"value": 300 * MB}
+
+    with mock.patch.object(IB, "process_rss_bytes", lambda: fake_rss["value"]):
+        with budget.reserve(64 * MB):
+            pass
+        stats = budget.stats()
+    check("resident memory is reported", stats["rss_mb"] == 300,
+          "rss_mb=%r" % stats["rss_mb"])
+    check("and its high-water mark", stats["rss_peak_mb"] == 300,
+          "rss_peak_mb=%r" % stats["rss_peak_mb"])
+    #300MB resident, 64MB of it reserved: the rest is the interesting part.
+    check("memory the budget cannot account for",
+          stats["unaccounted_peak_mb"] == 300 - 64,
+          "unaccounted=%r" % stats["unaccounted_peak_mb"])
+
+    print("\n[6] the high-water mark only moves up, and is throttled")
+    budget = IB.ImageMemoryBudget(budget_bytes=512 * MB)
+    fake_rss = {"value": 1000 * MB}
+    with mock.patch.object(IB, "process_rss_bytes", lambda: fake_rss["value"]):
+        with budget.reserve(MB):
+            pass
+        peak_high = budget.stats()["rss_peak_mb"]
+        #A later, smaller sample must not lower the peak: the peak is what the
+        #OOM killer reacted to.
+        fake_rss["value"] = 100 * MB
+        budget._rss_sampled_mono = 0.0
+        with budget.reserve(MB):
+            pass
+        after = budget.stats()
+    check("the peak holds", peak_high == 1000 and after["rss_peak_mb"] == 1000,
+          "peak=%r then %r" % (peak_high, after["rss_peak_mb"]))
+    check("the current reading follows the process down",
+          after["rss_mb"] == 100, "rss_mb=%r" % after["rss_mb"])
+
+    #Sampling is throttled, or a busy session would read /proc per decode.
+    budget = IB.ImageMemoryBudget(budget_bytes=512 * MB)
+    reads = {"n": 0}
+
+    def counting_rss():
+        reads["n"] += 1
+        return 200 * MB
+
+    with mock.patch.object(IB, "process_rss_bytes", counting_rss):
+        for _ in range(50):
+            with budget.reserve(MB):
+                pass
+    check("50 reservations do not mean 100 /proc reads", reads["n"] <= 2,
+          "reads=%d" % reads["n"])
+
+    print("\n[7] an unreadable /proc is not fatal")
+    budget = IB.ImageMemoryBudget(budget_bytes=512 * MB)
+    with mock.patch.object(IB, "process_rss_bytes", lambda: 0):
+        with budget.reserve(MB):
+            pass
+        stats = budget.stats()
+    check("the budget still works", stats["rss_mb"] == 0 and stats["budget_mb"] == 512,
+          "stats=%r" % stats)
+
+
+def test_rss_reader():
+    print("\n[8] the reader itself")
+    value = IB.process_rss_bytes()
+    #0 on a platform without /proc and without psutil; a real size otherwise.
+    check("returns a plausible value", value == 0 or value > 1024 * 1024,
+          "value=%r" % value)
+
+    #The production host is Linux, so /proc/self/statm is the path that
+    #actually runs -- development is usually somewhere that falls through to
+    #psutil, which would leave the real parse untested.
+    #Fields: size resident shared text lib data dt, in pages.
+    real_open = open
+
+    def statm_open(path, *a, **kw):
+        if path == "/proc/self/statm":
+            return io.StringIO("132000 45678 3210 12 0 90000 0\n")
+        return real_open(path, *a, **kw)
+
+    with mock.patch("builtins.open", statm_open):
+        parsed = IB.process_rss_bytes()
+    check("the second field is resident pages",
+          parsed == 45678 * IB._PAGE_SIZE,
+          "parsed=%r expected=%r" % (parsed, 45678 * IB._PAGE_SIZE))
+
+    def broken_open(path, *a, **kw):
+        if path == "/proc/self/statm":
+            return io.StringIO("garbage\n")
+        return real_open(path, *a, **kw)
+
+    with mock.patch("builtins.open", broken_open):
+        with mock.patch.dict(sys.modules, {"psutil": None}):
+            check("garbage reads as unknown, not a crash",
+                  IB.process_rss_bytes() == 0)
+
+
 def main():
     print("=" * 70)
     print("image budget regression tests")
@@ -120,6 +229,8 @@ def main():
     test_ceiling_prefers_cgroup()
     test_budget_leaves_baseline_room()
     test_env_overrides()
+    test_rss_tracking()
+    test_rss_reader()
     print("\n" + "=" * 70)
     if FAILURES:
         print("FAILED (%d): %s" % (len(FAILURES), ", ".join(FAILURES)))

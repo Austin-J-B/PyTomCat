@@ -7056,7 +7056,11 @@ async def kickoff_boot_cache_warm_startup() -> None:
                 f"restored={count}",
                 ",".join(str(sn) for sn in restored.get("restored_serials") or []),
             )
-        gallery_names = {str(name or "").strip() for name in (V.get_all_cats() or [])}
+        #In a thread: the first caller loads the gallery, and that is a
+        #torch.load of 25MB off disk behind a 2.5s torch import. On the loop it
+        #stalled the gateway through the whole of startup.
+        all_cats = await asyncio.to_thread(V.get_all_cats)
+        gallery_names = {str(name or "").strip() for name in (all_cats or [])}
         needs_r7 = not {"Melvin", "Stove"}.issubset(gallery_names)
         if needs_r7 and str(getattr(settings, "cv_backend", "") or "").strip().lower() == "modal":
             scheduled = await schedule_gallery_retrain(

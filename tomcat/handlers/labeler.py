@@ -2409,21 +2409,57 @@ def _parse_yolo_box_str(box_str: str) -> Optional[Tuple[float, float, float, flo
     return parts[0], parts[1], parts[2], parts[3]
 
 
+#(profile cache generation, gallery bucket) -> the built catalog. Building it
+#walks every cat in the CatDatabase cache and reads each one's profile, and the
+#manual-review status endpoint used to rebuild the whole thing just to count
+#them. The bucket bounds how long a gallery-only cat can take to show up; the
+#CatDatabase side is exact.
+_profile_catalog_cache: Optional[Tuple[Tuple[int, int], Tuple[Any, Any, Any]]] = None
+_PROFILE_CATALOG_GALLERY_TTL_SEC = 60.0
+
+
 def _load_profile_catalog() -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
-    """Return alias lookup + ordered cats + canonical-key map from CatDatabase cache."""
+    """Alias lookup, ordered cats, and canonical-key map from the CatDatabase cache.
+
+    The returned structures are shared; treat them as read-only.
+    """
+    global _profile_catalog_cache
+    _refresh_profile_cache_if_due()
+    try:
+        from ..services import profile_cache
+        generation = (
+            profile_cache.generation(),
+            int(time.monotonic() // _PROFILE_CATALOG_GALLERY_TTL_SEC),
+        )
+    except Exception:
+        generation = (0, int(time.monotonic() // _PROFILE_CATALOG_GALLERY_TTL_SEC))
+    if _profile_catalog_cache is not None and _profile_catalog_cache[0] == generation:
+        return _profile_catalog_cache[1]
+    built = _build_profile_catalog()
+    _profile_catalog_cache = (generation, built)
+    return built
+
+
+def _refresh_profile_cache_if_due() -> None:
+    """Pull the CatDatabase sheet again, at most once per refresh window."""
     global _profile_refresh_mono
+    now_mono = time.monotonic()
+    if (now_mono - float(_profile_refresh_mono or 0.0)) < _PROFILE_REFRESH_MIN_SEC:
+        return
+    try:
+        from ..services import profile_cache
+        profile_cache.refresh_sync()
+    except Exception:
+        pass
+    _profile_refresh_mono = now_mono
+
+
+def _build_profile_catalog() -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
     alias_lookup: Dict[str, Dict[str, Any]] = {}
     ordered: List[Dict[str, Any]] = []
     by_key: Dict[str, Dict[str, Any]] = {}
     try:
         from ..services import profile_cache
-        now_mono = time.monotonic()
-        if (now_mono - float(_profile_refresh_mono or 0.0)) >= _PROFILE_REFRESH_MIN_SEC:
-            try:
-                profile_cache.refresh_sync()
-            except Exception:
-                pass
-            _profile_refresh_mono = now_mono
         full_names = profile_cache.all_actual_names()
         for full in full_names:
             raw = str(full or "").strip()

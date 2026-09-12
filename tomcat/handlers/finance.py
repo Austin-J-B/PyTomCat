@@ -11,7 +11,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional, Tuple, Set
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, Set
 
 from ..config import settings
 from ..logger import log_action
@@ -1482,24 +1482,52 @@ def _events_maybe_duplicate(a: "FinanceEvent", b: "FinanceEvent") -> bool:
     return True
 
 
-async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bool, str]]:
-    """Flush income events to Sheets and return per-email success info."""
+@dataclass(frozen=True)
+class _LedgerSheet:
+    """One side of the books: where its rows live and how they are built."""
+
+    kind: str                #"income" or "expense"; also the log tag prefix
+    title_setting: str
+    default_title: str
+    build_row: Callable[[FinanceEvent], List[str]]
+    #Dues are recorded by handlers/dues.py. The classifier already diverts them,
+    #so this is a second line of defence on the income side only.
+    skip_dues: bool
+
+
+_INCOME_SHEET = _LedgerSheet(
+    "income", "income_ws_title", "Income", _build_income_row, skip_dues=True
+)
+_EXPENSE_SHEET = _LedgerSheet(
+    "expense", "expense_ws_title", "Expenses", _build_expense_row, skip_dues=False
+)
+
+
+async def _append_ledger_rows(
+    sheet: _LedgerSheet, events: List[FinanceEvent]
+) -> Dict[str, Tuple[bool, str]]:
+    """Write events to one ledger sheet, skipping anything already recorded.
+
+    Every failure mode returns a reason per email rather than raising, because
+    the caller announces one Discord line per payment and must stay quiet about
+    rows that were not written. Nothing is indexed unless the append succeeded,
+    so an aborted batch is retried on the next scan instead of being lost.
+    """
     if not events:
         return {}
     sid = getattr(settings, 'sheet_megasheet_id', None)
     if not sid:
         return {event.email_id: (False, 'missing_sheet_id') for event in events}
     try:
-        ws_name = getattr(settings, 'income_ws_title', 'Income')
-        ws = _open_worksheet_with_retry(sid, ws_name, 'income')
+        ws_name = getattr(settings, sheet.title_setting, sheet.default_title)
+        ws = _open_worksheet_with_retry(sid, ws_name, sheet.kind)
     except Exception:
-        #Distinct reason, not the raw exception text: nothing was written, so
-        #the notifier must stay quiet rather than announce a row per payment.
-        #The batch is not indexed, so it retries on the next run.
+        #A distinct reason rather than the raw exception text: nothing was
+        #written, so the notifier must not announce a row per payment.
         return {event.email_id: (False, 'sheet_open_failed') for event in events}
 
-    snapshot = _fetch_recent_sheet_snapshot(ws, 'income')
-    #If fetch failed (None), we MUST abort to prevent duplicate logging
+    snapshot = _fetch_recent_sheet_snapshot(ws, sheet.kind)
+    #A failed read (None) must abort: writing blind would duplicate rows.
     if snapshot is None:
         return {event.email_id: (False, 'sheet_read_failed') for event in events}
     existing, existing_row_counts = snapshot
@@ -1514,48 +1542,45 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
         r['sheet_email_id'] for r in existing if r.get('sheet_email_id')
     )
 
+    def note_skip(tag: str, detail: str) -> None:
+        try:
+            log_action('finance_skip_duplicate', tag, detail)
+        except Exception:
+            pass
+
     results: Dict[str, Tuple[bool, str]] = {}
     rows: List[List[str]] = []
     idx_events: List[FinanceEvent] = []
 
     for ev in events:
-        # Primary dedup: one email = one payment, never log the same email twice
+        amount_label = f'{ev.counterparty} ${ev.amount:.2f}'
+        #Primary dedup: one email is one payment, never logged twice.
         if ev.email_id and ev.email_id in seen_email_ids:
             results[ev.email_id] = (False, 'dup_skipped')
             continue
 
-        #Skip known dues just in case classifier missed
-        if _is_dues_email(ev.amount, f"{ev.raw_subject} {ev.note}", ev.message_id):
-            try:
-                log_action('finance_skip_duplicate', 'kind=income_dues', f'{ev.counterparty} ${ev.amount:.2f}')
-            except Exception:
-                pass
+        if sheet.skip_dues and _is_dues_email(
+            ev.amount, f"{ev.raw_subject} {ev.note}", ev.message_id
+        ):
+            note_skip(f'kind={sheet.kind}_dues', amount_label)
             results[ev.email_id] = (False, 'dues_skip')
             continue
 
         if ev.txn_id and ev.txn_id in seen_txn:
-            try:
-                log_action('finance_skip_duplicate', 'income_txn', f'{ev.counterparty} ${ev.amount:.2f}')
-            except Exception:
-                pass
+            note_skip(f'{sheet.kind}_txn', amount_label)
             results[ev.email_id] = (False, 'dup_skipped')
             continue
         if ev.message_id and ev.message_id in seen_msg:
-            try:
-                log_action('finance_skip_duplicate', 'income_msg', f'{ev.counterparty} ${ev.amount:.2f}')
-            except Exception:
-                pass
+            note_skip(f'{sheet.kind}_msg', amount_label)
             results[ev.email_id] = (False, 'dup_skipped')
             continue
 
         fp_hash = _fingerprint_hash_for_event(ev)
-        row = _build_income_row(ev)
+        row = sheet.build_row(ev)
         row_key = _sheet_row_key(row)
         if fp_hash in seen_fp or existing_row_counts.get(row_key, 0) > 0 or _looks_duplicate(ev, existing):
-            try:
-                log_action('finance_skip_duplicate', 'kind=income', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
-            except Exception:
-                pass
+            note_skip(f'kind={sheet.kind}',
+                      f'{amount_label} on {ev.ts.date().isoformat()}')
             #Already in the sheet: settle it so later scans skip it outright.
             _index_settled(ev, 'duplicate')
             results[ev.email_id] = (False, 'dup_skipped')
@@ -1563,6 +1588,8 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
 
         rows.append(row)
         idx_events.append(ev)
+        #Add to the seen sets now so later events in this same batch are
+        #checked against this one, not just against the sheet.
         seen_fp.add(fp_hash)
         if ev.email_id:
             seen_email_ids.add(ev.email_id)
@@ -1574,7 +1601,7 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
         existing.append(_event_as_sheet_record(ev))
 
     if rows:
-        append_results = await _append_rows_with_retry(ws, rows, 'income')
+        append_results = await _append_rows_with_retry(ws, rows, sheet.kind)
         for ev, (ok, msg) in zip(idx_events, append_results):
             results[ev.email_id] = (ok, msg)
             if ok:
@@ -1588,114 +1615,21 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
                     "provider_ts": (ev.provider_ts or ev.ts).isoformat(),
                 })
             else:
-                log_action('finance_sheet_error', f'income_append_error', msg)
+                log_action('finance_sheet_error', f'{sheet.kind}_append_error', msg)
 
     for ev in events:
         results.setdefault(ev.email_id, (False, 'dup_skipped'))
     return results
+
+
+async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bool, str]]:
+    """Flush income events to Sheets and return per-email success info."""
+    return await _append_ledger_rows(_INCOME_SHEET, events)
 
 
 async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bool, str]]:
     """Flush expense events to Sheets and return per-email success info."""
-    if not events:
-        return {}
-    sid = getattr(settings, 'sheet_megasheet_id', None)
-    if not sid:
-        return {event.email_id: (False, 'missing_sheet_id') for event in events}
-    try:
-        ws_name = getattr(settings, 'expense_ws_title', 'Expenses')
-        ws = _open_worksheet_with_retry(sid, ws_name, 'expense')
-    except Exception:
-        return {event.email_id: (False, 'sheet_open_failed') for event in events}
-
-    snapshot = _fetch_recent_sheet_snapshot(ws, 'expense')
-    #If fetch failed (None), we MUST abort to prevent duplicate logging
-    if snapshot is None:
-        return {event.email_id: (False, 'sheet_read_failed') for event in events}
-    existing, existing_row_counts = snapshot
-
-    seen_fp = _load_fingerprints()
-    seen_txn = _load_txn_ids()
-    seen_msg = _load_message_ids()
-    #Union the local index with ids recovered from the sheet itself, so a lost
-    #or truncated index.jsonl can no longer resurrect already-logged payments.
-    seen_email_ids = set(_load_index().keys())
-    seen_email_ids.update(
-        r['sheet_email_id'] for r in existing if r.get('sheet_email_id')
-    )
-
-    results: Dict[str, Tuple[bool, str]] = {}
-    rows: List[List[str]] = []
-    idx_events: List[FinanceEvent] = []
-
-    for ev in events:
-        # Primary dedup: one email = one payment, never log the same email twice
-        if ev.email_id and ev.email_id in seen_email_ids:
-            results[ev.email_id] = (False, 'dup_skipped')
-            continue
-
-        if ev.txn_id and ev.txn_id in seen_txn:
-            try:
-                log_action('finance_skip_duplicate', 'expense_txn', f'{ev.counterparty} ${ev.amount:.2f}')
-            except Exception:
-                pass
-            results[ev.email_id] = (False, 'dup_skipped')
-            continue
-        if ev.message_id and ev.message_id in seen_msg:
-            try:
-                log_action('finance_skip_duplicate', 'expense_msg', f'{ev.counterparty} ${ev.amount:.2f}')
-            except Exception:
-                pass
-            results[ev.email_id] = (False, 'dup_skipped')
-            continue
-
-        fp_hash = _fingerprint_hash_for_event(ev)
-        row = _build_expense_row(ev)
-        row_key = _sheet_row_key(row)
-        if fp_hash in seen_fp or existing_row_counts.get(row_key, 0) > 0 or _looks_duplicate(ev, existing):
-            try:
-                log_action('finance_skip_duplicate', f'kind=expense', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
-            except Exception:
-                pass
-            #Already in the sheet: settle it so later scans skip it outright.
-            _index_settled(ev, 'duplicate')
-            results[ev.email_id] = (False, 'dup_skipped')
-            continue
-
-        rows.append(row)
-        idx_events.append(ev)
-        #Optimistically add to seen sets so subsequent items in this batch are checked against this one
-        seen_fp.add(fp_hash)
-        if ev.email_id:
-            seen_email_ids.add(ev.email_id)
-        if ev.txn_id:
-            seen_txn.add(ev.txn_id)
-        if ev.message_id:
-            seen_msg.add(ev.message_id)
-        existing_row_counts[row_key] = existing_row_counts.get(row_key, 0) + 1
-        existing.append(_event_as_sheet_record(ev))
-
-    if rows:
-        append_results = await _append_rows_with_retry(ws, rows, 'expense')
-        for ev, (ok, msg) in zip(idx_events, append_results):
-            results[ev.email_id] = (ok, msg)
-            if ok:
-                #Already added to seen sets above, but we need to persist to index
-                _append_index({
-                    "email_id": ev.email_id,
-                    "status": ev.direction,
-                    "provider": ev.provider,
-                    "fingerprint_hash": _fingerprint_hash_for_event(ev),
-                    "message_id": ev.message_id,
-                    "txn_id": ev.txn_id,
-                    "provider_ts": (ev.provider_ts or ev.ts).isoformat(),
-                })
-            else:
-                log_action('finance_sheet_error', 'expense_append_error', msg)
-
-    for ev in events:
-        results.setdefault(ev.email_id, (False, 'dup_skipped'))
-    return results
+    return await _append_ledger_rows(_EXPENSE_SHEET, events)
 
 
 async def _process_finance_events(

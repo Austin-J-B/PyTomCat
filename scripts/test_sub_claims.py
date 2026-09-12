@@ -174,6 +174,48 @@ def main() -> int:
     check("an officer can claim for someone else", "999",
           tomcat_main._acting_identity(officer, {"user_id": "999"})[0])
 
+    print("\n[9] the feeding channel gets one line for the whole batch")
+    #A volunteer picking up four days of a request should not produce four pings.
+    check("one shift",
+          "<@200> picked up <@100>'s substitute request for Lot 50 on Wednesday, 05/20/2026",
+          tomcat_main._claim_announcement("200", {"2026-05-20": [("Lot 50", "100", "Alice")]}))
+    check("two stations on one date",
+          "<@200> picked up <@100>'s substitute request for "
+          "Lot 50 and HOP on Wednesday, 05/20/2026",
+          tomcat_main._claim_announcement("200", {"2026-05-20": [
+              ("Lot 50", "100", "Alice"), ("HOP", "100", "Alice")]}))
+    check("three stations get the serial comma",
+          "<@200> picked up <@100>'s substitute request for "
+          "Lot 50, HOP, and West Hall on Wednesday, 05/20/2026",
+          tomcat_main._claim_announcement("200", {"2026-05-20": [
+              ("Lot 50", "100", "A"), ("HOP", "100", "A"), ("West Hall", "100", "A")]}))
+    check("two dates are joined",
+          "<@200> picked up <@100>'s substitute request for "
+          "Lot 50 on Wednesday, 05/20/2026 and HOP on Thursday, 05/21/2026",
+          tomcat_main._claim_announcement("200", {
+              "2026-05-20": [("Lot 50", "100", "A")],
+              "2026-05-21": [("HOP", "100", "A")]}))
+
+    print("\n[10] a requester who cannot be mentioned is still named")
+    check("a non-numeric id falls back to the name", "Alice",
+          tomcat_main._requester_mention("alice", "Alice"))
+    check("no id at all falls back to the name", "Bob",
+          tomcat_main._requester_mention(None, "Bob"))
+    check("neither leaves a readable stand-in", "someone",
+          tomcat_main._requester_mention(None, ""))
+    check("a numeric id becomes a mention", "<@100>",
+          tomcat_main._requester_mention("100", "Alice"))
+
+    print("\n[11] the line reads the same every run")
+    #The requester list used to be a set, so with two requesters the order
+    #changed between restarts.
+    claims = {"2026-05-20": [("Lot 50", "100", "A"), ("HOP", "101", "B")]}
+    first = tomcat_main._claim_announcement("200", claims)
+    check("two requesters in the order they appear",
+          "<@200> picked up <@100> and <@101>'s substitute request for "
+          "Lot 50 and HOP on Wednesday, 05/20/2026", first)
+    check("and stably", first, tomcat_main._claim_announcement("200", claims))
+
     print("\n" + "=" * 70)
     if FAILURES:
         print(f"{len(FAILURES)} failure(s).")

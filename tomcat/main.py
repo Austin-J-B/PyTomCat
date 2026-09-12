@@ -687,6 +687,54 @@ def _parse_subrequest_dates(data: dict) -> Tuple[List[dict], Optional[str]]:
     return [{"date": date_iso, "stations": clean}], None
 
 
+def _join_stations(names: List[str]) -> str:
+    """"Lot 50", "Lot 50 and HOP", "Lot 50, HOP, and West Hall"."""
+    if len(names) >= 3:
+        return ", ".join(names[:-1]) + f", and {names[-1]}"
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return names[0] if names else ""
+
+
+def _requester_mention(requester: Any, requester_name: str) -> str:
+    """A mention for whoever asked for the substitute, or a readable stand-in."""
+    if requester and str(requester).isdigit():
+        return f"<@{requester}>"
+    return requester_name or "someone"
+
+
+def _claim_announcement(claimer_id: Any, claims_by_date: Dict[str, List[tuple]]) -> str:
+    """The single line posted to the feeding channel for a batch of claims.
+
+    One line per batch rather than one per shift: a volunteer picking up four
+    days of a request should not produce four pings.
+    """
+    mentions: List[str] = []
+    date_bits: List[str] = []
+    for date_iso, items in claims_by_date.items():
+        for _station, requester, requester_name in items:
+            mention = _requester_mention(requester, requester_name)
+            #First-seen order. This was a set, so with two requesters the line
+            #read differently from one run to the next.
+            if mention not in mentions:
+                mentions.append(mention)
+        stations_text = _join_stations([station for station, _req, _name in items])
+        try:
+            when = datetime.fromisoformat(date_iso)
+            day_prefix = f"{when.strftime('%A')}, "
+            pretty_date = when.strftime("%m/%d/%Y")
+        except (TypeError, ValueError):
+            day_prefix = ""
+            pretty_date = date_iso
+        date_bits.append(f"{stations_text} on {day_prefix}{pretty_date}")
+
+    whose = " and ".join(mentions) if mentions else "someone"
+    return (
+        f"<@{claimer_id}> picked up {whose}'s substitute request for "
+        + " and ".join(date_bits)
+    )
+
+
 def _display_name_for(names: Dict[int, str], raw: Any) -> str:
     """Resolved display name for a Discord id, which may not be numeric."""
     try:
@@ -2070,63 +2118,23 @@ async def start_web_server(bot):
             except Exception:
                 continue
 
-        #Notify feeding team channel
+        #Notify the feeding team channel, once for the whole batch.
         try:
             channel_id = getattr(settings, "ch_feeding_team", None)
             if channel_id and messages_by_date:
                 ch = bot.get_channel(int(channel_id))
                 from discord.abc import Messageable
                 if isinstance(ch, Messageable):
-                    #Build a single aggregated message
-                    try:
-                        req_mentions_set = set()
-                        date_bits = []
-                        for date_iso, items in messages_by_date.items():
-                            stations = [st for st, _, _ in items]
-                            reqs = [(req, req_name) for _, req, req_name in items]
-                            for req, req_name in reqs:
-                                mention = None
-                                if req and str(req).isdigit():
-                                    mention = f"<@{req}>"
-                                elif req_name:
-                                    mention = req_name
-                                else:
-                                    mention = "someone"
-                                req_mentions_set.add(mention)
-                            if len(stations) >= 3:
-                                stations_text = ", ".join(stations[:-1]) + f", and {stations[-1]}"
-                            elif len(stations) == 2:
-                                stations_text = f"{stations[0]} and {stations[1]}"
-                            else:
-                                stations_text = stations[0]
-                            try:
-                                dt = datetime.fromisoformat(date_iso)
-                                dow = dt.strftime("%A")
-                                date_pretty = dt.strftime("%m/%d/%Y")
-                            except Exception:
-                                dow = ""
-                                date_pretty = date_iso
-                            date_bits.append(f"{stations_text} on {dow + ', ' if dow else ''}{date_pretty}")
-                        req_mentions = ""
-                        if len(req_mentions_set) >= 2:
-                            req_mentions = " and ".join(req_mentions_set)
-                        elif len(req_mentions_set) == 1:
-                            req_mentions = next(iter(req_mentions_set))
-                        else:
-                            req_mentions = "someone"
-                        msg = f"<@{user_id}> picked up {req_mentions}'s substitute request for " + " and ".join(date_bits)
-                        mention_ids = [user_id]
-                        mention_ids.extend(
-                            req
-                            for items in messages_by_date.values()
-                            for _, req, _ in items
-                        )
-                        await ch.send(
-                            msg,
-                            allowed_mentions=_allowed_user_mentions(*mention_ids),
-                        )
-                    except Exception:
-                        pass
+                    mention_ids = [user_id]
+                    mention_ids.extend(
+                        requester
+                        for items in messages_by_date.values()
+                        for _station, requester, _name in items
+                    )
+                    await ch.send(
+                        _claim_announcement(user_id, messages_by_date),
+                        allowed_mentions=_allowed_user_mentions(*mention_ids),
+                    )
         except Exception:
             pass
 

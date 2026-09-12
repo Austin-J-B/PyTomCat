@@ -50,6 +50,7 @@ jobs:
           python scripts/test_open_subs.py
           python scripts/test_sub_deletion.py
           python scripts/test_morning_message.py
+          python scripts/test_sub_file_cache.py
           python scripts/test_finance_dedup.py
           python scripts/test_finance_classifiers.py
           python scripts/test_finance_append.py

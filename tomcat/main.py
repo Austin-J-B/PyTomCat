@@ -11,7 +11,7 @@ import secrets
 import socket
 import threading
 import re
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from collections import deque
 from datetime import datetime, timedelta
 
@@ -601,28 +601,133 @@ async def get_session(request: web.Request):
 
     return _issue_session_response(user_info, permissions, request)
 
+#A sub request may cover a month of dates at most; the form cannot ask for more.
+_MAX_SUBREQUEST_DATES = 31
+
+
+def _coerce_iso_date(value: Any) -> Optional[str]:
+    """An ISO date string from a form value, or None if it will not parse."""
+    try:
+        return datetime.fromisoformat(str(value)).date().isoformat()
+    except ValueError:
+        return None
+
+
+def _subrequest_identity(session: dict, data: dict) -> Tuple[Optional[str], Optional[str]]:
+    """Who a sub request is filed for: (user_id, user_name).
+
+    An officer may file on someone else's behalf, so the body is allowed to name
+    them. Everyone else is pinned to their own session identity whatever the
+    body asks for — this is the only thing between the form and impersonation.
+    """
+    permissions = session.get("permissions") or {}
+    user_id = data.get("user_id")
+    user_name = data.get("user_name")
+    if not permissions.get("is_officer"):
+        user_id = session.get("user_id")
+        user_name = session.get("username")
+    #An officer filing for themselves sends neither field.
+    return user_id or session.get("user_id"), user_name or session.get("username")
+
+
+def _clean_subrequest_stations(
+    date_iso: str, stations: Any
+) -> Tuple[Optional[List[str]], Optional[str]]:
+    """Station names from a submission, checked against that date's roster.
+
+    Returns (stations, None) or (None, error). A submission naming a station
+    that does not exist on that date is refused rather than quietly trimmed, so
+    a stale or tampered form cannot file a request against nothing.
+    """
+    submitted = list(dict.fromkeys(str(s).strip() for s in stations if str(s).strip()))
+    allowed = set(station_names(date_iso))
+    clean = [name for name in submitted if name in allowed]
+    if len(clean) != len(submitted):
+        return None, "Invalid station"
+    return clean, None
+
+
+def _parse_subrequest_dates(data: dict) -> Tuple[List[dict], Optional[str]]:
+    """The date/station pairs a submission asks for, or an error message.
+
+    Two body shapes are accepted: a `requests` list of {date, stations} for the
+    multi-date form, and a flat {date, stations} for the single-date one. In the
+    list form an entry naming no usable date or station is skipped, since the
+    rest of the batch still stands; in the flat form there is nothing else being
+    asked for, so it is an error.
+    """
+    raw = data.get("requests")
+    if isinstance(raw, list) and raw:
+        if len(raw) > _MAX_SUBREQUEST_DATES:
+            return [], "Too many requests"
+        parsed: List[dict] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                return [], "Invalid request entry"
+            stations = entry.get("stations") or []
+            date_iso = _coerce_iso_date(entry.get("date")) if entry.get("date") else None
+            if not date_iso or not isinstance(stations, list) or not stations:
+                continue
+            clean, error = _clean_subrequest_stations(date_iso, stations)
+            if error:
+                return [], error
+            if clean:
+                parsed.append({"date": date_iso, "stations": clean})
+        return parsed, None
+
+    stations = data.get("stations") or []
+    if not data.get("date") or not isinstance(stations, list) or not stations:
+        return [], "Missing required fields"
+    date_iso = _coerce_iso_date(data.get("date"))
+    if not date_iso:
+        return [], "Invalid date format"
+    clean, error = _clean_subrequest_stations(date_iso, stations)
+    if error:
+        return [], error
+    return [{"date": date_iso, "stations": clean}], None
+
+
+async def _authorized(
+    request: web.Request,
+    *,
+    require_view: bool = False,
+    require_edit: bool = False,
+) -> Tuple[Optional[dict], Optional[web.Response]]:
+    """Authorize a request that changes something: permissions, then CSRF.
+
+    Returns (session, None) or (None, response). Having this in one place is
+    the point: a CSRF token only means anything once the session is known good,
+    and a new write endpoint cannot quietly skip the check by forgetting to
+    copy it in.
+    """
+    session, error = await _require_permissions(
+        request, require_view=require_view, require_edit=require_edit
+    )
+    if error:
+        return None, error
+    csrf_error = _require_csrf(request, session)
+    if csrf_error:
+        return None, csrf_error
+    return session, None
+
+
 async def _authorized_json(
     request: web.Request,
     *,
     require_view: bool = False,
     require_edit: bool = False,
 ) -> Tuple[Optional[dict], Optional[dict], Optional[web.Response]]:
-    """Authorize a write request and parse its JSON body.
+    """_authorized, plus the request's parsed JSON body.
 
     Returns (session, payload, None), or (None, None, response) as soon as a
-    step fails. Every endpoint that changes something needs the same three
-    checks in the same order, and having them in one place is the point: a CSRF
-    token only means anything once the session is known good, and a new write
-    endpoint cannot quietly skip the check by forgetting to copy it.
+    step fails. Only a body that will not parse is refused here; handlers still
+    check the shape of what they were given.
     """
-    session, error = await _require_permissions(
+    session, error = await _authorized(
         request, require_view=require_view, require_edit=require_edit
     )
     if error:
         return None, None, error
-    csrf_error = _require_csrf(request, session)
-    if csrf_error:
-        return None, None, csrf_error
     try:
         return session, await request.json(), None
     except Exception:
@@ -1492,82 +1597,20 @@ async def start_web_server(bot):
 
     async def submit_subrequest(request):
         """Record a manual sub request."""
-        session, error = await _require_permissions(request, require_view=True)
-        if error: return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
-        
-        try:
-            data = await request.json()
-        except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+        session, data, error = await _authorized_json(request, require_view=True)
+        if error:
+            return error
 
-        #--- SECURITY / IMPERSONATION LOGIC ---
-        req_user_id = data.get("user_id")
-        req_user_name = data.get("user_name")
-        
-        #If user is NOT an officer, force them to use their own identity
-        permissions = session.get("permissions", {})
-        if not permissions.get("is_officer"):
-            req_user_id = session.get("user_id")
-            req_user_name = session.get("username") #fallback
-        
-        #If officer didn't provide a specific user (standard submit), default to self
+        req_user_id, req_user_name = _subrequest_identity(session, data)
+        #No requester means nothing to file, so that is settled before the
+        #payload is examined. The single-date form used to check this first and
+        #the multi-date form last; there is no reason for them to differ.
         if not req_user_id:
-            req_user_id = session.get("user_id")
-        if not req_user_name:
-            req_user_name = session.get("username")
-
-        raw_requests = data.get("requests")
-        parsed_requests = []
-
-        if isinstance(raw_requests, list) and raw_requests:
-            if len(raw_requests) > 31:
-                return _with_cors(web.Response(status=400, text="Too many requests"), request)
-            for entry in raw_requests:
-                if not isinstance(entry, dict):
-                    return _with_cors(web.Response(status=400, text="Invalid request entry"), request)
-                date_iso = entry.get("date")
-                stations = entry.get("stations") or []
-                if not date_iso or not isinstance(stations, list) or not stations:
-                    continue
-                try:
-                    date_obj = datetime.fromisoformat(str(date_iso))
-                    date_iso_clean = date_obj.date().isoformat()
-                except ValueError:
-                    continue
-                submitted_stations = list(dict.fromkeys(str(s).strip() for s in stations if str(s).strip()))
-                allowed_stations = set(station_names(date_iso_clean))
-                stations_clean = [s for s in submitted_stations if s in allowed_stations]
-                if len(stations_clean) != len(submitted_stations):
-                    return _with_cors(web.Response(status=400, text="Invalid station"), request)
-                if stations_clean:
-                    parsed_requests.append({
-                        "date": date_iso_clean,
-                        "stations": list(dict.fromkeys(stations_clean)),
-                    })
-        else:
-            date_iso = data.get("date")
-            stations = data.get("stations") or []
-            if not req_user_id or not date_iso or not isinstance(stations, list) or not stations:
-                return _with_cors(web.Response(status=400, text="Missing required fields"), request)
-            try:
-                date_obj = datetime.fromisoformat(str(date_iso))
-                date_iso_clean = date_obj.date().isoformat()
-            except ValueError:
-                return _with_cors(web.Response(status=400, text="Invalid date format"), request)
-            submitted_stations = list(dict.fromkeys(str(s).strip() for s in stations if str(s).strip()))
-            allowed_stations = set(station_names(date_iso_clean))
-            stations_clean = [s for s in submitted_stations if s in allowed_stations]
-            if len(stations_clean) != len(submitted_stations):
-                return _with_cors(web.Response(status=400, text="Invalid station"), request)
-            parsed_requests.append({
-                "date": date_iso_clean,
-                "stations": list(dict.fromkeys(stations_clean)),
-            })
-
-        if not req_user_id or not parsed_requests:
+            return _with_cors(web.Response(status=400, text="Missing required fields"), request)
+        parsed_requests, parse_error = _parse_subrequest_dates(data)
+        if parse_error:
+            return _with_cors(web.Response(status=400, text=parse_error), request)
+        if not parsed_requests:
             return _with_cors(web.Response(status=400, text="Missing required fields"), request)
 
         batch_id = f"sub-{int(datetime.now().timestamp()*1000)}"
@@ -1630,16 +1673,9 @@ async def start_web_server(bot):
     
     async def delete_subrequest(request):
         """Physically remove a request from the log file."""
-        session, error = await _require_permissions(request, require_view=True)
-        if error: return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
-
-        try:
-            data = await request.json()
-        except Exception:
-            return _with_cors(web.Response(status=400, text="Invalid JSON"), request)
+        session, data, error = await _authorized_json(request, require_view=True)
+        if error:
+            return error
 
         target_id = data.get("id")
         date_iso = data.get("date")
@@ -1712,11 +1748,9 @@ async def start_web_server(bot):
     
     async def leave_activity(request):
         """Disconnects the requesting user from their voice channel."""
-        session, error = await _require_permissions(request, require_view=True)
-        if error: return error
-        csrf_error = _require_csrf(request, session)
-        if csrf_error:
-            return csrf_error
+        session, error = await _authorized(request, require_view=True)
+        if error:
+            return error
         
         user_id = session.get("user_id")
         if not user_id:

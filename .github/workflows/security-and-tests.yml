@@ -49,6 +49,7 @@ jobs:
           python scripts/test_labeler_hot_paths.py
           python scripts/test_cat_lookup.py
           python scripts/test_photo_picker.py
+          python scripts/test_cat_query.py
           python scripts/test_alias_index.py
           python scripts/test_intent_router.py
           python scripts/test_logger.py

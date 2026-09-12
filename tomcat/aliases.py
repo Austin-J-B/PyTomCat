@@ -9,7 +9,7 @@ import time
 import threading
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
-from .stations import station_alias_table, station_display_for
+from .stations import station_alias_table, station_display_for, station_generation
 try:
     #Sheets + config available in this runtime; used for dynamic aliases
     from .config import settings  #type: ignore
@@ -18,7 +18,7 @@ except Exception:
     settings = None  #type: ignore
     sheets_client = None  #type: ignore
 
-from .utils.fuzzy import best_match, fuzzy_ratio
+from .utils.fuzzy import FuzzyIndex, best_match, fuzzy_ratio
 
 #Module-level caches keep nickname lookups inexpensive across handler calls.
 
@@ -94,13 +94,26 @@ _CAT_ALIASES: Dict[str, List[str]] = _build_cat_aliases()
 _DYN_CAT_ALIASES: Dict[str, List[str]] = {}
 _DYN_DISPLAY: Dict[str, str] = {}
 _DYN_LAST_TS: float = 0.0
+#Bumped on every swap of the two dicts above so the derived indexes below know
+#to rebuild. Everything else about alias matching is pure, so a generation token
+#plus the station one is enough to cache the whole normalized table.
+_DYN_GENERATION: int = 0
+
+
+def _swap_dyn_aliases(aliases: Dict[str, List[str]], display: Dict[str, str]) -> None:
+    global _DYN_CAT_ALIASES, _DYN_DISPLAY, _DYN_GENERATION
+    _DYN_CAT_ALIASES = aliases
+    _DYN_DISPLAY = display
+    _DYN_GENERATION += 1
+
+
 try:
     _DYN_TTL_SEC = int(getattr(settings, 'cat_aliases_ttl_sec', 60*60*2) or 7200)
 except Exception:
     _DYN_TTL_SEC = 60 * 60 * 2  #default 2 hours
 
 _FALLBACK_CAT_ALIAS_MAP: Dict[str, str] = {}
-_FALLBACK_CAT_ALIAS_PAIRS: List[Tuple[str, str]] = []
+_FALLBACK_CAT_ALIAS_FUZZY: Optional[FuzzyIndex] = None
 _FALLBACK_CAT_MTIME: float = -1.0
 _CATABASE_CSV_PATH = Path("cache/catabase/Catabase - CatDatabase.csv")
 _LEGACY_CATABASE_CSV_PATH = Path("Catabase - CatDatabase.csv")
@@ -165,7 +178,7 @@ def _do_dyn_alias_refresh() -> None:
     MUST run off the event loop — either on the background thread started by
     _refresh_dyn_aliases, or from a non-async caller.
     """
-    global _DYN_CAT_ALIASES, _DYN_DISPLAY, _DYN_LAST_TS
+    global _DYN_LAST_TS
     now = time.monotonic()
     new_aliases: Dict[str, List[str]] = {}
     new_display: Dict[str, str] = {}
@@ -205,8 +218,7 @@ def _do_dyn_alias_refresh() -> None:
                         seen.add(v); out.append(v)
                 new_aliases[key] = out
                 new_display[key] = disp
-            _DYN_CAT_ALIASES = new_aliases
-            _DYN_DISPLAY = new_display
+            _swap_dyn_aliases(new_aliases, new_display)
             _DYN_LAST_TS = now
             #Persist a lightweight CSV snapshot for offline fallback
             try:
@@ -265,20 +277,18 @@ def _do_dyn_alias_refresh() -> None:
                             seen.add(v); out.append(v)
                     new_aliases[key] = out
                     new_display[key] = disp
-            _DYN_CAT_ALIASES = new_aliases
-            _DYN_DISPLAY = new_display
+            _swap_dyn_aliases(new_aliases, new_display)
             _DYN_LAST_TS = now
             return
     except Exception:
         #leave dynamic empty on failure
-        _DYN_CAT_ALIASES = {}
-        _DYN_DISPLAY = {}
+        _swap_dyn_aliases({}, {})
         _DYN_LAST_TS = now
 
 
 def _ensure_fallback_cat_aliases() -> None:
     """Populate fallback aliases from the local CSV when dynamic sources miss."""
-    global _FALLBACK_CAT_ALIAS_MAP, _FALLBACK_CAT_ALIAS_PAIRS, _FALLBACK_CAT_MTIME
+    global _FALLBACK_CAT_ALIAS_MAP, _FALLBACK_CAT_ALIAS_FUZZY, _FALLBACK_CAT_MTIME
     for path in _FALLBACK_CSV_PATHS:
         try:
             mtime = os.path.getmtime(path)
@@ -305,19 +315,19 @@ def _ensure_fallback_cat_aliases() -> None:
                     alias_map.setdefault(alias_norm, disp)
         if alias_map:
             _FALLBACK_CAT_ALIAS_MAP = alias_map
-            _FALLBACK_CAT_ALIAS_PAIRS = [(alias, name) for alias, name in alias_map.items()]
+            _FALLBACK_CAT_ALIAS_FUZZY = FuzzyIndex(alias_map.items())
             _FALLBACK_CAT_MTIME = mtime
             return
     #No CSV available; clear cache so future attempts retry
     _FALLBACK_CAT_ALIAS_MAP = {}
-    _FALLBACK_CAT_ALIAS_PAIRS = []
+    _FALLBACK_CAT_ALIAS_FUZZY = None
     _FALLBACK_CAT_MTIME = -1.0
 
 
 def _fallback_lookup_cat(text_norm: str, tokens: Iterable[str]) -> Optional[str]:
     """Attempt to resolve cat names using fallback CSV aliases when needed."""
     _ensure_fallback_cat_aliases()
-    if not _FALLBACK_CAT_ALIAS_MAP:
+    if not _FALLBACK_CAT_ALIAS_MAP or _FALLBACK_CAT_ALIAS_FUZZY is None:
         return None
 
     candidate_order: List[str] = []
@@ -335,7 +345,7 @@ def _fallback_lookup_cat(text_norm: str, tokens: Iterable[str]) -> Optional[str]
             return _FALLBACK_CAT_ALIAS_MAP[cand]
 
     for cand in candidate_order:
-        match = best_match(cand, _FALLBACK_CAT_ALIAS_PAIRS, threshold=70)
+        match = _FALLBACK_CAT_ALIAS_FUZZY.best(cand, threshold=70)
         if match:
             return match[0]
 
@@ -361,14 +371,25 @@ STOPWORDS = {
 }
 
 
+_VOCAB_CACHE: Optional[Tuple[Tuple[int, int], Dict[str, List[str]]]] = None
+
+
 def alias_vocab() -> Dict[str, List[str]]:
+    """Display names by category. Cached: the router asks for it per message."""
+    global _VOCAB_CACHE
     _refresh_dyn_aliases(force=False)
-    cat_keys = set(_CAT_ALIASES.keys()) | set(_DYN_CAT_ALIASES.keys())
-    station_keys = set(station_alias_table().keys())
-    cats = sorted({ _display_for(k) for k in cat_keys })
-    stations = sorted({ _display_for(k) for k in station_keys })
-    all_names = sorted({ _display_for(k) for k in (cat_keys | station_keys) })
-    return {"cats": cats, "stations": stations, "all": all_names}
+    generation = (_DYN_GENERATION, station_generation())
+    if _VOCAB_CACHE is not None and _VOCAB_CACHE[0] == generation:
+        return _VOCAB_CACHE[1]
+    cat_keys = set(_CAT_ALIASES) | set(_DYN_CAT_ALIASES)
+    station_keys = set(station_alias_table())
+    vocab = {
+        "cats": sorted({_display_for(k) for k in cat_keys}),
+        "stations": sorted({_display_for(k) for k in station_keys}),
+        "all": sorted({_display_for(k) for k in (cat_keys | station_keys)}),
+    }
+    _VOCAB_CACHE = (generation, vocab)
+    return vocab
 
 def refresh_aliases_now() -> None:
     """Force a refresh of dynamic cat aliases from the sheet or CSV."""
@@ -409,89 +430,122 @@ def _merged_station_aliases() -> Dict[str, List[str]]:
     return station_alias_table()
 
 
-def _alias_pairs(table: Dict[str, List[str]], include_stopword_aliases: bool = False) -> List[Tuple[str, str]]:
-    pairs: List[Tuple[str, str]] = []
-    for key, aliases in table.items():
-        seen: set[str] = set()
-        for alias in list(aliases) + [key]:
-            alias_norm = _norm(alias)
-            if not alias_norm:
-                continue
-            if alias_norm in STOPWORDS and not include_stopword_aliases:
-                continue
-            alias_tokens = [tok for tok in _words(alias) if tok]
-            if alias_tokens and not include_stopword_aliases and all(tok in STOPWORDS for tok in alias_tokens):
-                continue
-            if alias_norm in seen:
-                continue
-            seen.add(alias_norm)
-            pairs.append((alias_norm, key))
-    return pairs
+class _AliasIndex:
+    """Everything alias matching needs, normalized once per alias-table change.
 
+    Matching used to re-normalize all ~200 aliases, rebuild the per-key token
+    map, and interpolate a fresh word-boundary pattern for each alias on *every*
+    call - and resolve_stations() calls into it once per word. That was several
+    milliseconds of synchronous work per Discord message. The tables only change
+    when the Catabase refresh or the stations file lands, so index them once.
 
-def _token_matches_alias(token: str, alias_token: str) -> bool:
-    if not token or not alias_token:
-        return False
-    if token == alias_token:
-        return True
-    if len(token) >= 4 and alias_token.startswith(token):
-        return True
-    return False
+    exact       alias -> key, first definition wins (the old scan order)
+    phrases     (compiled word-boundary pattern, key), most specific alias first
+    any_phrase  every alias in one pattern, used as a cheap gate
+    token_keys  word, or >=4-char prefix of one, -> keys that own it
+    key_padded  key -> its aliases padded with spaces, for substring tests
+    pairs       (alias, key) for fuzzy matching
+    fuzzy       the same pairs, pre-split for repeated FuzzyIndex queries
+    """
 
+    __slots__ = ("exact", "phrases", "any_phrase", "token_keys", "key_padded", "pairs", "fuzzy")
 
-def _resolve_exact_or_prefix(
-    table: Dict[str, List[str]],
-    text_norm: str,
-    tokens: Iterable[str],
-    include_stopword_aliases: bool = False,
-) -> Optional[str]:
-    # Prefer exact and more specific (longer) alias hits over shorter aliases.
-    best_key: Optional[str] = None
-    best_score: Tuple[int, int] = (-1, -1)
-    for key, aliases in table.items():
-        for alias in list(aliases) + [key]:
-            alias_norm = _norm(alias)
-            if not alias_norm:
-                continue
-            if alias_norm in STOPWORDS and not include_stopword_aliases:
-                continue
-            alias_tokens = [tok for tok in _words(alias) if tok]
-            if alias_tokens and not include_stopword_aliases and all(tok in STOPWORDS for tok in alias_tokens):
-                continue
-            if alias_norm == text_norm:
-                return key
-            if re.search(rf"\b{re.escape(alias_norm)}\b", text_norm):
-                score = (len(alias_norm), len(alias_tokens))
-                if score > best_score:
-                    best_score = score
-                    best_key = key
+    def __init__(self, table: Dict[str, List[str]], include_stopword_aliases: bool):
+        self.exact: Dict[str, str] = {}
+        self.pairs: List[Tuple[str, str]] = []
+        self.token_keys: Dict[str, List[str]] = {}
+        self.key_padded: List[Tuple[str, Tuple[str, ...]]] = []
+        scored: List[Tuple[Tuple[int, int], str, str]] = []
 
-    if best_key:
-        return best_key
-
-    key_tokens: Dict[str, List[str]] = {}
-    for key, aliases in table.items():
-        toks: List[str] = []
-        for alias in list(aliases) + [key]:
-            for tok in _words(alias):
-                if not tok:
+        for key, aliases in table.items():
+            seen: set[str] = set()
+            padded: List[str] = []
+            for alias in list(aliases) + [key]:
+                alias_norm = _norm(alias)
+                if not alias_norm or alias_norm in seen:
                     continue
-                if tok in STOPWORDS and not include_stopword_aliases:
+                if alias_norm in STOPWORDS and not include_stopword_aliases:
                     continue
-                toks.append(tok)
-        key_tokens[key] = list(dict.fromkeys(toks))
+                alias_tokens = _words(alias_norm)
+                if alias_tokens and not include_stopword_aliases and all(
+                    tok in STOPWORDS for tok in alias_tokens
+                ):
+                    continue
+                seen.add(alias_norm)
+                self.exact.setdefault(alias_norm, key)
+                self.pairs.append((alias_norm, key))
+                scored.append(((len(alias_norm), len(alias_tokens)), alias_norm, key))
+                padded.append(f" {alias_norm} ")
+                for tok in alias_tokens:
+                    if tok in STOPWORDS and not include_stopword_aliases:
+                        continue
+                    #Exact hits work at any length; prefix hits need >=4 chars.
+                    for lookup in (tok, *(tok[:n] for n in range(4, len(tok)))):
+                        owners = self.token_keys.setdefault(lookup, [])
+                        if key not in owners:
+                            owners.append(key)
+            self.key_padded.append((key, tuple(padded)))
 
-    hits: Dict[str, int] = {}
-    for tok in tokens:
-        if len(tok) < 3 or (tok in STOPWORDS and not include_stopword_aliases):
-            continue
-        matched = [key for key, toks in key_tokens.items() if any(_token_matches_alias(tok, t) for t in toks)]
-        if len(matched) == 1:
-            key = matched[0]
-            hits[key] = hits.get(key, 0) + 1
-    if len(hits) == 1:
-        return next(iter(hits.keys()))
-    return None
+        #Stable sort keeps table order among equally specific aliases, so the
+        #first match found below is the one the old max-score scan picked.
+        scored.sort(key=lambda item: item[0], reverse=True)
+        self.phrases: List[Tuple["re.Pattern[str]", str]] = [
+            (re.compile(_boundary(alias)), key) for _score, alias, key in scored
+        ]
+        self.any_phrase = (
+            re.compile("|".join(_boundary(alias) for _s, alias, _k in scored))
+            if scored else None
+        )
+        self.fuzzy = FuzzyIndex(self.pairs)
+
+    def resolve_exact_or_prefix(self, text_norm: str, tokens: Iterable[str]) -> Optional[str]:
+        """Longest alias phrase in the text, else a token that names one key."""
+        key = self.exact.get(text_norm)
+        if key is not None:
+            return key
+        #One combined pattern rules out the (common) no-alias case before the
+        #per-alias walk that works out *which* alias matched.
+        if self.any_phrase is not None and self.any_phrase.search(text_norm):
+            for pattern, key in self.phrases:
+                if pattern.search(text_norm):
+                    return key
+
+        hits: set[str] = set()
+        for tok in tokens:
+            if len(tok) < 3:
+                continue
+            owners = self.token_keys.get(tok)
+            if owners is not None and len(owners) == 1:
+                hits.add(owners[0])
+                if len(hits) > 1:
+                    return None
+        return next(iter(hits)) if len(hits) == 1 else None
+
+
+def _boundary(alias: str) -> str:
+    return r"\b" + re.escape(alias) + r"\b"
+
+
+_INDEX_CACHE: Dict[Tuple[str, bool], Tuple[Tuple[int, int], _AliasIndex]] = {}
+
+
+def _alias_index(want: str, include_stopword_aliases: bool = False) -> _AliasIndex:
+    generation = (_DYN_GENERATION, station_generation())
+    ckey = (want, include_stopword_aliases)
+    cached = _INDEX_CACHE.get(ckey)
+    if cached is not None and cached[0] == generation:
+        return cached[1]
+    table = _merged_cat_aliases() if want == "cat" else _merged_station_aliases()
+    index = _AliasIndex(table, include_stopword_aliases)
+    _INDEX_CACHE[ckey] = (generation, index)
+    return index
+
+
+def _lookup_tokens(text_norm: str, include_stopword_aliases: bool) -> List[str]:
+    tokens = _words(text_norm)
+    if include_stopword_aliases:
+        return tokens
+    return [tok for tok in tokens if tok not in STOPWORDS]
 
 
 def resolve_station_or_cat(text: str, want: str, include_stopword_aliases: bool = False) -> Optional[str]:
@@ -499,60 +553,38 @@ def resolve_station_or_cat(text: str, want: str, include_stopword_aliases: bool 
     text_norm = _normalize(text)
     if text_norm in STOPWORDS:
         return None
-    raw_tokens = _words(text_norm)
-    tokens = [tok for tok in raw_tokens if tok] if include_stopword_aliases else [tok for tok in raw_tokens if tok not in STOPWORDS]
+    tokens = _lookup_tokens(text_norm, include_stopword_aliases)
 
-    table = _merged_cat_aliases() if want == "cat" else _merged_station_aliases()
-    key = _resolve_exact_or_prefix(table, text_norm, tokens, include_stopword_aliases=include_stopword_aliases)
+    index = _alias_index(want, include_stopword_aliases)
+    key = index.resolve_exact_or_prefix(text_norm, tokens)
     if key:
         return _display_for(key)
 
-    alias_candidates = _alias_pairs(table, include_stopword_aliases=include_stopword_aliases)
-    candidates = [text_norm] + tokens
-    for cand in candidates:
+    for cand in [text_norm] + tokens:
         if not cand:
             continue
-        if not include_stopword_aliases and cand in STOPWORDS:
+        if not include_stopword_aliases and (cand in STOPWORDS or len(cand) < 4):
             continue
-        if len(cand) < 4 and not include_stopword_aliases:
-            continue
-        match = best_match(cand, alias_candidates, threshold=82)
+        match = index.fuzzy.best(cand, threshold=82)
         if match:
             return _display_for(match[0])
 
     if want == "cat":
-        fallback = _fallback_lookup_cat(text_norm, tokens)
-        if fallback:
-            return fallback
+        return _fallback_lookup_cat(text_norm, tokens) or None
     return None
 
 
 def resolve_stations(text: str, *, include_stopword_aliases: bool = False) -> List[str]:
     _refresh_dyn_aliases(force=False)
     text_norm = _norm(text)
-    raw_tokens = _words(text)
-    tokens = [tok for tok in raw_tokens if tok] if include_stopword_aliases else [tok for tok in raw_tokens if tok not in STOPWORDS]
-    table = _merged_station_aliases()
+    tokens = _lookup_tokens(text_norm, include_stopword_aliases)
+    index = _alias_index("station", include_stopword_aliases)
 
     found: List[str] = []
-    found_keys: set[str] = set()
     padded = f" {text_norm} "
-
-    for key, aliases in table.items():
-        for alias in list(aliases) + [key]:
-            alias_norm = _norm(alias)
-            if not alias_norm:
-                continue
-            if alias_norm in STOPWORDS and not include_stopword_aliases:
-                continue
-            alias_tokens = [tok for tok in _words(alias) if tok]
-            if alias_tokens and not include_stopword_aliases and all(tok in STOPWORDS for tok in alias_tokens):
-                continue
-            if f" {alias_norm} " in padded:
-                if key not in found_keys:
-                    found_keys.add(key)
-                    found.append(_display_for(key))
-                break
+    for key, aliases in index.key_padded:
+        if any(alias in padded for alias in aliases):
+            found.append(_display_for(key))
 
     for tok in tokens:
         if tok in STOPWORDS:
@@ -562,15 +594,10 @@ def resolve_stations(text: str, *, include_stopword_aliases: bool = False) -> Li
             found.append(disp)
 
     if not found:
-        alias_candidates = _alias_pairs(table, include_stopword_aliases=include_stopword_aliases)
         for cand in tokens:
-            if cand in STOPWORDS:
+            if cand in STOPWORDS or (len(cand) < 4 and not include_stopword_aliases):
                 continue
-            if len(cand) < 4 and not include_stopword_aliases:
-                continue
-            if not cand:
-                continue
-            match = best_match(cand, alias_candidates, threshold=82)
+            match = index.fuzzy.best(cand, threshold=82)
             if match:
                 disp = _display_for(match[0])
                 if disp not in found:

@@ -1,4 +1,4 @@
-"""Utilities for running YOLO detection and DINOv3 ReID similarity for TomCat."""
+﻿"""Utilities for running YOLO detection and DINOv3 ReID similarity for TomCat."""
 
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -216,20 +216,38 @@ def _cat_name_from_full(full_name: str) -> str:
     return s
 
 
-def _profile_cat_names() -> List[str]:
+#Labels that name a review outcome rather than a cat.
+_NON_CAT_PROFILE_KEYS = {"notacat", "needsreview", "rejected"}
+
+
+def _cat_names_from_profiles(full_names: List[str]) -> List[str]:
     out: List[str] = []
+    for full in full_names:
+        name = _cat_name_from_full(str(full))
+        if not name:
+            continue
+        if re.sub(r"[^a-z0-9]+", "", name.lower()) in _NON_CAT_PROFILE_KEYS:
+            continue
+        out.append(name)
+    return out
+
+
+def _profile_cat_names() -> List[str]:
+    """Cat names from the CatDatabase, refreshing a stale cache. Off-loop only."""
     try:
         from ..services import profile_cache
-        for full in profile_cache.all_actual_names():
-            name = _cat_name_from_full(str(full))
-            if name:
-                key = re.sub(r"[^a-z0-9]+", "", name.lower())
-                if key in {"notacat", "needsreview", "rejected"}:
-                    continue
-                out.append(name)
+        return _cat_names_from_profiles(profile_cache.all_actual_names())
     except Exception:
-        return out
-    return out
+        return []
+
+
+def _cached_profile_cat_names() -> List[str]:
+    """Cat names already cached. Never reads the sheet."""
+    try:
+        from ..services import profile_cache
+        return _cat_names_from_profiles(profile_cache.cached_actual_names())
+    except Exception:
+        return []
 
 
 def get_all_known_cats() -> List[str]:
@@ -2029,7 +2047,9 @@ def labeler_manual_ref_status() -> dict:
     total = int(_manual_ref_progress_total or 0)
     if total <= 0:
         try:
-            total = len(_profile_cat_names())
+            #Whatever the cache knows. This reports progress and is called from
+            #the event loop, so it must not go to the sheet for a denominator.
+            total = len(_cached_profile_cat_names())
         except Exception:
             total = 0
     built = int(_manual_ref_progress_built or 0)

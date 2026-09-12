@@ -683,15 +683,45 @@ def _append_metadata_row_locked(path: Path, row: dict[str, str]) -> None:
         writer.writerow(row)
 
 
+def _read_metadata_cells_locked(metadata_path: Path) -> list[list[str]]:
+    """Metadata cells in canonical header order, one list per data row.
+
+    The caller must already hold _METADATA_FILE_LOCK. This is the one parse of
+    the metadata CSV; both public readers are built on it. It is a plain
+    csv.reader rather than a DictReader because the file runs to twelve
+    thousand rows and every consumer reads all of them -- the header row tells
+    us each column's position once instead of per row.
+    """
+    width = len(CSV_HEADERS)
+    cells: list[list[str]] = []
+    with metadata_path.open("r", newline="", encoding="utf-8-sig") as handle:
+        reader = csv.reader(handle)
+        try:
+            header = next(reader)
+        except StopIteration:
+            return cells
+        if header == CSV_HEADERS:
+            for record in reader:
+                if not record:
+                    continue
+                count = len(record)
+                #Short rows pad, long ones lose the extra columns, as the
+                #DictReader this replaced did.
+                cells.append(record if count == width else (record + [""] * (width - count))[:width])
+            return cells
+        #A file written by an older version, or by hand: place each column by name.
+        columns = [header.index(name) if name in header else -1 for name in CSV_HEADERS]
+        for record in reader:
+            if not record:
+                continue
+            count = len(record)
+            cells.append([record[at] if 0 <= at < count else "" for at in columns])
+    return cells
+
+
 def _read_metadata_rows_locked(metadata_path: Path) -> list[dict[str, str]]:
     """Read metadata rows while the caller already holds _METADATA_FILE_LOCK."""
-    rows: list[dict[str, str]] = []
-    with metadata_path.open("r", newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        for raw in reader:
-            row = {header: str((raw or {}).get(header, "") or "") for header in CSV_HEADERS}
-            rows.append(row)
-    return rows
+    return [dict(zip(CSV_HEADERS, record)) for record in _read_metadata_cells_locked(metadata_path)]
 
 
 def _build_metadata_row(
@@ -774,11 +804,10 @@ def read_metadata_rows() -> list[dict[str, str]]:
 
 def read_metadata_table() -> list[list[str]]:
     """Return the metadata CSV as a full table, including the header row."""
-    rows = read_metadata_rows()
-    table: list[list[str]] = [list(CSV_HEADERS)]
-    for row in rows:
-        table.append([str((row or {}).get(header, "") or "") for header in CSV_HEADERS])
-    return table
+    _, metadata_path = ensure_storage_ready()
+    with _METADATA_FILE_LOCK:
+        cells = _read_metadata_cells_locked(metadata_path)
+    return [list(CSV_HEADERS), *cells]
 
 
 def _parse_metadata_timestamp(value: str) -> Optional[dt.datetime]:

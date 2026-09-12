@@ -34,17 +34,47 @@ jobs:
       - name: Compile Python
         run: python -m compileall -q tomcat UserInterface scripts cloud
 
+      - name: Check for undefined names
+        run: python scripts/check_undefined_names.py
+
+      - name: Check for blocking sheet calls on the event loop
+        run: python scripts/check_event_loop_blocking.py
+
       - name: Run Python regression scripts
         run: |
+          python scripts/test_blocking_check.py
           python scripts/test_web_security.py
+          python scripts/test_static_assets.py
+          python scripts/test_authorized_json.py
+          python scripts/test_subrequest_parsing.py
+          python scripts/test_sub_claims.py
+          python scripts/test_open_subs.py
+          python scripts/test_sub_deletion.py
+          python scripts/test_morning_message.py
+          python scripts/test_sub_file_cache.py
           python scripts/test_finance_dedup.py
+          python scripts/test_finance_classifiers.py
+          python scripts/test_finance_append.py
           python scripts/test_dues_name_match.py
+          python scripts/test_dues_cleanup.py
+          python scripts/test_membership_table.py
           python scripts/test_income_category.py
           python scripts/test_spam_false_positives.py
           python scripts/test_pending_dues.py
           python scripts/test_log_retention.py
           python scripts/test_labeler_hot_paths.py
+          python scripts/test_classify_quality.py
+          python scripts/test_labeler_queues.py
           python scripts/test_cat_lookup.py
+          python scripts/test_photo_picker.py
+          python scripts/test_photo_metadata_csv.py
+          python scripts/test_cat_query.py
+          python scripts/test_alias_index.py
+          python scripts/test_intent_router.py
+          python scripts/test_logger.py
+          python scripts/test_schedule_store.py
+          python scripts/test_vision_handlers.py
+          python scripts/test_profile_cache.py
           python scripts/test_image_budget.py
 
       - name: Run JavaScript regression scripts

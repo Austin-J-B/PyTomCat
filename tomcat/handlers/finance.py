@@ -1,4 +1,4 @@
-"""Non-dues finance ingestion: classify emails, build Sheets payloads, notify sandbox."""
+﻿"""Non-dues finance ingestion: classify emails, build Sheets payloads, notify sandbox."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional, Tuple, Set
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, Set
 
 from ..config import settings
 from ..logger import log_action
@@ -871,262 +871,205 @@ def _fingerprint(ev: "FinanceEvent") -> str:
 
 #--- Venmo-specific parsing of payment notifications ---
 
-def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
+#Every provider pulls the same fields off a notification email and then builds
+#one of two events from them. The shape below is shared so each classifier is
+#only its own pattern matching.
+@dataclass(frozen=True)
+class _EmailFacts:
+    """The provider-independent fields of one notification email."""
+
+    email_id: str
+    subject: str
+    content: str
+    ts: datetime
+    message_id: Optional[str]
+    txn_id: Optional[str]
+
+
+def _email_facts(email: dict) -> _EmailFacts:
     subject = email.get("subject", "")
     content = email.get("content", "")
+    return _EmailFacts(
+        email_id=email.get("id", ""),
+        subject=subject,
+        content=content,
+        ts=_parse_timestamp(email),
+        message_id=email.get("message_id"),
+        txn_id=_extract_txn_id(subject, content),
+    )
+
+
+def _event(
+    facts: _EmailFacts, provider: str, name: str, note: str, amount: float,
+    direction: str, category: Optional[str],
+) -> FinanceEvent:
+    return FinanceEvent(
+        email_id=facts.email_id, provider=provider, counterparty=name, note=note,
+        amount=amount, direction=direction, category=category, ts=facts.ts,
+        raw_subject=facts.subject, raw_content=facts.content,
+        message_blank=not bool(note.strip()),
+        message_id=facts.message_id, txn_id=facts.txn_id,
+    )
+
+
+def _income(
+    facts: _EmailFacts, provider: str, name: str, note: str, amount: float,
+    *, fallback_category: Optional[str] = None,
+) -> Tuple[Optional[FinanceEvent], str]:
+    """Money in — unless the amount and note say it is a dues payment.
+
+    Dues belong to handlers/dues.py, so they leave here as "dues" with no event
+    rather than being booked as income as well.
+    """
+    if _is_dues_email(amount, f"{facts.subject} {note}", facts.message_id):
+        return (None, "dues")
+    category = _categorize_income(note or facts.subject, facts.subject)
+    if fallback_category is not None:
+        category = category or fallback_category
+    return (_event(facts, provider, name, note, amount, "income", category), "income")
+
+
+def _expense(
+    facts: _EmailFacts, provider: str, name: str, note: str, amount: float,
+    category_text: str,
+) -> Tuple[Optional[FinanceEvent], str]:
+    """Money out. `category_text` is what the expense categorizer reads."""
+    category = _categorize_expense(name, category_text)
+    return (_event(facts, provider, name, note, amount, "expense", category), "expense")
+
+
+IGNORED: Tuple[None, str] = (None, "ignore")
+
+#Venmo and Cash App announce an incoming person-to-person payment with the same
+#subject line, so both read it with this.
+_P2P_RECEIVED_SUBJECT = re.compile(
+    r"^(?P<name>.+?)\s+(?:paid|sent)\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", re.I
+)
+
+#--- Venmo: person-to-person only, and the subject carries everything ---
+_VENMO_SENT = re.compile(
+    r"^you\s+paid\s+(?P<name>.+?)\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", re.I
+)
+
+
+def _classify_venmo(email: dict) -> Tuple[Optional[FinanceEvent], str]:
+    facts = _email_facts(email)
+    subject, body = facts.subject, facts.content
     text = subject.strip()
-    body = content
-    ts = _parse_timestamp(email)
-    message_id = email.get("message_id")
-    txn_id = _extract_txn_id(subject, content)
 
-    # Match person-to-person payments received.
-    m = re.match(r"^(?P<name>.+?)\s+(?:paid|sent)\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
+    def note_for(match: "re.Match[str]") -> str:
+        return _extract_note(_extract_venmo_note(subject, body, match.groupdict().get("note")))
+
+    m = _P2P_RECEIVED_SUBJECT.match(text)
     if m:
-        name = _clean_counterparty(m.group("name"))
-        amount = _coerce_amount(m.group("amount"), subject, body)
-        note = _extract_venmo_note(subject, body, m.group("note"))
-        note = _extract_note(note)
-        blank = not bool(note.strip())
-        if _is_dues_email(amount, f"{subject} {note}", message_id):
-            return (None, "dues")
-        category = _categorize_income(note or subject, subject)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="venmo",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="income",
-            category=category,
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=blank,
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "income")
+        return _income(facts, "venmo", _clean_counterparty(m.group("name")), note_for(m),
+                       _coerce_amount(m.group("amount"), subject, body))
 
-    # Match person-to-person payments sent.
-    m = re.match(r"^you\s+paid\s+(?P<name>.+?)\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
+    m = _VENMO_SENT.match(text)
     if m:
-        name = _clean_counterparty(m.group("name"))
-        amount = _coerce_amount(m.group("amount"), subject, body)
-        note = _extract_venmo_note(subject, body, m.group("note"))
-        note = _extract_note(note)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="venmo",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="expense",
-            category=_categorize_expense(name, note or subject),
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=not bool(note.strip()),
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "expense")
+        note = note_for(m)
+        return _expense(facts, "venmo", _clean_counterparty(m.group("name")), note,
+                        _coerce_amount(m.group("amount"), subject, body), note or subject)
 
-    return (None, "ignore")
+    return IGNORED
 
 
+#--- Cash App parsing mirrors Venmo but also handles spending receipts ---
+_CASHAPP_RECEIVED_BODY = re.compile(
+    r"You\s+were\s+sent\s+\$?(?P<amount>[0-9.,]+)\s+by\s+(?P<name>.+?)(?:[.]\s*|\s+for\s+(?P<note>.+))", re.I
+)
+_CASHAPP_SENT_SUBJECT = re.compile(
+    r"^You sent \$?(?P<amount>[0-9.,]+)\s+to\s+(?P<name>.+?)(?:\s+for\s+(?P<note>.+))?$", re.I
+)
+_CASHAPP_SENT_BODY = re.compile(
+    r"You\s+(?:paid\s+(?P<name_paid>.+?)\s+\$?(?P<amount_paid>[0-9.,]+)"
+    r"|sent\s+\$?(?P<amount_sent>[0-9.,]+)\s+to\s+(?P<name_sent>.+?))"
+    r"(?:\s+for\s+(?P<note>.+))?(?:[.,]|$)", re.I
+)
+_CASHAPP_SPENT = re.compile(r"You spent \$([0-9.,]+)\s+at\s+([^\n]+)", re.I)
 
-#--- Cash App parsing logic mirrors Venmo but handles spending receipts ---
 
 def _classify_cashapp(email: dict) -> Tuple[Optional[FinanceEvent], str]:
-    subject = email.get("subject", "")
-    content = email.get("content", "")
+    facts = _email_facts(email)
+    subject, body = facts.subject, facts.content
     text = subject.strip()
-    body = content
-    ts = _parse_timestamp(email)
-    message_id = email.get("message_id")
-    txn_id = _extract_txn_id(subject, content)
 
-    m = re.match(r"^(?P<name>.+?)\s+(?:paid|sent)\s+you\s+\$?(?P<amount>[0-9.,]+)(?:\s+for\s+(?P<note>.+))?", text, re.I)
-    if not m:
-        m = re.search(r"You\s+were\s+sent\s+\$?(?P<amount>[0-9.,]+)\s+by\s+(?P<name>.+?)(?:[.]\s*|\s+for\s+(?P<note>.+))", body, re.I)
+    def note_for(raw: Optional[str]) -> str:
+        return _extract_note(_extract_cashapp_note(subject, body, raw))
+
+    m = _P2P_RECEIVED_SUBJECT.match(text) or _CASHAPP_RECEIVED_BODY.search(body)
     if m:
-        groups = m.groupdict()
-        name = _clean_counterparty(groups.get("name") or "")
-        amount = _coerce_amount(groups.get("amount") or "", subject, body)
-        note = _extract_cashapp_note(subject, body, groups.get("note"))
-        note = _extract_note(note)
-        blank = not bool(note.strip())
-        if _is_dues_email(amount, f"{subject} {note}", message_id):
-            return (None, "dues")
-        category = _categorize_income(note or subject, subject)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="cashapp",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="income",
-            category=category,
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=blank,
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "income")
+        g = m.groupdict()
+        return _income(facts, "cashapp", _clean_counterparty(g.get("name") or ""),
+                       note_for(g.get("note")),
+                       _coerce_amount(g.get("amount") or "", subject, body))
 
-    # Match Cash App transfers sent from the account holder.
-    m = re.match(r"^You sent \$?(?P<amount>[0-9.,]+)\s+to\s+(?P<name>.+?)(?:\s+for\s+(?P<note>.+))?$", text, re.I)
-    if not m:
-        m = re.search(
-            r"You\s+(?:paid\s+(?P<name_paid>.+?)\s+\$?(?P<amount_paid>[0-9.,]+)|sent\s+\$?(?P<amount_sent>[0-9.,]+)\s+to\s+(?P<name_sent>.+?))(?:\s+for\s+(?P<note>.+))?(?:[.,]|$)",
-            body,
-            re.I,
+    #Transfers sent by the account holder. The subject form is tried first
+    #because the body form also matches inside longer receipts.
+    m = _CASHAPP_SENT_SUBJECT.match(text) or _CASHAPP_SENT_BODY.search(body)
+    if m:
+        g = m.groupdict()
+        name = _clean_counterparty(g.get("name") or g.get("name_paid") or g.get("name_sent") or "")
+        note = note_for(g.get("note"))
+        amount = _coerce_amount(
+            g.get("amount") or g.get("amount_paid") or g.get("amount_sent") or "", subject, body
         )
+        return _expense(facts, "cashapp", name, note, amount, note or subject)
+
+    #Debit-card style purchases at merchants.
+    m = _CASHAPP_SPENT.search(facts.content)
     if m:
-        groups = m.groupdict()
-        name = _clean_counterparty(groups.get("name") or groups.get("name_paid") or groups.get("name_sent") or "")
-        amount = _coerce_amount(groups.get("amount") or groups.get("amount_paid") or groups.get("amount_sent") or "", subject, body)
-        note = _extract_cashapp_note(subject, body, groups.get("note"))
-        note = _extract_note(note)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="cashapp",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="expense",
-            category=_categorize_expense(name, note or subject),
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=not bool(note.strip()),
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "expense")
+        return _expense(facts, "cashapp", _clean_counterparty(m.group(2)), note_for(None),
+                        _coerce_amount(m.group(1), subject, facts.content), subject)
 
-    #Spending via Cash App (debit card style purchases at merchants)
-    m = re.search(r"You spent \$([0-9.,]+)\s+at\s+([^\n]+)", content, re.I)
-    if m:
-        amount = _coerce_amount(m.group(1), subject, content)
-        name = _clean_counterparty(m.group(2))
-        note = _extract_cashapp_note(subject, body, None)
-        note = _extract_note(note)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="cashapp",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="expense",
-            category=_categorize_expense(name, subject),
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=not bool(note.strip()),
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "expense")
-
-    return (None, "ignore")
+    return IGNORED
 
 
+#--- PayPal notifications: more varied subjects and receipt layouts ---
+_PAYPAL_RECEIVED_BODY = re.compile(r"([A-Za-z][A-Za-z '\.-]+)\s+sent\s+you\s+\$([0-9.,]+)")
+_PAYPAL_RECEIVED_ALT = re.compile(r"Money received\s+from\s+([^\n]+)\s+\$([0-9.,]+)")
+_PAYPAL_SENT = re.compile(
+    r"You\s+sent\s+a?\s*\$([0-9.,]+)\s*(?:usd)?\s+payment\s+to\s+([^\n]+)", re.I
+)
+_PAYPAL_STATEMENT = re.compile(r"statement", re.I)
+_PAYPAL_COMPACT = re.compile(r"^(?P<name>.+?):\s*\$?(?P<amount>[0-9.,]+)\s*(?:usd)?", re.I)
+_PAYPAL_SUBJECT_RECEIVED = re.compile(r"^(?P<name>.+?)\s+sent\s+you\s+\$?(?P<amount>[0-9.,]+)", re.I)
+_PAYPAL_MONEY_IN_SUBJECTS = ("you've got money", "money received")
 
-#--- PayPal notifications: more varied subjects/receipts ---
 
 def _classify_paypal(email: dict) -> Tuple[Optional[FinanceEvent], str]:
-    subject = email.get("subject", "")
-    content = email.get("content", "")
+    facts = _email_facts(email)
+    subject, content = facts.subject, facts.content
     text = subject.strip()
-    body = content
-    ts = _parse_timestamp(email)
-    message_id = email.get("message_id")
-    txn_id = _extract_txn_id(subject, content)
 
-    if "you've got money" in text.lower() or "money received" in text.lower():
-        m = re.search(r"([A-Za-z][A-Za-z '\.-]+)\s+sent\s+you\s+\$([0-9.,]+)", content)
-        if not m:
-            m = re.search(r"Money received\s+from\s+([^\n]+)\s+\$([0-9.,]+)", content)
+    def note_for() -> str:
+        return _extract_note(_extract_paypal_note(subject, content, None))
+
+    if any(marker in text.lower() for marker in _PAYPAL_MONEY_IN_SUBJECTS):
+        m = _PAYPAL_RECEIVED_BODY.search(content) or _PAYPAL_RECEIVED_ALT.search(content)
         if m:
-            name = _clean_counterparty(m.group(1))
-            amount = _coerce_amount(m.group(2), subject, content)
-            note = _extract_paypal_note(subject, content, None)
-            note = _extract_note(note)
-            blank = not bool(note.strip())
-            if _is_dues_email(amount, f"{subject} {note}", message_id):
-                return (None, "dues")
-            category = _categorize_income(note or subject, subject) or _DONATION_DEFAULT
-            return (FinanceEvent(
-                email_id=email.get("id", ""),
-                provider="paypal",
-                counterparty=name,
-                note=note,
-                amount=amount,
-                direction="income",
-                category=category,
-                ts=ts,
-                raw_subject=subject,
-                raw_content=content,
-                message_blank=blank,
-                message_id=message_id,
-                txn_id=txn_id,
-            ), "income")
+            #A payment announced this way with no recognizable purpose is a
+            #donation; the other PayPal shapes leave it uncategorized.
+            return _income(facts, "paypal", _clean_counterparty(m.group(1)), note_for(),
+                           _coerce_amount(m.group(2), subject, content),
+                           fallback_category=_DONATION_DEFAULT)
 
-    m = re.search(r"You\s+sent\s+a?\s*\$([0-9.,]+)\s*(?:usd)?\s+payment\s+to\s+([^\n]+)", content, re.I)
+    m = _PAYPAL_SENT.search(content)
     if m:
-        amount = _coerce_amount(m.group(1), subject, content)
-        name = _clean_counterparty(m.group(2))
-        note = _extract_paypal_note(subject, content, None)
-        note = _extract_note(note)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="paypal",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="expense",
-            category=_categorize_expense(name, note or subject),
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=not bool(note.strip()),
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "expense")
+        note = note_for()
+        return _expense(facts, "paypal", _clean_counterparty(m.group(2)), note,
+                        _coerce_amount(m.group(1), subject, content), note or subject)
 
-    if re.search(r"statement", text, re.I):
-        return (None, "ignore")
+    if _PAYPAL_STATEMENT.search(text):
+        return IGNORED
 
-    # Fallback for compact "[Name]: $Amount" style lines.
-    m = re.match(r"^(?P<name>.+?):\s*\$?(?P<amount>[0-9.,]+)\s*(?:usd)?", text, re.I)
-    if not m:
-         m = re.match(r"^(?P<name>.+?)\s+sent\s+you\s+\$?(?P<amount>[0-9.,]+)", text, re.I)
-
+    #Fallback for compact "[Name]: $Amount" subject lines.
+    m = _PAYPAL_COMPACT.match(text) or _PAYPAL_SUBJECT_RECEIVED.match(text)
     if m:
-        name = _clean_counterparty(m.group("name"))
-        amount = _coerce_amount(m.group("amount"), subject, body)
-        note = _extract_paypal_note(subject, content, None)
-        note = _extract_note(note)
-        blank = not bool(note.strip())
-        if _is_dues_email(amount, f"{subject} {note}", message_id):
-            return (None, "dues")
-        category = _categorize_income(note or subject, subject)
-        return (FinanceEvent(
-            email_id=email.get("id", ""),
-            provider="paypal",
-            counterparty=name,
-            note=note,
-            amount=amount,
-            direction="income",
-            category=category,
-            ts=ts,
-            raw_subject=subject,
-            raw_content=content,
-            message_blank=blank,
-            message_id=message_id,
-            txn_id=txn_id,
-        ), "income")
+        return _income(facts, "paypal", _clean_counterparty(m.group("name")), note_for(),
+                       _coerce_amount(m.group("amount"), subject, facts.content))
 
-    return (None, "ignore")
+    return IGNORED
 
 
 def _parse_timestamp(email: dict) -> datetime:
@@ -1181,25 +1124,25 @@ def _categorize_expense(counterparty: str, text: str) -> str:
     return _EXPENSE_TYPES["misc"]
 
 
+def _row_shared_fields(event: FinanceEvent) -> Tuple[str, str, str, str]:
+    """The timestamp, month, year and name cell both ledger schemas begin with.
+
+    Dates are UTC, matching the stored event, and formatted the way the existing
+    sheet rows are (10/22/2025). The name cell carries the note inline and ends
+    with the bot marker the dedup scan looks for.
+    """
+    ts = (event.provider_ts or event.ts).astimezone(timezone.utc)
+    note = event.note.strip()
+    name_field = (
+        f"{event.counterparty} (Message: {note or 'none'})" + _bot_marker(event.email_id)
+    )
+    return f"{ts.month}/{ts.day}/{ts.year}", ts.strftime('%B'), str(ts.year), name_field
+
+
 def _build_income_row(event: FinanceEvent) -> List[str]:
     """Translate a FinanceEvent into the Income sheet row schema."""
     #Schema: Timestamp, Month, Year, Email Address, Name, Income type, Amount, Payment Type
-    ts = (event.provider_ts or event.ts).astimezone(timezone.utc)
-    #Note: Assuming central/local time might be better for Month/Year, 
-    #but we'll stick to UTC for consistency unless configured otherwise.
-    #For format matching CSV: 10/22/2025
-    timestamp = f"{ts.month}/{ts.day}/{ts.year}" 
-    month = ts.strftime('%B')
-    year = str(ts.year)
-    
-    name_field = f"{event.counterparty}"
-    note = event.note.strip()
-    if note:
-        name_field += f" (Message: {note})"
-    else:
-        name_field += " (Message: none)"
-    name_field += _bot_marker(event.email_id)
-
+    timestamp, month, year, name_field = _row_shared_fields(event)
     return [
         timestamp,
         month,
@@ -1215,19 +1158,7 @@ def _build_income_row(event: FinanceEvent) -> List[str]:
 def _build_expense_row(event: FinanceEvent) -> List[str]:
     """Translate a FinanceEvent into the Expenses sheet row schema."""
     #Schema: Timestamp, Month, Year, Name, Expense Type, Amount
-    ts = (event.provider_ts or event.ts).astimezone(timezone.utc)
-    timestamp = f"{ts.month}/{ts.day}/{ts.year}"
-    month = ts.strftime('%B')
-    year = str(ts.year)
-    
-    name_field = f"{event.counterparty}"
-    note = event.note.strip()
-    if note:
-        name_field += f" (Message: {note})"
-    else:
-        name_field += " (Message: none)"
-    name_field += _bot_marker(event.email_id)
-
+    timestamp, month, year, name_field = _row_shared_fields(event)
     return [
         timestamp,
         month,
@@ -1250,6 +1181,11 @@ async def _throttle_sheet_call() -> None:
     delay = _sheet_call_delay()
     if delay > 0:
         await asyncio.sleep(delay)
+
+
+def _open_worksheet(sid: str, ws_name: str):
+    """One worksheet, opened without retries. Blocking; call in a thread."""
+    return sheets_client().open_by_key(sid).worksheet(ws_name)
 
 
 def _open_worksheet_with_retry(sid: str, ws_name: str, label: str, attempts: int = 3):
@@ -1296,7 +1232,11 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
     if not rows:
         return []
 
-    observed_counts = _recent_sheet_row_counts(ws, label)
+    #In a thread: this reads the whole ledger back over synchronous HTTP, and
+    #the verify loop below does it up to five more times with a backoff. On the
+    #event loop that stalls the Discord heartbeat for seconds at exactly the
+    #moment Sheets is already refusing writes.
+    observed_counts = await asyncio.to_thread(_recent_sheet_row_counts, ws, label)
     results: List[Tuple[bool, str]] = []
     for row in rows:
         row_key = _sheet_row_key(row)
@@ -1306,7 +1246,9 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
         last_error = "ok"
         try:
             await _throttle_sheet_call()
-            ws.append_row(row, value_input_option='USER_ENTERED')
+            await asyncio.to_thread(
+                ws.append_row, row, value_input_option='USER_ENTERED'
+            )
             success = True
             last_error = "ok"
             if observed_counts is not None:
@@ -1317,7 +1259,7 @@ async def _append_rows_with_retry(ws, rows: List[List[str]], label: str) -> List
                 if verify_attempt:
                     await asyncio.sleep(delay)
                     delay = min(delay * 2.0, 8.0)
-                verified_counts = _recent_sheet_row_counts(ws, label)
+                verified_counts = await asyncio.to_thread(_recent_sheet_row_counts, ws, label)
                 if verified_counts is not None:
                     current_count = verified_counts.get(row_key, 0)
                     previous_count = baseline_count if baseline_count is not None else 0
@@ -1539,24 +1481,54 @@ def _events_maybe_duplicate(a: "FinanceEvent", b: "FinanceEvent") -> bool:
     return True
 
 
-async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bool, str]]:
-    """Flush income events to Sheets and return per-email success info."""
+@dataclass(frozen=True)
+class _LedgerSheet:
+    """One side of the books: where its rows live and how they are built."""
+
+    kind: str                #"income" or "expense"; also the log tag prefix
+    title_setting: str
+    default_title: str
+    build_row: Callable[[FinanceEvent], List[str]]
+    #Dues are recorded by handlers/dues.py. The classifier already diverts them,
+    #so this is a second line of defence on the income side only.
+    skip_dues: bool
+
+
+_INCOME_SHEET = _LedgerSheet(
+    "income", "income_ws_title", "Income", _build_income_row, skip_dues=True
+)
+_EXPENSE_SHEET = _LedgerSheet(
+    "expense", "expense_ws_title", "Expenses", _build_expense_row, skip_dues=False
+)
+
+
+async def _append_ledger_rows(
+    sheet: _LedgerSheet, events: List[FinanceEvent]
+) -> Dict[str, Tuple[bool, str]]:
+    """Write events to one ledger sheet, skipping anything already recorded.
+
+    Every failure mode returns a reason per email rather than raising, because
+    the caller announces one Discord line per payment and must stay quiet about
+    rows that were not written. Nothing is indexed unless the append succeeded,
+    so an aborted batch is retried on the next scan instead of being lost.
+    """
     if not events:
         return {}
     sid = getattr(settings, 'sheet_megasheet_id', None)
     if not sid:
         return {event.email_id: (False, 'missing_sheet_id') for event in events}
     try:
-        ws_name = getattr(settings, 'income_ws_title', 'Income')
-        ws = _open_worksheet_with_retry(sid, ws_name, 'income')
+        ws_name = getattr(settings, sheet.title_setting, sheet.default_title)
+        #Every sheet call below is synchronous HTTP, so none of them run on the
+        #event loop: an email scan can write dozens of rows in one pass.
+        ws = await asyncio.to_thread(_open_worksheet_with_retry, sid, ws_name, sheet.kind)
     except Exception:
-        #Distinct reason, not the raw exception text: nothing was written, so
-        #the notifier must stay quiet rather than announce a row per payment.
-        #The batch is not indexed, so it retries on the next run.
+        #A distinct reason rather than the raw exception text: nothing was
+        #written, so the notifier must not announce a row per payment.
         return {event.email_id: (False, 'sheet_open_failed') for event in events}
 
-    snapshot = _fetch_recent_sheet_snapshot(ws, 'income')
-    #If fetch failed (None), we MUST abort to prevent duplicate logging
+    snapshot = await asyncio.to_thread(_fetch_recent_sheet_snapshot, ws, sheet.kind)
+    #A failed read (None) must abort: writing blind would duplicate rows.
     if snapshot is None:
         return {event.email_id: (False, 'sheet_read_failed') for event in events}
     existing, existing_row_counts = snapshot
@@ -1571,48 +1543,45 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
         r['sheet_email_id'] for r in existing if r.get('sheet_email_id')
     )
 
+    def note_skip(tag: str, detail: str) -> None:
+        try:
+            log_action('finance_skip_duplicate', tag, detail)
+        except Exception:
+            pass
+
     results: Dict[str, Tuple[bool, str]] = {}
     rows: List[List[str]] = []
     idx_events: List[FinanceEvent] = []
 
     for ev in events:
-        # Primary dedup: one email = one payment, never log the same email twice
+        amount_label = f'{ev.counterparty} ${ev.amount:.2f}'
+        #Primary dedup: one email is one payment, never logged twice.
         if ev.email_id and ev.email_id in seen_email_ids:
             results[ev.email_id] = (False, 'dup_skipped')
             continue
 
-        #Skip known dues just in case classifier missed
-        if _is_dues_email(ev.amount, f"{ev.raw_subject} {ev.note}", ev.message_id):
-            try:
-                log_action('finance_skip_duplicate', 'kind=income_dues', f'{ev.counterparty} ${ev.amount:.2f}')
-            except Exception:
-                pass
+        if sheet.skip_dues and _is_dues_email(
+            ev.amount, f"{ev.raw_subject} {ev.note}", ev.message_id
+        ):
+            note_skip(f'kind={sheet.kind}_dues', amount_label)
             results[ev.email_id] = (False, 'dues_skip')
             continue
 
         if ev.txn_id and ev.txn_id in seen_txn:
-            try:
-                log_action('finance_skip_duplicate', 'income_txn', f'{ev.counterparty} ${ev.amount:.2f}')
-            except Exception:
-                pass
+            note_skip(f'{sheet.kind}_txn', amount_label)
             results[ev.email_id] = (False, 'dup_skipped')
             continue
         if ev.message_id and ev.message_id in seen_msg:
-            try:
-                log_action('finance_skip_duplicate', 'income_msg', f'{ev.counterparty} ${ev.amount:.2f}')
-            except Exception:
-                pass
+            note_skip(f'{sheet.kind}_msg', amount_label)
             results[ev.email_id] = (False, 'dup_skipped')
             continue
 
         fp_hash = _fingerprint_hash_for_event(ev)
-        row = _build_income_row(ev)
+        row = sheet.build_row(ev)
         row_key = _sheet_row_key(row)
         if fp_hash in seen_fp or existing_row_counts.get(row_key, 0) > 0 or _looks_duplicate(ev, existing):
-            try:
-                log_action('finance_skip_duplicate', 'kind=income', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
-            except Exception:
-                pass
+            note_skip(f'kind={sheet.kind}',
+                      f'{amount_label} on {ev.ts.date().isoformat()}')
             #Already in the sheet: settle it so later scans skip it outright.
             _index_settled(ev, 'duplicate')
             results[ev.email_id] = (False, 'dup_skipped')
@@ -1620,6 +1589,8 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
 
         rows.append(row)
         idx_events.append(ev)
+        #Add to the seen sets now so later events in this same batch are
+        #checked against this one, not just against the sheet.
         seen_fp.add(fp_hash)
         if ev.email_id:
             seen_email_ids.add(ev.email_id)
@@ -1631,7 +1602,7 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
         existing.append(_event_as_sheet_record(ev))
 
     if rows:
-        append_results = await _append_rows_with_retry(ws, rows, 'income')
+        append_results = await _append_rows_with_retry(ws, rows, sheet.kind)
         for ev, (ok, msg) in zip(idx_events, append_results):
             results[ev.email_id] = (ok, msg)
             if ok:
@@ -1645,114 +1616,21 @@ async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[boo
                     "provider_ts": (ev.provider_ts or ev.ts).isoformat(),
                 })
             else:
-                log_action('finance_sheet_error', f'income_append_error', msg)
+                log_action('finance_sheet_error', f'{sheet.kind}_append_error', msg)
 
     for ev in events:
         results.setdefault(ev.email_id, (False, 'dup_skipped'))
     return results
+
+
+async def _append_income_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bool, str]]:
+    """Flush income events to Sheets and return per-email success info."""
+    return await _append_ledger_rows(_INCOME_SHEET, events)
 
 
 async def _append_expense_rows(events: List[FinanceEvent]) -> Dict[str, Tuple[bool, str]]:
     """Flush expense events to Sheets and return per-email success info."""
-    if not events:
-        return {}
-    sid = getattr(settings, 'sheet_megasheet_id', None)
-    if not sid:
-        return {event.email_id: (False, 'missing_sheet_id') for event in events}
-    try:
-        ws_name = getattr(settings, 'expense_ws_title', 'Expenses')
-        ws = _open_worksheet_with_retry(sid, ws_name, 'expense')
-    except Exception:
-        return {event.email_id: (False, 'sheet_open_failed') for event in events}
-
-    snapshot = _fetch_recent_sheet_snapshot(ws, 'expense')
-    #If fetch failed (None), we MUST abort to prevent duplicate logging
-    if snapshot is None:
-        return {event.email_id: (False, 'sheet_read_failed') for event in events}
-    existing, existing_row_counts = snapshot
-
-    seen_fp = _load_fingerprints()
-    seen_txn = _load_txn_ids()
-    seen_msg = _load_message_ids()
-    #Union the local index with ids recovered from the sheet itself, so a lost
-    #or truncated index.jsonl can no longer resurrect already-logged payments.
-    seen_email_ids = set(_load_index().keys())
-    seen_email_ids.update(
-        r['sheet_email_id'] for r in existing if r.get('sheet_email_id')
-    )
-
-    results: Dict[str, Tuple[bool, str]] = {}
-    rows: List[List[str]] = []
-    idx_events: List[FinanceEvent] = []
-
-    for ev in events:
-        # Primary dedup: one email = one payment, never log the same email twice
-        if ev.email_id and ev.email_id in seen_email_ids:
-            results[ev.email_id] = (False, 'dup_skipped')
-            continue
-
-        if ev.txn_id and ev.txn_id in seen_txn:
-            try:
-                log_action('finance_skip_duplicate', 'expense_txn', f'{ev.counterparty} ${ev.amount:.2f}')
-            except Exception:
-                pass
-            results[ev.email_id] = (False, 'dup_skipped')
-            continue
-        if ev.message_id and ev.message_id in seen_msg:
-            try:
-                log_action('finance_skip_duplicate', 'expense_msg', f'{ev.counterparty} ${ev.amount:.2f}')
-            except Exception:
-                pass
-            results[ev.email_id] = (False, 'dup_skipped')
-            continue
-
-        fp_hash = _fingerprint_hash_for_event(ev)
-        row = _build_expense_row(ev)
-        row_key = _sheet_row_key(row)
-        if fp_hash in seen_fp or existing_row_counts.get(row_key, 0) > 0 or _looks_duplicate(ev, existing):
-            try:
-                log_action('finance_skip_duplicate', f'kind=expense', f'{ev.counterparty} ${ev.amount:.2f} on {ev.ts.date().isoformat()}')
-            except Exception:
-                pass
-            #Already in the sheet: settle it so later scans skip it outright.
-            _index_settled(ev, 'duplicate')
-            results[ev.email_id] = (False, 'dup_skipped')
-            continue
-
-        rows.append(row)
-        idx_events.append(ev)
-        #Optimistically add to seen sets so subsequent items in this batch are checked against this one
-        seen_fp.add(fp_hash)
-        if ev.email_id:
-            seen_email_ids.add(ev.email_id)
-        if ev.txn_id:
-            seen_txn.add(ev.txn_id)
-        if ev.message_id:
-            seen_msg.add(ev.message_id)
-        existing_row_counts[row_key] = existing_row_counts.get(row_key, 0) + 1
-        existing.append(_event_as_sheet_record(ev))
-
-    if rows:
-        append_results = await _append_rows_with_retry(ws, rows, 'expense')
-        for ev, (ok, msg) in zip(idx_events, append_results):
-            results[ev.email_id] = (ok, msg)
-            if ok:
-                #Already added to seen sets above, but we need to persist to index
-                _append_index({
-                    "email_id": ev.email_id,
-                    "status": ev.direction,
-                    "provider": ev.provider,
-                    "fingerprint_hash": _fingerprint_hash_for_event(ev),
-                    "message_id": ev.message_id,
-                    "txn_id": ev.txn_id,
-                    "provider_ts": (ev.provider_ts or ev.ts).isoformat(),
-                })
-            else:
-                log_action('finance_sheet_error', 'expense_append_error', msg)
-
-    for ev in events:
-        results.setdefault(ev.email_id, (False, 'dup_skipped'))
-    return results
+    return await _append_ledger_rows(_EXPENSE_SHEET, events)
 
 
 async def _process_finance_events(
@@ -1791,8 +1669,8 @@ async def _process_finance_events(
         if sid:
             try:
                 ws_name = getattr(settings, 'income_ws_title', 'Income')
-                ws = sheets_client().open_by_key(sid).worksheet(ws_name)
-                sheet_records = _fetch_recent_records(ws, 'income')
+                ws = await asyncio.to_thread(_open_worksheet, sid, ws_name)
+                sheet_records = await asyncio.to_thread(_fetch_recent_records, ws, 'income')
             except Exception:
                 pass  # Non-critical: inference will still use batch context
 
@@ -2276,7 +2154,9 @@ async def _check_dues_corroboration(counterparty: str, provider: str, bot) -> bo
     
     #Check membership application list for unverified entry matching this name
     try:
-        rows = dues_module._load_membership_rows()
+        #Off the loop: this reads the membership sheet over synchronous HTTP
+        #whenever its TTL is up, with quota retries behind it.
+        rows = await dues_module._load_membership_rows_async()
         cur_sem = dues_module._current_semester_label()
         cur_sem_norm = dues_module._norm_sem_label(cur_sem).lower()
         
@@ -2348,7 +2228,9 @@ async def _process_pending_dues(bot) -> None:
     #pending clock kept counting down against a source that could not answer.
     from . import dues as _dues_mod
     try:
-        _dues_mod._load_membership_rows()
+        #Off the loop, for the same reason. The load is for its side effect:
+        #membership_data_is_authoritative reports on the one that just ran.
+        await _dues_mod._load_membership_rows_async()
         corroboration_ok, corroboration_detail = _dues_mod.membership_data_is_authoritative()
     except Exception as e:
         corroboration_ok, corroboration_detail = False, f'{type(e).__name__}: {e}'

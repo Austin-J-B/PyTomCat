@@ -40,6 +40,7 @@ jobs:
           python scripts/test_finance_dedup.py
           python scripts/test_finance_classifiers.py
           python scripts/test_dues_name_match.py
+          python scripts/test_dues_cleanup.py
           python scripts/test_income_category.py
           python scripts/test_spam_false_positives.py
           python scripts/test_pending_dues.py

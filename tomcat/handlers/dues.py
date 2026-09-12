@@ -1584,17 +1584,75 @@ async def _delete_portal_messages(bot, ids: list[int]) -> int:
             continue
     return deleted
 
-async def _cleanup_portal_messages_for_emails(bot, rows: list[dict], emails_with_sem: list[tuple[str, str | None]]) -> int:
-    """Attempt to delete portal messages for verified emails, even when verified via email-only fallback."""
+def _same_awareness(ts: datetime, reference: datetime) -> datetime:
+    """Put `ts` in `reference`'s timezone (or naivety) so the two can subtract."""
+    if reference.tzinfo is None:
+        return ts.replace(tzinfo=None)
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=reference.tzinfo)
+    return ts.astimezone(reference.tzinfo)
+
+
+async def _delete_logged_portal_messages(bot, emails_with_sem: list[tuple[str, str | None]]) -> int:
+    """Delete the portal messages the dues log already ties to these emails."""
     if not emails_with_sem:
         return 0
-    deleted = 0
     try:
         log_ids = _dues_log_message_ids_for_emails(emails_with_sem)
         if log_ids:
-            deleted += await _delete_portal_messages(bot, log_ids)
+            return await _delete_portal_messages(bot, log_ids)
     except Exception:
         pass
+    return 0
+
+
+async def _delete_portal_messages_by_author(bot, targets: set[str]) -> int:
+    """Delete recent payment posts in the portal written by one of `targets`.
+
+    Only explicit payment messages, and only inside the email backfill window:
+    an older post by the same member is somebody else's payment round and must
+    survive.
+    """
+    if not targets:
+        return 0
+    cleanup_limit = int(getattr(settings, 'dues_cleanup_scan_limit', 0) or 0)
+    msgs = await _fetch_portal_messages(
+        bot,
+        include_processed=True,
+        limit_override=cleanup_limit if cleanup_limit > 0 else None,
+    )
+    if not msgs:
+        return 0
+    now = _dues_now()
+    backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
+    ids: list[int] = []
+    for m in msgs:
+        p = _parse_portal_message(m)
+        if not _is_explicit_payment_message(p.get('content', '')):
+            continue
+        ts = p.get('ts')
+        if isinstance(ts, datetime) and (now - _same_awareness(ts, now)).days > backfill_days:
+            continue
+        author_keys = {
+            _norm_user_key(p.get('author_name') or ''),
+            _norm_user_key(p.get('author_display') or ''),
+        }
+        if author_keys & targets:
+            mid = int(getattr(m, 'id', 0) or 0)
+            if mid:
+                ids.append(mid)
+    if not ids:
+        return 0
+    #One post can match more than one target; delete it once.
+    return await _delete_portal_messages(bot, list(dict.fromkeys(ids)))
+
+
+async def _cleanup_portal_messages_for_emails(bot, rows: list[dict], emails_with_sem: list[tuple[str, str | None]]) -> int:
+    """Delete portal messages for verified emails, including email-only verification."""
+    if not emails_with_sem:
+        return 0
+    deleted = await _delete_logged_portal_messages(bot, emails_with_sem)
+
     targets: set[str] = set()
     for email, sem in emails_with_sem:
         email_norm = (email or '').strip().lower()
@@ -1608,49 +1666,11 @@ async def _cleanup_portal_messages_for_emails(bot, rows: list[dict], emails_with
                 r_sem = _norm_sem_label(r.get('semester') or '')
                 if r_sem and r_sem != sem_norm:
                     continue
-            handle = r.get('discord_username') or ''
-            key = _norm_user_key(handle)
+            key = _norm_user_key(r.get('discord_username') or '')
             if key:
                 targets.add(key)
-    if not targets:
-        return deleted
-    cleanup_limit = int(getattr(settings, 'dues_cleanup_scan_limit', 0) or 0)
-    msgs = await _fetch_portal_messages(
-        bot,
-        include_processed=True,
-        limit_override=cleanup_limit if cleanup_limit > 0 else None,
-    )
-    if not msgs:
-        return deleted
-    now = _dues_now()
-    backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
-    ids: list[int] = []
-    for m in msgs:
-        p = _parse_portal_message(m)
-        if not _is_explicit_payment_message(p.get('content','')):
-            continue
-        ts = p.get('ts')
-        if isinstance(ts, datetime):
-            if now.tzinfo is None:
-                ts_cmp = ts.replace(tzinfo=None)
-            elif ts.tzinfo is None:
-                ts_cmp = ts.replace(tzinfo=now.tzinfo)
-            else:
-                ts_cmp = ts.astimezone(now.tzinfo)
-            if (now - ts_cmp).days > backfill_days:
-                continue
-        au = _norm_user_key(p.get('author_name') or '')
-        ad = _norm_user_key(p.get('author_display') or '')
-        if au in targets or ad in targets:
-            mid = int(getattr(m, 'id', 0) or 0)
-            if mid:
-                ids.append(mid)
-    if not ids:
-        return deleted
-    # Remove duplicates so the same portal message is not deleted twice.
-    ids = list(dict.fromkeys(ids))
-    deleted += await _delete_portal_messages(bot, ids)
-    return deleted
+    return deleted + await _delete_portal_messages_by_author(bot, targets)
+
 
 async def _cleanup_portal_messages_for_verified_rows(bot, rows: list[dict], cur_sem: str) -> int:
     """Delete portal messages for members already verified in the current semester."""
@@ -1664,60 +1684,18 @@ async def _cleanup_portal_messages_for_verified_rows(bot, rows: list[dict], cur_
             sem = _norm_sem_label(r.get('semester') or '')
             if sem and sem != cur_sem_norm:
                 continue
-        raw_handle = r.get('discord_username') or ''
         email = (r.get('email') or '').strip().lower()
         if email:
             emails_with_sem.append((email, r.get('semester') or None))
-        for cand in _split_handle_candidates(raw_handle):
+        #A member may have listed several handles; any of them can be the author.
+        for cand in _split_handle_candidates(r.get('discord_username') or ''):
             key = _norm_user_key(cand)
             if key:
                 targets.add(key)
-    deleted = 0
-    if emails_with_sem:
-        try:
-            log_ids = _dues_log_message_ids_for_emails(emails_with_sem)
-            if log_ids:
-                deleted += await _delete_portal_messages(bot, log_ids)
-        except Exception:
-            pass
-    if not targets:
-        return deleted
-    cleanup_limit = int(getattr(settings, 'dues_cleanup_scan_limit', 0) or 0)
-    msgs = await _fetch_portal_messages(
-        bot,
-        include_processed=True,
-        limit_override=cleanup_limit if cleanup_limit > 0 else None,
-    )
-    if not msgs:
-        return deleted
-    now = _dues_now()
-    backfill_days = int(getattr(settings, 'dues_email_backfill_days', 30) or 30)
-    ids: list[int] = []
-    for m in msgs:
-        p = _parse_portal_message(m)
-        if not _is_explicit_payment_message(p.get('content','')):
-            continue
-        ts = p.get('ts')
-        if isinstance(ts, datetime):
-            if now.tzinfo is None:
-                ts_cmp = ts.replace(tzinfo=None)
-            elif ts.tzinfo is None:
-                ts_cmp = ts.replace(tzinfo=now.tzinfo)
-            else:
-                ts_cmp = ts.astimezone(now.tzinfo)
-            if (now - ts_cmp).days > backfill_days:
-                continue
-        au = _norm_user_key(p.get('author_name') or '')
-        ad = _norm_user_key(p.get('author_display') or '')
-        if au in targets or ad in targets:
-            mid = int(getattr(m, 'id', 0) or 0)
-            if mid:
-                ids.append(mid)
-    if not ids:
-        return deleted
-    ids = list(dict.fromkeys(ids))
-    deleted += await _delete_portal_messages(bot, ids)
-    return deleted
+
+    deleted = await _delete_logged_portal_messages(bot, emails_with_sem)
+    return deleted + await _delete_portal_messages_by_author(bot, targets)
+
 
 async def handle_update_dues_members(intent, ctx) -> None:
     """Reconcile dues spreadsheet entries with Discord member info."""

@@ -117,71 +117,80 @@ def _load_snapshot() -> None:
         _CACHE = {}
         _TS = 0.0
 
+#Profile field -> the header spellings the CatDatabase has used for it, most
+#specific first. Column order has changed over the sheet's life, so columns are
+#found by header rather than position, and a missing one reads as None.
+_PROFILE_COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("image_url", ("imageurl", "image", "photo", "mostrecentimageurl",
+                   "mostrecentimage", "linkofmostrecentimage",
+                   "linkofmostrecentimageurl")),
+    ("location", ("location",)),
+    ("physical_description", ("physicaldescription",)),
+    ("behavior", ("behavior",)),
+    ("birthday_estimate", ("birthdayestimate", "birthday")),
+    ("tnrd", ("tnrd",)),
+    ("tnr_date", ("tnrdate",)),
+    ("sex", ("sex",)),
+    ("nicknames", ("commonnicknames", "nicknames")),
+    ("comments", ("comments", "notes")),
+    ("last_seen_date", ("lastseendate",)),
+    ("last_seen_time", ("lastseentime",)),
+    ("last_seen_by", ("lastseenby",)),
+)
+_FULL_NAME_HEADERS = ("fulllegalname", "fullname", "name", "catdatabase", "full")
+
+
+def _header_key(text: str) -> str:
+    return re.sub(r"[^a-z]+", "", (text or "").lower())
+
+
+def _profiles_from_rows(rows: List[List[str]]) -> Dict[str, Dict[str, Any]]:
+    """Cat profiles keyed by normalized name, from a CatDatabase table.
+
+    rows[0] is the header. The live sheet and the CSV snapshot share this
+    layout, so both go through here.
+    """
+    if not rows:
+        return {}
+    header, *data = rows
+    index = {_header_key(h): i for i, h in enumerate(header)}
+
+    def column(names: tuple[str, ...]) -> int:
+        for name in names:
+            if name in index:
+                return index[name]
+        return -1
+
+    #With no recognizable name header, assume the first column.
+    full_col = max(column(_FULL_NAME_HEADERS), 0)
+    columns = [(field, column(names)) for field, names in _PROFILE_COLUMNS]
+
+    profiles: Dict[str, Dict[str, Any]] = {}
+    for row in data:
+        full = (row[full_col] if full_col < len(row) else "").strip()
+        if not full:
+            continue
+        profile: Dict[str, Any] = {"actual_name": full}
+        for field, col in columns:
+            profile[field] = row[col] if 0 <= col < len(row) else None
+        profiles[_norm(_display_from_full(full))] = profile
+    return profiles
+
+
 def _load_from_csv() -> None:
-    """Hydrate cache from the bundled CSV fallback."""
-    """Build cache from the local CSV snapshot if available."""
+    """Hydrate the cache from the bundled CSV snapshot, if one is readable."""
     global _CACHE, _TS
-    try:
-        import csv
-        for path in _readable_catabase_csv_paths():
-            if not os.path.exists(path):
-                continue
-            with open(path, 'r', encoding='utf-8') as f:
-                reader = csv.reader(f)
-                header = next(reader, None)
-                if not header:
-                    continue
-                def hkey(s: str) -> str:
-                    return re.sub(r"[^a-z]+", "", (s or '').lower())
-                idx = {hkey(h): i for i, h in enumerate(header)}
-                def col(*keys: str) -> int:
-                    for k in keys:
-                        if k in idx: return idx[k]
-                    return -1
-                i_full = col('fulllegalname','fullname','name','catdatabase','full')
-                i_img  = col('imageurl','image','photo','mostrecentimageurl','mostrecentimage','linkofmostrecentimage','linkofmostrecentimageurl')
-                i_loc  = col('location')
-                i_phys = col('physicaldescription')
-                i_beh  = col('behavior')
-                i_bday = col('birthdayestimate','birthday')
-                i_tnrd = col('tnrd')
-                i_tndt = col('tnrdate')
-                i_sex  = col('sex')
-                i_nick = col('commonnicknames','nicknames')
-                i_comm = col('comments','notes')
-                i_lsd  = col('lastseendate')
-                i_lst  = col('lastseentime')
-                i_lsb  = col('lastseenby')
-                cache: Dict[str, Dict[str, Any]] = {}
-                for r in reader:
-                    full_idx = i_full if i_full >= 0 else 0
-                    full = (r[full_idx] if full_idx < len(r) else '').strip()
-                    if not full:
-                        continue
-                    disp = _display_from_full(full)
-                    key = _norm(disp)
-                    cache[key] = {
-                        "actual_name": full,
-                        "image_url": (r[i_img] if i_img >= 0 and i_img < len(r) else None),
-                        "location": (r[i_loc] if i_loc >= 0 and i_loc < len(r) else None),
-                        "physical_description": (r[i_phys] if i_phys >= 0 and i_phys < len(r) else None),
-                        "behavior": (r[i_beh] if i_beh >= 0 and i_beh < len(r) else None),
-                        "birthday_estimate": (r[i_bday] if i_bday >= 0 and i_bday < len(r) else None),
-                        "tnrd": (r[i_tnrd] if i_tnrd >= 0 and i_tnrd < len(r) else None),
-                        "tnr_date": (r[i_tndt] if i_tndt >= 0 and i_tndt < len(r) else None),
-                        "sex": (r[i_sex] if i_sex >= 0 and i_sex < len(r) else None),
-                        "nicknames": (r[i_nick] if i_nick >= 0 and i_nick < len(r) else None),
-                        "comments": (r[i_comm] if i_comm >= 0 and i_comm < len(r) else None),
-                        "last_seen_date": (r[i_lsd] if i_lsd >= 0 and i_lsd < len(r) else None),
-                        "last_seen_time": (r[i_lst] if i_lst >= 0 and i_lst < len(r) else None),
-                        "last_seen_by": (r[i_lsb] if i_lsb >= 0 and i_lsb < len(r) else None),
-                    }
-                if cache:
-                    _CACHE = cache
-                    _TS = time.monotonic()
-                    return
-    except Exception:
-        pass
+    for path in _readable_catabase_csv_paths():
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                profiles = _profiles_from_rows(list(csv.reader(handle)))
+        except Exception:
+            continue
+        if profiles:
+            _CACHE = profiles
+            _TS = time.monotonic()
+            return
+
 
 def _save_snapshot() -> None:
     """Persist the current cache to disk for restarts."""
@@ -210,16 +219,15 @@ def _cache_is_stale() -> bool:
     return (time.monotonic() - ts) > ttl
 
 def refresh_sync() -> int:
-    """Synchronously refresh the cache; returns number of profiles."""
-    """Refresh the in-process cache from the CatDatabase sheet. Returns count on success, 0 on failure."""
+    """Refresh the cache from the CatDatabase sheet. Returns the count, 0 on failure."""
+    global _CACHE, _TS, _COUNT
     sid = getattr(settings, 'sheet_catabase_id', None)
     if not sid:
         return 0
     try:
-        ws = sheets_client().open_by_key(sid).worksheet("CatDatabase")
-        rows = ws.get_all_values()
+        rows = sheets_client().open_by_key(sid).worksheet("CatDatabase").get_all_values()
     except Exception:
-        # Fall back to the snapshot and report that no fresh sheet read occurred.
+        #Fall back to the snapshot and report that no fresh sheet read occurred.
         _load_snapshot()
         return 0
     if not rows:
@@ -228,73 +236,22 @@ def refresh_sync() -> int:
         _sync_metadata_names_from_catabase_rows(rows)
     except Exception:
         pass
-    header, *data = rows
-    #Map known columns by approximate keys
-    def hkey(s: str) -> str:
-        return re.sub(r"[^a-z]+", "", (s or '').lower())
-    idx = {hkey(h): i for i, h in enumerate(header)}
-    def col(*keys: str) -> int:
-        for k in keys:
-            if k in idx: return idx[k]
-        return -1
-    i_full = col('fulllegalname','fullname','name','catdatabase','full')
-    i_img  = col('imageurl','image','photo','mostrecentimageurl','mostrecentimage','linkofmostrecentimage','linkofmostrecentimageurl')
-    i_loc  = col('location')
-    i_phys = col('physicaldescription')
-    i_beh  = col('behavior')
-    i_bday = col('birthdayestimate','birthday')
-    i_tnrd = col('tnrd')
-    i_tndt = col('tnrdate')
-    i_sex  = col('sex')
-    i_nick = col('commonnicknames','nicknames')
-    i_comm = col('comments','notes')
-    i_lsd  = col('lastseendate')
-    i_lst  = col('lastseentime')
-    i_lsb  = col('lastseenby')
 
-    cache: Dict[str, Dict[str, Any]] = {}
-    for r in data:
-        #Fallback: if we couldn't detect a header for full name, use first column (0)
-        full_idx = i_full if i_full >= 0 else 0
-        full = (r[full_idx] if full_idx < len(r) else '').strip()
-        if not full:
-            continue
-        disp = _display_from_full(full)
-        key = _norm(disp)
-        cache[key] = {
-            "actual_name": full,
-            "image_url": (r[i_img] if i_img >= 0 and i_img < len(r) else None),
-            "location": (r[i_loc] if i_loc >= 0 and i_loc < len(r) else None),
-            "physical_description": (r[i_phys] if i_phys >= 0 and i_phys < len(r) else None),
-            "behavior": (r[i_beh] if i_beh >= 0 and i_beh < len(r) else None),
-            "birthday_estimate": (r[i_bday] if i_bday >= 0 and i_bday < len(r) else None),
-            "tnrd": (r[i_tnrd] if i_tnrd >= 0 and i_tnrd < len(r) else None),
-            "tnr_date": (r[i_tndt] if i_tndt >= 0 and i_tndt < len(r) else None),
-            "sex": (r[i_sex] if i_sex >= 0 and i_sex < len(r) else None),
-            "nicknames": (r[i_nick] if i_nick >= 0 and i_nick < len(r) else None),
-            "comments": (r[i_comm] if i_comm >= 0 and i_comm < len(r) else None),
-            "last_seen_date": (r[i_lsd] if i_lsd >= 0 and i_lsd < len(r) else None),
-            "last_seen_time": (r[i_lst] if i_lst >= 0 and i_lst < len(r) else None),
-            "last_seen_by": (r[i_lsb] if i_lsb >= 0 and i_lsb < len(r) else None),
-        }
-    if cache:
-        global _CACHE, _TS
-        _CACHE = cache
-        _TS = time.monotonic()
-        global _COUNT
-        _COUNT = len(_CACHE)
-        _save_snapshot()
-        #Also write a CSV snapshot with all columns for offline usage
-        try:
-            path = _preferred_catabase_csv_path()
-            with open(path, 'w', encoding='utf-8', newline='') as f:
-                w = csv.writer(f)
-                for r in rows:
-                    w.writerow(r)
-        except Exception:
-            pass
-        return _COUNT
-    return 0
+    profiles = _profiles_from_rows(rows)
+    if not profiles:
+        return 0
+    _CACHE = profiles
+    _TS = time.monotonic()
+    _COUNT = len(_CACHE)
+    _save_snapshot()
+    #Also keep an all-columns CSV snapshot for offline use.
+    try:
+        with open(_preferred_catabase_csv_path(), 'w', encoding='utf-8', newline='') as f:
+            csv.writer(f).writerows(rows)
+    except Exception:
+        pass
+    return _COUNT
+
 
 async def refresh_async() -> int:
     """Async wrapper that runs refresh_sync off the event loop."""

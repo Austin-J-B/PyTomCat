@@ -735,18 +735,16 @@ def _ensure_gallery() -> None:
                     gallery_path = Path(gallery_target)
             if not gallery_path.exists() or gallery_path.stat().st_size == 0:
                 raise RuntimeError(f"Gallery file is missing or empty: {gallery_target}. Please run a gallery retrain.")
-            try:
-                gal_data = torch.load(gallery_target, map_location=_device, weights_only=True)
-            except Exception:
-                gal_data = torch.load(gallery_target, map_location=_device, weights_only=False)
+            from . import gallery_file
 
-            _gallery_emb = (gal_data['emb'] if 'emb' in gal_data else gal_data['embeddings']).to(_device)
+            gal_data = gallery_file.read_gallery(gallery_target)
+            _gallery_emb = torch.from_numpy(gal_data["emb"]).to(_device)
             _gallery_emb = torch.nn.functional.normalize(_gallery_emb, p=2, dim=1)
 
             idx_to_class = gal_data.get('idx_to_class') or {v: k for k, v in gal_data['class_to_idx'].items()}
-            _gallery_names = [idx_to_class[int(i)] for i in (gal_data['label'] if 'label' in gal_data else gal_data['labels'])]
-            raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
-            raw_records = gal_data.get("records") or gal_data.get("gallery_records") or []
+            _gallery_names = [idx_to_class[int(i)] for i in gal_data["label"]]
+            raw_paths = gal_data.get("path") or []
+            raw_records = gal_data.get("records") or []
             _gallery_records, _gallery_paths = _build_gallery_runtime_metadata(
                 _gallery_names,
                 raw_paths,
@@ -3100,18 +3098,15 @@ def refresh_gallery(path: Optional[str] = None) -> dict:
                 target_path = Path(target)
         if not target_path.exists() or target_path.stat().st_size == 0:
             raise RuntimeError(f"Gallery file is missing or empty: {target}. Please run a gallery retrain.")
-        try:
-            gal_data = torch.load(target, map_location=_device, weights_only=True)
-        except Exception:
-            gal_data = torch.load(target, map_location=_device, weights_only=False)
+        from . import gallery_file
 
-        emb = (gal_data["emb"] if "emb" in gal_data else gal_data["embeddings"]).to(_device)
+        gal_data = gallery_file.read_gallery(target)
+        emb = torch.from_numpy(gal_data["emb"]).to(_device)
         emb = torch.nn.functional.normalize(emb, p=2, dim=1)
         idx_to_class = gal_data.get("idx_to_class") or {v: k for k, v in gal_data["class_to_idx"].items()}
-        labels = gal_data["label"] if "label" in gal_data else gal_data["labels"]
-        names = [idx_to_class[int(i)] for i in labels]
-        raw_paths = gal_data.get("path") or gal_data.get("paths") or gal_data.get("img_paths") or []
-        raw_records = gal_data.get("records") or gal_data.get("gallery_records") or []
+        names = [idx_to_class[int(i)] for i in gal_data["label"]]
+        raw_paths = gal_data.get("path") or []
+        raw_records = gal_data.get("records") or []
         records, paths = _build_gallery_runtime_metadata(names, raw_paths, raw_records)
 
         _gallery_emb = emb

@@ -1054,26 +1054,45 @@ def _with_cors(resp: web.StreamResponse, request: web.Request) -> web.StreamResp
 #read and decoded inside the request handler on every hit, and labeler.js alone
 #is ~340KB -- enough synchronous work to stall the event loop on each page load.
 #Bytes are cached rather than text so responses skip the encode as well.
-_static_asset_cache: Dict[str, tuple[tuple[float, int], bytes]] = {}
+#(filename, prefix) -> (file stamp, response body, ETag). The prefix is part of
+#the key because it is part of the payload: labeler.js is served with its
+#feature flags prepended.
+_static_asset_cache: Dict[tuple[str, bytes], tuple[tuple[float, int], bytes, str]] = {}
 
 
-def _static_asset_bytes(filename: str, prefix: bytes = b"") -> bytes:
-    """Repo-root asset as UTF-8 bytes, cached against its mtime and size.
+def _static_asset(filename: str, prefix: bytes = b"") -> tuple[bytes, str]:
+    """Repo-root asset as response-ready bytes plus its ETag.
 
-    `prefix` is part of the cached payload, so it has to be stable for the life
-    of the process (it carries the labeler's feature flags, read from env once).
+    Cached against the file's mtime and size, so a deploy is picked up without a
+    request costing a read.
     """
     stat = os.stat(filename)
     stamp = (stat.st_mtime, stat.st_size)
-    cached = _static_asset_cache.get(filename)
+    key = (filename, prefix)
+    cached = _static_asset_cache.get(key)
     if cached is not None and cached[0] == stamp:
-        return cached[1]
+        return cached[1], cached[2]
     #Text mode on purpose: labeler.js is stored with CRLF endings and has always
     #gone out with them translated. Reading it as bytes would change the payload.
     with open(filename, "r", encoding="utf-8") as handle:
         body = prefix + handle.read().encode("utf-8")
-    _static_asset_cache[filename] = (stamp, body)
-    return body
+    etag = f'"{hashlib.sha256(body).hexdigest()[:32]}"'
+    _static_asset_cache[key] = (stamp, body, etag)
+    return body, etag
+
+
+def _if_none_match_has(request: web.Request, etag: str) -> bool:
+    """Whether the client already holds this exact version."""
+    header = request.headers.get("If-None-Match", "")
+    if not header:
+        return False
+    if header.strip() == "*":
+        return True
+    #A browser may send several, and may weaken them with a W/ prefix.
+    return any(
+        candidate.strip().removeprefix("W/") == etag
+        for candidate in header.split(",")
+    )
 
 
 def _static_asset_route(
@@ -1083,16 +1102,27 @@ def _static_asset_route(
     prefix: bytes = b"",
     missing_text: Optional[str] = None,
 ):
-    """Build a no-store handler that serves one repo-root file."""
+    """Build a revalidating handler that serves one repo-root file.
+
+    These were sent with no-store, so every page load re-downloaded all of them
+    -- ~540KB, of which labeler.js is 340KB, over whatever connection a
+    volunteer is on. "no-cache" keeps the same guarantee that matters, which is
+    that a browser never shows a stale labeler after a deploy: it still asks on
+    every load. It just gets a 304 and no body when the file has not changed.
+    """
     not_found = missing_text or f"{filename} not found"
 
     async def handler(request: web.Request) -> web.Response:
         try:
-            body = _static_asset_bytes(filename, prefix)
+            body, etag = _static_asset(filename, prefix)
         except OSError:
             return web.Response(text=not_found, status=404)
-        resp = web.Response(body=body, content_type=content_type, charset="utf-8")
-        resp.headers["Cache-Control"] = "no-store"
+        if _if_none_match_has(request, etag):
+            resp = web.Response(status=304)
+        else:
+            resp = web.Response(body=body, content_type=content_type, charset="utf-8")
+        resp.headers["ETag"] = etag
+        resp.headers["Cache-Control"] = "no-cache"
         return _with_cors(resp, request)
 
     handler.__name__ = "get_" + filename.replace("-", "_").replace(".", "_")

@@ -40,6 +40,7 @@ jobs:
       - name: Run Python regression scripts
         run: |
           python scripts/test_web_security.py
+          python scripts/test_static_assets.py
           python scripts/test_finance_dedup.py
           python scripts/test_finance_classifiers.py
           python scripts/test_finance_append.py

@@ -12,7 +12,10 @@ Type=simple
 User=tomcat
 Group=tomcat
 WorkingDirectory=/home/tomcat/PyTomCat
-EnvironmentFile=/home/tomcat/PyTomCat/.env
+# No EnvironmentFile=. systemd does not strip inline comments, so a .env line
+# like `SHEET_MEGASHEET_ID=1PBv... # CCC megasheet` arrived with the comment in
+# the value, and load_dotenv() never overrides a variable that is already set.
+# Every sheet open 404'd. config.py loads .env itself from WorkingDirectory.
 ExecStart=/home/tomcat/PyTomCat/.venv/bin/python /home/tomcat/PyTomCat/scripts/start.py
 Restart=always
 RestartSec=10

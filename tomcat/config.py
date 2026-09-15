@@ -263,6 +263,9 @@ class Settings:
     ui_guild_id: int | None = int(os.getenv("UI_GUILD_ID", "0") or "0") or None
     officer_role_id: int | None = int(os.getenv("OFFICER_ROLE_ID", "0") or "0") or None
     officer_role_ids: list[int] = field(default_factory=lambda: _parse_role_id_list_env("OFFICER_ROLE_IDS"))
+    # Roles that owe no dues (consulting officers). They can still be officers
+    # for commands; they are only left out of the "without dues" report.
+    dues_exempt_role_ids: list[int] = field(default_factory=lambda: _parse_role_id_list_env("DUES_EXEMPT_ROLE_IDS"))
     role_feeding_manager_id: int | None = int(os.getenv("ROLE_FEEDING_MANAGER", "0") or "0") or None
     role_photo_labeler_id: int | None = int(os.getenv("ROLE_PHOTO_LABELER", "0") or "0") or None
     role_viewer_id: int | None = int(os.getenv("ROLE_VIEWER", "0") or "0") or None

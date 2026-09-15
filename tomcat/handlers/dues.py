@@ -888,6 +888,36 @@ def _get_semester_expiry(semester_label: str) -> date:
         return (datetime.now() + timedelta(days=180)).date()
 
 
+def _get_semester_start(semester_label: str) -> Optional[date]:
+    """The earliest date a payment can belong to this semester, or None.
+
+    Early on purpose: people pay a few weeks before term starts. Spring opens
+    Dec 1 of the prior year and Fall opens Jun 1 (the earliest Fall form in the
+    sheet is dated mid-July).
+    """
+    normalized = (semester_label or '').strip().lower()
+    year_match = re.search(r'\d{4}', normalized)
+    if not year_match:
+        return None
+    year = int(year_match.group())
+    if 'fall' in normalized:
+        return date(year, 6, 1)
+    if 'spring' in normalized:
+        return date(year - 1, 12, 1)
+    return None
+
+
+def _row_semester_start(row: dict) -> Optional[date]:
+    """When this membership row starts counting, or None if we cannot tell."""
+    label = _norm_sem_label(row.get('semester') or '')
+    if re.search(r"\d{4}", label) and re.search(r"spring|fall", label, re.I):
+        return _get_semester_start(label)
+    signed = _parse_member_date(row.get('date') or '')
+    if signed:
+        return _get_semester_start("%s %d" % ('Spring' if signed.month <= 6 else 'Fall', signed.year))
+    return None
+
+
 def _row_semester_expiry(row: dict):
     """When this membership row stops counting, or None if we cannot tell.
 
@@ -913,12 +943,19 @@ def _member_row_is_current(row: dict, today=None) -> bool:
     a Fall 2024 entry was still a candidate for a September 2026 payment, and
     a junk row from that term absorbed one.
 
+    A row is also not current before its term opens. Without that bound a
+    Fall 2026 row counted as current for a February 2024 post, and a pinned
+    2024 instructions post matched its author's Fall 2026 row.
+
     Rows whose term cannot be determined are kept, so a blank semester cell
     does not silently drop a real member.
     """
     if today is None:
         from datetime import date as _date
         today = _date.today()
+    start = _row_semester_start(row)
+    if start is not None and today < start:
+        return False
     expiry = _row_semester_expiry(row)
     if expiry is None:
         return True
@@ -1494,6 +1531,12 @@ async def _delete_portal_messages(bot, ids: list[int]) -> int:
         except Exception:
             continue
         if not msg:
+            continue
+        #A pinned post is channel instructions, never a payment. On 2026-09-14 a
+        #2024 pinned "Dues are either $15 a semester" post matched its author's
+        #current row and was deleted; Discord cannot undelete it.
+        if getattr(msg, 'pinned', False):
+            log_action('dues_portal_delete_skip_pinned', f'id={mid}', '')
             continue
         try:
             await msg.delete()
@@ -2799,6 +2842,78 @@ _ALLOWED_AMOUNTS = set(int(x) for x in getattr(settings,'dues_allowed_amounts',[
 _MIN_SHEET_SCORE = 0.35
 
 
+def _member_indexes(members: list[dict]) -> dict:
+    """Lookups over membership rows for matching portal posts.
+
+    by_discord keeps every row per handle. A returning member has a row per
+    semester under the same handle, and keeping only one of them left last
+    semester's row as the sole candidate for a current payment.
+    """
+    by_discord: Dict[str, List[dict]] = {}
+    by_handle: Dict[str, List[dict]] = {}
+    names_vocab: List[Tuple[str, dict]] = []
+    for mm in members:
+        dn = _norm_user(mm.get('discord_username'))
+        if dn:
+            by_discord.setdefault(dn, []).append(mm)
+        pu = mm.get('payment_username') or ''
+        for h in _handles_from_text(pu) + re.findall(r"[@$][A-Za-z][A-Za-z0-9_\-]{1,31}", pu):
+            key = h.lstrip('@$').lower()
+            if key:
+                by_handle.setdefault(key, []).append(mm)
+        fn = (mm.get('full_name') or '').strip()
+        if fn:
+            names_vocab.append((fn, mm))
+    return {'by_discord': by_discord, 'by_handle': by_handle, 'names_vocab': names_vocab}
+
+
+def _member_candidates(p: dict, members: list[dict], idx: dict) -> list[dict]:
+    """Membership rows worth scoring against one portal post.
+
+    Every lookup contributes and the scorer picks the winner. These used to
+    stop at the first lookup that found anything: Christopher Mendoza's
+    username matched only his Spring row, so his Fall row -- named by his
+    display name and by the name he wrote -- was never scored, and the job
+    skipped him as a stale semester.
+    """
+    out: List[dict] = []
+    seen: set[int] = set()
+
+    def add(rows) -> None:
+        for mm in rows:
+            if id(mm) not in seen:
+                seen.add(id(mm))
+                out.append(mm)
+
+    an = _norm_user(p.get('author_name'))
+    ad = _norm_user(p.get('author_display'))
+    for key in (an, ad):
+        if key:
+            add(idx['by_discord'].get(key, []))
+    for h in (p.get('handles') or []):
+        add(idx['by_handle'].get(h.lstrip('@$').lower(), []))
+    if p.get('name'):
+        named = [(r, mm) for fn, mm in idx['names_vocab'] if (r := _name_match(p['name'], fn)) >= 75]
+        named.sort(key=lambda x: x[0], reverse=True)
+        add(mm for _r, mm in named[:10])
+    if an and len(an) >= 6:
+        near = []
+        for mm in members:
+            dn = _norm_user(mm.get('discord_username'))
+            if not dn:
+                continue
+            #Containment needs 6+ characters on the row side too, to avoid slivers.
+            if len(dn) >= 6 and (an in dn or dn in an):
+                near.append((95, mm))
+            else:
+                r = _ratio(an, dn)
+                if r >= 85:
+                    near.append((r, mm))
+        near.sort(key=lambda x: x[0], reverse=True)
+        add(mm for _r, mm in near[:10])
+    return out or members[:50]
+
+
 def _rank_sheet_matches(scored: List[Tuple[float, dict]], cur_sem: str) -> List[Tuple[float, dict]]:
     """Best sheet match first, with the current semester's row winning ties.
 
@@ -2947,7 +3062,9 @@ async def _fetch_portal_messages(bot, include_processed: bool = False, limit_ove
         fetched = []
         async for m in ch.history(limit=limit, oldest_first=False):
             fetched.append(m)
-        msgs = list(reversed(fetched))
+        #Pinned posts are channel instructions, not payments: never score,
+        #verify or clean them up.
+        msgs = [m for m in reversed(fetched) if not getattr(m, 'pinned', False)]
     except Exception as e:
         log_action('dues_portal_history_error', f'ch={ch_id}', str(e))
         return []
@@ -3001,7 +3118,13 @@ async def _analyze_dues(bot) -> List[dict]:
     oldest_ts = parsed_msgs[0][1]['ts']
     as_of = oldest_ts.replace(tzinfo=None).date()
     before = len(members)
-    members = [r for r in members if _member_row_is_current(r, as_of)]
+    #Keep a row if it was current on the date of any post in the scan. A single
+    #as_of date cannot do this now that rows also have a start: one old post in
+    #the portal would drop every current row.
+    post_days = {
+        pm['ts'].date() for _m, pm in parsed_msgs if isinstance(pm.get('ts'), datetime)
+    } or {as_of}
+    members = [r for r in members if any(_member_row_is_current(r, d) for d in post_days)]
     if before != len(members):
         log_event({"event": "dues_scan_rows_filtered", "as_of": as_of.isoformat(),
                    "kept": len(members), "dropped": before - len(members)})
@@ -3033,26 +3156,7 @@ async def _analyze_dues(bot) -> List[dict]:
             'raw': e,
         })
 
-    #Build member indexes
-    by_discord: Dict[str, dict] = {}
-    by_handle: Dict[str, List[dict]] = {}
-    names_vocab: List[Tuple[str, dict]] = []
-    def _add_handle_map(h: str, row: dict):
-        key = h.lstrip('@$').lower()
-        if key:
-            by_handle.setdefault(key, []).append(row)
-    for mm in members:
-        dn = _norm_user(mm.get('discord_username'))
-        if dn:
-            by_discord[dn] = mm
-        pu = mm.get('payment_username') or ''
-        for h in _handles_from_text(pu):
-            _add_handle_map(h, mm)
-        for tok in re.findall(r"[@$][A-Za-z][A-Za-z0-9_\-]{1,31}", pu):
-            _add_handle_map(tok, mm)
-        fn = (mm.get('full_name') or '').strip()
-        if fn:
-            names_vocab.append((fn, mm))
+    member_idx = _member_indexes(members)
 
     #Candidate store for email uniqueness enforcement
     per_msg_candidates: Dict[int, dict] = {}
@@ -3081,49 +3185,22 @@ async def _analyze_dues(bot) -> List[dict]:
         if aid and aid in member_to_rows:
             #take top few by pre-match score
             mem_candidates = [r for r,_sc in sorted(member_to_rows[aid], key=lambda x: -x[1])][:10]
-        handles_norm = [h.lstrip('@$').lower() for h in (p.get('handles') or [])]
-        an = _norm_user(p.get('author_name'))
-        if not mem_candidates and an and an in by_discord:
-            mem_candidates = [by_discord[an]]
-        if not mem_candidates and handles_norm:
-            seen = set()
-            for h in handles_norm:
-                for mm in by_handle.get(h, []) or []:
-                    tid = id(mm)
-                    if tid not in seen:
-                        seen.add(tid); mem_candidates.append(mm)
-        if not mem_candidates and p.get('name'):
-            cand = p['name']
-            scored = []
-            for fn, mm in names_vocab:
-                r = _name_match(cand, fn)
-                if r >= 75:
-                    scored.append((r, mm))
-            scored.sort(reverse=True)
-            mem_candidates = [mm for r, mm in scored[:10]]
-        if not mem_candidates and an and len(an) >= 6:
-            scored = []
-            for mm in members:
-                dn = _norm_user(mm.get('discord_username'))
-                if not dn: continue
-                #Containment match: if one is substring of the other (min 6 chars to avoid false positives)
-                if len(dn) >= 6 and (an in dn or dn in an):
-                    scored.append((95, mm))
-                else:
-                    r = _ratio(an, dn)
-                    if r >= 85:
-                        scored.append((r, mm))
-            scored.sort(reverse=True)
-            mem_candidates = [mm for r, mm in scored[:10]]
         if not mem_candidates:
-            mem_candidates = members[:50]
+            mem_candidates = _member_candidates(p, members, member_idx)
 
         #Score sheet candidates. Anything below the floor is no match at all --
         #accepting every sc > 0 let a 0.10 name sliver attach a payment to an
         #unrelated row, which is how a $15 Cash App payment landed on a
         #leftover 2024 test entry whose full_name was "Hi".
+        #The roster was pre-filtered against the oldest post in the scan, and
+        #the portal can hold a post that is years old; that dragged the filter
+        #back to 2024 and let an old post match a current row. Judge each post
+        #against rows that were current on its own date.
+        msg_day = p['ts'].date() if isinstance(p.get('ts'), datetime) else as_of
         scored_S: List[Tuple[float, dict]] = []
         for S in mem_candidates:
+            if not _member_row_is_current(S, msg_day):
+                continue
             sc = _score_sheet(p, S)
             if sc >= _MIN_SHEET_SCORE:
                 scored_S.append((sc, S))
@@ -3542,6 +3619,26 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
     except Exception:
         pass
     return added, removed
+
+
+def _is_dues_exempt(member) -> bool:
+    """Does this member hold a role that owes no dues (consulting officers)?"""
+    exempt: set[int] = set()
+    for raw in getattr(settings, 'dues_exempt_role_ids', []) or []:
+        try:
+            if int(raw or 0):
+                exempt.add(int(raw))
+        except Exception:
+            continue
+    if not exempt:
+        return False
+    for role in getattr(member, 'roles', []) or []:
+        try:
+            if int(getattr(role, 'id', 0) or 0) in exempt:
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _meets_auto_verify(score: float, threshold: float) -> bool:
@@ -3967,7 +4064,7 @@ async def _run_daily_dues_job(bot) -> None:
                     else:
                         key = _norm_user_key(str(uid))
                         member = key_to_member.get(key) if key else None
-                    if member and not _has_dues(member):
+                    if member and not _has_dues(member) and not _is_dues_exempt(member):
                         sched_no_dues.append(_member_name(member))
             except Exception:
                 pass
@@ -3987,7 +4084,8 @@ async def _run_daily_dues_job(bot) -> None:
                             continue
                         if mid:
                             seen_member_ids.add(mid)
-                        if not _has_dues(m):
+                        #Consulting officers count as officers for commands but owe no dues.
+                        if not _has_dues(m) and not _is_dues_exempt(m):
                             officers_no_dues.append(_member_name(m))
             except Exception:
                 pass

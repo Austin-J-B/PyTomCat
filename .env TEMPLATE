@@ -123,6 +123,7 @@ CATABASE_PHOTO_SYNC_INTERVAL_SEC=300
 UITEST_ACTIVITY_APP_ID=               # For the user interface to work
 OFFICER_ROLE_ID=                      # Required: officer role for UI/admin actions
 OFFICER_ROLE_IDS=                     # Optional: comma-separated officer roles (e.g. prod,test)
+DUES_EXEMPT_ROLE_IDS=                 # Optional: roles that owe no dues (e.g. consulting officers); skipped in the "without dues" report
 ROLE_FEEDING_MANAGER=                 # Feeding manager role ID
 ROLE_PHOTO_LABELER=                   # Photo labeler role ID
 ROLE_VIEWER=                          # Basic viewer role ID

@@ -3767,6 +3767,36 @@ def _officer_confirmed_payments(msgs: list, rows: list[dict], cur_sem: str) -> l
     return out
 
 
+def _orphaned_confirmation_ids(before: list, after: list, attempted: set[int]) -> list[int]:
+    """Officer confirmations left pointing at a post that no longer exists.
+
+    A confirmed post is often verified by its receipt email instead, which
+    deletes the post but not the officer's reply. `before` is the portal as
+    read ahead of this run's deletions, `after` as read once they finished.
+    A reply is orphaned once Discord reports its referenced post deleted; an
+    adjacent confirmation only when the post above it was deleted this run.
+    """
+    after_ids = {int(getattr(m, 'id', 0) or 0) for m in after}
+    out: list[int] = []
+    for m in after:
+        if not _is_officer_confirmation(m):
+            continue
+        ref = getattr(m, 'reference', None)
+        if ref is not None and getattr(ref, 'message_id', None):
+            if isinstance(getattr(ref, 'resolved', None), discord.DeletedReferencedMessage):
+                out.append(int(m.id))
+            continue
+        for i, b in enumerate(before):
+            if int(getattr(b, 'id', 0) or 0) != int(m.id):
+                continue
+            target = _confirmation_target(before, i)
+            tid = int(getattr(target, 'id', 0) or 0) if target is not None else 0
+            if tid and tid in attempted and tid not in after_ids:
+                out.append(int(m.id))
+            break
+    return out
+
+
 async def _run_daily_dues_job(bot) -> None:
     """Execute the daily dues verification and role sync."""
     #Declared here because this job invalidates the membership cache after it
@@ -3848,6 +3878,7 @@ async def _run_daily_dues_job(bot) -> None:
     # Only against a roster that was actually read: an empty or cached roster
     # would silently confirm nothing, or confirm against stale rows.
     confirmed: list[dict] = []
+    portal_msgs: list = []
     try:
         confirm_rows = await _load_membership_rows_async()
         roster_ok, roster_detail = membership_data_is_authoritative()
@@ -3932,6 +3963,7 @@ async def _run_daily_dues_job(bot) -> None:
     
     #3b. Delete portal messages for verified entries, and for officer-confirmed
     # posts both the member's post and the officer's confirmation.
+    ids: list[int] = []
     if verified or confirmed:
         try:
             ids = [int(r.get('message_id') or 0) for r in verified if int(r.get('message_id') or 0)]
@@ -3943,7 +3975,18 @@ async def _run_daily_dues_job(bot) -> None:
                 log_action('dues_scheduler_cleanup', f'deleted={deleted}', '')
         except Exception as e:
             log_action('dues_portal_delete_error', '', str(e))
-    
+
+    #3c. An officer's "confirmed" on a post that got deleted some other way
+    # (usually its receipt email verified it first) would otherwise sit in
+    # the portal forever.
+    try:
+        orphans = _orphaned_confirmation_ids(portal_msgs, await _fetch_portal_messages(bot), set(ids))
+        if orphans:
+            deleted = await _delete_portal_messages(bot, orphans)
+            log_action('dues_scheduler_cleanup', f'orphan_confirmations_deleted={deleted}', '')
+    except Exception as e:
+        log_action('dues_portal_delete_error', 'orphan_confirmations', str(e))
+
     #4. Log to CH_LOGGING (human readable)
     if log_ch and (verified or confirmed):
         lines = ["Dues processed and verified:"]

@@ -31,6 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 #not write records into the corpus the real logs are analysed from.
 import _test_support  # noqa: F401
 
+import discord
+
 from tomcat.handlers import dues
 
 FAILURES: List[str] = []
@@ -341,6 +343,32 @@ async def test_index_does_not_hide_posts(tmp: Path) -> None:
           dues._dues_log_message_ids_for_emails([("dsf1084@mavs.uta.edu", CUR_SEM)]))
 
 
+def test_orphaned_confirmations() -> None:
+    print("\norphaned confirmations")
+    megan = FakeAuthor(7, "m_digio", "Megan", officer=True)
+    grug = FakeAuthor(8, "grug", "Grug", officer=True)
+    before = [
+        FakeMessage(50, "Megan - cashapp", megan, 90),
+        FakeMessage(51, "confirmed", grug, 80, reply_to=50),
+        FakeMessage(52, "My name is Jasmine Kasper I have Atlas $15", JASMINE, 70),
+        FakeMessage(53, "confirming :)", ATLAS, 69),
+        FakeMessage(54, "Acacia Shiroma $15 Izzy", ACACIA, 60),
+        FakeMessage(55, "confirmed", DEREK, 59),
+    ]
+    #Megan's and Jasmine's posts were verified by email and deleted; Acacia's was not.
+    deleted_ref = object.__new__(discord.DeletedReferencedMessage)
+    after = [m for m in before if m.id not in (50, 52)]
+    after[0].reference.resolved = deleted_ref
+    check("reply and adjacent confirmations of deleted posts are orphans",
+          [51, 53], dues._orphaned_confirmation_ids(before, after, {50, 52}))
+
+    #A reply whose post still exists, and an adjacent one whose post the bot
+    #never touched, both stay.
+    live = FakeMessage(56, "confirmed", grug, 50, reply_to=54)
+    check("confirmations of live posts stay", [],
+          dues._orphaned_confirmation_ids(before + [live], after[1:] + [live], set()))
+
+
 async def main() -> int:
     print("=" * 70)
     print("dues portal matching")
@@ -353,6 +381,7 @@ async def main() -> int:
     test_consulting_officers_owe_no_dues()
     await test_pinned_posts_are_never_touched()
     test_threshold_rounding()
+    test_orphaned_confirmations()
     with tempfile.TemporaryDirectory() as tmp:
         await test_index_does_not_hide_posts(Path(tmp))
     print()

@@ -103,8 +103,6 @@ DUES_DIR = os.path.join("logs", "dues")
 os.makedirs(DUES_DIR, exist_ok=True)
 DUES_INDEX = os.path.join(DUES_DIR, "index.jsonl")
 _DUES_PROCESSED_EMOJI = os.getenv("DUES_PROCESSED_EMOJI", "✅")
-_DUES_INDEX_CACHE: Optional[set[str]] = None
-_DUES_INDEX_TS: float = 0.0
 
 #----------- Normalization & Regexes -----------
 _PROVIDER_RE = re.compile(
@@ -752,31 +750,6 @@ def _parse_member_date(s: str) -> Optional[datetime]:
         except Exception:
             continue
     return None
-
-def _load_dues_index_ids() -> set[str]:
-    """Load processed portal message IDs to avoid reprocessing."""
-    global _DUES_INDEX_CACHE, _DUES_INDEX_TS
-    ttl = int(getattr(settings, 'dues_index_ttl_sec', 300) or 300)
-    now = time.time()
-    if _DUES_INDEX_CACHE is not None and (now - _DUES_INDEX_TS) < ttl:
-        return set(_DUES_INDEX_CACHE)
-    ids: set[str] = set()
-    try:
-        if os.path.exists(DUES_INDEX):
-            with open(DUES_INDEX, 'r', encoding='utf-8') as f:
-                for line in f:
-                    try:
-                        obj = json.loads(line.strip())
-                        mid = str(obj.get('message_id') or '')
-                        if mid:
-                            ids.add(mid)
-                    except Exception:
-                        continue
-    except Exception:
-        pass
-    _DUES_INDEX_CACHE = set(ids)
-    _DUES_INDEX_TS = now
-    return ids
 
 def _prep_emails_between(start_dt: datetime, end_dt: datetime) -> list[dict]:
     raw_emails = _load_email_logs_between(start_dt, end_dt)
@@ -2826,6 +2799,22 @@ _ALLOWED_AMOUNTS = set(int(x) for x in getattr(settings,'dues_allowed_amounts',[
 _MIN_SHEET_SCORE = 0.35
 
 
+def _rank_sheet_matches(scored: List[Tuple[float, dict]], cur_sem: str) -> List[Tuple[float, dict]]:
+    """Best sheet match first, with the current semester's row winning ties.
+
+    A returning member has a row per semester with the same handle, name and
+    provider, and last semester's row stays live through its grace window. On
+    an equal score the older row came first in the sheet and won, and the job
+    then skipped the member as a stale semester.
+    """
+    cur = _norm_sem_label(cur_sem or '')
+    return sorted(
+        scored,
+        key=lambda x: (round(float(x[0]), 6), bool(cur) and _norm_sem_label(x[1].get('semester') or '') == cur),
+        reverse=True,
+    )
+
+
 def _payer_agrees(sheet_name: str, email_payer: str) -> bool:
     """Do the sheet row and the payment email name the same person?
 
@@ -2964,16 +2953,13 @@ async def _fetch_portal_messages(bot, include_processed: bool = False, limit_ove
         return []
     if include_processed:
         return msgs
-    #Skip messages already marked as processed (reaction fallback when delete fails)
-    processed_ids = _load_dues_index_ids()
+    #Skip only posts the bot marked processed (the reaction left when a delete
+    #fails). The dues index is not a processed list: it records every post that
+    #was ever analysed, so skipping on it hid a payment for good after one bad
+    #scan. Sep 12-14 2026 ran against a 404ing roster, and every post from those
+    #days stayed in the portal, matched to nothing, never looked at again.
     processed = []
     for m in msgs:
-        try:
-            mid = str(getattr(m, 'id', '') or '')
-            if mid and mid in processed_ids:
-                continue
-        except Exception:
-            pass
         try:
             reactions = getattr(m, 'reactions', []) or []
             if any(str(r.emoji) == _DUES_PROCESSED_EMOJI and getattr(r, 'me', False) for r in reactions):
@@ -2989,6 +2975,7 @@ async def _analyze_dues(bot) -> List[dict]:
     _debug('begin')
     msgs = await _fetch_portal_messages(bot)
     members = await _load_membership_rows_async()
+    cur_sem = _current_semester_label()
 
     #Filter portal messages to explicit payment statements
     parsed_msgs: List[Tuple[Any, dict]] = []
@@ -3140,7 +3127,7 @@ async def _analyze_dues(bot) -> List[dict]:
             sc = _score_sheet(p, S)
             if sc >= _MIN_SHEET_SCORE:
                 scored_S.append((sc, S))
-        scored_S.sort(key=lambda x: x[0], reverse=True)
+        scored_S = _rank_sheet_matches(scored_S, cur_sem)
         S_best = scored_S[0][1] if scored_S else None
         S_best_score = scored_S[0][0] if scored_S else 0.0
 
@@ -3557,6 +3544,132 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
     return added, removed
 
 
+def _meets_auto_verify(score: float, threshold: float) -> bool:
+    """Does a match score clear the auto-verify cutoff?
+
+    Scores are sums of float weights, and name overlap (0.70) plus the provider
+    on the form (0.20) comes to 0.8999999999999999 -- a textbook match that
+    missed 0.90 by rounding alone. Compare with a tolerance far below any
+    weight so only that rounding is forgiven.
+    """
+    return float(score) >= float(threshold) - 1e-6
+
+
+#An officer's short "confirming" / "confirmed!" / "verified" in the portal.
+_CONFIRM_RE = re.compile(r"\b(?:confirm(?:ed|ing|s)?|verif(?:y|ied))\b", re.I)
+#Longer officer posts that contain the word are conversation, not a sign-off.
+_CONFIRM_MAX_LEN = 80
+#A confirmation without a reply is read as being about the post right above
+#it, which is only safe while the two are close together.
+_CONFIRM_ADJACENT_WINDOW = timedelta(hours=72)
+
+
+def _is_officer_confirmation(msg) -> bool:
+    text = _norm_space(getattr(msg, 'content', '') or '')
+    if not text or len(text) > _CONFIRM_MAX_LEN or not _CONFIRM_RE.search(text):
+        return False
+    return is_officer(getattr(msg, 'author', None), settings)
+
+
+def _confirmation_target(msgs: list, i: int):
+    """The portal post an officer's confirmation at msgs[i] refers to, if any.
+
+    A reply names its post outright. Otherwise the confirmation is taken to be
+    about the post directly above it -- that is how officers actually confirm
+    cash in the portal -- but only a member's post, and only a recent one, so
+    officer chatter and old posts are not swept up.
+    """
+    conf = msgs[i]
+    ref_id = getattr(getattr(conf, 'reference', None), 'message_id', None)
+    if ref_id:
+        for m in msgs:
+            if int(getattr(m, 'id', 0) or 0) == int(ref_id):
+                return m
+        return None
+    if i == 0:
+        return None
+    prev = msgs[i - 1]
+    if is_officer(getattr(prev, 'author', None), settings) or _is_officer_confirmation(prev):
+        return None
+    c_ts, p_ts = getattr(conf, 'created_at', None), getattr(prev, 'created_at', None)
+    if isinstance(c_ts, datetime) and isinstance(p_ts, datetime):
+        if (c_ts - _same_awareness(p_ts, c_ts)) > _CONFIRM_ADJACENT_WINDOW:
+            return None
+    return prev
+
+
+def _full_name_in_text(full_name: str, text: str) -> bool:
+    """Does the post spell out this form name?
+
+    The first name plus at least one more name token must appear as words, so
+    "Chloe Samayoa" finds "Chloe Samayoa-Garcia" but a lone "Megan" finds no one.
+    """
+    name_toks = [t for t in re.findall(r"[a-z]+", _simplify_name(full_name or '').lower()) if len(t) > 1]
+    if len(name_toks) < 2:
+        return False
+    words = set(re.findall(r"[a-z]+", (text or '').lower()))
+    return name_toks[0] in words and any(t in words for t in name_toks[1:])
+
+
+def _row_for_confirmed_message(msg, rows: list[dict], cur_sem: str) -> Optional[dict]:
+    """The one unverified current-semester form row this post belongs to.
+
+    Matches on the author's Discord handle or the full name written in the
+    post. More than one distinct member fitting is left for a human.
+    """
+    cur = _norm_sem_label(cur_sem)
+    author = getattr(msg, 'author', None)
+    keys = {
+        _norm_user_key(getattr(author, attr, '') or '')
+        for attr in ('name', 'display_name', 'global_name')
+    } - {''}
+    text = getattr(msg, 'content', '') or ''
+    hits: list[dict] = []
+    for r in rows:
+        if r.get('verified') or not (r.get('email') or '').strip():
+            continue
+        if _norm_sem_label(r.get('semester') or '') != cur:
+            continue
+        handle_hit = any(_norm_user_key(h) in keys for h in _split_handle_candidates(r.get('discord_username') or ''))
+        if handle_hit or _full_name_in_text(r.get('full_name') or '', text):
+            hits.append(r)
+    if len({(r.get('email') or '').strip().lower() for r in hits}) != 1:
+        return None
+    return hits[0]
+
+
+def _officer_confirmed_payments(msgs: list, rows: list[dict], cur_sem: str) -> list[dict]:
+    """Portal posts an officer confirmed, paired with the member's form row.
+
+    Cash handed to an officer and in-kind donations name no payment provider,
+    so there is no receipt email and the scorer never sees them. The officer's
+    confirmation is the evidence instead; the form row is still required, so
+    nobody is verified without having filled out the form this semester.
+    """
+    out: list[dict] = []
+    taken: set[int] = set()
+    for i, m in enumerate(msgs):
+        if not _is_officer_confirmation(m):
+            continue
+        target = _confirmation_target(msgs, i)
+        if target is None:
+            continue
+        tid = int(getattr(target, 'id', 0) or 0)
+        if not tid or tid in taken:
+            continue
+        if getattr(getattr(target, 'author', None), 'id', None) == getattr(getattr(m, 'author', None), 'id', None):
+            continue
+        r = _row_for_confirmed_message(target, rows, cur_sem)
+        if r is None:
+            log_action('dues_officer_confirm_unmatched',
+                       f"user={getattr(getattr(target, 'author', None), 'name', '?')}",
+                       (getattr(target, 'content', '') or '')[:120])
+            continue
+        taken.add(tid)
+        out.append({'row': r, 'message': target, 'confirmation': m})
+    return out
+
+
 async def _run_daily_dues_job(bot) -> None:
     """Execute the daily dues verification and role sync."""
     #Declared here because this job invalidates the membership cache after it
@@ -3605,7 +3718,7 @@ async def _run_daily_dues_job(bot) -> None:
     verified = []
     for rec in rows:
         score = float(rec.get('score_total', 0.0) or 0.0)
-        if score >= threshold:
+        if _meets_auto_verify(score, threshold):
             row_sem = _norm_sem_label((rec.get('primary_member') or {}).get('semester') or '')
             if cur_sem_norm and row_sem != cur_sem_norm:
                 #No form entry for this semester - leave the portal message in
@@ -3634,6 +3747,26 @@ async def _run_daily_dues_job(bot) -> None:
         except Exception as e:
             log_action('dues_auto_donation_error', '', str(e))
 
+    #2c. Posts an officer confirmed (cash to an officer, in-kind donations).
+    # Only against a roster that was actually read: an empty or cached roster
+    # would silently confirm nothing, or confirm against stale rows.
+    confirmed: list[dict] = []
+    try:
+        confirm_rows = await _load_membership_rows_async()
+        roster_ok, roster_detail = membership_data_is_authoritative()
+        if roster_ok:
+            portal_msgs = await _fetch_portal_messages(bot)
+            confirmed = _officer_confirmed_payments(portal_msgs, confirm_rows, cur_sem)
+            for c in confirmed:
+                log_action('dues_officer_confirmed',
+                           f"user={getattr(c['message'].author, 'name', '?')} "
+                           f"officer={getattr(c['confirmation'].author, 'name', '?')}",
+                           f"row={c['row'].get('full_name', '')}; semester={c['row'].get('semester', '')}")
+        else:
+            log_action('dues_officer_confirm_skip', 'roster_unavailable', str(roster_detail)[:160])
+    except Exception as e:
+        log_action('dues_officer_confirm_error', '', str(e))
+
     #3. Mark verified in sheet if we have emails
     try:
         emails_to_verify: list[tuple[str, str]] = []
@@ -3646,6 +3779,10 @@ async def _run_daily_dues_job(bot) -> None:
                 for r in verified
                 if (r.get('primary_member') or {}).get('email')
             ])
+        emails_to_verify.extend([
+            ((c['row'].get('email') or '').strip().lower(), c['row'].get('semester') or cur_sem)
+            for c in confirmed
+        ])
         #Add fallback email-only matches so portal messages are not required
         rows_for_fallback: list[dict] = []
         extra: list[tuple[str, str]] = []
@@ -3696,10 +3833,14 @@ async def _run_daily_dues_job(bot) -> None:
     except Exception as e:
         log_action('dues_mark_verified_error', '', str(e))
     
-    #3b. Delete portal messages for verified entries
-    if verified:
+    #3b. Delete portal messages for verified entries, and for officer-confirmed
+    # posts both the member's post and the officer's confirmation.
+    if verified or confirmed:
         try:
             ids = [int(r.get('message_id') or 0) for r in verified if int(r.get('message_id') or 0)]
+            for c in confirmed:
+                ids.extend(int(getattr(c[k], 'id', 0) or 0) for k in ('message', 'confirmation'))
+            ids = [i for i in dict.fromkeys(ids) if i]
             if ids:
                 deleted = await _delete_portal_messages(bot, ids)
                 log_action('dues_scheduler_cleanup', f'deleted={deleted}', '')
@@ -3707,13 +3848,17 @@ async def _run_daily_dues_job(bot) -> None:
             log_action('dues_portal_delete_error', '', str(e))
     
     #4. Log to CH_LOGGING (human readable)
-    if log_ch and verified:
+    if log_ch and (verified or confirmed):
         lines = ["Dues processed and verified:"]
         for rec in verified:
             uname = rec.get('author', 'unknown')
             provider = rec.get('provider', 'unknown')
             score = float(rec.get('score_total', 0.0) or 0.0)
             lines.append(f"  {uname} ({provider}) - score {score:.2f}")
+        for c in confirmed:
+            uname = getattr(c['message'].author, 'name', 'unknown')
+            officer = getattr(c['confirmation'].author, 'name', 'unknown')
+            lines.append(f"  {uname} - confirmed by officer {officer}")
         try:
             await safe_send(log_ch, '\n'.join(lines))
         except Exception as e:
@@ -3894,7 +4039,16 @@ async def _run_daily_dues_job(bot) -> None:
                 await asyncio.sleep(1.1)  #Rate limit
             except Exception:
                 pass
-    
+    if member_ch and confirmed:
+        for c in confirmed:
+            sem = c['row'].get('semester') or cur_sem
+            line = f"{c['row'].get('full_name', 'Unknown')}, {getattr(c['message'].author, 'name', 'unknown')}, {_norm_sem_label(sem).lower()}"
+            try:
+                await safe_send(member_ch, line)
+                await asyncio.sleep(1.1)  #Rate limit
+            except Exception:
+                pass
+
     log_action('dues_scheduler', f'verified={len(verified)} added={len(added)} removed={len(removed)}', 'done')
 
 async def start_dues_scheduler(bot) -> None:
@@ -4020,20 +4174,27 @@ async def _append_dues_log(row: dict):
             dt = datetime.now(timezone.utc)
 
     mid = str(row.get('message_id') or '')
+    #Posts are rescanned every run, so this logs a post once per distinct
+    #matched email rather than once ever. Portal cleanup finds posts by the
+    #email in these records; if only a scan against an unreadable roster (no
+    #match) were kept, a later real match would never get the post deleted.
+    email = ((row.get('primary_member') or {}).get('email') or '').strip().lower()
     try:
-        existing = set()
+        logged: dict[str, set[str]] = {}
         if os.path.exists(DUES_INDEX):
             with open(DUES_INDEX, 'r', encoding='utf-8') as f:
                 for line in f:
                     try:
                         obj = json.loads(line.strip())
                         if obj.get('message_id'):
-                            existing.add(str(obj['message_id']))
+                            logged.setdefault(str(obj['message_id']), set()).add(
+                                str(obj.get('email') or '').strip().lower())
                     except Exception:
                         continue
 
         path = _dues_month_path(dt)
-        if mid and mid in existing:
+        seen = logged.get(mid) if mid else None
+        if seen is not None and (not email or email in seen):
             #If monthly file was deleted but index remains, re-write the row
             if not os.path.exists(path):
                 with open(path, 'a', encoding='utf-8') as f:
@@ -4045,7 +4206,7 @@ async def _append_dues_log(row: dict):
 
         if mid:
             with open(DUES_INDEX, 'a', encoding='utf-8') as f:
-                f.write(json.dumps({"message_id": mid, "ts": _now_iso()}) + "\n")
+                f.write(json.dumps({"message_id": mid, "email": email, "ts": _now_iso()}) + "\n")
     except Exception:
         pass
 

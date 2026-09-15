@@ -196,6 +196,91 @@ def test_current_semester_wins_ties() -> None:
     check("a clearly better older row still wins", "Spring 2026", ranked[0][1]["semester"])
 
 
+def test_every_lookup_contributes_candidates() -> None:
+    print("\ncandidate rows")
+    #Christopher Mendoza: his username is on the Spring row only; the Fall row
+    #carries his display name, his full name and the provider he used.
+    spring = {"full_name": "Christopher Mendoza", "discord_username": "Pancakemixteamdj ",
+              "semester": "Spring 2026", "paid_where": "", "kind": "Food/Litter Donation",
+              "email": "cam6723@mavs.uta.edu", "payment_username": "Christopher Mendoza"}
+    fall = {"full_name": "Christopher Mendoza", "discord_username": "Pancake(Chris/topher)",
+            "semester": CUR_SEM, "paid_where": "Cashapp", "kind": "$15 Donation, Discord Verification",
+            "email": "cam6723@mavs.uta.edu", "payment_username": "$ChristopherMendoza24"}
+    other = {"full_name": "Someone Else", "discord_username": "unrelated_person",
+             "semester": CUR_SEM, "paid_where": "Venmo", "kind": "", "email": "x@x.edu", "payment_username": ""}
+    members = [spring, fall, other]
+    msg = FakeMessage(50, "Christopher Mendoza - 15$ Cash App",
+                      FakeAuthor(11, "pancakemixteamdj", "Pancake(Chris/topher)"), 30)
+    p = dues._parse_portal_message(msg)
+    cands = dues._member_candidates(p, members, dues._member_indexes(members))
+    check("current row is a candidate alongside the username's old row",
+          True, spring in cands and fall in cands)
+    check("unrelated row is not pulled in", False, other in cands)
+    scored = [(dues._score_sheet(p, r), r) for r in cands if dues._score_sheet(p, r) >= dues._MIN_SHEET_SCORE]
+    best = dues._rank_sheet_matches(scored, CUR_SEM)[0]
+    check("Fall row wins the match", CUR_SEM, best[1]["semester"])
+    check("Fall row score clears the cutoff", True, dues._meets_auto_verify(best[0], 0.90))
+
+
+def test_old_post_is_judged_by_its_own_date() -> None:
+    print("\nold posts")
+    fall_2026 = {"full_name": "Austin Brown", "discord_username": "austinbaustinb", "semester": CUR_SEM}
+    #A February 2024 post: a Fall 2026 row did not exist yet and must not match.
+    check("Fall 2026 row is not current for a Feb 2024 post", False,
+          dues._member_row_is_current(fall_2026, datetime(2024, 2, 17).date()))
+    check("Fall 2026 row is current for a Sep 2026 post", True,
+          dues._member_row_is_current(fall_2026, NOW.date()))
+
+
+class DeletableMessage(FakeMessage):
+    def __init__(self, *args, pinned: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pinned = pinned
+        self.deleted = False
+
+    async def delete(self):
+        self.deleted = True
+
+
+async def test_pinned_posts_are_never_touched() -> None:
+    print("\npinned posts")
+    #The 2024 pinned instructions post names every provider, so it scored as a
+    #payment, matched its author's row, and was deleted.
+    pinned = DeletableMessage(60, "**Dues are either $15 a semester** - On Paypal - On Venmo - On Cashapp",
+                              FakeAuthor(12, "austinbaustinb"), 60 * 24 * 900, pinned=True)
+    payment = DeletableMessage(61, "Leslie Morales, $20 Cash App", FakeAuthor(13, "lesmorales11"), 30)
+
+    class Channel(FakeChannel):
+        async def fetch_message(self, mid):
+            return {60: pinned, 61: payment}[int(mid)]
+
+    channel = Channel([pinned, payment])
+    dues.settings.ch_due_portal = 123
+    bot = type("Bot", (), {"get_channel": lambda _self, _cid: channel})()
+    got = [int(m.id) for m in await dues._fetch_portal_messages(bot)]
+    check("pinned post is not fetched for scoring", [61], got)
+    got = [int(m.id) for m in await dues._fetch_portal_messages(bot, include_processed=True)]
+    check("pinned post is not fetched for cleanup either", [61], got)
+    deleted = await dues._delete_portal_messages(bot, [60, 61])
+    check("delete skips the pinned post", (1, False, True), (deleted, pinned.deleted, payment.deleted))
+
+
+def test_consulting_officers_owe_no_dues() -> None:
+    print("\ndues-exempt roles")
+    role = lambda rid: type("R", (), {"id": rid})()
+    consulting = type("M", (), {"roles": [role(1101141660294971413)]})()
+    officer = type("M", (), {"roles": [role(845035667661783061)]})()
+    saved = getattr(dues.settings, "dues_exempt_role_ids", [])
+    try:
+        dues.settings.dues_exempt_role_ids = [1101141660294971413]
+        check("consulting officer is exempt", True, dues._is_dues_exempt(consulting))
+        check("regular officer is not exempt", False, dues._is_dues_exempt(officer))
+        dues.settings.dues_exempt_role_ids = []
+        check("nobody is exempt when unconfigured", False, dues._is_dues_exempt(consulting))
+    finally:
+        dues.settings.dues_exempt_role_ids = saved
+
+
 def test_threshold_rounding() -> None:
     print("\nauto-verify threshold")
     #Name overlap (0.70) plus provider on the form (0.20): the Camila Davila case.
@@ -263,6 +348,10 @@ async def main() -> int:
     test_officer_confirmations()
     test_confirmation_guards()
     test_current_semester_wins_ties()
+    test_every_lookup_contributes_candidates()
+    test_old_post_is_judged_by_its_own_date()
+    test_consulting_officers_owe_no_dues()
+    await test_pinned_posts_are_never_touched()
     test_threshold_rounding()
     with tempfile.TemporaryDirectory() as tmp:
         await test_index_does_not_hide_posts(Path(tmp))

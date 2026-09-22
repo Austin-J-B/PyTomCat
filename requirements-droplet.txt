@@ -20,7 +20,7 @@ rapidfuzz==3.10.1
 beautifulsoup4==4.12.3
 
 # Computer vision helpers (still imported by local code paths)
-opencv-python-headless==4.10.0.84
+opencv-python-headless==5.0.0.93
 ultralytics>=8.4.138
 
 # PyTorch CPU-only (CV is on Modal; local needs torch for gallery tensor ops)

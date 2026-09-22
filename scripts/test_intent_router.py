@@ -15,7 +15,7 @@ import asyncio
 import itertools
 import sys
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -49,8 +49,12 @@ from tomcat.config import settings
 FEED_CH = 90001
 OTHER_CH = 90002
 
-TODAY = date.today().isoformat()
-TOMORROW = (date.today() + timedelta(days=1)).isoformat()
+#The router reads "today" in America/Chicago. date.today() is the machine's
+#zone, which is UTC on CI, so from 7pm to midnight Central every date case
+#expected tomorrow's date and failed.
+_TODAY_CENTRAL = (datetime.now(router_mod.CENTRAL_TZ) if router_mod.CENTRAL_TZ else datetime.now()).date()
+TODAY = _TODAY_CENTRAL.isoformat()
+TOMORROW = (_TODAY_CENTRAL + timedelta(days=1)).isoformat()
 
 
 class FakeAttachment:

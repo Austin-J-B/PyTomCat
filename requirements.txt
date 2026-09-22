@@ -21,7 +21,7 @@ beautifulsoup4==4.12.3
 
 #Computer vision helpers
 opencv-python-headless==5.0.0.93
-ultralytics>=8.4.138
+ultralytics>=8.4.156
 
 #PyTorch (+cu128 for Windows/Nvidia). Matches the 2.8.0 that
 #requirements-droplet.txt and the Modal image already pin, so the gallery

@@ -14,7 +14,7 @@ google-auth-httplib2==0.2.0
 httplib2==0.32.0
 
 #Data processing / parsing
-numpy==1.26.4
+numpy==2.5.3
 Pillow==12.3.0
 rapidfuzz==3.10.1
 beautifulsoup4==4.12.3

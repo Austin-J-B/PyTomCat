@@ -1,7 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cu128
 
 #Core Discord bot stack
-discord.py==2.4.0
+discord.py==2.7.1
 python-dotenv==1.2.3
 aiohttp==3.14.3
 

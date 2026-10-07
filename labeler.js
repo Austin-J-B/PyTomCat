@@ -95,6 +95,7 @@
     const CLASSIFY_WARM_READY_MIN_REFS_PER_CAT = 3;
     const CLASSIFY_REF_MIN_CANDIDATES_WITH_REFS = 5;
     const CLASSIFY_REF_MIN_COVERAGE = 0.4;
+    const CLASSIFY_REF_DISPLAY_WAIT_MS = 1500;
     const CLASSIFY_REF_RETRY_ATTEMPTS = 2;
     const CLASSIFY_REF_REFRESH_COOLDOWN_MS = 2800;
     const CLASSIFY_NEXT_CROP_PREFETCH_COOLDOWN_MS = 2200;
@@ -182,6 +183,44 @@
     function getCsrfToken() {
         if (typeof window === 'undefined') return '';
         return typeof window.__TC_CSRF_TOKEN === 'string' ? window.__TC_CSRF_TOKEN : '';
+    }
+
+    let inMemoryLabelerSessionId = '';
+    let fallbackLabelerSessionCounter = 0;
+    function getLabelerSessionId() {
+        if (inMemoryLabelerSessionId) return inMemoryLabelerSessionId;
+        const storageKey = 'tomcat.labeler.diag_session.v1';
+        try {
+            const storage = labelerSessionStorage();
+            const existing = String(storage?.getItem(storageKey) || '').trim();
+            if (/^[A-Za-z0-9_-]{12,64}$/.test(existing)) {
+                inMemoryLabelerSessionId = existing;
+                return existing;
+            }
+            const cryptoApi = typeof globalThis !== 'undefined' ? globalThis.crypto : null;
+            let generated = '';
+            if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+                generated = cryptoApi.randomUUID();
+            } else if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {
+                const bytes = new Uint8Array(16);
+                cryptoApi.getRandomValues(bytes);
+                generated = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+            } else {
+                //Only a diagnostic correlation key; keep a per-tab fallback if
+                //an older browser has no Web Crypto implementation at all.
+                fallbackLabelerSessionCounter += 1;
+                const perfMs = (typeof performance !== 'undefined' && Number.isFinite(performance.now()))
+                    ? Math.floor(performance.now() * 1000)
+                    : 0;
+                generated = `local-${Date.now().toString(36)}-${perfMs.toString(36)}-${fallbackLabelerSessionCounter}`;
+            }
+            inMemoryLabelerSessionId = generated.slice(0, 64);
+            storage?.setItem(storageKey, inMemoryLabelerSessionId);
+        } catch (e) {
+            fallbackLabelerSessionCounter += 1;
+            inMemoryLabelerSessionId = `local-${Date.now().toString(36)}-${fallbackLabelerSessionCounter}`;
+        }
+        return inMemoryLabelerSessionId;
     }
 
     function buildApiUrl(path) {
@@ -975,11 +1014,13 @@
 
     async function apiGet(endpoint, opts = {}) {
         const signal = opts.sessionScoped === false ? opts.signal : (opts.signal || labelerRequestController.signal);
-        return apiClient.get(endpoint, { ...opts, signal });
+        const separator = String(endpoint || '').includes('?') ? '&' : '?';
+        const trackedEndpoint = `${endpoint}${separator}labeler_session_id=${encodeURIComponent(getLabelerSessionId())}`;
+        return apiClient.get(trackedEndpoint, { ...opts, signal });
     }
 
     async function apiPost(endpoint, data, opts = {}) {
-        const payload = data || {};
+        const payload = { ...(data || {}), labeler_session_id: getLabelerSessionId() };
         const prefetch = !!payload.prefetch;
         const maxAttempts = prefetch ? 1 : Number(opts.maxAttempts || API_RETRY_MAX_ATTEMPTS);
         const signal = opts.sessionScoped === false ? opts.signal : (opts.signal || labelerRequestController.signal);
@@ -2208,15 +2249,14 @@
     function prefetchDisplayRefsForItem(item, results, priority = 'high') {
         const idx = _targetCropIdxForItem(item);
         const rows = Array.isArray(results) ? results : [];
-        // Prefetch display-quality refs for the focus crop at requested
-        // priority, then warm-level refs for remaining crops at 'normal'
-        // so every crop in a multi-crop image starts loading early.
+        // Keep speculative work bounded to the focus crop and one upcoming
+        // crop. Warming every crop builds a backlog ahead of visible refs.
         prefetchDisplayRefsForCrop(results, idx, priority);
         if (rows.length > 1) {
             prefetchRefsFromResults(results, {
                 priority: 'normal',
                 focusCropIdx: idx,
-                maxCrops: rows.length,
+                maxCrops: Math.min(rows.length, 2),
                 maxCandidates: CLASSIFY_WARM_PREFETCH_MAX_CANDIDATES,
                 maxRefsPerCandidate: CLASSIFY_WARM_PREFETCH_MAX_REFS,
             });
@@ -2542,6 +2582,10 @@
                     readyReason = 'preds_cached+prefetch_stalled';
                 } else if (refsSufficient && imageReady && predsCached && elapsed >= Math.min(500, Math.floor(waitBudgetMs * 0.04))) {
                     readyReason = 'refs_sufficient+image_ready';
+                } else if (FLAG_CLASSIFY_READY_RELAX && hasPreds && imageReady && elapsed >= CLASSIFY_REF_DISPLAY_WAIT_MS) {
+                    // Reference photos enrich the sidebar; they must not block
+                    // a loaded crop and its predictions indefinitely.
+                    readyReason = 'preds_ready+image_ready+refs_loading';
                 }
                 if (readyReason) {
                     setWarmOverlay(false);
@@ -2625,6 +2669,7 @@
             else if (finalPredsCached && finalPrefetchTerminalError) finalReadyReason = 'deadline_preds_cached+prefetch_terminal_error';
             else if (finalPredsCached && finalPrefetchStalled) finalReadyReason = 'deadline_preds_cached+prefetch_stalled';
             else if (finalRefsSufficient && finalImageReady && finalPredsCached) finalReadyReason = 'deadline_refs_sufficient+image_ready';
+            else if (FLAG_CLASSIFY_READY_RELAX && Array.isArray(finalRows) && finalRows.length && finalImageReady) finalReadyReason = 'deadline_preds_ready+image_ready+refs_loading';
             if (finalReadyReason) {
                 void postUiDiag('classify_item_ready_done', {
                     serial: Number(item?.serial || 0) || null,
@@ -4574,12 +4619,9 @@
             cropsSeen += 1;
             const cands = Array.isArray(crop?.candidates) ? crop.candidates : [];
             const activeCands = cands.slice(0, maxCandidates);
-            // Round-robin by depth: enqueue 1 ref per candidate per pass so
-            // every candidate gets at least one ref loading before any gets a
-            // second.  Since unshift puts the last-added item at the front of
-            // the queue, iterate depths in REVERSE so depth-0 (the first ref
-            // per candidate) ends up at the very front.
-            for (let depth = maxRefsPerCandidate - 1; depth >= 0; depth--) {
+            // Both priority lanes are FIFO. Load the first reference for each
+            // candidate before spending slots on second and later references.
+            for (let depth = 0; depth < maxRefsPerCandidate; depth++) {
                 for (const cand of activeCands) {
                     const refs = Array.isArray(cand?.refs) ? cand.refs : [];
                     if (depth >= refs.length) continue;
@@ -4596,8 +4638,8 @@
                     } else if (srcs.fallbackUrlSrc) {
                         prefetchRefImageSrc(srcs.fallbackUrlSrc, { priority });
                     }
-                    if (srcs.hqSrc) {
-                        prefetchRefImageSrc(srcs.hqSrc, { priority: priority === 'high' ? 'high' : 'normal' });
+                    if (srcs.hqSrc && srcs.hqSrc !== (srcs.fastSrc || srcs.baseSrc || srcs.fallbackUrlSrc)) {
+                        prefetchRefImageSrc(srcs.hqSrc, { priority: 'normal' });
                     }
                 }
             }
@@ -5027,47 +5069,45 @@
             queueAdvanceStartedAt = 0;
             queueAdvanceFromSerial = null;
             queueAdvanceMeta = null;
-            if (transitionMs >= 1500) {
-                const claimWaitMs = meta && meta.claim_started_at && meta.claim_granted_at
-                    ? Math.max(0, Number(meta.claim_granted_at) - Number(meta.claim_started_at))
-                    : 0;
-                const preImageMs = meta && meta.claim_granted_at && meta.load_image_at
-                    ? Math.max(0, Number(meta.load_image_at) - Number(meta.claim_granted_at))
-                    : 0;
-                const imageLoadMs = meta && meta.load_image_at && meta.image_loaded_at
-                    ? Math.max(0, Number(meta.image_loaded_at) - Number(meta.load_image_at))
-                    : 0;
-                const readyWaitMs = Math.max(0, Number(meta?.item_ready_wait_ms || 0));
-                const preImageOtherMs = Math.max(0, preImageMs - readyWaitMs);
-                void postUiDiag('transition_slow', {
-                    from_serial: fromSerial,
-                    to_serial: Number(currentSerial || 0) || null,
-                    ms: transitionMs,
-                    mode: labelerMode,
-                    queue_index: Number(queueIndex || 0),
-                    queue_total: Number(queueTotal || 0),
-                    claim_wait_ms: claimWaitMs,
-                    pre_image_ms: preImageMs,
-                    ready_wait_ms: readyWaitMs,
-                    ready_wait_ready: !!meta?.item_ready_wait_ready,
-                    pre_image_other_ms: preImageOtherMs,
-                    image_load_ms: imageLoadMs,
-                    claim_retry_loops: Number(meta?.claim_retry_loops || 0),
-                    claim_error_kind: String(meta?.claim_error_kind || ''),
-                    claim_last_result: String(meta?.claim_last_result || ''),
-                    claim_last_error: String(meta?.claim_last_error || ''),
-                    pred_cache_hit: !!meta?.pred_cache_hit,
-                    classify_warm_ready: !!meta?.classify_warm_ready,
-                    drive_like: !!meta?.drive_like,
-                    image_source: String(meta?.image_source || ''),
-                    image_intent: String(meta?.image_intent || ''),
-                    image_prefetch_ready: !!meta?.image_prefetch_ready,
-                    image_prefetch_state: getPrefetchedImageState(currentSerial),
-                    cached_image_path: compactCachedImagePathDiag(currentSerial),
-                    detect_pipeline: labelerMode === 'detect' ? buildDetectPipelineDiag(currentSerial) : null,
-                    classify_pipeline: labelerMode === 'classify' ? buildClassifyPipelineDiag(currentItem) : null,
-                });
-            }
+            const claimWaitMs = meta && meta.claim_started_at && meta.claim_granted_at
+                ? Math.max(0, Number(meta.claim_granted_at) - Number(meta.claim_started_at))
+                : 0;
+            const preImageMs = meta && meta.claim_granted_at && meta.load_image_at
+                ? Math.max(0, Number(meta.load_image_at) - Number(meta.claim_granted_at))
+                : 0;
+            const imageLoadMs = meta && meta.load_image_at && meta.image_loaded_at
+                ? Math.max(0, Number(meta.image_loaded_at) - Number(meta.load_image_at))
+                : 0;
+            const readyWaitMs = Math.max(0, Number(meta?.item_ready_wait_ms || 0));
+            const preImageOtherMs = Math.max(0, preImageMs - readyWaitMs);
+            void postUiDiag(transitionMs >= 1500 ? 'transition_slow' : 'transition_done', {
+                from_serial: fromSerial,
+                to_serial: Number(currentSerial || 0) || null,
+                ms: transitionMs,
+                mode: labelerMode,
+                queue_index: Number(queueIndex || 0),
+                queue_total: Number(queueTotal || 0),
+                claim_wait_ms: claimWaitMs,
+                pre_image_ms: preImageMs,
+                ready_wait_ms: readyWaitMs,
+                ready_wait_ready: !!meta?.item_ready_wait_ready,
+                pre_image_other_ms: preImageOtherMs,
+                image_load_ms: imageLoadMs,
+                claim_retry_loops: Number(meta?.claim_retry_loops || 0),
+                claim_error_kind: String(meta?.claim_error_kind || ''),
+                claim_last_result: String(meta?.claim_last_result || ''),
+                claim_last_error: String(meta?.claim_last_error || ''),
+                pred_cache_hit: !!meta?.pred_cache_hit,
+                classify_warm_ready: !!meta?.classify_warm_ready,
+                drive_like: !!meta?.drive_like,
+                image_source: String(meta?.image_source || ''),
+                image_intent: String(meta?.image_intent || ''),
+                image_prefetch_ready: !!meta?.image_prefetch_ready,
+                image_prefetch_state: getPrefetchedImageState(currentSerial),
+                cached_image_path: compactCachedImagePathDiag(currentSerial),
+                detect_pipeline: labelerMode === 'detect' ? buildDetectPipelineDiag(currentSerial) : null,
+                classify_pipeline: labelerMode === 'classify' ? buildClassifyPipelineDiag(currentItem) : null,
+            });
         }
 
         resizeCanvasToContainer();
@@ -7262,7 +7302,7 @@
                 return;
             }
             if (Array.isArray(rows) && rows.length) {
-                prefetchDisplayRefsForItem(item, rows, offset === 1 ? 'high' : 'normal');
+                prefetchDisplayRefsForItem(item, rows, 'normal');
             }
         }
         if (

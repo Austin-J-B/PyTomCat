@@ -1278,7 +1278,7 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
     )
     if op == "list_names_by_filters" and _all_filters_empty:
         # If source_text is present, the user asked something specific that we
-        # couldn't parse — return an honest failure instead of a misleading count.
+        # couldn't parse — return a silent miss instead of a misleading count.
         if source_text:
             return {
                 "ok": True,
@@ -1286,7 +1286,7 @@ def run_cat_query(query: Dict[str, Any]) -> Dict[str, Any]:
                 "count": 0,
                 "names": [],
                 "filters": {},
-                "message": "I wasn't able to understand that query.",
+                "message": "",
             }
         op = "count_all_cats"
 

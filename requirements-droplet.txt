@@ -1,7 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Core Discord bot stack
-discord.py==2.4.0
+discord.py==2.7.1
 python-dotenv==1.2.3
 aiohttp==3.14.3
 
@@ -14,14 +14,14 @@ google-auth-httplib2==0.2.0
 httplib2==0.32.0
 
 # Data processing / parsing
-numpy==1.26.4
+numpy==2.5.3
 Pillow==12.3.0
 rapidfuzz==3.10.1
-beautifulsoup4==4.12.3
+beautifulsoup4==4.15.0
 
 # Computer vision helpers (still imported by local code paths)
 opencv-python-headless==5.0.0.93
-ultralytics>=8.4.138
+ultralytics>=8.4.161
 
 # PyTorch CPU-only (CV is on Modal; local needs torch for gallery tensor ops)
 torch==2.14.0+cpu

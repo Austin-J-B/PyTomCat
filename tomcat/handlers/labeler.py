@@ -23,9 +23,11 @@ import random
 import hashlib
 import base64
 import asyncio
+import contextvars
 import sys
 import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Set
 
@@ -90,6 +92,62 @@ _detect_sem = asyncio.Semaphore(_DETECT_CONCURRENCY)
 _refine_sem = asyncio.Semaphore(_REFINE_CONCURRENCY)
 _HEAVY_CONCURRENCY = max(1, int(os.getenv("LABELER_HEAVY_CONCURRENCY", "3") or "3"))
 _heavy_sem = asyncio.Semaphore(_HEAVY_CONCURRENCY)
+# Modal's blocking .remote() calls must not occupy asyncio's shared executor:
+# with three server CPUs that pool has only seven workers, and image/cache work
+# plus queue scans use it too. Match the CV pool to Modal's two-container cap.
+_LABELER_CV_EXECUTOR = ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="labeler-cv",
+)
+# Queue candidate parsing is cheap but scans the full metadata table. Keep one
+# worker reserved so a burst of blocking CV RPCs cannot make queue refresh wait
+# behind unrelated image and network work in the default executor.
+_LABELER_QUEUE_SCAN_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="labeler-queue-scan",
+)
+_LABELER_EXECUTOR_QUEUE_SLOW_MS = max(
+    100,
+    int(os.getenv("LABELER_EXECUTOR_QUEUE_SLOW_MS", "500") or "500"),
+)
+
+
+async def _run_labeler_executor(
+    executor: ThreadPoolExecutor,
+    pool_name: str,
+    fn: Any,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Run blocking labeler work outside asyncio's shared thread pool."""
+    loop = asyncio.get_running_loop()
+    submitted = time.perf_counter()
+    fn_name = str(getattr(fn, "__qualname__", None) or getattr(fn, "__name__", "call"))
+
+    def invoke() -> Any:
+        wait_ms = (time.perf_counter() - submitted) * 1000.0
+        if wait_ms >= float(_LABELER_EXECUTOR_QUEUE_SLOW_MS):
+            log_action(
+                "labeler_executor_queue_slow",
+                f"pool={pool_name}; function={fn_name}",
+                f"wait_ms={int(round(wait_ms))}",
+            )
+        return fn(*args, **kwargs)
+
+    context = contextvars.copy_context()
+    return await loop.run_in_executor(executor, context.run, invoke)
+
+
+async def _run_labeler_cv(fn: Any, *args: Any, **kwargs: Any) -> Any:
+    """Run model inference on the bounded labeler CV executor."""
+    return await _run_labeler_executor(_LABELER_CV_EXECUTOR, "cv", fn, *args, **kwargs)
+
+
+async def _run_labeler_queue_scan(fn: Any, *args: Any, **kwargs: Any) -> Any:
+    """Run full-table queue parsing on its reserved single-worker executor."""
+    return await _run_labeler_executor(_LABELER_QUEUE_SCAN_EXECUTOR, "queue_scan", fn, *args, **kwargs)
+
+
 _DEFAULT_REF_CROP_RENDER_CONCURRENCY = max(4, min(16, int(os.cpu_count() or 8)))
 _REF_CROP_RENDER_CONCURRENCY = max(
     1,
@@ -2342,7 +2400,7 @@ def _kick_detector_warm_task() -> None:
         #queue started another full detector + SAM pass.
         global _detector_warm_done
         try:
-            await asyncio.to_thread(V.warm_labeler_detector)
+            await _run_labeler_cv(V.warm_labeler_detector)
         except Exception as e:
             log_action("labeler_detector_warm_error", f"type={type(e).__name__}", str(e))
         finally:
@@ -4028,10 +4086,13 @@ def _kickoff_photo_metadata_cache_refresh(reason: str = "") -> None:
 
 
 def _identify_should_trace(prefetch: bool) -> bool:
-    if not _IDENTIFY_DEBUG:
-        return False
+    #Foreground calls are the volunteer-visible work and should always retain
+    #their timing breakdown. Keep speculative prefetch traces sampled to avoid
+    #flooding logs during queue warming.
     if not prefetch:
         return True
+    if not _IDENTIFY_DEBUG:
+        return False
     return random.random() < _IDENTIFY_DEBUG_PREFETCH_SAMPLE
 
 
@@ -4978,7 +5039,7 @@ async def get_queue_detect(request: web.Request) -> web.Response:
         #Off the loop: this walks every photo metadata row, and the UI polls
         #this endpoint. The scan takes its inputs as arguments so it can run in
         #a thread without touching module state.
-        queue = await asyncio.to_thread(_parse_queue_detect_candidates, rows, claims, user_id)
+        queue = await _run_labeler_queue_scan(_parse_queue_detect_candidates, rows, claims, user_id)
         queue, local_excluded, local_sample = _filter_queue_to_local(
             "detect",
             queue,
@@ -5015,7 +5076,7 @@ async def get_queue_classify(request: web.Request) -> web.Response:
         claims = await _claims_snapshot()
 
         #Off the loop, as in get_queue_detect: a full metadata scan per poll.
-        candidates = await asyncio.to_thread(
+        candidates = await _run_labeler_queue_scan(
             _parse_queue_classify_candidates, rows, claims, user_id
         )
 
@@ -5157,7 +5218,7 @@ async def get_queue_manual(request: web.Request) -> web.Response:
         user_id, _ = _actor_from_request(request)
         claims = await _claims_snapshot()
         #Off the loop, as in get_queue_detect: a full metadata scan per poll.
-        queue = await asyncio.to_thread(_parse_queue_manual_candidates, rows, claims, user_id)
+        queue = await _run_labeler_queue_scan(_parse_queue_manual_candidates, rows, claims, user_id)
         queue, local_excluded, local_sample = _filter_queue_to_local(
             "manual",
             queue,
@@ -5436,6 +5497,7 @@ async def post_ui_diag(request: web.Request) -> web.Response:
             "auto_skip",
             "auto_skip_halt",
             "image_error",
+            "transition_done",
             "transition_slow",
             "claim_retry",
             "claim_acquire_slow",
@@ -5592,6 +5654,7 @@ async def post_detect(request: web.Request) -> web.Response:
         t_req = time.perf_counter()
         image_ms = 0.0
         detect_ms = 0.0
+        sam_ms = 0.0
         sem_wait_ms = 0.0
         image_source = "none"
         inline_sam_passes_requested = int(_DETECT_INLINE_SAM_PASSES)
@@ -5664,7 +5727,7 @@ async def post_detect(request: web.Request) -> web.Response:
         log_action(
             "labeler_detect_start",
             f"rid={req_id}; serial={serial_i}; prefetch={prefetch}; fast={fast}",
-            f"img_src={image_source}; img_ms={int(round(image_ms))}",
+            f"img_src={image_source}; img_ms={int(round(image_ms))}; img_bytes={len(image_bytes)}",
         )
 
         acquired = False
@@ -5686,7 +5749,7 @@ async def post_detect(request: web.Request) -> web.Response:
             detect_timeout = _DETECT_PREFETCH_TIMEOUT_SEC if prefetch else _DETECT_TIMEOUT_SEC
             t_detect = time.perf_counter()
             detect_result = await asyncio.wait_for(
-                asyncio.to_thread(V.detect, image_bytes, include_boxed_image=False),
+                _run_labeler_cv(V.detect, image_bytes, include_boxed_image=False),
                 timeout=detect_timeout,
             )
             detect_ms = (time.perf_counter() - t_detect) * 1000.0
@@ -5718,8 +5781,9 @@ async def post_detect(request: web.Request) -> web.Response:
                     yolo_boxes.append((cx, cy, w, h))
                 try:
                     sam_timeout = max(1.0, float(_DETECT_INLINE_SAM_TIMEOUT_SEC))
+                    t_sam = time.perf_counter()
                     refine_result = await asyncio.wait_for(
-                        asyncio.to_thread(
+                        _run_labeler_cv(
                             V.refine_boxes_with_diagnostics,
                             image_bytes,
                             yolo_boxes,
@@ -5727,6 +5791,7 @@ async def post_detect(request: web.Request) -> web.Response:
                         ),
                         timeout=sam_timeout,
                     )
+                    sam_ms = (time.perf_counter() - t_sam) * 1000.0
                     refined_boxes_abs = list(refine_result.boxes or raw_boxes_abs)
                     refined_polygons_abs = list(refine_result.polygons or [])
                     refined_mask_tiles_abs = list(refine_result.mask_tiles or [])
@@ -5833,7 +5898,8 @@ async def post_detect(request: web.Request) -> web.Response:
             f"rid={req_id}; serial={serial_i}; prefetch={prefetch}; fast={fast}",
             (
                 f"ms total={int(round(total_ms))} img={int(round(image_ms))} sem={int(round(sem_wait_ms))} "
-                f"detect={int(round(detect_ms))}; src={image_source}; raw_boxes={len(raw_boxes_abs)}; "
+                f"detect={int(round(detect_ms))} sam={int(round(sam_ms))}; src={image_source}; "
+                f"img_bytes={len(image_bytes)} img_size={iw}x{ih}; raw_boxes={len(raw_boxes_abs)}; "
                 f"out_boxes={len(yolo_boxes)}; sam_refined={int(bool(sam_refined))}; "
                 f"sam_passes={int(inline_sam_passes_requested)}; "
                 f"delta_shifted={int(box_delta.get('shifted') or 0)}; "
@@ -5985,7 +6051,7 @@ async def post_refine(request: web.Request) -> web.Response:
 
             try:
                 refine_result = await asyncio.wait_for(
-                    asyncio.to_thread(V.refine_boxes_with_diagnostics, image_bytes, boxes, passes=passes),
+                    _run_labeler_cv(V.refine_boxes_with_diagnostics, image_bytes, boxes, passes=passes),
                     timeout=(_REFINE_PREFETCH_TIMEOUT_SEC if prefetch else _REFINE_TIMEOUT_SEC),
                 )
                 refined = list(refine_result.boxes or [])
@@ -6302,7 +6368,7 @@ async def post_identify(request: web.Request) -> web.Response:
                 timeout_sec = (_IDENTIFY_PREFETCH_TIMEOUT_SEC if prefetch else _IDENTIFY_TIMEOUT_SEC)
                 t_identify = time.perf_counter()
                 result = await asyncio.wait_for(
-                    asyncio.to_thread(
+                    _run_labeler_cv(
                         V.identify_boxes,
                         image_bytes,
                         boxes,
@@ -6572,7 +6638,7 @@ async def post_manual_candidates(request: web.Request) -> web.Response:
             await _manual_sem.acquire()
             acquired = True
             raw_candidates = await asyncio.wait_for(
-                asyncio.to_thread(
+                _run_labeler_cv(
                     V.manual_review_candidates,
                     image_bytes,
                     box,

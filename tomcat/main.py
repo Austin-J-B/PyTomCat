@@ -120,6 +120,7 @@ LABELER_IMAGE_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_IMAGE_RATE_LIMIT_
 LABELER_CLAIM_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_CLAIM_RATE_LIMIT_MAX_REQUESTS", "2600") or "2600")
 LABELER_SAVE_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_SAVE_RATE_LIMIT_MAX_REQUESTS", "1500") or "1500")
 LABELER_UI_DIAG_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("LABELER_UI_DIAG_RATE_LIMIT_MAX_REQUESTS", "8000") or "8000")
+LABELER_HTTP_SLOW_LOG_MS = max(100, int(os.getenv("LABELER_HTTP_SLOW_LOG_MS", "1200") or "1200"))
 LABELER_RATE_LIMIT_SPLIT = os.getenv("LABELER_RATE_LIMIT_SPLIT", "1").strip().lower() in {"1", "true", "yes", "on"}
 #Every request the UI makes has to finish well inside Cloudflare's 100s origin
 #timeout, or the browser gets a 524 with an HTML error page instead of JSON.
@@ -1111,7 +1112,12 @@ def _allowed_user_mentions(*user_ids: Any) -> discord.AllowedMentions:
 
 
 from .config import settings
-from .logger import log_event, log_action  #noqa: F401  #imported for shared use
+from .logger import (
+    bind_log_context,
+    log_event,
+    log_action,
+    reset_log_context,
+)  #noqa: F401  #imported for shared use
 from .intent_router import IntentRouter, Intent
 from .handlers.misc import start_profile_scheduler, start_google_api_health_scheduler
 from .services.local_photos import (
@@ -1632,6 +1638,24 @@ async def rate_limit_middleware(request: web.Request, handler):
             if not expected or not provided or not hmac.compare_digest(expected, str(provided)):
                 return _with_cors(web.Response(status=403, text="Missing or invalid CSRF token"), request)
 
+    labeler_payload: dict = {}
+    labeler_session_id = ""
+    if is_labeler_api:
+        labeler_session_id = str(request.query.get("labeler_session_id") or "").strip()
+        if request.method not in {"GET", "HEAD"} and request.content_type == "application/json":
+            try:
+                payload = await request.json()
+                if isinstance(payload, dict):
+                    labeler_payload = payload
+                    labeler_session_id = str(
+                        payload.get("labeler_session_id") or labeler_session_id
+                    ).strip()
+            except Exception:
+                #The endpoint keeps ownership of malformed request handling.
+                pass
+        if not re.fullmatch(r"[A-Za-z0-9_-]{12,64}", labeler_session_id):
+            labeler_session_id = ""
+
     client_ip = _trusted_client_ip(request)
     if client_ip == "unknown":
         peername = request.transport.get_extra_info("peername") if request.transport else None
@@ -1666,9 +1690,79 @@ async def rate_limit_middleware(request: web.Request, handler):
     while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
         bucket.popleft()
     if len(bucket) >= max_requests:
+        if is_labeler_api:
+            route_resource = getattr(getattr(request.match_info, "route", None), "resource", None)
+            route = str(getattr(route_resource, "canonical", "") or request.path)
+            log_action(
+                "labeler_http_rate_limited",
+                f"{request.method} {route}; uid={str((labeler_session or {}).get('user_id') or '').strip()}; session={labeler_session_id}",
+                f"status=429; limit={max_requests}",
+            )
         return _with_cors(web.Response(status=429, text="Too many requests"), request)
     bucket.append(now)
-    return await handler(request)
+    if not is_labeler_api:
+        return await handler(request)
+
+    route_resource = getattr(getattr(request.match_info, "route", None), "resource", None)
+    route = str(getattr(route_resource, "canonical", "") or request.path)
+    serial = str(
+        labeler_payload.get("serial")
+        or request.match_info.get("sn")
+        or ""
+    ).strip()
+    request_id = secrets.token_hex(6)
+    request["labeler_session_id"] = labeler_session_id
+    request["labeler_request_id"] = request_id
+    context_token = bind_log_context(
+        labeler_session_id=labeler_session_id or None,
+        labeler_request_id=request_id,
+        labeler_route=route,
+        labeler_user_id=str((labeler_session or {}).get("user_id") or "").strip() or None,
+    )
+    started = time.perf_counter()
+    status = 500
+    try:
+        response = await handler(request)
+        status = int(getattr(response, "status", 200) or 200)
+        return response
+    except web.HTTPException as exc:
+        status = int(exc.status)
+        raise
+    except Exception:
+        status = 500
+        raise
+    finally:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        try:
+            trigger = f"{request.method} {route}; serial={serial or ''}"
+            details = [f"status={status}", f"total_ms={int(round(elapsed_ms))}"]
+            for key in ("mode", "action", "prefetch", "fast", "passes", "force"):
+                if key in labeler_payload:
+                    value = labeler_payload.get(key)
+                    details.append(f"{key}={int(value) if isinstance(value, bool) else str(value)[:32]}")
+            boxes = labeler_payload.get("boxes")
+            if isinstance(boxes, list):
+                details.append(f"boxes={len(boxes)}")
+
+            summary_routes = {
+                "/api/labeler/manual/candidates",
+            }
+            request_action = str(labeler_payload.get("action") or "").strip().lower()
+            is_foreground = not bool(labeler_payload.get("prefetch"))
+            is_user_action = (
+                (route in summary_routes and is_foreground)
+                or (route == "/api/labeler/claim" and request_action == "acquire")
+            )
+            if is_user_action:
+                log_action("labeler_http_request_summary", trigger, "; ".join(details))
+            if status >= 400 or elapsed_ms >= LABELER_HTTP_SLOW_LOG_MS:
+                log_action(
+                    "labeler_http_request_error" if status >= 400 else "labeler_http_request_slow",
+                    trigger,
+                    "; ".join(details + [f"slow_threshold_ms={LABELER_HTTP_SLOW_LOG_MS}"]),
+                )
+        finally:
+            reset_log_context(context_token)
 
 
 async def start_web_server(bot):

@@ -160,6 +160,10 @@ _LABELER_REF_BUILD_WORKERS = max(
     1,
     int(os.getenv("LABELER_REF_BUILD_WORKERS", str(_DEFAULT_LABELER_REF_BUILD_WORKERS)) or str(_DEFAULT_LABELER_REF_BUILD_WORKERS)),
 )
+_LABELER_REF_CACHE_BUILD_BATCH_SIZE = max(
+    1,
+    int(os.getenv("LABELER_REF_CACHE_BUILD_BATCH_SIZE", "16") or "16"),
+)
 _IDENTIFY_STATION_PRIOR_ENABLED = str(os.getenv("IDENTIFY_STATION_PRIOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
 _IDENTIFY_STATION_PRIOR_SEED_CONF = float(os.getenv("IDENTIFY_STATION_PRIOR_SEED_CONF", "0.72") or "0.72")
 _IDENTIFY_STATION_PRIOR_SEED_GAP = float(os.getenv("IDENTIFY_STATION_PRIOR_SEED_GAP", "0.04") or "0.04")
@@ -2027,22 +2031,38 @@ async def _build_ref_cache(
                     pass
             continue
 
-        crops, refs = await asyncio.to_thread(
-            _collect_labeler_ref_entries,
-            entries,
-            thumb_size=thumb_size,
-        )
-        if crops:
+        emb_parts: List[np.ndarray] = []
+        cat_refs: List[dict[str, Any]] = []
+        # The full cap may be 250 crops per cat. Keep only a small batch alive
+        # while Modal embeds it so a long ref-cache warm cannot fill RAM/swap.
+        batch_size = max(1, int(_LABELER_REF_CACHE_BUILD_BATCH_SIZE))
+        for offset in range(0, len(entries), batch_size):
+            batch_entries = entries[offset:offset + batch_size]
+            crops, refs = await asyncio.to_thread(
+                _collect_labeler_ref_entries,
+                batch_entries,
+                thumb_size=thumb_size,
+            )
+            if not crops:
+                continue
             try:
-                emb = await asyncio.to_thread(_embed_crops, crops)
+                emb = _as_embeddings(await asyncio.to_thread(_embed_crops, crops))
                 if emb.size > 0:
-                    new_cache[cat] = {"emb": emb, "refs": refs}
+                    emb_parts.append(emb)
+                    cat_refs.extend(refs[:int(emb.shape[0])])
             finally:
                 for crop in crops:
                     try:
                         crop.close()
                     except Exception:
                         pass
+                del crop
+                crops.clear()
+        if emb_parts:
+            new_cache[cat] = {
+                "emb": np.concatenate(emb_parts, axis=0),
+                "refs": cat_refs,
+            }
         built += 1
         if progress_hook:
             try:

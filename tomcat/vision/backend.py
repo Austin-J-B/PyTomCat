@@ -221,8 +221,16 @@ class LocalBackend(CVBackend):
         if V._sam is None:
             return np.zeros((0, 0, 0), dtype=bool)
         crop = np.asarray(Image.open(io.BytesIO(crop_bytes)).convert("RGB"))
+        use_half = bool(
+            V._half and V._device is not None and V._device.type == "cuda"
+        )
         with torch.inference_mode():
-            results = V._sam(crop, bboxes=[list(prompt_box)], verbose=False)
+            results = V._sam(
+                crop,
+                bboxes=[list(prompt_box)],
+                verbose=False,
+                half=use_half,
+            )
         return V._extract_sam_masks(results)
 
     def detect_and_embed(
@@ -333,21 +341,42 @@ class ModalBackend(CVBackend):
         )
 
     def detect(self, img: Image.Image) -> List["Det"]:
-        # No separate detect-only endpoint deployed; route through
-        # detect_and_embed and discard the embeddings. Costs ~50ms of wasted
-        # DINOv3 work server-side but avoids a Modal redeploy. The labeler
-        # "Detect" button is the main caller and isn't latency-critical.
         from . import vision as V
         from ..config import settings
 
         buf = io.BytesIO()
         img.convert("RGB").save(buf, format="JPEG", quality=92)
-        result = self.detect_and_embed(
-            buf.getvalue(),
-            conf=float(settings.cv_conf or V._DEFAULT_CONF),
-            detect_imgsz=int(settings.cv_detect_imgsz),
-            pad_pct=float(settings.cv_pad_pct),
-        )
+        image_bytes = buf.getvalue()
+        conf = float(settings.cv_conf or V._DEFAULT_CONF)
+        detect_imgsz = int(settings.cv_detect_imgsz)
+
+        self._ensure_connected()
+        # Newer Modal deployments expose a YOLO-only method. Keep compatibility
+        # with an older deployed app while it is being rolled out.
+        detect_only = getattr(self._instance, "detect_only", None)
+        if detect_only is not None:
+            try:
+                result = detect_only.remote(
+                    image_bytes, conf=conf, detect_imgsz=detect_imgsz
+                )
+            except Exception as e:
+                message = str(e).lower()
+                missing_method = isinstance(e, (AttributeError, NotImplementedError)) or (
+                    "detect_only" in message
+                    and any(token in message for token in ("not found", "does not exist", "no such method"))
+                )
+                if not missing_method:
+                    raise
+                result = None
+        else:
+            result = None
+        if result is None:
+            result = self.detect_and_embed(
+                image_bytes,
+                conf=conf,
+                detect_imgsz=detect_imgsz,
+                pad_pct=float(settings.cv_pad_pct),
+            )
         return [
             V.Det(tuple(d["box"]), float(d["conf"]))
             for d in (result.get("detections") or [])
@@ -383,12 +412,27 @@ class ModalBackend(CVBackend):
     def sam_refine_crop(self, crop_bytes: bytes, prompt_box: List[float]) -> Any:
         import numpy as np
         from PIL import Image
+        from ..config import settings
 
         self._ensure_connected()
         try:
-            mask_pngs = self._instance.sam_refine_crop.remote(
-                crop_bytes, list(prompt_box)
-            )
+            try:
+                mask_pngs = self._instance.sam_refine_crop.remote(
+                    crop_bytes, list(prompt_box), half=bool(settings.cv_half)
+                )
+            except Exception as e:
+                # A bot can briefly be newer than the deployed Modal class.
+                # Retry only when the old method rejects the new optional flag.
+                message = str(e).lower()
+                unsupported_half = "half" in message and any(
+                    marker in message
+                    for marker in ("unexpected keyword", "unexpected argument", "got an unexpected")
+                )
+                if not unsupported_half:
+                    raise
+                mask_pngs = self._instance.sam_refine_crop.remote(
+                    crop_bytes, list(prompt_box)
+                )
         except Exception:
             return np.zeros((0, 0, 0), dtype=bool)
         if not mask_pngs:

@@ -129,7 +129,7 @@ def main() -> int:
     check("no matches", 0, result["count"])
     check("says so plainly", True, result["message"].startswith("I couldn't find any"))
     result = ask(op="list_names_by_filters", source_text="what about the thing")
-    check("an unparsed question is admitted", "I wasn't able to understand that query.",
+    check("an unparsed question is silent", "",
           result["message"])
     check("no filters claimed", {}, result["filters"])
     #No filters and no source text is a bare "how many cats" in disguise.

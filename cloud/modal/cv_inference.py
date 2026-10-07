@@ -217,6 +217,36 @@ class CVInference:
             pass
 
     @modal.method()
+    def detect_only(
+        self,
+        image_bytes: bytes,
+        *,
+        conf: float = 0.552,
+        detect_imgsz: int = 640,
+    ) -> dict:
+        """Run YOLO without DINO, for labeler paths that only need boxes."""
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img_w, img_h = img.size
+        results = self._yolo.predict(
+            img, conf=conf, imgsz=detect_imgsz, verbose=False
+        )
+
+        detections = []
+        for r in results:
+            boxes = r.boxes.xyxy.detach().cpu().numpy()
+            confs = r.boxes.conf.detach().cpu().numpy()
+            for b, c in zip(boxes, confs):
+                detections.append(
+                    {
+                        "box": (float(b[0]), float(b[1]), float(b[2]), float(b[3])),
+                        "conf": float(c),
+                    }
+                )
+        return {"image_size": (img_w, img_h), "detections": detections}
+
+    @modal.method()
     def detect_and_embed(
         self,
         image_bytes: bytes,
@@ -307,6 +337,7 @@ class CVInference:
         self,
         crop_bytes: bytes,
         prompt_box: List[float],
+        half: bool = True,
     ) -> List[bytes]:
         """Run SAM2 on one cropped image with one box prompt.
 
@@ -321,7 +352,12 @@ class CVInference:
         img = Image.open(io.BytesIO(crop_bytes)).convert("RGB")
 
         with torch.inference_mode():
-            results = self._sam(img, bboxes=[list(prompt_box)], verbose=False)
+            results = self._sam(
+                img,
+                bboxes=[list(prompt_box)],
+                verbose=False,
+                half=bool(half and self._device.type == "cuda"),
+            )
 
         out: List[bytes] = []
         for r in results:

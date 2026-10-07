@@ -7,6 +7,7 @@ deliberately (see "Death to 'human' logs"). Every record carries a "ts".
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import atexit
+from contextvars import ContextVar, Token
 import json
 import os
 import threading
@@ -31,6 +32,17 @@ TZ = ZoneInfo("America/Chicago")
 _LOG_LOCK = threading.Lock()
 _log_day: Optional[str] = None
 _log_handle: Optional[TextIO] = None
+_LOG_CONTEXT: ContextVar[Optional[dict]] = ContextVar("tomcat_log_context", default=None)
+
+
+def bind_log_context(**fields: Any) -> Token:
+    """Attach structured fields to log actions emitted in this async context."""
+    return _LOG_CONTEXT.set({key: value for key, value in fields.items() if value is not None})
+
+
+def reset_log_context(token: Token) -> None:
+    """Restore the context that was active before ``bind_log_context``."""
+    _LOG_CONTEXT.reset(token)
 
 
 def _close_log_handle() -> None:
@@ -91,6 +103,7 @@ def log_action(name: str, trigger: str, output: str) -> None:
         "name": name,
         "trigger": trigger,
         "output": output,
+        **(_LOG_CONTEXT.get() or {}),
     })
 
 

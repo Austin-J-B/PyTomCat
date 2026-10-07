@@ -58,6 +58,80 @@ def ok(label: str, condition: bool, detail: str = "") -> None:
         print(f"  FAIL {label}{('  -> ' + detail) if detail else ''}")
 
 
+def test_modal_fast_paths() -> None:
+    """Box-only detection avoids DINO, while SAM precision stays configurable."""
+    from PIL import Image
+
+    from tomcat.config import settings
+    from tomcat.vision.backend import ModalBackend
+
+    class RemoteMethod:
+        def __init__(self, fn):
+            self.remote = fn
+
+    class Instance:
+        pass
+
+    backend = ModalBackend()
+    backend._instance = Instance()
+    calls = {}
+    backend._instance.detect_only = RemoteMethod(
+        lambda image_bytes, **kwargs: {
+            "detections": [{"box": (1.0, 2.0, 30.0, 40.0), "conf": 0.9}]
+        }
+    )
+    backend._instance.detect_and_embed = RemoteMethod(
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("DINO should be skipped"))
+    )
+    image = Image.new("RGB", (64, 48))
+    detections = backend.detect(image)
+    check("Modal detect uses YOLO-only boxes", [((1.0, 2.0, 30.0, 40.0), 0.9)],
+          [(d.xyxy, d.conf) for d in detections])
+
+    previous_half = settings.cv_half
+    try:
+        settings.cv_half = True
+
+        def new_sam_api(crop_bytes, prompt_box, **kwargs):
+            calls["half"] = kwargs.get("half")
+            return []
+
+        backend._instance.sam_refine_crop = RemoteMethod(
+            new_sam_api
+        )
+        empty = backend.sam_refine_crop(b"", [0.0, 0.0, 1.0, 1.0])
+        check("Modal SAM receives configured fp16 mode", True, calls.get("half"))
+        check("empty remote masks stay empty", (0, 0, 0), empty.shape)
+
+        old_api_calls = []
+
+        def old_sam_api(crop_bytes, prompt_box, **kwargs):
+            old_api_calls.append(dict(kwargs))
+            if "half" in kwargs:
+                raise TypeError("got an unexpected keyword argument 'half'")
+            return []
+
+        backend._instance.sam_refine_crop = RemoteMethod(old_sam_api)
+        backend.sam_refine_crop(b"", [0.0, 0.0, 1.0, 1.0])
+        check("older Modal SAM signatures retry without the optional flag", [{"half": True}, {}], old_api_calls)
+    finally:
+        settings.cv_half = previous_half
+
+    legacy = Instance()
+    legacy_calls = []
+    legacy.detect_only = RemoteMethod(
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("remote method detect_only not found in deployed app")
+        )
+    )
+    legacy.detect_and_embed = RemoteMethod(
+        lambda image_bytes, **kwargs: legacy_calls.append(kwargs) or {"detections": []}
+    )
+    backend._instance = legacy
+    check("older Modal apps retain the detect fallback", [], backend.detect(image))
+    ok("legacy detect fallback keeps its settings", bool(legacy_calls))
+
+
 def main() -> int:
     print("=" * 70)
     print("embedding backend boundary tests")
@@ -168,6 +242,9 @@ def main() -> int:
     normed = V._l2_normalize(np.array([[0.0, 0.0], [3.0, 4.0]], dtype=np.float32))
     ok("no nan", not bool(np.isnan(normed).any()))
     check("and a real row is unit length", 1.0, round(float(np.linalg.norm(normed[1])), 6))
+
+    print("\n[7] Modal fast paths and compatibility")
+    test_modal_fast_paths()
 
     print("\n" + "=" * 70)
     if FAILURES:

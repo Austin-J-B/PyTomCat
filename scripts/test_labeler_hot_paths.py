@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import csv
+from concurrent.futures import ThreadPoolExecutor
 import os
 import shutil
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -38,6 +40,101 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     print("  %-4s %s%s" % ("PASS" if ok else "FAIL", name, "" if ok else "  -> " + detail))
     if not ok:
         FAILURES.append(name)
+
+
+def test_labeler_work_does_not_wait_for_default_executor() -> None:
+    """CV RPCs and queue scans remain schedulable when the shared pool is full."""
+    from tomcat.handlers import labeler
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def occupy_default_worker() -> None:
+        started.set()
+        release.wait(5.0)
+
+    async def run() -> None:
+        loop = asyncio.get_running_loop()
+        loop.set_default_executor(ThreadPoolExecutor(max_workers=1, thread_name_prefix="test-default"))
+        blocker = loop.run_in_executor(None, occupy_default_worker)
+        try:
+            deadline = time.monotonic() + 2.0
+            while not started.is_set() and time.monotonic() < deadline:
+                await asyncio.sleep(0.01)
+            check("default executor blocker started", started.is_set())
+
+            cv_result = await asyncio.wait_for(
+                labeler._run_labeler_cv(lambda: "cv-ready"), timeout=1.0
+            )
+            queue_result = await asyncio.wait_for(
+                labeler._run_labeler_queue_scan(lambda: "queue-ready"), timeout=1.0
+            )
+            check("CV executor runs while default pool is occupied", cv_result == "cv-ready")
+            check("queue scan executor runs while default pool is occupied", queue_result == "queue-ready")
+            check("default worker stayed occupied during isolated work", not blocker.done())
+        finally:
+            release.set()
+            await asyncio.wait_for(blocker, timeout=2.0)
+
+    asyncio.run(run())
+
+
+def test_reference_cache_builds_in_bounded_batches() -> None:
+    """Reference embeddings stay aligned while large crop batches are released."""
+    import numpy as np
+    from PIL import Image
+    from tomcat.services import catsheets
+    from tomcat.vision import vision as V
+
+    original = (
+        V._ensure_gallery,
+        V.get_all_cats,
+        V._collect_labeler_ref_entries,
+        V._embed_crops,
+        V._LABELER_REF_CACHE_BUILD_BATCH_SIZE,
+        catsheets.get_photo_metadata_rows,
+    )
+    row_count = 5
+    rows = [[""] * 10]
+    for serial in range(1, row_count + 1):
+        row = [""] * 10
+        row[V.COL_SERIAL] = f"sn{serial:04d}"
+        row[V.COL_BOX_COORDS] = "0.5 0.5 0.2 0.2"
+        row[V.COL_BOX_CAT_IDS] = "Miso"
+        rows.append(row)
+    batch_sizes: list[int] = []
+
+    def collect(entries, *, thumb_size):
+        batch_sizes.append(len(entries))
+        crops = [Image.new("RGB", (2, 2), color=(sn, 0, 0)) for sn, _, _ in entries]
+        refs = [{"serial": sn, "crop": crop_idx} for sn, _, crop_idx in entries]
+        return crops, refs
+
+    try:
+        V._ensure_gallery = lambda: None
+        V.get_all_cats = lambda: ["Miso"]
+        V._collect_labeler_ref_entries = collect
+        V._embed_crops = lambda crops: np.asarray(
+            [[float(crop.getpixel((0, 0))[0]), 1.0] for crop in crops],
+            dtype=np.float32,
+        )
+        V._LABELER_REF_CACHE_BUILD_BATCH_SIZE = 2
+        catsheets.get_photo_metadata_rows = lambda ttl_sec=None: rows
+        result = asyncio.run(V._build_ref_cache(max_per_cat=250, thumb_size=32))
+    finally:
+        (
+            V._ensure_gallery,
+            V.get_all_cats,
+            V._collect_labeler_ref_entries,
+            V._embed_crops,
+            V._LABELER_REF_CACHE_BUILD_BATCH_SIZE,
+            catsheets.get_photo_metadata_rows,
+        ) = original
+
+    pack = result.get("Miso") or {}
+    check("reference build respects its image batch ceiling", [2, 2, 1], batch_sizes)
+    check("reference embeddings survive batched build", (row_count, 2), pack.get("emb").shape)
+    check("reference metadata remains aligned", list(range(1, row_count + 1)), [r["serial"] for r in pack.get("refs", [])])
 
 
 def test_crop_index_rebuild_is_shared() -> None:
@@ -431,6 +528,10 @@ def test_rendered_crop_cache_has_a_byte_budget() -> None:
 def main() -> int:
     print("labeler hot paths")
     print("=" * 70)
+    print("executor isolation")
+    test_labeler_work_does_not_wait_for_default_executor()
+    print("reference-cache memory bound")
+    test_reference_cache_builds_in_bounded_batches()
     print("crop index rebuild")
     test_crop_index_rebuild_is_shared()
     print("ref crop eviction on save")

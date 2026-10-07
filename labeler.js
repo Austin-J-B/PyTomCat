@@ -186,6 +186,7 @@
     }
 
     let inMemoryLabelerSessionId = '';
+    let fallbackLabelerSessionCounter = 0;
     function getLabelerSessionId() {
         if (inMemoryLabelerSessionId) return inMemoryLabelerSessionId;
         const storageKey = 'tomcat.labeler.diag_session.v1';
@@ -196,13 +197,28 @@
                 inMemoryLabelerSessionId = existing;
                 return existing;
             }
-            const generated = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-                ? crypto.randomUUID()
-                : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+            const cryptoApi = typeof globalThis !== 'undefined' ? globalThis.crypto : null;
+            let generated = '';
+            if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+                generated = cryptoApi.randomUUID();
+            } else if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {
+                const bytes = new Uint8Array(16);
+                cryptoApi.getRandomValues(bytes);
+                generated = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+            } else {
+                //Only a diagnostic correlation key; keep a per-tab fallback if
+                //an older browser has no Web Crypto implementation at all.
+                fallbackLabelerSessionCounter += 1;
+                const perfMs = (typeof performance !== 'undefined' && Number.isFinite(performance.now()))
+                    ? Math.floor(performance.now() * 1000)
+                    : 0;
+                generated = `local-${Date.now().toString(36)}-${perfMs.toString(36)}-${fallbackLabelerSessionCounter}`;
+            }
             inMemoryLabelerSessionId = generated.slice(0, 64);
             storage?.setItem(storageKey, inMemoryLabelerSessionId);
         } catch (e) {
-            inMemoryLabelerSessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+            fallbackLabelerSessionCounter += 1;
+            inMemoryLabelerSessionId = `local-${Date.now().toString(36)}-${fallbackLabelerSessionCounter}`;
         }
         return inMemoryLabelerSessionId;
     }

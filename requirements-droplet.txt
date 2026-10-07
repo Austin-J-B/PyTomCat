@@ -23,9 +23,10 @@ beautifulsoup4==4.15.0
 opencv-python-headless==5.0.0.93
 ultralytics>=8.4.161
 
-# PyTorch CPU-only (CV is on Modal; local needs torch for gallery tensor ops)
+# PyTorch CPU-only (CV is on Modal; local needs torch for gallery tensor ops).
+# TorchVision 0.29 is ABI-compatible with PyTorch 2.14; 0.23 requires 2.8.
 torch==2.14.0+cpu
-torchvision==0.23.0
+torchvision==0.29.1
 
 # HTTP utilities
 requests==2.34.2

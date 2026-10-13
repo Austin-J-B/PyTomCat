@@ -10,7 +10,7 @@ All README images come from project screenshots or supplied training artifacts. 
 | `features-sn3340.jpg`, `features-sn3510.jpg` | Matching JPEGs from `DetectorModelTraining/Heatmaps`; reduced to at most 1200 × 800 for the README. |
 | `detector-pr.png`, `detector-training.png` | `BoxPR_curve.png` and `results.png` from `SecondFullSmallTrain(BEST)`; lossless image re-encoding. |
 | `identity-projection.png` | Clipboard image `ee9839de-d4e7-4230-b1b8-f86763c72f62`; historical projection, method and checkpoint unknown. Legend entries are animal identities. |
-| `identity-embedding-cloud.png` | Generated from `weights/R5.5.4_cat_DINOv3_gallery.npz`: PCA projection of its 11,799 normalized 512-dimensional reference embeddings across 113 identities. The eight largest identities are colored; the rest are gray. |
+| `identity-embedding-cloud.png` | Generated from `weights/R7.0.1_cat_DINOv3_gallery.npz`: PCA projection of its 14,103 normalized 512-dimensional reference embeddings across 121 identities. Rebuilt on 2026-10-07 from the latest production photo-label snapshot with the R6 ViT-L/16 encoder and 181 verified Discord records. The eight largest identities are colored; the rest are gray. |
 | `identity-recall-full.png` | Clipboard image `fc1a50fd-b1ae-44cf-9a88-86a4c192a368`; historical full-validation plot. |
 | `identity-recall-balanced.png` | Clipboard image `39a13890-5362-4662-a3c8-d2958d29bf61`; historical balanced-subset plot. |
 
@@ -41,4 +41,10 @@ Channel-averaged feature responses are not prediction-specific attribution. [Gra
 
 The original plotting code, raw metrics, split definitions, projection method, and checkpoint IDs were not supplied with the clipboard figures. The plots are shown as experiment history. Approximate endpoint values are read from the charts, not reconstructed as raw measurements. No claim is made that the full-validation and balanced-subset curves belong to the same run, or that either measures the current encoder.
 
-`identity-embedding-cloud.png` is a separate reproducible view of the saved R5.5.4 gallery. PCA keeps the plot deterministic and includes all gallery rows; its two axes are projection directions, not cat traits. It shows the organization of the saved reference embeddings, not held-out recognition accuracy or the current R6 encoder.
+`identity-embedding-cloud.png` is a reproducible view of the production R7.0.1 gallery. PCA includes all 14,103 gallery rows; its two axes are projection directions, not cat traits. The rebuild filtered 1,002 crops below the minimum size and could not load two source images. This plot shows the organization of the saved reference embeddings, not held-out recognition accuracy.
+
+## Gallery snapshot log
+
+The R6 gallery snapshot captured on 2026-10-06 is archived at `weights/archive/R6_cat_DINOv3_gallery_2026-10-06.pt`. The bot's automatic gallery search only scans files directly inside `weights/`, so this archival copy cannot become the active gallery.
+
+Production rebuilt and live-reloaded `R7.0.2_cat_DINOv3_gallery.pt` on 2026-10-09. The recorded refresh succeeded with 14,309 embeddings across 124 cat identities. `CV_GALLERY_PATH` remains set to `auto` so the newest version is selected on restart.

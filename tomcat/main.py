@@ -1111,6 +1111,31 @@ def _allowed_user_mentions(*user_ids: Any) -> discord.AllowedMentions:
     )
 
 
+def _sanitize_spam_alert_content(content: str) -> str:
+    """Prevent copied mass-mention text from being interpreted as a ping."""
+    return re.sub(
+        r"@(everyone|here)\b",
+        lambda match: "@\u200b" + match.group(1),
+        content or "",
+        flags=re.IGNORECASE,
+    )
+
+
+def _allowed_spam_alert_mentions(officer_role_id: Any) -> discord.AllowedMentions:
+    """Allow only the intentional officer-role ping in a spam alert."""
+    try:
+        role_id = int(officer_role_id or 0)
+    except (TypeError, ValueError):
+        role_id = 0
+    roles = [discord.Object(id=role_id)] if role_id > 0 else []
+    return discord.AllowedMentions(
+        everyone=False,
+        roles=roles,
+        users=False,
+        replied_user=False,
+    )
+
+
 from .config import settings
 from .logger import (
     bind_log_context,
@@ -2571,7 +2596,7 @@ async def on_message(message: discord.Message):
                         "Spam Message Detected\n"
                         f"User: {uname} ({getattr(message.author,'id','')})\n"
                         "Message:\n"
-                        f"{message.content or ''}\n"
+                        f"{_sanitize_spam_alert_content(message.content or '')}\n"
                         f"{invite_line}\n\n"
                         f"{mention}\n"
                         "🔨 to ban user\n"
@@ -2583,7 +2608,10 @@ async def on_message(message: discord.Message):
                         log_action("send_suppressed", f"ch={getattr(ch,'id',None)}", snippet)
                     else:
                         try:
-                            alert_msg = await ch.send(body)
+                            alert_msg = await ch.send(
+                                body,
+                                allowed_mentions=_allowed_spam_alert_mentions(officer_role_id),
+                            )
                         except Exception as send_exc:
                             log_action("spam_alert_error", f"ch={getattr(ch,'id',None)}", str(send_exc))
                     if alert_msg:

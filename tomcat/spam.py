@@ -9,18 +9,44 @@ from typing import Optional, Tuple
 from .logger import log_action
 from .utils.permissions import is_officer
 
+#Share the same wording between the content and recent-join signals so a
+#"direct/private message" request cannot bypass the behavioral check.
+SEND_ME_MESSAGE_PATTERN = (
+    r"\bsend\s+me\s+a\s+(?:(?:direct|private)\s+)?"
+    r"(?:dm|pm|message|msg|text|note)\b"
+)
+
+DEVICE_PATTERN = (
+    r"\b(?:mac\s*book|macbook|iphone|ps\s*5|playstation|laptop|camera|canon|nikon|"
+    r"eos|dslr|mirror\s*less|gopro|go\s*pro|drone|gimbal|lens(?:es)?|"
+    r"\d{2,3}\s*-\s*\d{2,3}\s*mm|\d{2,3}\s*mm|f/\d|pc|desktop|rig|gpu|rtx|gtx|"
+    r"graphics\s*card|ryzen|power\s*supply|ddr\d)\b"
+)
+#One weighted rule even when multiple giveaway wordings match. New forms require
+#a device and a transfer/giveaway context; "offering a camera workshop" and
+#"give this camera a try" aren't giveaway offers.
+GIFTING_DEVICE_RE = re.compile(
+    r"\b(?:gift(?:ing)?(?:\s+out)?|giv(?:e|ing)\s+(?:away|out)|"
+    r"offer(?:ing)?(?:\s+it)?\s+(?:out|up)|"
+    rf"pass(?:ing)?\s+(?:(?:it|them)\s+)?(?:on|along))\b.*{DEVICE_PATTERN}"
+    rf"|\bgiv(?:e|ing)\s+(?:(?:my|this|that|a|an|the)\s+)?{DEVICE_PATTERN}\s+to\b"
+    rf"|\boffer(?:ing)?\b[^.!?\n]*{DEVICE_PATTERN}[^.!?\n]*\bas\s+(?:a\s+)?giveaway\b"
+    rf"|{DEVICE_PATTERN}[^.!?\n]*\bpass(?:ing)?\s+(?:it|them)\s+(?:on|along)\b",
+    re.I,
+)
+
 SPAM_PATTERNS = [
     re.compile(r"free\s+.*(mac\s*book|macbook|iphone|ps\s*5|playstation)\b", re.I),
     re.compile(r"tickets?\s+(?:to|for)\s+.+(concert|show|tour|event)", re.I),
     re.compile(r"\b(?:dm|pm|message|text)\s+me\b.*\b(interested|if interested)\b", re.I),
-    re.compile(r"first\s*come\s*first\s*serve", re.I),
+    re.compile(r"\bfirst\s*come\s*[,;-]?\s*first\s*served?\b", re.I),
     re.compile(r"\bmail\s+me\b|\bemail\s+me\b", re.I),
 ]
 
 SUSPICIOUS_TERMS = [
     ("dm_if_interested", 2, re.compile(r"\b(?:dm|message|text)\s+me\s+if\s+(?:(?:you'?re|you\s+are)\s+)?interested\b", re.I)),
     ("interested_should_dm", 2, re.compile(r"\b(?:any\s*one|anyone)\b.*\binterested\b.*\b(?:should|can|pls|please)?\s*(?:dm|pm|message|text)\b(?:\s+me)?\b", re.I)),
-    ("gifting_device", 2, re.compile(r"\b(?:gift(?:ing)?(?:\s+out)?|giv(?:e|ing)\s+(?:away|out)|offer(?:ing)?(?:\s+it)?\s+(?:out|up)|pass(?:ing)?\s+(?:on|along))\b.*\b(?:mac\s*book|macbook|iphone|ps\s*5|playstation|laptop|camera|canon|nikon|eos|dslr|mirror\s*less|gopro|go\s*pro|drone|gimbal|lens(?:es)?|\d{2,3}\s*-\s*\d{2,3}\s*mm|\d{2,3}\s*mm|f/\d|pc|desktop|rig|gpu|rtx|gtx|graphics\s*card|ryzen|power\s*supply|ddr\d)\b", re.I)),
+    ("gifting_device", 2, GIFTING_DEVICE_RE),
     ("sell_my", 1, re.compile(r"\bsell(?:ing)?\s+my\b", re.I)),
     ("season_tickets", 1, re.compile(r"\bseason\s+tickets?\b", re.I)),
     ("selling_tickets", 1, re.compile(r"\bsell(?:ing)?\s+(?:my\s+)?tickets?\b", re.I)),
@@ -30,7 +56,7 @@ SUSPICIOUS_TERMS = [
     ("giving_away_items", 2, re.compile(r"\b(?:give\s+(?:out|away)|giving\s+(?:out|away|them\s+out)|giv(?:e|ing)\s+them\s+(?:out|away)|offer(?:ing)?(?:\s+it)?\s+(?:out|up)|pass(?:ing)?\s+(?:on|along))\b.{0,40}\b(?:item|items|belongings|stuff|everything|furniture|free)\b", re.I)),
     ("free_of_charge", 1, re.compile(r"\bfree\s+of\s+charge\b|\bcompletely\s+free\b|\bfor\s+free\b", re.I)),
     ("dm_me_for_details", 1, re.compile(r"\b(?:dm|pm|message|text|inbox)\s+me\s+for\s+(?:more\s+)?(?:detail|details|info|information|pic|pics|picture|pictures)\b", re.I)),
-    ("send_me_a_message", 1, re.compile(r"\bsend\s+me\s+a\s+(?:message|dm|text|note)\b", re.I)),
+    ("send_me_a_message", 1, re.compile(SEND_ME_MESSAGE_PATTERN, re.I)),
 ]
 
 #Household goods / appliances frequently dumped in the giveaway-scam item list.
@@ -63,7 +89,7 @@ DM_SOLICITATION_RE = re.compile(
     r"\b(?:dm|pm|inbox|msg)\s+me\b"
     r"|\b(?:message|text)\s+me\b"
     r"|\b(?:dm|pm)\s+(?:if|to|for|now|via|us)\b"  # "DM if interested", "DM me via signal"
-    r"|\bsend\s+me\s+a\s+(?:dm|pm|message|msg|text|note)\b"
+    rf"|{SEND_ME_MESSAGE_PATTERN}"
     r"|\bshoot\s+me\s+a\s+(?:dm|pm|message|text)\b"
     r"|\bslide\s+into\s+my\s+dms?\b"
     r"|\bhit\s+me\s+up\b",

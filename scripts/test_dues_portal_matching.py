@@ -20,9 +20,11 @@ import asyncio
 import json
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -234,6 +236,58 @@ def test_old_post_is_judged_by_its_own_date() -> None:
           dues._member_row_is_current(fall_2026, NOW.date()))
 
 
+async def test_dues_roles_with_handle_notes() -> None:
+    print("\nverified dues with notes after the Discord handle")
+    for text, expected in [
+        ("m_digio i think", ["m_digio"]),
+        ("@m_digio I THINK?", ["m_digio"]),
+        ("m_digio i think / mdigio", ["m_digio"]),
+        ("m_digio i think / megan_alt", ["m_digio", "megan_alt"]),
+        ("ithink", ["ithink"]),
+        ("i_think", ["i_think"]),
+    ]:
+        check(f"handle candidates: {text}", expected, dues._split_handle_candidates(text))
+
+    dues_role = SimpleNamespace(id=123, name="due paying members")
+    officer_role = SimpleNamespace(id=456, name="vice president")
+
+    class Member(FakeAuthor):
+        def __init__(self, uid, name, roles):
+            super().__init__(uid, name)
+            self.roles = list(roles)
+            self.add_roles = AsyncMock()
+            self.remove_roles = AsyncMock()
+
+    megan = Member(7, "m_digio", [dues_role, officer_role])
+    new_member = Member(8, "new_member", [])
+    expired = Member(9, "expired_member", [dues_role])
+    pending = Member(10, "unverified_member", [dues_role])
+    members = [megan, new_member, expired, pending]
+    rows = [
+        row("Megan Digiovanni", "m_digio", "megan@example.org",
+            semester="Spring 2026", verified=True),
+        row("Megan Digiovanni", "m_digio i think", "megan@example.org", verified=True),
+        row("New Member", "new_member i think", "new@example.org", verified=True),
+        row("Expired Member", "expired_member", "expired@example.org",
+            semester="Spring 2026", verified=True),
+        row("Unverified Member", "unverified_member", "pending@example.org"),
+    ]
+    guild = SimpleNamespace(get_role=lambda rid: dues_role if rid == dues_role.id else None)
+    with patch.object(dues.settings, "role_due_paying_id", dues_role.id), \
+            patch.object(dues, "_load_membership_rows_async", AsyncMock(return_value=rows)), \
+            patch.object(dues, "_MEMBERSHIP_ROWS_LAST_AUTHORITATIVE", True), \
+            patch.object(dues, "_ensure_guild_members", AsyncMock(return_value=members)), \
+            patch.object(dues, "log_action"):
+        added, removed = await dues._sync_dues_roles(None, guild, CUR_SEM, date(2026, 9, 16))
+
+    check("verified Fall dues keep Megan's role after Spring expires", False,
+          megan.remove_roles.called)
+    check("new verified member with a handle note gets the role", [new_member], added)
+    check("expired and unverified dues still lose the role", [expired, pending], removed)
+    check("only the dues role is removed", dues_role, expired.remove_roles.call_args.args[0])
+    check("officer role is preserved", True, officer_role in megan.roles)
+
+
 class DeletableMessage(FakeMessage):
     def __init__(self, *args, pinned: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -378,6 +432,7 @@ async def main() -> int:
     test_current_semester_wins_ties()
     test_every_lookup_contributes_candidates()
     test_old_post_is_judged_by_its_own_date()
+    await test_dues_roles_with_handle_notes()
     test_consulting_officers_owe_no_dues()
     await test_pinned_posts_are_never_touched()
     test_threshold_rounding()

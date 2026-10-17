@@ -12,9 +12,13 @@ Run: python scripts/test_vision_handlers.py
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import sys
+import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -127,6 +131,61 @@ logged: List[tuple] = []
 vision.log_action = lambda *a: logged.append(a)
 
 
+async def test_timeout_releases_cv_worker():
+    from tomcat.vision.backend import ModalBackend
+
+    print("\nModal timeouts release the CV worker")
+    release = threading.Event()
+    started = threading.Event()
+
+    class ModalTimeout(Exception):
+        pass
+
+    class Call:
+        object_id = "fc-timeout-regression"
+
+        def get(self, timeout=None):
+            if not release.wait(timeout):
+                raise ModalTimeout("no remote result")
+            return {"detections": []}
+
+    class Method:
+        def remote(self, *args, **kwargs):
+            #The old path waits past Discord's timeout, poisoning the only
+            #worker. Release it in finally so a failing test cannot hang CI.
+            started.set()
+            release.wait()
+            return {"detections": []}
+
+        def spawn(self, *args, **kwargs):
+            started.set()
+            return Call()
+
+    backend = ModalBackend()
+    backend._instance = SimpleNamespace(detect_and_embed=Method())
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        with patch.object(vision, "_CV_EXECUTOR", executor), \
+                patch.object(vision, "_cv_timeout_sec", return_value=0.1), \
+                patch.dict(sys.modules, {"modal.exception": SimpleNamespace(TimeoutError=ModalTimeout)}):
+            try:
+                await asyncio.wait_for(vision._run_cv(
+                    lambda: backend.detect_and_embed(b"image", conf=0.5, detect_imgsz=640, pad_pct=0.1)
+                ), timeout=0.3)
+                check("stalled remote call times out", True, False)
+            except asyncio.TimeoutError:
+                check("stalled remote call times out", True, True)
+            check("the stalled call actually started", True, started.is_set())
+            try:
+                result = await asyncio.wait_for(vision._run_cv(lambda: "next request ran"), timeout=1.0)
+            except asyncio.TimeoutError:
+                result = "worker still occupied"
+            check("the next request uses the same worker successfully", "next request ran", result)
+    finally:
+        release.set()
+        executor.shutdown(wait=True, cancel_futures=True)
+
+
 async def run_command(handler, out_or_exc, *, attachments=(1,), ctx_extra=None):
     tmp: List[str] = []
     install_stubs(out_or_exc, tmp_files=tmp)
@@ -143,6 +202,7 @@ async def main() -> int:
     print("=" * 70)
     print("vision command regression tests")
     print("=" * 70)
+    await test_timeout_releases_cv_worker()
 
     print("\n[1] no image: each command names itself in the hint")
     for handler, want in [

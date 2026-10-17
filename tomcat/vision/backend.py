@@ -26,6 +26,7 @@ import io
 import threading
 import time
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from PIL import Image
@@ -45,6 +46,20 @@ if TYPE_CHECKING:
 # Modal app and class names. Match what cloud/modal/cv_inference.py deploys.
 MODAL_APP_NAME = "tomcat-cv"
 MODAL_CLASS_NAME = "CVInference"
+
+
+_remote_call_state = threading.local()
+
+
+@contextmanager
+def remote_call_deadline(deadline: float):
+    """Share one Discord request's time budget across its blocking GPU calls."""
+    previous = getattr(_remote_call_state, "deadline", None)
+    _remote_call_state.deadline = deadline
+    try:
+        yield
+    finally:
+        _remote_call_state.deadline = previous
 
 
 class CVBackend(ABC):
@@ -324,6 +339,29 @@ class ModalBackend(CVBackend):
             self._cls = modal.Cls.from_name(MODAL_APP_NAME, MODAL_CLASS_NAME)
             self._instance = self._cls()
 
+    def _invoke(self, method_name: str, *args, **kwargs):
+        method = getattr(self._instance, method_name)
+        deadline = getattr(_remote_call_state, "deadline", None)
+        if deadline is None:
+            #Batch retraining and other callers keep their existing behavior.
+            return method.remote(*args, **kwargs)
+        if time.monotonic() >= deadline:
+            raise TimeoutError("CV request time budget exhausted")
+
+        from modal.exception import TimeoutError as ModalTimeoutError
+
+        #wait_for() around an executor future cannot stop its worker thread.
+        #Bound Modal's result wait itself so a stalled RPC releases that worker
+        #and the next Discord request can run without restarting the bot.
+        call = method.spawn(*args, **kwargs)
+        try:
+            return call.get(timeout=max(0.0, deadline - time.monotonic()))
+        except ModalTimeoutError as e:
+            from ..logger import log_action
+
+            log_action("modal_cv_timeout", method_name, f"call_id={call.object_id}")
+            raise TimeoutError(f"Modal {method_name} exceeded the CV request budget") from e
+
     def detect_and_embed(
         self,
         image_bytes: bytes,
@@ -333,7 +371,8 @@ class ModalBackend(CVBackend):
         pad_pct: float,
     ) -> Dict[str, Any]:
         self._ensure_connected()
-        return self._instance.detect_and_embed.remote(
+        return self._invoke(
+            "detect_and_embed",
             image_bytes,
             conf=conf,
             detect_imgsz=detect_imgsz,
@@ -356,7 +395,8 @@ class ModalBackend(CVBackend):
         detect_only = getattr(self._instance, "detect_only", None)
         if detect_only is not None:
             try:
-                result = detect_only.remote(
+                result = self._invoke(
+                    "detect_only",
                     image_bytes, conf=conf, detect_imgsz=detect_imgsz
                 )
             except Exception as e:
@@ -406,7 +446,7 @@ class ModalBackend(CVBackend):
             # negligible quality cost for DINOv3 embedding.
             c.convert("RGB").save(buf, format="JPEG", quality=92)
             crop_bytes.append(buf.getvalue())
-        embs = self._instance.embed_crops.remote(crop_bytes)
+        embs = self._invoke("embed_crops", crop_bytes)
         return np.asarray(embs, dtype=np.float32)
 
     def sam_refine_crop(self, crop_bytes: bytes, prompt_box: List[float]) -> Any:

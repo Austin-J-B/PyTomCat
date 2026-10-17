@@ -30,8 +30,8 @@ _CV_SEM = asyncio.Semaphore(1)
 # default asyncio executor lets an orphaned CV thread (e.g. Modal RPC stuck
 # past wait_for's timeout — the underlying thread has no asyncio-aware cancel)
 # steal a worker from sheet sync, Gmail polling, and the labeler. With
-# max_workers=1, a second CV call queues here instead, and wait_for still
-# times out cleanly — so the fallout from one stuck call is bounded.
+# max_workers=1, model access stays serialized. Modal result waits also use
+# the request deadline so a timeout cannot strand this worker indefinitely.
 _CV_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     max_workers=1, thread_name_prefix="tc-cv"
 )
@@ -45,8 +45,16 @@ _CV_COLD_TIMEOUT_SEC = 120.0  # generous timeout for first-time model loading
 
 async def _run_cv(fn, *args):
     """Run a blocking CV function on the dedicated single-worker executor."""
+    from ..vision.backend import remote_call_deadline
+
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_CV_EXECUTOR, fn, *args)
+    deadline = time.monotonic() + _cv_timeout_sec()
+
+    def run():
+        with remote_call_deadline(deadline):
+            return fn(*args)
+
+    return await loop.run_in_executor(_CV_EXECUTOR, run)
 
 
 def _cv_timeout_sec() -> float:

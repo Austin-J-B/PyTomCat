@@ -2000,6 +2000,10 @@ def _split_handle_candidates(text: str) -> list[str]:
     seen: set[str] = set()
     for p in parts:
         p = p.strip().lstrip('@')
+        #A form answer such as "m_digio i think" still names m_digio. Leaving
+        #the note attached made verified renewals fail the role-sync match
+        #once the previous semester's exact-handle row expired.
+        p = re.sub(r"\s+i\s+think\s*[.!?]*$", "", p, flags=re.I).strip()
         if not p or re.fullmatch(r"(?i)(none|n/?a|na)", p):
             continue
         #If they provided multiple words, keep if it looks like a username (has dot/underscore/number) or short single word
@@ -3605,8 +3609,13 @@ async def _sync_dues_roles(bot, guild, cur_sem: str, today_date) -> tuple[list, 
             if not allow_removals:
                 continue
             try:
-                await member.remove_roles(role_obj, reason="TomCat: dues expired, not renewed")
+                await member.remove_roles(role_obj, reason="TomCat: no matching verified, unexpired dues entry")
                 removed.append(member)
+                log_action(
+                    'dues_role_removed',
+                    f'uid={member.id}; user={member.name}',
+                    f'role={role_id}; reason=no_matching_verified_unexpired_dues; source={membership_source}'
+                )
             except Exception as e:
                 log_action('dues_role_remove_error', f'uid={member.id}', str(e))
     
@@ -4027,7 +4036,7 @@ async def _run_daily_dues_job(bot) -> None:
             role_lines.extend([f"-{n}" for n in added_names])
         if removed:
             removed_names = _names(removed)
-            role_lines.append(f"Roles removed (expired): {len(removed_names)}")
+            role_lines.append(f"Roles removed (no valid verified dues): {len(removed_names)}")
             role_lines.extend([f"-{n}" for n in removed_names])
         try:
             await safe_send(log_ch, '\n'.join(role_lines))

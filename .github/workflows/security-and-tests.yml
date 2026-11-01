@@ -63,6 +63,8 @@ jobs:
           python scripts/test_spam_false_positives.py
           python scripts/test_pending_dues.py
           python scripts/test_log_retention.py
+          python scripts/test_deploy_privilege_boundary.py
+          python scripts/test_sensitive_log_boundary.py
           python scripts/test_labeler_hot_paths.py
           python scripts/test_classify_quality.py
           python scripts/test_labeler_queues.py

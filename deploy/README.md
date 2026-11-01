@@ -16,19 +16,53 @@ tunnel crash produced a Cloudflare **1033** with nothing to restart it).
 
 ## One-time install (run as root)
 
+Systemd units and sudoers policy are privileged configuration. An administrator
+must review them and install from a **root-controlled trusted copy** (for
+example, a checkout under `/root` whose revision was reviewed independently).
+Never install these files directly from `/home/tomcat/PyTomCat`: the `tomcat`
+service can write that checkout. The sync helper is deprecated and fails
+closed.
+
 ```bash
-cd /home/tomcat/PyTomCat
-sudo install -m644 -o root -g root deploy/cloudflared.service /etc/systemd/system/cloudflared.service
-sudo install -m644 -o root -g root deploy/tomcat.service /etc/systemd/system/tomcat.service
-sudo install -m644 -o root -g root deploy/tomcat-deploy.service /etc/systemd/system/tomcat-deploy.service
-sudo install -m644 -o root -g root deploy/tomcat-deploy.timer /etc/systemd/system/tomcat-deploy.timer
-sudo install -m440 -o root -g root deploy/tomcat-cloudflared.sudoers /etc/sudoers.d/tomcat-cloudflared
-sudo visudo -cf /etc/sudoers.d/tomcat-cloudflared   # validate sudoers syntax
-sudo install -m755 -o root -g root deploy/tomcat-sync-units.sh /usr/local/sbin/tomcat-sync-units
+TRUSTED_DEPLOY_DIR=/root/reviewed-PyTomCat/deploy
+sudo install -m644 -o root -g root "$TRUSTED_DEPLOY_DIR/cloudflared.service" /etc/systemd/system/cloudflared.service
+sudo install -m644 -o root -g root "$TRUSTED_DEPLOY_DIR/tomcat.service" /etc/systemd/system/tomcat.service
+sudo install -m644 -o root -g root "$TRUSTED_DEPLOY_DIR/tomcat-deploy.service" /etc/systemd/system/tomcat-deploy.service
+sudo install -m644 -o root -g root "$TRUSTED_DEPLOY_DIR/tomcat-deploy.timer" /etc/systemd/system/tomcat-deploy.timer
+sudo install -m440 -o root -g root "$TRUSTED_DEPLOY_DIR/tomcat-cloudflared.sudoers" /etc/sudoers.d/tomcat-cloudflared
+sudo visudo -cf /etc/sudoers.d/tomcat-cloudflared
 sudo systemctl daemon-reload
 sudo systemctl enable --now cloudflared.service
 sudo systemctl enable --now tomcat.service tomcat-deploy.timer
 ```
+
+### Urgent production migration from automatic unit sync
+
+The previous `tomcat-sync-units` helper installed units and sudoers policy from
+the bot-writable checkout. Remove that path during migration:
+
+1. From a root-controlled trusted copy, review and install the updated deploy
+   script without the helper call:
+
+   ```bash
+   TRUSTED_DEPLOY_DIR=/root/reviewed-PyTomCat/deploy
+   sudo install -m755 -o tomcat -g tomcat "$TRUSTED_DEPLOY_DIR/deploy.sh" /home/tomcat/deploy.sh
+   ```
+
+2. Review and manually install all four unit files and the narrowed sudoers
+   file using the commands above.
+3. Validate the installed sudoers policy with `visudo -cf` as shown, then run
+   `sudo systemctl daemon-reload`.
+4. Confirm the helper is no longer referenced by the active sudoers policy or
+   deployment configuration, then remove the old root-owned helper:
+
+   ```bash
+   sudo grep -R -n --fixed-strings '/usr/local/sbin/tomcat-sync-units' /etc/sudoers /etc/sudoers.d /home/tomcat/deploy.sh /etc/systemd/system || true
+   sudo rm -f /usr/local/sbin/tomcat-sync-units
+   ```
+
+   If the reference check finds any active configuration reference, remove it
+   and confirm again before deleting the helper.
 
 Then restart the bot so `start.py` stops spawning its own (Linux) tunnel child:
 
@@ -49,6 +83,59 @@ It updates with `git merge --ff-only`, which **refuses** when the working tree
 cannot cleanly fast-forward. It must never go back to `git reset --hard`: the
 host holds live runtime state in the working tree, and a hard reset silently
 restores whatever was last committed over it.
+
+### One-time migration for tracked sensitive logs
+
+**Before deploying the commit that removes the tracked `logs/subs/` and
+`logs/moderation/` files, preserve the production data using this procedure.**
+The existing tracked files make `git merge --ff-only` reject the update when
+they contain live changes. The old deploy script cannot automate this
+transition safely.
+
+Stop TomCat first so the log files cannot change while they are copied. The
+archive below is stored outside the checkout in a root-only directory; keep it
+until the restored runtime logs have been verified and backed up elsewhere.
+
+```bash
+REPO_DIR=/home/tomcat/PyTomCat
+BACKUP_DIR=/home/tomcat/backups/pre-sensitive-log-ignore-$(date +%Y%m%d-%H%M%S)
+sudo systemctl stop tomcat tomcat-deploy.timer tomcat-deploy.service
+sudo install -d -o root -g root -m700 "$BACKUP_DIR"
+sudo tar -czf "$BACKUP_DIR/sensitive-logs.tgz" -C "$REPO_DIR" logs/subs logs/moderation
+sudo chmod 600 "$BACKUP_DIR/sensitive-logs.tgz"
+sudo tar -tzf "$BACKUP_DIR/sensitive-logs.tgz"
+```
+
+Review the archive listing to confirm it contains only the expected log paths.
+Restore the checkout copies to their current committed bytes so the fast-forward
+can apply the tracked deletions, then run the deploy script that was updated
+from a trusted copy as described in the urgent unit-sync migration above:
+
+```bash
+sudo -u tomcat git -C "$REPO_DIR" restore --source=HEAD --worktree -- logs/subs logs/moderation
+sudo -u tomcat /home/tomcat/deploy.sh
+sudo systemctl stop tomcat
+```
+
+After the new ignore rules and commit are present, restore the preserved runtime
+logs and verify ownership and restrictive permissions before restarting TomCat:
+
+```bash
+sudo tar -xzf "$BACKUP_DIR/sensitive-logs.tgz" -C "$REPO_DIR"
+sudo chown -R tomcat:tomcat "$REPO_DIR/logs/subs" "$REPO_DIR/logs/moderation"
+sudo find "$REPO_DIR/logs/subs" "$REPO_DIR/logs/moderation" -type d -exec chmod 700 {} +
+sudo find "$REPO_DIR/logs/subs" "$REPO_DIR/logs/moderation" -type f -exec chmod 600 {} +
+sudo find "$REPO_DIR/logs/subs" "$REPO_DIR/logs/moderation" -printf '%u:%g %m %p\n'
+```
+
+Confirm each file is owned by `tomcat:tomcat`, directories are mode `700`, and
+files are mode `600`. Keep the protected archive; do not discard it as part of
+this migration.
+
+```bash
+sudo systemctl start tomcat
+sudo systemctl start tomcat-deploy.timer
+```
 
 Files the bot writes continuously are gitignored and must stay that way:
 
@@ -94,32 +181,24 @@ the DINOv3 gallery, the labeler caches).
 The values suit a CPX21 (4GB). **After rescaling the server, raise `MemoryHigh`
 and `MemoryMax`** -- the decode budget follows them on its own.
 
-Unit changes apply themselves: every `deploy.sh` run calls
-`sudo /usr/local/sbin/tomcat-sync-units`, which reinstalls any unit whose repo
-copy differs from what is in `/etc/systemd/system`, runs `daemon-reload`, and
-lets `deploy.sh` do the restart. To confirm the caps are live after a deploy:
+Code deploys do not install systemd units or sudoers files. Unit and sudoers
+changes require explicit administrator review and installation from a
+root-controlled trusted copy, followed by `daemon-reload` and any needed
+service restart. To confirm the caps are live after a deploy:
 
 ```bash
 systemctl show tomcat -p MemoryHigh -p MemoryMax
 ```
 
-To apply a unit change immediately rather than waiting for 5am, run
-`/home/tomcat/deploy.sh` (a no-op for code if already up to date, but it still
-syncs units), or run the sync and restart by hand:
+To apply a unit change immediately, have an administrator install the reviewed
+unit from the trusted copy, then reload systemd and restart the affected unit:
 
 ```bash
-sudo /usr/local/sbin/tomcat-sync-units && sudo systemctl restart tomcat
+sudo systemctl daemon-reload && sudo systemctl restart tomcat
 ```
 
-Two things the sync deliberately does **not** do:
-
-- **It will not install a `deploy/` tree that differs from `HEAD`.** The bot can
-  write its own checkout (`ReadWritePaths`), so installing unverified files
-  would let a compromised bot plant a root-run unit and wait for the timer.
-  A dirty `deploy/` aborts the sync with a non-zero exit instead.
-- **It does not update itself.** `tomcat-sync-units` runs as root, so changes to
-  `deploy/tomcat-sync-units.sh` need the `install` line from the one-time setup
-  re-run by hand. Only the units it copies deploy automatically.
+The deprecated `tomcat-sync-units` script now exits with an error and performs
+no privileged actions. Do not install or invoke it.
 
 ### Swap
 

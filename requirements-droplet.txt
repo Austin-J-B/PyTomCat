@@ -32,4 +32,4 @@ torchvision==0.29.1
 requests==2.34.2
 
 # Modal cloud (CV inference offload)
-modal==1.4.2
+modal==1.6.3

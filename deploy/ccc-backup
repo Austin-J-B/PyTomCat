@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+MODE="${1:-essential}"
+OUT=/home/tomcat/backups/offsite-staging
+RECIPIENTS=/etc/ccc-backup/recipients.txt
+REMOTE=ccc-drive
+REMOTE_DIR=CCC-Encrypted-Server-Backups
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+
+case "$MODE" in
+  essential)
+    SOURCES=(
+      home/tomcat/PyTomCat/logs
+      home/tomcat/PyTomCat/cache/feeding_schedule.ndjson
+      home/tomcat/PyTomCat/cache/feeding_checklist.ndjson
+      home/tomcat/PyTomCat/cache/stations.ndjson
+      home/tomcat/PyTomCat/cache/catabase
+      home/tomcat/PyTomCat/cache/sheets
+      "home/tomcat/PyTomCat/TomCatBot Pics.csv"
+      home/tomcat/PyTomCat/.env
+      home/tomcat/PyTomCat/config.yml
+      home/tomcat/PyTomCat/credentials
+      home/tomcat/deploy.sh
+      etc/ssh/sshd_config.d/90-ccc-hardening.conf
+      etc/sudoers.d/ccc-austin
+      etc/sudoers.d/tomcat-cloudflared
+      etc/systemd/system/tomcat.service
+      etc/systemd/system/cloudflared.service
+      etc/systemd/system/tomcat-deploy.service
+      etc/systemd/system/tomcat-deploy.timer
+      usr/local/sbin/ccc-backup
+      etc/ccc-backup/recipients.txt
+      etc/systemd/system/ccc-backup-essential.service
+      etc/systemd/system/ccc-backup-essential.timer
+      etc/systemd/system/ccc-backup-models.service
+      etc/systemd/system/ccc-backup-models.timer
+    )
+    ;;
+  models)
+    SOURCES=(home/tomcat/PyTomCat/weights)
+    ;;
+  *)
+    echo "usage: $0 essential|models" >&2
+    exit 2
+    ;;
+esac
+
+install -d -m700 -o root -g root "$OUT"
+test -s "$RECIPIENTS"
+TMP="$OUT/.ccc-$MODE-$STAMP.tar.zst.age.tmp"
+FINAL="$OUT/ccc-$MODE-$STAMP.tar.zst.age"
+CHECKSUM="$FINAL.sha256"
+trap 'rm -f "$TMP"' EXIT
+
+tar -C / --create --file=- --numeric-owner --acls --xattrs --ignore-failed-read "${SOURCES[@]}" \
+  | zstd -T0 -q -3 \
+  | age -R "$RECIPIENTS" -o "$TMP"
+
+test -s "$TMP"
+mv "$TMP" "$FINAL"
+sha256sum "$FINAL" > "$CHECKSUM"
+chmod 600 "$FINAL" "$CHECKSUM"
+trap - EXIT
+
+if rclone listremotes 2>/dev/null | grep -qx "$REMOTE:"; then
+  rclone copyto "$FINAL" "$REMOTE:$REMOTE_DIR/$(basename "$FINAL")" --transfers 1 --checkers 2
+  rclone copyto "$CHECKSUM" "$REMOTE:$REMOTE_DIR/$(basename "$CHECKSUM")" --transfers 1 --checkers 2
+  UPLOADED=yes
+else
+  UPLOADED=no
+fi
+
+find "$OUT" -maxdepth 1 -type f \( -name 'ccc-*.tar.zst.age' -o -name 'ccc-*.tar.zst.age.sha256' \) -mtime +7 -delete
+logger -t ccc-backup "mode=$MODE bytes=$(stat -c %s "$FINAL") uploaded=$UPLOADED file=$(basename "$FINAL")"
+printf 'backup=%s\nsha256=%s\nuploaded=%s\n' "$FINAL" "$(cut -d' ' -f1 "$CHECKSUM")" "$UPLOADED"

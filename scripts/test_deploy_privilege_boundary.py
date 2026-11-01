@@ -16,6 +16,17 @@ ROOT = Path(__file__).resolve().parents[1]
 SUDOERS = (ROOT / "deploy" / "tomcat-cloudflared.sudoers").read_text(encoding="utf-8")
 DEPLOY = (ROOT / "deploy" / "deploy.sh").read_text(encoding="utf-8")
 HELPER = (ROOT / "deploy" / "tomcat-sync-units.sh").read_text(encoding="utf-8")
+BACKUP = (ROOT / "deploy" / "ccc-backup").read_text(encoding="utf-8")
+BACKUP_RECIPIENTS_EXAMPLE = (
+    ROOT / "deploy" / "ccc-backup-recipients.example"
+).read_text(encoding="utf-8")
+BACKUP_UNITS = [
+    (ROOT / "deploy" / name).read_text(encoding="utf-8")
+    for name in (
+        "ccc-backup-essential.service",
+        "ccc-backup-models.service",
+    )
+]
 
 
 def check(label: str, ok: bool) -> None:
@@ -40,6 +51,25 @@ def main() -> int:
           not re.search(r"/(?:etc/systemd/system|etc/sudoers(?:\.d)?)(?:/|\b)", HELPER))
     check("deprecated helper fails closed with administrator guidance",
           "exit 1" in HELPER and "administrator" in HELPER.lower())
+
+    check("backup encrypts to public recipients and has no decrypt path",
+          'age -R "$RECIPIENTS"' in BACKUP and not re.search(r"\bage\s+(?:-[^\s]+\s+)*-d\b", BACKUP))
+    check("backup preserves its own recovery configuration",
+          all(path in BACKUP for path in (
+              "usr/local/sbin/ccc-backup",
+              "etc/ccc-backup/recipients.txt",
+              "etc/systemd/system/ccc-backup-essential.service",
+              "etc/systemd/system/ccc-backup-essential.timer",
+              "etc/systemd/system/ccc-backup-models.service",
+              "etc/systemd/system/ccc-backup-models.timer",
+          )))
+    check("backup never deletes or synchronizes remote data",
+          not re.search(r"\brclone\s+(?:delete|deletefile|purge|sync|rmdirs?)\b", BACKUP))
+    check("backup services enforce a private umask",
+          all("UMask=0077" in unit for unit in BACKUP_UNITS))
+    check("recipient example contains no real public key",
+          not re.search(r"(?m)^ssh-(?:ed25519|rsa)\s+[A-Za-z0-9+/]{40,}={0,3}(?:\s|$)",
+                        BACKUP_RECIPIENTS_EXAMPLE))
 
     # The regular deploy lifecycle must remain intact after removing unit sync.
     check("deploy preserves fast-forward updates and dependency install",

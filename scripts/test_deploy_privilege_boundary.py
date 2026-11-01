@@ -4,8 +4,13 @@ Run: python scripts/test_deploy_privilege_boundary.py
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _test_support  # noqa: F401, E402
 
 ROOT = Path(__file__).resolve().parents[1]
 SUDOERS = (ROOT / "deploy" / "tomcat-cloudflared.sudoers").read_text(encoding="utf-8")

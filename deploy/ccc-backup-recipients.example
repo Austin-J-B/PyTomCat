@@ -1,0 +1,5 @@
+# One age-compatible SSH public key per line. Use at least two independently
+# controlled officer recovery keys so a lost private key does not make every
+# backup unrecoverable. Never put private keys in this file or in Git.
+# ssh-ed25519 AAAA... officer-1-backup-recovery
+# ssh-ed25519 AAAA... officer-2-backup-recovery

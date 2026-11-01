@@ -200,6 +200,48 @@ sudo systemctl daemon-reload && sudo systemctl restart tomcat
 The deprecated `tomcat-sync-units` script now exits with an error and performs
 no privileged actions. Do not install or invoke it.
 
+## Encrypted off-site backups
+
+`ccc-backup` creates `age`-encrypted archives locally and uploads only the
+ciphertext and its SHA-256 sidecar to the `ccc-drive` rclone remote. Essential
+runtime and recovery state is backed up daily; model weights are backed up
+weekly. Large, reproducible image caches are intentionally excluded.
+
+The production host must not hold a decryption key. Put only public recipients
+in `/etc/ccc-backup/recipients.txt`, with at least two independently controlled
+officer recovery keys. The rclone OAuth configuration is a secret and must stay
+root-only at `/root/.config/rclone/rclone.conf`; never copy it into Git.
+
+After reviewing these files from a root-controlled trusted checkout, install
+them with:
+
+```bash
+TRUSTED_DEPLOY_DIR=/root/reviewed-PyTomCat/deploy
+sudo install -m755 -o root -g root "$TRUSTED_DEPLOY_DIR/ccc-backup" /usr/local/sbin/ccc-backup
+sudo install -d -m755 -o root -g root /etc/ccc-backup
+# Create recipients.txt manually from reviewed public keys; do not install the
+# example file unchanged.
+sudo install -m644 -o root -g root "$TRUSTED_DEPLOY_DIR/ccc-backup-essential.service" /etc/systemd/system/
+sudo install -m644 -o root -g root "$TRUSTED_DEPLOY_DIR/ccc-backup-essential.timer" /etc/systemd/system/
+sudo install -m644 -o root -g root "$TRUSTED_DEPLOY_DIR/ccc-backup-models.service" /etc/systemd/system/
+sudo install -m644 -o root -g root "$TRUSTED_DEPLOY_DIR/ccc-backup-models.timer" /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ccc-backup-essential.timer ccc-backup-models.timer
+```
+
+Validate a manual run and confirm `uploaded=yes` before relying on the timers:
+
+```bash
+sudo systemctl start ccc-backup-essential.service
+sudo systemctl show ccc-backup-essential.service -p Result -p ExecMainStatus
+sudo journalctl -t ccc-backup -n 5 --no-pager
+```
+
+Local ciphertext older than seven days is removed after a successful run.
+Remote archives are deliberately not deleted by the server: a compromised host
+should not automatically erase the recovery history. Review Drive retention
+and perform a test restore with an officer-held key at least once per semester.
+
 ### Swap
 
 There is no swap on this host, so a spike has nowhere to go but the OOM killer.

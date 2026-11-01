@@ -7,7 +7,7 @@ beautifulsoup4==4.15.0
 discord.py==2.7.1
 gspread==6.2.1
 numpy==2.5.3
-Pillow==12.3.0
+Pillow==13.0.0
 pyflakes==3.4.0
 python-dotenv==1.2.3
 rapidfuzz==3.10.1

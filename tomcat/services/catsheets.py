@@ -10,12 +10,12 @@ from __future__ import annotations
 from typing import Any
 import asyncio
 import csv
-import datetime as dt
 import json
 import random
 import time
 from .sheets_client import sheets_client
 from . import local_photos
+from .cat_age import format_age_value, age_estimate_label
 from ..config import settings
 try:
     from ..utils.text import norm_alnum_lower
@@ -479,18 +479,9 @@ async def get_cat_profile(query: str) -> dict | str:
     if not best_row:
         return f"No match for '{query}'."
 
-    #Compute approximate age from birthday_estimate if formatted like M/D/YYYY
-    age = None
-    try:
-        b = best_row[IDX["birthday_estimate"]] if len(best_row) > IDX["birthday_estimate"] else ""
-        if b:
-            m, d, y = [int(x) for x in str(b).split("/")]
-            bd = dt.date(y, m, d)
-            today = dt.date.today()
-            years = today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day))
-            age = f"~{years} years old"
-    except Exception:
-        pass
+    birthday = best_row[IDX["birthday_estimate"]] if len(best_row) > IDX["birthday_estimate"] else ""
+    last_seen = best_row[IDX["last_seen_date"]] if len(best_row) > IDX["last_seen_date"] else ""
+    age = format_age_value(birthday, last_seen)
 
     return {
         "actual_name": best_row[IDX["full_name"]].strip() if len(best_row) > IDX["full_name"] else query.strip(),
@@ -501,6 +492,7 @@ async def get_cat_profile(query: str) -> dict | str:
         "last_seen_date": best_row[IDX["last_seen_date"]] if len(best_row) > IDX["last_seen_date"] else None,
         "last_seen_time": best_row[IDX["last_seen_time"]] if len(best_row) > IDX["last_seen_time"] else None,
         "last_seen_by": best_row[IDX["last_seen_by"]] if len(best_row) > IDX["last_seen_by"] else None,
+        "birthday_estimate": birthday,
         "age": age,
         "tnrd": best_row[IDX["tnrd"]] if len(best_row) > IDX["tnrd"] else None,
         "tnr_date": best_row[IDX["tnr_date"]] if len(best_row) > IDX["tnr_date"] else None,
@@ -543,7 +535,8 @@ async def build_profile_embed(query: str) -> dict | str:
         lines.append(f"**Location:** {location}")
     age = prof.get("age")
     if age:
-        lines.append(f"**Age Estimate:** {age}")
+        label = age_estimate_label(prof.get("birthday_estimate"), prof.get("last_seen_date"))
+        lines.append(f"**{label}:** {age}")
     sex = prof.get("sex")
     if sex:
         lines.append(f"**Sex:** {sex}")

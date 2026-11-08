@@ -1100,6 +1100,60 @@ def _open_request_index(subs: List[dict], today_iso: str) -> Dict[tuple, Any]:
     return index
 
 
+def _sub_claims_for_date(subs: List[dict], date_iso: str) -> Dict[tuple, Any]:
+    """(requester, station) -> who covers that shift on date_iso.
+
+    The one rule the morning roster, the 8pm ping and the schedule lookup all
+    share, so they cannot disagree about who is feeding. A claim counts only
+    against a request still in the log, and only for a station and date that
+    request asked for. If a shift was claimed more than once -- the same
+    request posted twice and both copies taken -- the earliest claim in the log
+    wins: that volunteer saw it open first and was told it was theirs.
+
+    A sub who later asks for their own sub hands the shift on, so each entry
+    follows that chain to whoever holds the shift at the end of it.
+    """
+    #Not named `requests`: check_event_loop_blocking.py reads requests.get as
+    #the HTTP library.
+    by_id = {
+        r.get("id"): r
+        for r in subs
+        if r.get("status") == "requested" and r.get("id") and r.get("requester")
+    }
+    direct: Dict[tuple, Any] = {}
+    for record in subs:
+        if record.get("status") != "accepted":
+            continue
+        assignee = record.get("assignee")
+        if not assignee:
+            continue
+        if date_iso not in _normalize_dates(record.get("dates") or []):
+            continue
+        request = by_id.get(record.get("parent_id")) or by_id.get(record.get("id"))
+        if request is None and not record.get("parent_id") and record.get("requester"):
+            #A legacy row accepted in place: the request and its claim are the
+            #same record.
+            request = record
+        if request is None:
+            continue
+        if date_iso not in _normalize_dates(request.get("dates") or []):
+            continue
+        asked_for = _canonical_stations(request)
+        requester = str(request.get("requester"))
+        for station in _canonical_stations(record):
+            if station in asked_for:
+                direct.setdefault((requester, station), assignee)
+
+    claims: Dict[tuple, Any] = {}
+    for (requester, station), assignee in direct.items():
+        seen = {requester}
+        while str(assignee) not in seen and (str(assignee), station) in direct:
+            seen.add(str(assignee))
+            assignee = direct[(str(assignee), station)]
+        claims[(requester, station)] = assignee
+    return claims
+
+
 async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.View | None]:
     """Builds the 7:45 AM 'Good Morning' message with the day's feeding schedule."""
     today = datetime.now(CENTRAL_TZ).date() if CENTRAL_TZ else date.today()
@@ -1117,14 +1171,8 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
         files = _load_sub_files(_all_sub_month_keys(), include_legacy=True)
         subs = [item for sublist in files for item in sublist[1]]
 
-    #Map accepted request IDs to assignees for today
-    accepted_req_map = {
-        r.get("parent_id"): r.get("assignee") 
-        for r in subs 
-        if r.get("status") == "accepted" 
-        and today_iso in _normalize_dates(r.get("dates") or [])
-        and r.get("parent_id")
-    }
+    #Who has taken which scheduled feeder's shift today
+    claims = _sub_claims_for_date(subs, today_iso)
 
     lines = ["Good Morning!", "Todays currently scheduled feeders are:"]
     open_request_exists = False
@@ -1136,15 +1184,13 @@ async def build_morning_message(bot: discord.Client) -> tuple[str, discord.ui.Vi
         station_canonical = _canonical_station(station) or station
 
         for feeder_id in original_feeders:
-            feeder_request_id = open_requests.get((str(feeder_id), station_canonical))
-            if feeder_request_id:
-                sub_assignee_id = accepted_req_map.get(feeder_request_id)
-                if sub_assignee_id:
-                    roster_parts.append(_format_user(bot, sub_assignee_id, False))
-                else:
-                    original_feeder_name = _format_user(bot, feeder_id, False)
-                    roster_parts.append(f"Needs Sub (for {original_feeder_name})")
-                    open_request_exists = True
+            sub_assignee_id = claims.get((str(feeder_id), station_canonical))
+            if sub_assignee_id:
+                roster_parts.append(_format_user(bot, sub_assignee_id, False))
+            elif open_requests.get((str(feeder_id), station_canonical)):
+                original_feeder_name = _format_user(bot, feeder_id, False)
+                roster_parts.append(f"Needs Sub (for {original_feeder_name})")
+                open_request_exists = True
             else:
                 roster_parts.append(_format_user(bot, feeder_id, False))
 
@@ -1412,8 +1458,8 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> bool:
                 for _, rows in files:
                     subs.extend(rows)
             today_iso = today.isoformat()
-            request_map = _build_request_map(subs)
-            assigned_unfed = [st for st in unfed if _assignees_for_station(st, sched, subs, today_iso, request_map)]
+            claims = _sub_claims_for_date(subs, today_iso)
+            assigned_unfed = [st for st in unfed if _assignees_for_station(st, sched, subs, today_iso, claims)]
 
         if not assigned_unfed:
             msg = "All stations have been fed! Yippee!!!"
@@ -1444,12 +1490,31 @@ async def _run_8pm_check(bot: discord.Client, *, force: bool = False) -> bool:
             log_action("feeding_8pm_error", f"unfed={len(unfed)}", f"{type(e).__name__}: {e}")
             return False
 
-def _build_request_map(subs: List[dict]) -> Dict[str, int | str]:
-    return {
-        r.get("id"): r.get("requester")
-        for r in subs
-        if r.get("status") == "requested" and r.get("id") and r.get("requester")
-    }
+def _unscheduled_claims(
+    subs: List[dict],
+    date_iso: str,
+    sched: Dict[str, List[int | str]],
+) -> Dict[str, Any]:
+    """station -> who claimed it on date_iso, for stations nobody is scheduled on.
+
+    With no scheduled feeder there is no requester to match against, so the
+    claim stands on its own. Earliest in the log wins, as it does in
+    _sub_claims_for_date.
+    """
+    found: Dict[str, Any] = {}
+    for r in subs:
+        if r.get("status") != "accepted":
+            continue
+        assignee = r.get("assignee")
+        if not assignee:
+            continue
+        if date_iso not in _normalize_dates(r.get("dates") or []):
+            continue
+        for station in _canonical_stations(r):
+            if sched.get(station):
+                continue
+            found.setdefault(station, assignee)
+    return found
 
 
 def _assignees_for_station(
@@ -1457,55 +1522,18 @@ def _assignees_for_station(
     sched: Dict[str, List[int | str]],
     subs: List[dict],
     today_iso: str,
-    request_map: Optional[Dict[str, int | str]] = None,
+    claims: Optional[Dict[tuple, Any]] = None,
 ) -> List[int | str]:
     key = _canonical_station(station) or station
     scheduled_ids = sched.get(key, [])
     if not scheduled_ids:
-        #Check for subs for unassigned stations
-        for r in reversed(subs):
-            if r.get("status") != "accepted":
-                continue
-            rec_station = _canonical_station(r.get("station")) or r.get("station")
-            if rec_station != key:
-                continue
-            if today_iso not in _normalize_dates(r.get("dates") or []):
-                continue
-            assignee_id = r.get("assignee")
-            if assignee_id:
-                return [assignee_id]  #Return the sub, even if no one was scheduled
-        return []
+        #Return the sub, even if no one was scheduled
+        assignee_id = _unscheduled_claims(subs, today_iso, sched).get(key)
+        return [assignee_id] if assignee_id else []
 
-    final_assignees = list(scheduled_ids)
-    request_map = request_map or _build_request_map(subs)
-    processed_requesters = set()
-
-    for r in reversed(subs):
-        if r.get("status") != "accepted":
-            continue
-
-        rec_station = _canonical_station(r.get("station")) or r.get("station")
-        if rec_station != key:
-            continue
-
-        if today_iso not in _normalize_dates(r.get("dates") or []):
-            continue
-
-        parent_id = r.get("parent_id")
-        requester_id = request_map.get(parent_id)
-        assignee_id = r.get("assignee")
-
-        if not requester_id and r.get("id"):
-            parent_id = r.get("id")
-            requester_id = request_map.get(parent_id)
-
-        if requester_id and assignee_id and requester_id in final_assignees:
-            if requester_id in processed_requesters:
-                continue
-
-            final_assignees = [assignee_id if u == requester_id else u for u in final_assignees]
-            processed_requesters.add(requester_id)
-
+    if claims is None:
+        claims = _sub_claims_for_date(subs, today_iso)
+    final_assignees = [claims.get((str(uid), key), uid) for uid in scheduled_ids]
     return list(dict.fromkeys(final_assignees))
 
 async def build_8pm_lines(
@@ -1533,10 +1561,10 @@ async def build_8pm_lines(
     today_iso = today.isoformat()
 
     sched = sched or {}
-    request_map = _build_request_map(subs)
+    claims = _sub_claims_for_date(subs, today_iso)
 
     def _assignees_for(station: str) -> List[int | str]:
-        return _assignees_for_station(station, sched, subs, today_iso, request_map)
+        return _assignees_for_station(station, sched, subs, today_iso, claims)
 
     def _format_station_line(station: str) -> str:
         assignees = _assignees_for(station)
@@ -1601,22 +1629,20 @@ async def build_schedule_for_date(
             subs.extend(rows)
 
     target_iso = target_date.isoformat()
-    accepted: Dict[str, int] = {}
-    for rec in reversed(subs):
-        if rec.get("status") != "accepted":
-            continue
-        dates = _normalize_dates(rec.get("dates") or [])
-        if target_iso not in dates:
-            continue
-        station = _canonical_station(rec.get("station")) or rec.get("station")
-        assignee = rec.get("assignee")
-        if station and isinstance(assignee, int) and station not in accepted:
-            accepted[station] = assignee
-
+    claims = _sub_claims_for_date(subs, target_iso)
+    accepted: Dict[str, Any] = {}
+    for station, feeders in sched.items():
+        for uid in feeders or []:
+            sub_uid = claims.get((str(uid), _canonical_station(station) or station))
+            if sub_uid and station not in accepted:
+                accepted[station] = sub_uid
     stations: List[str] = list(sched.keys())
-    for st in accepted.keys():
-        if st not in stations:
-            stations.append(st)
+    #A claim on a station nobody was scheduled for still shows, as at 8pm.
+    for station, assignee in _unscheduled_claims(subs, target_iso, sched).items():
+        if station not in accepted:
+            accepted[station] = assignee
+        if station not in stations:
+            stations.append(station)
 
     header = target_date.strftime("%A, %B %d, %Y").replace(" 0", " ")
     lines: List[str] = [f"**Feeding schedule for {header}**"]

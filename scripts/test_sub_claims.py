@@ -73,8 +73,10 @@ def main() -> int:
         accepted("r2", "West Hall", "2026-05-02"),
     ))
     check("open requests keyed by id", ["r1", "r2"], sorted(index))
-    check("taken shifts keyed by request, station and date",
-          {("r2", "West Hall", "2026-05-02")}, taken)
+    #Also keyed by whose shift it is, so a request posted twice is taken once.
+    check("taken shifts keyed by request, station and date, and by shift",
+          {("r2", "West Hall", "2026-05-02"),
+           tomcat_main._shift_key("100", "West Hall", "2026-05-02")}, taken)
 
     print("\n[2] a multi-station request marks each station taken separately")
     both = {

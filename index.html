@@ -1330,7 +1330,7 @@
                         </div>
 
                         <div class="form-row actions">
-                            <button class="save-btn" onclick="submitSubRequest()">Submit</button>
+                            <button class="save-btn" id="sub-submit-btn" onclick="submitSubRequest()">Submit</button>
                             <div id="sub-status" class="save-status"></div>
                         </div>
                     </div>
@@ -3915,6 +3915,11 @@
             });
 
             if (!requests.length) { if (status) status.textContent = "Select at least one station."; return; }
+            //A second click while the first is in flight used to file the same
+            //request twice, and both copies could then be claimed.
+            const submitBtn = document.getElementById('sub-submit-btn');
+            if (submitBtn && submitBtn.disabled) return;
+            if (submitBtn) submitBtn.disabled = true;
             status.textContent = "Submitting...";
             try {
                 const endpoint = apiBase ? `${apiBase}/api/subrequest` : '/api/subrequest';
@@ -3928,8 +3933,13 @@
                         requests
                     })
                 });
+                if (res.status === 409) { status.textContent = await res.text(); return; }
                 if (!res.ok) throw new Error(await res.text());
-                status.textContent = "Submitted";
+                const result = await res.json().catch(() => ({}));
+                const skipped = Array.isArray(result.skipped) ? result.skipped.length : 0;
+                status.textContent = skipped
+                    ? "Submitted (some shifts were already requested and were skipped)"
+                    : "Submitted";
                 await loadOpenSubs();
                 selectedDates = new Set();
                 selectedStationsByDate = {};
@@ -3940,6 +3950,8 @@
                 setRequestTab('available');
             } catch (e) {
                 status.textContent = "Submit failed";
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
 
@@ -4042,6 +4054,13 @@
                         }))
                     })
                 });
+                //Somebody else got there first: say so, and refresh the list so
+                //the shift they took stops showing as open.
+                if (res.status === 409) {
+                    status.textContent = await res.text();
+                    await loadOpenSubs();
+                    return;
+                }
                 if (!res.ok) throw new Error(await res.text());
                 status.textContent = "Submitted";
                 await loadOpenSubs();

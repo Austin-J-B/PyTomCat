@@ -852,6 +852,13 @@ def _collect_sub_request_items(files: Any) -> Tuple[Dict[tuple, Any], List[dict]
         except Exception:
             #A malformed line in one month's log should not hide the others.
             continue
+    #A shift posted under two request ids is covered once either is claimed,
+    #so the other copy must not keep showing as open. Earliest claim wins.
+    requester_of = {item["id"]: item["requester_id"] for item in items if item.get("requester_id")}
+    for (parent, station, date_iso), assignee in list(accepted_map.items()):
+        requester = requester_of.get(parent)
+        if requester and assignee:
+            accepted_map.setdefault(_shift_key(requester, station, date_iso), assignee)
     return accepted_map, items, requester_ids, assignee_ids
 
 
@@ -876,6 +883,10 @@ def _bucket_sub_requests(
         except (TypeError, ValueError):
             when = None
         assignee = accepted_map.get((item.get("id"), item.get("station"), date_iso))
+        if not assignee and item.get("requester_id"):
+            assignee = accepted_map.get(
+                _shift_key(item["requester_id"], item.get("station"), date_iso)
+            )
 
         out = dict(item)
         if item.get("requester_id") and not item.get("requester_name"):
@@ -900,6 +911,25 @@ def _bucket_sub_requests(
     return buckets
 
 
+def _record_stations(record: dict) -> List[str]:
+    return [
+        str(v) for v in (
+            record.get("stations")
+            or ([record.get("station")] if record.get("station") else [])
+        )
+    ]
+
+
+def _shift_key(requester: Any, station: str, date_iso: str) -> tuple:
+    """The shift a claim covers: whose, which station, which day.
+
+    Distinct from a (request id, station, date) claim key: the same shift can
+    sit under two request ids when a request was posted twice, and it must
+    still only be taken once.
+    """
+    return ("shift", str(requester), str(station), str(date_iso))
+
+
 def _index_sub_records(
     files: Any,
 ) -> Tuple[Dict[str, dict], set]:
@@ -908,25 +938,65 @@ def _index_sub_records(
     Both come from the server's own logs, never from the request body: a claim
     names an id and nothing else is trusted, so a client cannot turn its own
     strings into a Discord mention. Taken claims are keyed by
-    (request id, station, date), which is the granularity a claim covers.
+    (request id, station, date), which is the granularity a claim covers, and
+    also by _shift_key, so a shift posted under two request ids is still only
+    taken once. A claim whose request has since been deleted covers no shift.
     """
     requested: Dict[str, dict] = {}
     accepted = set()
+    claims: List[tuple] = []
     for _path, rows in files:
         for record in rows:
             record_id = str(record.get("id") or "")
             dates = record.get("dates") or []
             date_iso = str(dates[0]) if dates else ""
-            stations = record.get("stations") or (
-                [record.get("station")] if record.get("station") else []
-            )
             if record.get("status") == "requested" and record_id:
                 requested[record_id] = record
             elif record.get("status") == "accepted":
                 parent = str(record.get("parent_id") or record_id)
-                for station in stations:
-                    accepted.add((parent, str(station), date_iso))
+                for station in _record_stations(record):
+                    accepted.add((parent, station, date_iso))
+                    claims.append((parent, station, date_iso))
+    for parent, station, date_iso in claims:
+        source = requested.get(parent)
+        if source and source.get("requester"):
+            accepted.add(_shift_key(source.get("requester"), station, date_iso))
     return requested, accepted
+
+
+def _drop_duplicate_requests(
+    parsed_requests: List[dict],
+    requester: Any,
+    files: Any,
+) -> Tuple[List[dict], List[dict]]:
+    """Split a submission into what is new and what this requester already asked.
+
+    Returns (kept, skipped), each a list of {date, stations}. Asking twice for
+    the same station on the same day used to file a second request that could
+    be claimed by a second volunteer, after which the morning and 8pm posts
+    named different people for the one shift.
+    """
+    already = set()
+    for _path, rows in files:
+        for record in rows:
+            if record.get("status") != "requested":
+                continue
+            if str(record.get("requester")) != str(requester):
+                continue
+            for date_iso in record.get("dates") or []:
+                for station in _record_stations(record):
+                    already.add((str(station), str(date_iso)))
+    kept: List[dict] = []
+    skipped: List[dict] = []
+    for req in parsed_requests:
+        date_iso = str(req["date"])
+        new = [st for st in req["stations"] if (str(st), date_iso) not in already]
+        old = [st for st in req["stations"] if (str(st), date_iso) in already]
+        if new:
+            kept.append({**req, "stations": new})
+        if old:
+            skipped.append({"date": date_iso, "stations": old})
+    return kept, skipped
 
 
 def _validate_sub_claims(
@@ -958,12 +1028,7 @@ def _validate_sub_claims(
         if not date_iso:
             return [], (400, "Invalid date")
         source_dates = [str(v) for v in (source.get("dates") or [])]
-        source_stations = [
-            str(v) for v in (
-                source.get("stations")
-                or ([source.get("station")] if source.get("station") else [])
-            )
-        ]
+        source_stations = _record_stations(source)
         #The claim has to name a station and date the request actually asked
         #for, not just a request id that exists.
         if date_iso not in source_dates or station not in source_stations:
@@ -971,7 +1036,11 @@ def _validate_sub_claims(
         claim_key = (parent_id, station, date_iso)
         if claim_key in accepted or claim_key in pending:
             return [], (409, "Request already claimed")
+        shift = _shift_key(source.get("requester"), station, date_iso)
+        if shift in accepted or shift in pending:
+            return [], (409, "That shift is already covered")
         pending.add(claim_key)
+        pending.add(shift)
         validated.append((
             parent_id, station, date_iso,
             source.get("requester"), source.get("requester_name") or "",
@@ -2023,6 +2092,25 @@ async def start_web_server(bot):
         if not parsed_requests:
             return _with_cors(web.Response(status=400, text="Missing required fields"), request)
 
+        #Nothing awaits between this read and the appends below, so a second
+        #copy of the same submission cannot slip in between them.
+        from .handlers.feeding import _sub_month_key_from_date
+        month_keys = list(dict.fromkeys(
+            key for key in (_sub_month_key_from_date(req["date"]) for req in parsed_requests) if key
+        ))
+        parsed_requests, skipped = _drop_duplicate_requests(
+            parsed_requests,
+            req_user_id,
+            _feed._load_sub_files(
+                month_keys=month_keys or None,
+                include_legacy=_feed.SUBS_LEGACY_FILE.exists(),
+            ),
+        )
+        if not parsed_requests:
+            return _with_cors(web.Response(
+                status=409, text="You already asked for a sub for that shift",
+            ), request)
+
         batch_id = f"sub-{int(datetime.now().timestamp()*1000)}"
         created_ts = datetime.now().isoformat()
         records_written = []
@@ -2079,7 +2167,7 @@ async def start_web_server(bot):
         except Exception:
             pass
 
-        return _with_cors(web.json_response({"status": "ok"}), request)
+        return _with_cors(web.json_response({"status": "ok", "skipped": skipped}), request)
     
     async def delete_subrequest(request):
         """Physically remove a request from the log file."""

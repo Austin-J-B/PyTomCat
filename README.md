@@ -32,6 +32,8 @@ This repository contains the Python bot, its volunteer web interface, and the co
 
 Messages go through a rule-based intent router with aliases, fuzzy matching, and recent-message context. That lets TomCat handle requests such as `tomcat show me microwave`, including cases where someone sends a photo and its accompanying text separately. There is no LLM in the command-routing path.
 
+Use `tom show me sn12345` to retrieve a specific photo. Its reply includes a **photo origin** link to the original Discord message, the date it was posted, and any labeled cats when that metadata is available.
+
 ```mermaid
 flowchart LR
     D[Discord messages and reactions] --> R[Intent router]

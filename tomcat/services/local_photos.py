@@ -802,6 +802,47 @@ def read_metadata_rows() -> list[dict[str, str]]:
         return _read_metadata_rows_locked(metadata_path)
 
 
+def get_photo_details(serial: int) -> dict[str, Any]:
+    """Return a photo's original message link, posting date and saved cat labels."""
+    row = next(
+        (row for row in read_metadata_rows() if _parse_serial_like(row.get("Serial Number")) == serial),
+        None,
+    )
+    if row is None:
+        return {}
+
+    guild_id = str(row.get("Guild ID") or "").strip() or "@me"
+    channel_id = str(row.get("Channel") or "").strip()
+    message_id = str(row.get("Message ID") or "").strip()
+    origin_url = ""
+    if (
+        (guild_id == "@me" or re.fullmatch(r"[1-9][0-9]*", guild_id))
+        and re.fullmatch(r"[1-9][0-9]*", channel_id)
+        and re.fullmatch(r"[1-9][0-9]*", message_id)
+    ):
+        origin_url = f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+    else:
+        stored_url = str(row.get("Discord URL") or "").strip()
+        if re.fullmatch(r"https://(?:www\.)?discord(?:app)?\.com/channels/(?:@me|[0-9]+)/[0-9]+/[0-9]+/?", stored_url):
+            origin_url = stored_url
+
+    cat_names: list[str] = []
+    seen: set[str] = set()
+    for token in str(row.get("Box Cat IDs") or "").split("|"):
+        name = _CAT_LABEL_PREFIX_RE.sub("", token.strip()).strip()
+        key = name.casefold()
+        if key in _SKIP_LABEL_TOKENS or key in seen:
+            continue
+        seen.add(key)
+        cat_names.append(name)
+    posted_at = _parse_metadata_timestamp(row.get("Timestamp"))
+    if origin_url:
+        message_id = origin_url.rstrip("/").rsplit("/", 1)[-1]
+    if posted_at is None and re.fullmatch(r"[1-9][0-9]{0,19}", message_id):
+        posted_at = discord.utils.snowflake_time(int(message_id))
+    return {"origin_url": origin_url, "cat_names": cat_names, "posted_at": posted_at}
+
+
 def read_metadata_table() -> list[list[str]]:
     """Return the metadata CSV as a full table, including the header row."""
     _, metadata_path = ensure_storage_ready()

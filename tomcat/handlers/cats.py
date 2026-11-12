@@ -343,6 +343,17 @@ async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
             log_action("show_photo_local_missing", serial_token, "lookup=serial")
             return
         embed = discord.Embed(title=f"__**Photo {serial_token}**__", color=0x2F3136)
+        try:
+            details = await asyncio.to_thread(local_photos.get_photo_details, int(serial))
+        except Exception as exc:
+            log_action("show_photo_metadata_error", serial_token, f"{type(exc).__name__}: {exc}")
+            details = {}
+        if details.get("origin_url"):
+            embed.description = f"[photo origin]({details['origin_url']})"
+        if details.get("posted_at"):
+            _add_field(embed, "Posted", discord.utils.format_dt(details["posted_at"], style="D"), inline=False)
+        names = [discord.utils.escape_markdown(name) for name in details.get("cat_names", [])]
+        _add_field(embed, "Labeled cats", ", ".join(names), inline=False)
         embed.set_image(url=f"attachment://{filename}")
         sent = await ch.send(embed=embed, file=discord.File(io.BytesIO(image_bytes), filename=filename))
         log_event({

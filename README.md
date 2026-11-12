@@ -18,7 +18,7 @@ This repository contains the Python bot, its volunteer web interface, and the co
 ## What it does
 
 - **Feeding coordination.** Records completed rounds, manages schedules and substitute requests, and posts reminders for stations that still need food.
-- **Cat profiles and photos.** Looks up individual cats, serves random photos, and crops images using the detector. A local cache keeps repeat requests quick.
+- **Cat profiles and photos.** Looks up individual cats, serves random photos, retrieves a specific photo by serial number (`tom show me sn12345`), and crops images using the detector. A local cache keeps repeat requests quick.
 - **Photo identification.** Detects animals, compares their image embeddings against a reference gallery, and returns ranked identities. Members can react to correct a guess or ask for the top five.
 - **Dues and bookkeeping.** Reads payment notifications from the club mailbox, matches dues to members, assigns membership roles, and records financial activity in Google Sheets.
 - **Moderation and records.** Flags likely spam and keeps daily text logs alongside structured event logs.

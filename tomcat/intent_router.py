@@ -244,6 +244,7 @@ class IntentEvent:
     attachment_ids: List[int]
     #slots:
     cat_name: Optional[str] = None         #canonical cat or station display name
+    photo_serial: Optional[int] = None    #exact photo lookup, independent of cat labels
     station: Optional[str] = None          #canonical station key (same string space as cat if shared)
     stations: Optional[List[str]] = None   #optional multi-station list for feed updates
     dates: Optional[List[str]] = None      #ISO "YYYY-MM-DD"
@@ -257,9 +258,10 @@ class IntentEvent:
 #Simple ring buffer per (channel_id, user_id)
 MachineRow = Dict[str, Any]
 
-TOMCAT_PREFIX = re.compile(r"^\s*(tom\s*cat|tomcat|tom-kat|tom\s*kat)[\s,:-]*", re.I)
+TOMCAT_PREFIX = re.compile(r"^\s*(tom\s*cat|tomcat|tom-kat|tom\s*kat|tom\b)[\s,:-]*", re.I)
 SHOW_PAT = re.compile(r"\b(show\s*me|show)\b", re.I)
 PHOTO_PAT = re.compile(r"\b(photo|picture|pic|image)\b", re.I)
+PHOTO_SERIAL_PAT = re.compile(r"\bsn([0-9]+)\b", re.I)
 WHO_PAT  = re.compile(r"\b(who\s+is|who\s*'s|who\s*s|whois)\b", re.I)
 IDENT_PAT= re.compile(r"\b(identify|id|classify|classification)\b", re.I)
 DETECT_PAT = re.compile(r"\bdetect\b", re.I)
@@ -662,7 +664,8 @@ class IntentRouter:
             log_intent(event.type, event.confidence,
                        channel_id=event.channel_id, user_id=event.user_id,
                        message_id=event.message_id, has_image=event.has_image,
-                       slots={"cat": event.cat_name, "station": event.station, "dates": event.dates},
+                       slots={"cat": event.cat_name, "photo_serial": event.photo_serial,
+                              "station": event.station, "dates": event.dates},
                        decision=trace)
 
             #------- Phase 4: Dispatch -------
@@ -866,6 +869,13 @@ class IntentRouter:
             show_like = bool(SHOW_PAT.search(text_wo) or _fuzzy_command_present(text_wo, ["show me", "show"]))
             photo_like = bool(PHOTO_PAT.search(text_wo))
             if show_like or photo_like:
+                serial_match = PHOTO_SERIAL_PAT.search(text_wo)
+                if serial_match:
+                    serial = int(serial_match.group(1))
+                    return self._decided(
+                        row, trace, [f"slot:photo_serial={serial}", "intent:show_photo"],
+                        "show_photo", 1.0, photo_serial=serial,
+                    )
                 cat = self._extract_best_entity(text_wo, want="cat")
                 if cat:
                     return self._decided(
@@ -945,9 +955,10 @@ class IntentRouter:
     async def _dispatch(self, event: IntentEvent, message: discord.Message, ctx: Dict[str, Any]) -> None:
         #Confidence gates and clarification
         #Commands
-        if event.type == "show_photo" and event.cat_name:
+        if event.type == "show_photo" and (event.cat_name or event.photo_serial is not None):
             #reuse the cats handler
-            await handle_cat_photo(_intent("cat_photo", {"name": event.cat_name}), ctx)
+            data = {"serial": event.photo_serial} if event.photo_serial is not None else {"name": event.cat_name}
+            await handle_cat_photo(_intent("cat_photo", data), ctx)
             return
 
         if event.type == "who_is" and event.cat_name:

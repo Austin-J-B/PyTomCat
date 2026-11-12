@@ -65,7 +65,7 @@ async def _read_local_photo_bytes(serial: Any) -> tuple[Optional[bytes], str]:
     sn = _parse_serial_value(serial)
     if sn is None:
         return None, ".jpg"
-    path = local_photos.get_local_photo_path(sn)
+    path = await asyncio.to_thread(local_photos.get_local_photo_path, sn)
     suffix = str(getattr(path, "suffix", "") or ".jpg").lower() if path is not None else ".jpg"
     if path is None or not path.is_file():
         return None, suffix
@@ -332,8 +332,28 @@ async def handle_cat_show(intent: 'Intent', ctx: dict) -> None:
 
 
 async def handle_cat_photo(intent: 'Intent', ctx: dict) -> None:
-    """Send a single photo embed with manual paging buttons."""
+    """Send an exact serial photo, or a random cat photo with paging buttons."""
     ch: discord.abc.MessageableChannel = ctx["channel"]
+    serial = intent.data.get("serial")
+    if serial is not None:
+        serial_token = f"sn{int(serial):04d}"
+        image_bytes, filename, _ = await _build_local_show_image_payload(serial)
+        if not image_bytes:
+            await ch.send(f"photo {serial_token} could not be retrieved")
+            log_action("show_photo_local_missing", serial_token, "lookup=serial")
+            return
+        embed = discord.Embed(title=f"__**Photo {serial_token}**__", color=0x2F3136)
+        embed.set_image(url=f"attachment://{filename}")
+        sent = await ch.send(embed=embed, file=discord.File(io.BytesIO(image_bytes), filename=filename))
+        log_event({
+            "event": "show_photo_page",
+            "source": "serial",
+            "serial": serial_token,
+            "delivery": "send",
+            "message_id": getattr(sent, "id", None),
+            "cropped": False,
+        })
+        return
     name = intent.data.get("name", "").strip()
     if not name:
         await ch.send("Which cat would you like to see? Ex: `TomCat, show me Microwave`")

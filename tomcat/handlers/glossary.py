@@ -7,6 +7,7 @@ from typing import List, Tuple
 #Command definitions: (display_format, description)
 USER_COMMANDS: List[Tuple[str, str]] = [
     ("TomCat, show me [cat name]", "Shows a photo of the specified cat."),
+    ("Tom, show me sn12345", "Shows a specific photo by its serial number."),
     ("TomCat, who is [cat name]", "Shows the profile card for a cat."),
     ("TomCat, who is this?", "Identifies the cat in an attached or recent image."),
     ("TomCat, identify", "Runs cat identification on an attached image."),

@@ -3,12 +3,12 @@
 #Core Discord bot stack
 discord.py==2.7.1
 python-dotenv==1.2.3
-aiohttp==3.14.4
+aiohttp==3.14.5
 
 #Google Sheets + OAuth
 gspread==6.2.1
 google-api-python-client==2.201.0
-google-auth==2.57.0
+google-auth==2.62.2
 google-auth-oauthlib==1.5.0
 google-auth-httplib2==0.4.4
 httplib2==0.32.1
@@ -16,12 +16,12 @@ httplib2==0.32.1
 #Data processing / parsing
 numpy==2.5.3
 Pillow==13.0.0
-rapidfuzz==3.10.1
+rapidfuzz==3.14.6
 beautifulsoup4==4.15.0
 
 #Computer vision helpers
 opencv-python-headless==5.0.0.93
-ultralytics>=8.4.202
+ultralytics>=8.4.211
 
 #PyTorch (+cu128 for Windows/Nvidia). Matches the 2.8.0 that
 #requirements-droplet.txt and the Modal image already pin, so the gallery
@@ -33,4 +33,4 @@ torchvision==0.23.0+cu128
 requests==2.34.2
 
 #Modal cloud (CV inference offload)
-modal==1.6.3
+modal==1.6.4

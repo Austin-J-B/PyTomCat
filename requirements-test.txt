@@ -8,7 +8,7 @@ discord.py==2.7.1
 gspread==6.2.1
 numpy==2.5.3
 Pillow==13.0.0
-pyflakes==3.4.0
+pyflakes==4.1.0
 python-dotenv==1.2.3
 rapidfuzz==3.14.6
 requests==2.34.2

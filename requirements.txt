@@ -20,7 +20,7 @@ rapidfuzz==3.14.6
 beautifulsoup4==4.15.0
 
 #Computer vision helpers
-opencv-python-headless==5.0.0.93
+opencv-python-headless==5.1.0.95
 ultralytics>=8.4.211
 
 #PyTorch (+cu128 for Windows/Nvidia). Matches the 2.8.0 that

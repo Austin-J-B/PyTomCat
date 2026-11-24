@@ -500,25 +500,39 @@ class Engine:
         return replies
 
     # ---- picking ----
-    def scored_candidates(self, prefix, item, messages, generator, n):
+    def scored_candidates(self, prefix, item, messages, generator, n, echoes=None):
         """[(pick score, reply tokens, text)] for the usable candidates (lm_watch.score_candidates with
-        MuonKahuna's settings; with a judge the per-token gain is not computed)."""
+        MuonKahuna's settings; with a judge the per-token gain is not computed). Candidates that only copy a
+        chat message are left out; if `echoes` is a list they are added to it (tokens) for the last resort."""
         tok = self.tokenizer
-        own_words = {w for m in messages if m["s"] == BOT_SPEAKER for w in content_words(m["text"])}
-        recent_words = {w for m in messages[-3:] for w in content_words(m["text"])}
         blocked = {copy_key(m["text"]) for m in messages}
-        chat_cats = ({t for m in messages for t in tok.tokens(m["text"]) if t in tok.protected}
-                     | {c for m in messages for c in (m.get("photo") or [])})
-        meow_in = is_meow(messages[-1]["text"])
-        scored, unique, judged = [], set(), []
+        usable, unique = [], set()
         for reply in self.sample(prefix, n, generator):
             if not reply or len(reply) < 2 or tuple(reply) in unique:
                 continue
             unique.add(tuple(reply))
+            text = tok.decode(split_photo_tokens(tok, reply)).strip().lower()
+            if not text:
+                continue
+            if copy_key(text) in blocked:
+                if echoes is not None and reply not in echoes:
+                    echoes.append(reply)
+                continue
+            usable.append(reply)
+        return self.score(usable, item, messages)
+
+    def score(self, replies, item, messages):
+        """Pick scores for reply token lists: judge grade plus the dashboard's picker bonuses and penalties."""
+        tok = self.tokenizer
+        own_words = {w for m in messages if m["s"] == BOT_SPEAKER for w in content_words(m["text"])}
+        recent_words = {w for m in messages[-3:] for w in content_words(m["text"])}
+        chat_cats = ({t for m in messages for t in tok.tokens(m["text"]) if t in tok.protected}
+                     | {c for m in messages for c in (m.get("photo") or [])})
+        meow_in = is_meow(messages[-1]["text"])
+        scored, judged = [], []
+        for reply in replies:
             text_tokens = split_photo_tokens(tok, reply)
             text = tok.decode(text_tokens).strip().lower()
-            if not text or copy_key(text) in blocked:
-                continue
             bonus = LENGTH_BONUS * math.log(max(1, len(set(text.split()))))
             if meow_in and is_meow(text):
                 bonus += MEOW_BONUS
@@ -565,14 +579,19 @@ class Engine:
         seed = random.SystemRandom().randrange(1 << 63) if seed is None else seed
         generator = torch.Generator().manual_seed(seed)
         n = MEOW_CANDIDATES if is_meow(msgs[-1]["text"]) else CANDIDATES
-        scored = self.scored_candidates(prefix, item, msgs, generator, n)
+        echoes = []  # candidates that only copied a chat message ("WHAT?" -> "what????")
+        scored = self.scored_candidates(prefix, item, msgs, generator, n, echoes)
         if not scored:
-            scored = self.scored_candidates(prefix, item, msgs, generator, FALLBACK_CANDIDATES)
+            scored = self.scored_candidates(prefix, item, msgs, generator, FALLBACK_CANDIDATES, echoes)
         blocked = {copy_key(m["text"]) for m in msgs}
         tries = 0
         while not scored:  # last resort: plain samples at 0.8 / 0.95, still no copies of the chat
             if tries == 5:
-                raise ValueError("The model only repeated the chat.")
+                if not echoes:
+                    raise ValueError("The model only repeated the chat.")
+                # Every candidate was an echo: send the best-scoring one rather than nothing.
+                scored = self.score(echoes, item, msgs)
+                break
             tries += 1
             for reply in self.sample(prefix, 1, generator, contrast=0.0, temperature=0.8, top_p=0.95):
                 if reply:
@@ -580,8 +599,12 @@ class Engine:
                     if text_tokens[:1] == ["<re>"] and len(text_tokens) > 1 and is_speaker(text_tokens[1]):
                         text_tokens = text_tokens[2:]
                     text = tok.decode(text_tokens).strip()
-                    if text and copy_key(text) not in blocked:
+                    if not text:
+                        continue
+                    if copy_key(text) not in blocked:
                         scored = [[0.0, reply, text]]
+                    elif len(reply) >= 2 and reply not in echoes:
+                        echoes.append(reply)
         best = max(scored, key=lambda s: s[0])
         text_tokens = split_photo_tokens(tok, best[1])
         if text_tokens[:1] == ["<re>"] and len(text_tokens) > 1 and is_speaker(text_tokens[1]):

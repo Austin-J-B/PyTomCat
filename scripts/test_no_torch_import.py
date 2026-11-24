@@ -41,6 +41,8 @@ MODULES = [
     "tomcat.vision.vision",
     "tomcat.services.gallery_updater",
     "tomcat.handlers.labeler",
+    #TomCatGPT's model runs in its own worker process (tomcat.lm.worker); the bot side must stay torch-free.
+    "tomcat.handlers.tomcatgpt",
 ]
 
 FAILURES: List[str] = []

@@ -2468,6 +2468,10 @@ async def on_ready():
             log_event({"event":"health","component":"image_intake_local","status":"error","error": str(e)})
 
     _start_background_task("health_checks", lambda: _health_checks())
+
+    #Load the TomCatGPT model in its worker process now, so the first question doesn't wait for it.
+    from .handlers.tomcatgpt import WORKER as _tomcatgpt_worker
+    _start_background_task("tomcatgpt_warm", lambda: _tomcatgpt_worker.warm())
     try:
         _start_background_task("photo_sync_missing", lambda: _sync_missing_local_photos(bot))
     except Exception:
@@ -2746,6 +2750,15 @@ async def on_message(message: discord.Message):
         # Intake can be expensive on cold start because duplicate indexing scans the local photo corpus.
         # Keep it off the command-response path so CV requests still route immediately.
         asyncio.create_task(_run_image_intake(message))
+
+    #TomCatGPT (language model): its call tag and reply threads come before the "TomCat," commands and the
+    #fun triggers, so "TomCatGPT, meow" or "TomCatGPT, show me microwave" goes to the model alone.
+    try:
+        from .handlers.tomcatgpt import maybe_handle as _tomcatgpt_maybe_handle
+        if await _tomcatgpt_maybe_handle(message, bot):
+            return
+    except Exception as e:
+        log_action("tomcatgpt_error", f"ch={getattr(message.channel, 'id', '?')}", f"{type(e).__name__}: {e}")
 
     #Lightweight fun triggers (e.g., "meow") anywhere; safe_send respects silent mode
     try:

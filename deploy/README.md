@@ -254,6 +254,37 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 sudo sysctl -w vm.swappiness=10 && echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf
 ```
 
+## TomCatGPT (language model demo)
+
+"TomCatGPT, ..." messages, and Discord replies to its answers, go to the TomCat
+language model (`tomcat/handlers/tomcatgpt.py`). The model runs on CPU in a
+worker process (`python -m tomcat.lm.worker`) that the bot starts at login and
+keeps loaded; the bot itself never imports torch.
+
+The weights are trained on member messages and the bundle includes the private
+name/slur blocklist, so they are **never committed** (the repo is public). Build
+the bundle on the training machine and copy it to the server:
+
+```bash
+python scripts/export_tomcatgpt_bundle.py --research-root . --out cache/tomcatgpt
+scp -r cache/tomcatgpt ccc-admin:/tmp/tomcatgpt
+# on the server:
+sudo rsync -a --delete /tmp/tomcatgpt/ /home/tomcat/PyTomCat/cache/tomcatgpt/
+sudo chown -R tomcat:tomcat /home/tomcat/PyTomCat/cache/tomcatgpt && rm -rf /tmp/tomcatgpt
+sudo systemctl restart tomcat
+```
+
+Without the bundle the bot answers "TomCatGPT isn't installed on this server
+yet." `TOMCATGPT_ENABLED=0` turns it off entirely; `TOMCATGPT_THREADS` (default
+2 of the 3 vCPUs) sets the worker's torch threads. The worker logs to
+`cache/tomcatgpt/worker.log`; replies are logged as `tomcatgpt_reply`.
+
+Memory: the worker holds three ~54M-parameter models in fp32 (chat model,
+reviewer, the reviewer's frozen base, ~650MB) plus torch, about 1GB, inside
+`tomcat.service`'s `MemoryMax`. It sets its own `oom_score_adj` to 1000, so if
+the unit hits the cap the kernel kills the worker, not the bot
+(`OOMPolicy=continue` keeps the unit up), and the next question restarts it.
+
 ## Notes
 
 - `config.yml` and the `cloudflared` binary are gitignored and persist across

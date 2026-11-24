@@ -258,8 +258,10 @@ sudo sysctl -w vm.swappiness=10 && echo 'vm.swappiness=10' | sudo tee /etc/sysct
 
 "TomCatGPT, ..." messages, and Discord replies to its answers, go to the TomCat
 language model (`tomcat/handlers/tomcatgpt.py`). The model runs on CPU in a
-worker process (`python -m tomcat.lm.worker`) that the bot starts at login and
-keeps loaded; the bot itself never imports torch.
+worker process (`python -m tomcat.lm.worker`) that the bot starts on the first
+question and stops 5 minutes after the last one, so it holds no memory while
+nobody is using it (a cold start is ~3.5s on the CPX21); the bot itself never
+imports torch.
 
 The weights are trained on member messages and the bundle includes the private
 name/slur blocklist, so they are **never committed** (the repo is public). Build
@@ -279,11 +281,13 @@ yet." `TOMCATGPT_ENABLED=0` turns it off entirely; `TOMCATGPT_THREADS` (default
 2 of the 3 vCPUs) sets the worker's torch threads. The worker logs to
 `cache/tomcatgpt/worker.log`; replies are logged as `tomcatgpt_reply`.
 
-Memory: the worker holds three ~54M-parameter models in fp32 (chat model,
-reviewer, the reviewer's frozen base, ~650MB) plus torch, about 1GB, inside
-`tomcat.service`'s `MemoryMax`. It sets its own `oom_score_adj` to 1000, so if
-the unit hits the cap the kernel kills the worker, not the bot
-(`OOMPolicy=continue` keeps the unit up), and the next question restarts it.
+Memory (measured on the server, 2026-11-24): ~430MB after loading, peak ~1.2GB
+on a 32-candidate meow reply. About 650MB of that is the weight files
+memory-mapped read-only, which the kernel can drop and re-read under pressure
+instead of killing anything. The worker sets its own `oom_score_adj` to 1000,
+so if `tomcat.service` still hits `MemoryMax` the kernel kills the worker, not
+the bot (`OOMPolicy=continue` keeps the unit up), and the next question restarts
+it.
 
 ## Notes
 

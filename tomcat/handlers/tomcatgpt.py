@@ -8,8 +8,9 @@
 The call tag is separate from the "TomCat," command wake word: on_message checks it first, so "TomCatGPT, show me
 microwave" goes to the model, not the photo command.
 
-The model runs in a worker process (tomcat/lm/worker.py) started on first use and kept loaded; this module never
-imports torch. One request is answered at a time.
+The model runs in a worker process (tomcat/lm/worker.py) started on the first question and stopped 5 minutes after
+the last one, so it holds no memory while nobody is using it; this module never imports torch. One request is
+answered at a time.
 """
 from __future__ import annotations
 
@@ -29,7 +30,8 @@ from ..logger import log_action
 ROOT = Path(__file__).resolve().parents[2]
 MAX_THREAD = 20          # messages handed to the model (it trims to its 512-token window)
 MAX_HOPS = 40            # reply-chain lookups before giving up
-REQUEST_TIMEOUT = 120.0  # seconds per reply, load included
+REQUEST_TIMEOUT = 120.0  # seconds per reply
+IDLE_SECONDS = 300.0     # the model is unloaded this long after the last question
 LOAD_TIMEOUT = 300.0
 
 # "TomCatGPT", "Tomcat GPT", "tom cat gpt", "TomCat-GPT", "tomkatgpt", "TomGPT", "tomcat gtp" ... at the start of
@@ -176,13 +178,17 @@ async def build_thread(message: Any, bot_id: Optional[int]) -> Optional[List[dic
 
 
 class Worker:
-    """The worker process and a lock so one request is in flight at a time."""
+    """The worker process, started on the first question and stopped after IDLE_SECONDS without one, so the
+    model only holds memory while people are using it (a cold start is ~4s on the server). One request is in
+    flight at a time."""
 
-    def __init__(self) -> None:
+    def __init__(self, idle_seconds: float = IDLE_SECONDS) -> None:
         self.proc: Optional[asyncio.subprocess.Process] = None
         self.lock = asyncio.Lock()
         self.next_id = 0
         self.log = None
+        self.idle_seconds = idle_seconds
+        self._idle_task: Optional[asyncio.Task] = None
 
     def available(self) -> bool:
         return (ROOT / settings.tomcatgpt_dir / "manifest.json").is_file()
@@ -202,23 +208,32 @@ class Worker:
             await self.stop()
             raise RuntimeError(ready.get("error") or "TomCatGPT worker exited while loading")
         log_action("tomcatgpt_worker_ready", f"pid={self.proc.pid}",
-                   f"load={ready.get('load_seconds')}s; wait={time.perf_counter() - started:.1f}s")
+                   f"load={ready.get('load_seconds')}s; wait={time.perf_counter() - started:.1f}s; "
+                   f"peak_mb={ready.get('peak_mb')}")
 
     async def ensure(self) -> None:
         if self.proc is None or self.proc.returncode is not None:
             await self._start()
 
-    async def warm(self) -> None:
-        """Load the model in the background at startup, so the first question is not slow."""
-        if not settings.tomcatgpt_enabled or not self.available():
-            return
-        async with self.lock:
-            try:
-                await self.ensure()
-            except Exception as e:
-                log_action("tomcatgpt_worker_error", "warm", f"{type(e).__name__}: {e}")
+    def _schedule_idle_stop(self) -> None:
+        if self._idle_task is not None and not self._idle_task.done():
+            self._idle_task.cancel()
+        self._idle_task = asyncio.get_running_loop().create_task(self._idle_stop())
+
+    async def _idle_stop(self) -> None:
+        await asyncio.sleep(self.idle_seconds)
+        async with self.lock:  # never in the middle of a request
+            if self.proc is not None:
+                await self.stop()
+                log_action("tomcatgpt_worker_idle_stop", f"idle={self.idle_seconds:.0f}s", "model unloaded")
 
     async def reply(self, messages: List[dict]) -> dict:
+        try:
+            return await self._reply(messages)
+        finally:
+            self._schedule_idle_stop()
+
+    async def _reply(self, messages: List[dict]) -> dict:
         async with self.lock:
             for attempt in (1, 2):  # a dead worker (e.g. OOM-killed) gets one restart
                 await self.ensure()
@@ -238,7 +253,10 @@ class Worker:
                     if attempt == 2:
                         raise RuntimeError("TomCatGPT worker exited")
                     continue
-                return json.loads(line)
+                result = json.loads(line)
+                if result.get("peak_mb"):
+                    result["peak_mb"] = int(result["peak_mb"])
+                return result
         raise RuntimeError("unreachable")
 
     async def stop(self) -> None:
@@ -289,7 +307,8 @@ async def maybe_handle(message: Any, bot: Any) -> bool:
         await _send(message, "I couldn't think of anything to say. Try asking another way?")
         return True
     log_action("tomcatgpt_reply", f"msg={message.id}; ch={getattr(channel, 'id', '?')}",
-               f"thread={len(thread)}; candidates={result.get('candidates')}; seconds={result.get('seconds')}")
+               f"thread={len(thread)}; candidates={result.get('candidates')}; seconds={result.get('seconds')}; "
+               f"worker_peak_mb={result.get('peak_mb')}")
     await _send(message, result["text"])
     return True
 

@@ -177,8 +177,10 @@ class CausalLM(nn.Module):
 
 
 def build_model(config: dict, untied: bool, state: dict, pad: int) -> CausalLM:
+    """assign=True uses the loaded tensors as the weights instead of copying them in: with torch.load(mmap=True)
+    they stay file-backed pages, which the kernel can drop and re-read, rather than a second private copy."""
     model = CausalLM(CausalConfig(**config), pad, untied)
-    model.load_state_dict(state)
+    model.load_state_dict(state, assign=True)
     return model.eval().requires_grad_(False)
 
 
@@ -187,11 +189,12 @@ class PromptRows:
     """n sampling rows sharing one prompt: the prompt runs once, its keys/values are copied to every row, then
     step() adds one token per row. .logits holds the latest next-token logits [n, vocab]."""
 
-    def __init__(self, model: CausalLM, ids: list[int], n: int):
+    def __init__(self, model: CausalLM, ids: list[int], n: int, new_tokens: int = MAX_TOKENS):
         cfg = model.cfg
         self.model, self.heads, self.width = model, cfg.heads, cfg.width
         self.head = self.width // self.heads
-        self.k = torch.zeros((len(model.blocks), n, self.heads, cfg.max_length, self.head))
+        length = min(cfg.max_length, len(ids) + new_tokens)  # only these positions are ever written
+        self.k = torch.zeros((len(model.blocks), n, self.heads, length, self.head))
         self.v = torch.zeros_like(self.k)
         self.logits = self._run(torch.tensor([ids]), 0).expand(n, -1)
         self.k[:, 1:] = self.k[:, :1]
@@ -327,8 +330,14 @@ def fit_features(judge: ReplyJudge, tokenizer: Tokenizer, examples: list[dict], 
             for (lp, n, eom), (lp0, _, _) in zip(ctx, noctx)]
 
 
+JUDGE_CHUNK = 8  # replies scored per pass; bounds memory when a meow brings 32 candidates
+
+
 def judge_scores(judge: ReplyJudge, tokenizer: Tokenizer, item: dict, replies: list[list[str]]) -> list[float]:
     """Expected grade (0..classes-1) of each reply as the bot's reply to the chat in item."""
+    if len(replies) > JUDGE_CHUNK:
+        return [g for i in range(0, len(replies), JUDGE_CHUNK)
+                for g in judge_scores(judge, tokenizer, item, replies[i:i + JUDGE_CHUNK])]
     limit, pad = judge.lm.cfg.max_length, tokenizer.id["<pad>"]
     examples = []
     for reply in replies:
@@ -409,13 +418,13 @@ class Engine:
         self.manifest = manifest
         self.tokenizer = tok = Tokenizer.load(bundle / "tokenizer.json")
         pad = tok.id["<pad>"]
-        gen = torch.load(bundle / "generator.pt", map_location="cpu", weights_only=True)
+        gen = torch.load(bundle / "generator.pt", map_location="cpu", weights_only=True, mmap=True)
         if gen["config"]["vocab_size"] != len(tok.vocab):
             raise ValueError("tokenizer does not match the chat model")
         self.model = build_model(gen["config"], gen["untied"], gen["state_dict"], pad)
         self.step = gen.get("step")
         del gen
-        saved = torch.load(bundle / "judge.pt", map_location="cpu", weights_only=True)
+        saved = torch.load(bundle / "judge.pt", map_location="cpu", weights_only=True, mmap=True)
         lm = build_model(saved["config"], saved["untied"], saved["lm"], pad)
         ref = build_model(saved["config"], saved["ref_untied"], saved["ref"], pad) if saved["feats"] else None
         self.judge = ReplyJudge(lm, ref, saved["hidden"], saved["classes"], saved["feats"])

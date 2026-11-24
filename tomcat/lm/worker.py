@@ -20,12 +20,24 @@ import time
 import traceback
 from pathlib import Path
 
+try:
+    import resource
+except ImportError:  # Windows (local runs)
+    resource = None
+
 
 def raise_oom_score() -> None:
     try:  # Linux only; a process may always make itself likelier to be killed
         Path("/proc/self/oom_score_adj").write_text("1000")
     except OSError:
         pass
+
+
+def peak_mb() -> int | None:
+    """Peak resident memory of this process so far (Linux reports KB); None where unavailable."""
+    if resource is None:
+        return None
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
 
 
 def main() -> None:
@@ -45,7 +57,7 @@ def main() -> None:
         traceback.print_exc()
         sys.exit(1)
     out.write(json.dumps({"ready": True, "load_seconds": round(time.perf_counter() - started, 2),
-                          "step": engine.step}) + "\n")
+                          "step": engine.step, "peak_mb": peak_mb()}) + "\n")
     out.flush()
     for line in sys.stdin:
         if not line.strip():
@@ -57,7 +69,7 @@ def main() -> None:
             t0 = time.perf_counter()
             result = engine.reply(request["messages"])
             response = {"id": rid, "text": result["text"], "candidates": result["candidates"],
-                        "seconds": round(time.perf_counter() - t0, 2)}
+                        "seconds": round(time.perf_counter() - t0, 2), "peak_mb": peak_mb()}
         except Exception as exc:
             traceback.print_exc()
             response = {"id": rid, "error": f"{type(exc).__name__}: {exc}"}

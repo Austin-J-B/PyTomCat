@@ -211,6 +211,19 @@ async def worker_checks():
         out = await worker.reply([{"s": 1, "text": "back"}])
         check("worker restarts", out.get("text"), "echo back")
 
+        # Idle: the model is unloaded a while after the last question and loads again on the next one.
+        worker.idle_seconds = 0.3
+        await worker.reply([{"s": 1, "text": "one"}])
+        await asyncio.sleep(0.1)
+        await worker.reply([{"s": 1, "text": "two"}])  # resets the idle timer
+        await asyncio.sleep(0.2)
+        check("busy worker stays loaded", worker.proc is not None, True)
+        await asyncio.sleep(0.4)
+        check("idle worker unloaded", worker.proc, None)
+        out = await worker.reply([{"s": 1, "text": "after idle"}])
+        check("reloads after idle", out.get("text"), "echo after idle")
+        worker.idle_seconds = 300.0
+
         # The handler end to end: tagged question in, reply out with the button and no pings.
         gpt.WORKER = worker
         bot = SimpleNamespace(user=SimpleNamespace(id=BOT))

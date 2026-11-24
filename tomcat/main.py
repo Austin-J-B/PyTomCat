@@ -2468,10 +2468,6 @@ async def on_ready():
             log_event({"event":"health","component":"image_intake_local","status":"error","error": str(e)})
 
     _start_background_task("health_checks", lambda: _health_checks())
-
-    #Load the TomCatGPT model in its worker process now, so the first question doesn't wait for it.
-    from .handlers.tomcatgpt import WORKER as _tomcatgpt_worker
-    _start_background_task("tomcatgpt_warm", lambda: _tomcatgpt_worker.warm())
     try:
         _start_background_task("photo_sync_missing", lambda: _sync_missing_local_photos(bot))
     except Exception:

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import signal
 import sys
 import time
 from pathlib import Path
@@ -33,6 +34,17 @@ MAX_HOPS = 40            # reply-chain lookups before giving up
 REQUEST_TIMEOUT = 120.0  # seconds per reply
 IDLE_SECONDS = 300.0     # the model is unloaded this long after the last question
 LOAD_TIMEOUT = 300.0
+OOM_MESSAGE = ("Error: TomCatGPT ran out of memory (OOM). This may need reconfiguring or another update. "
+               "You can try again later, but results are not guaranteed.")
+
+
+class WorkerOOM(RuntimeError):
+    """The worker was killed by a signal (SIGKILL): on the server, the kernel's out-of-memory killer."""
+
+
+def _killed(returncode: Optional[int]) -> bool:
+    kill = getattr(signal, "SIGKILL", None)
+    return kill is not None and returncode == -kill
 
 # "TomCatGPT", "Tomcat GPT", "tom cat gpt", "TomCat-GPT", "tomkatgpt", "TomGPT", "tomcat gtp" ... at the start of
 # the message, optionally after "@", "hey" or "yo", followed by punctuation, space or the end.
@@ -205,11 +217,25 @@ class Worker:
         line = await asyncio.wait_for(self.proc.stdout.readline(), LOAD_TIMEOUT)
         ready = json.loads(line or b"{}")
         if not ready.get("ready"):
+            returncode = await self._exit_code()
             await self.stop()
+            if _killed(returncode):
+                raise WorkerOOM("killed while loading")
             raise RuntimeError(ready.get("error") or "TomCatGPT worker exited while loading")
         log_action("tomcatgpt_worker_ready", f"pid={self.proc.pid}",
                    f"load={ready.get('load_seconds')}s; wait={time.perf_counter() - started:.1f}s; "
                    f"peak_mb={ready.get('peak_mb')}")
+
+    async def _exit_code(self) -> Optional[int]:
+        """The worker's exit code once its output has ended (None if it is somehow still running)."""
+        proc = self.proc
+        if proc is None:
+            return None
+        try:
+            await asyncio.wait_for(proc.wait(), 5)
+        except asyncio.TimeoutError:
+            return None
+        return proc.returncode
 
     async def ensure(self) -> None:
         if self.proc is None or self.proc.returncode is not None:
@@ -244,12 +270,20 @@ class Worker:
                     await self.proc.stdin.drain()
                     line = await asyncio.wait_for(self.proc.stdout.readline(), REQUEST_TIMEOUT)
                 except (BrokenPipeError, ConnectionResetError, asyncio.TimeoutError) as e:
+                    returncode = None if isinstance(e, asyncio.TimeoutError) else await self._exit_code()
                     await self.stop()
+                    if _killed(returncode):
+                        raise WorkerOOM("killed during a reply") from e
                     if attempt == 2:
                         raise RuntimeError(f"TomCatGPT worker failed: {type(e).__name__}") from e
                     continue
                 if not line:
+                    # Killed mid-reply: almost surely the OOM killer. Retrying now would load the model straight
+                    # back into the same memory pressure, so report it instead.
+                    returncode = await self._exit_code()
                     await self.stop()
+                    if _killed(returncode):
+                        raise WorkerOOM("killed during a reply")
                     if attempt == 2:
                         raise RuntimeError("TomCatGPT worker exited")
                     continue
@@ -298,6 +332,10 @@ async def maybe_handle(message: Any, bot: Any) -> bool:
     try:
         async with channel.typing():
             result = await WORKER.reply(thread)
+    except WorkerOOM as e:
+        log_action("tomcatgpt_oom", f"msg={message.id}", str(e))
+        await _send(message, OOM_MESSAGE)
+        return True
     except Exception as e:
         log_action("tomcatgpt_error", f"msg={message.id}", f"{type(e).__name__}: {e}")
         await _send(message, "TomCatGPT is napping right now. Try again in a minute.")

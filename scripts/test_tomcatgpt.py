@@ -180,6 +180,9 @@ FAKE = textwrap.dedent("""
         r = json.loads(line)
         if r["messages"][-1]["text"] == "die":
             sys.exit(3)
+        if r["messages"][-1]["text"] == "oom":  # what the kernel's OOM killer does
+            import os, signal
+            os.kill(os.getpid(), signal.SIGKILL)
         print(json.dumps({"id": r["id"], "text": "echo " + r["messages"][-1]["text"], "candidates": 4,
                           "seconds": 0}), flush=True)
 """)
@@ -210,6 +213,20 @@ async def worker_checks():
             pass
         out = await worker.reply([{"s": 1, "text": "back"}])
         check("worker restarts", out.get("text"), "echo back")
+
+        # Killed by a signal (the OOM killer): no retry, a WorkerOOM the handler turns into the OOM message.
+        if hasattr(gpt.signal, "SIGKILL"):  # POSIX: CI and the server
+            try:
+                await worker.reply([{"s": 1, "text": "oom"}])
+                FAILURES.append("oom: no WorkerOOM raised")
+            except gpt.WorkerOOM:
+                pass
+            gpt.WORKER = worker
+            m = Message(ALICE, "TomCatGPT oom")
+            await gpt.maybe_handle(m, SimpleNamespace(user=SimpleNamespace(id=BOT)))
+            check("oom message", m.replies, [gpt.OOM_MESSAGE])
+            out = await worker.reply([{"s": 1, "text": "after oom"}])
+            check("recovers after oom", out.get("text"), "echo after oom")
 
         # Idle: the model is unloaded a while after the last question and loads again on the next one.
         worker.idle_seconds = 0.3

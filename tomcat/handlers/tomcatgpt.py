@@ -113,6 +113,10 @@ async def _parent(message: Any) -> Optional[Any]:
     ref = getattr(message, "reference", None)
     if ref is None or getattr(ref, "message_id", None) is None:
         return None
+    # A forward also carries a reference to the original message, but it is not a reply: forwarding one of
+    # TomCatGPT's answers must not continue (or empty-prompt) the thread.
+    if getattr(getattr(ref, "type", None), "name", None) == "forward":
+        return None
     resolved = getattr(ref, "resolved", None) or getattr(ref, "cached_message", None)
     if resolved is not None and hasattr(resolved, "content"):
         return resolved

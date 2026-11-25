@@ -161,6 +161,10 @@ d2 = Message(ALICE, "what's new", reply_to=d1a)
 d2a = Message(BOT, "not much", reply_to=d2)
 del CH.messages[d2.id]
 check("deleted middle", thread(Message(ALICE, "cool", reply_to=d2a)), None)
+# Forwarding one of TomCatGPT's answers is not a reply: no thread, no hint.
+fw = Message(ALICE, "", reply_to=a1)
+fw.reference.type = SimpleNamespace(name="forward")
+check("forward of answer", thread(fw), None)
 # Empty question: an empty list (the handler answers with a hint).
 check("empty", thread(Message(ALICE, "TomCatGPT")), [])
 # Long threads are capped.

@@ -9,6 +9,8 @@ come from a bundle folder written by scripts/export_tomcatgpt_bundle.py:
                    base model for the fit features              "classes", "feats", "ref", "ref_untied"}
     tokenizer.json the vocabulary both were trained with
     blocklist/     member_full_names.json, slur_patterns.json, name_stems.json (private; never in git)
+    person_names.json  lowercase first names / handles of people (private; optional): names the bot already wrote in
+                   a thread are made less likely (NAME_REPEAT_PENALTY)
     manifest.json  sha256 of each file, checked at load
 
 How a reply is picked (MuonKahuna's CHAT_SETTINGS on the dashboard, 2026-11-24): 4 candidates sampled
@@ -42,6 +44,12 @@ CANDIDATES = 4
 FALLBACK_CANDIDATES = 8  # every one of the 4 was a repeat: one full batch, like the dashboard
 MEOW_CANDIDATES = 32
 SAMPLE_CHUNK = 8  # rows sampled per pass (bounds the key/value cache memory)
+# A person's name the bot already wrote in this thread is made e^-NAME_REPEAT_PENALTY times as likely at every
+# step (AJ 2026-11-24: names are fine, the bot just gets stuck on one; control it, don't block it). 0 turns it off.
+# Measured on the 16 #bot-spam threads (2026-11-24) where the bot had named someone, best of 4, 8 seeds each:
+# the pick repeats the name 59% of the time at 0, 38% at 3, 24% at 4, 4% at 5; the reviewer's grade of the pick
+# does not drop (2.12 / 2.15 / 2.18 / 2.20) and fewer turns end with no usable candidate (34 / 22 / 14 / 13 of 128).
+NAME_REPEAT_PENALTY = 4.0
 TEMPERATURE, TOP_P, MAX_TOKENS, CONTRAST, PLAUSIBLE = 0.6, 0.9, 80, 1.0, 0.1
 JUDGE_SPREAD = 0.38       # judge_mk_v3's score spread over model replies; pick uses judge / spread
 LENGTH_BONUS = 0.5
@@ -455,6 +463,21 @@ class Engine:
         banned |= {i for i, t in enumerate(tok.vocab) if "@" in t or "＠" in t}
         self.banned = sorted(banned)
         self.speaker_ids = [i for i, t in enumerate(tok.vocab) if is_speaker(t)]
+        names_path = bundle / "person_names.json"
+        names = json.loads(names_path.read_text(encoding="utf-8")) if names_path.is_file() else []
+        # Only names that are one whole token (either spelling: message start / after a space), so the penalty
+        # never touches a word piece another word shares.
+        self.name_tokens = {}
+        for name in names:
+            pieces = [tok.tokens(form) for form in (name, " " + name)]
+            ids = [tok.id[p[0]] for p in pieces if len(p) == 1]
+            if ids:
+                self.name_tokens[name] = ids
+
+    def repeat_name_ids(self, messages: list[dict]) -> list[int]:
+        """Token ids of the people's names the bot already wrote in this thread."""
+        said = {w for m in messages if m["s"] == BOT_SPEAKER for w in re.findall(r"[a-z0-9_']+", m["text"].lower())}
+        return sorted({i for w in said & self.name_tokens.keys() for i in self.name_tokens[w]})
 
     # ---- safety ----
     def unsendable(self, text: str) -> bool:
@@ -465,7 +488,8 @@ class Engine:
     # ---- sampling ----
     @torch.inference_mode()
     def sample(self, prefix: list[str], n: int, generator: torch.Generator, contrast: float = CONTRAST,
-               temperature: float = TEMPERATURE, top_p: float = TOP_P) -> list[list[str] | None]:
+               temperature: float = TEMPERATURE, top_p: float = TOP_P,
+               penalize: list[int] | None = None) -> list[list[str] | None]:
         """n one-message replies to prefix (ending with the reply's speaker slot), sampled together."""
         tok, model = self.tokenizer, self.model
         prompts = [fit(list(prefix), model.cfg.max_length - MAX_TOKENS)]
@@ -475,11 +499,15 @@ class Engine:
         blocked = torch.zeros(states[0].logits.shape[1], dtype=torch.bool)
         blocked[self.speaker_ids] = True
         blocked[[tok.id["<eos>"], tok.id["<re>"]] + self.banned] = True
+        shift = torch.zeros(blocked.shape[0])
+        if penalize and NAME_REPEAT_PENALTY:
+            shift[penalize] = -NAME_REPEAT_PENALTY
         eom = tok.id["<eom>"]
         rows = [[] for _ in range(n)]
         done = torch.zeros(n, dtype=torch.bool)
         for _ in range(MAX_TOKENS):
-            logps = [torch.log_softmax(st.logits.float().masked_fill(blocked, -torch.inf), dim=-1) for st in states]
+            logps = [torch.log_softmax((st.logits.float() + shift).masked_fill(blocked, -torch.inf), dim=-1)
+                     for st in states]
             mixed = torch.logsumexp(torch.stack(logps[:1]), dim=0)
             if contrast:
                 ok = mixed >= mixed.max(dim=-1, keepdim=True).values + math.log(PLAUSIBLE)
@@ -509,7 +537,7 @@ class Engine:
         return replies
 
     # ---- picking ----
-    def scored_candidates(self, prefix, item, messages, generator, n, echoes=None):
+    def scored_candidates(self, prefix, item, messages, generator, n, echoes=None, penalize=None):
         """[(pick score, reply tokens, text)] for the usable candidates (lm_watch.score_candidates with
         MuonKahuna's settings; with a judge the per-token gain is not computed). Candidates that only copy a
         chat message are left out; if `echoes` is a list they are added to it (tokens) for the last resort."""
@@ -519,7 +547,7 @@ class Engine:
         # Sampled SAMPLE_CHUNK rows at a time: the key/value caches grow with the rows, and a meow's 32 rows at
         # once cost ~300 MB for a moment; same distribution, one chunk per pass.
         sampled = [r for i in range(0, n, SAMPLE_CHUNK)
-                   for r in self.sample(prefix, min(SAMPLE_CHUNK, n - i), generator)]
+                   for r in self.sample(prefix, min(SAMPLE_CHUNK, n - i), generator, penalize=penalize)]
         for reply in sampled:
             if not reply or len(reply) < 2 or tuple(reply) in unique:
                 continue
@@ -593,9 +621,10 @@ class Engine:
         generator = torch.Generator().manual_seed(seed)
         n = MEOW_CANDIDATES if is_meow(msgs[-1]["text"]) else CANDIDATES
         echoes = []  # candidates that only copied a chat message ("WHAT?" -> "what????")
-        scored = self.scored_candidates(prefix, item, msgs, generator, n, echoes)
+        penalize = self.repeat_name_ids(msgs)
+        scored = self.scored_candidates(prefix, item, msgs, generator, n, echoes, penalize)
         if not scored:
-            scored = self.scored_candidates(prefix, item, msgs, generator, FALLBACK_CANDIDATES, echoes)
+            scored = self.scored_candidates(prefix, item, msgs, generator, FALLBACK_CANDIDATES, echoes, penalize)
         blocked = {copy_key(m["text"]) for m in msgs}
         tries = 0
         while not scored:  # last resort: plain samples at 0.8 / 0.95, still no copies of the chat
@@ -606,7 +635,8 @@ class Engine:
                 scored = self.score(echoes, item, msgs)
                 break
             tries += 1
-            for reply in self.sample(prefix, 1, generator, contrast=0.0, temperature=0.8, top_p=0.95):
+            for reply in self.sample(prefix, 1, generator, contrast=0.0, temperature=0.8, top_p=0.95,
+                                     penalize=penalize):
                 if reply:
                     text_tokens = split_photo_tokens(tok, reply)
                     if text_tokens[:1] == ["<re>"] and len(text_tokens) > 1 and is_speaker(text_tokens[1]):

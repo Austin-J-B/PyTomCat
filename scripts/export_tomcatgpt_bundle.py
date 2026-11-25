@@ -6,7 +6,9 @@ git-ignored cache/ folder and is copied to the server directly, never committed.
     python scripts/export_tomcatgpt_bundle.py --research-root ../PyTomCat --out cache/tomcatgpt
 
 Defaults: MuonKahuna (experiments/muon_u1_bo16/model.pt) as the chat model, judge_mk_v3 as the reviewer,
-corpus_v2/tokenizer_6000.json, the blocklist folder.
+corpus_v2/tokenizer_6000.json, the blocklist folder, and person_names.json from the research name lexicon
+(names/name_lexicon.json, scripts/lm_name_finder.py: the unambiguous people's names, for the engine's
+NAME_REPEAT_PENALTY; skipped when the lexicon is missing).
 """
 from __future__ import annotations
 
@@ -47,6 +49,7 @@ def main() -> None:
     ap.add_argument("--judge", default="cache/tomcat_lm/reply_judge/judge_mk_v3.pt")
     ap.add_argument("--tokenizer", default="cache/tomcat_lm/corpus_v2/tokenizer_6000.json")
     ap.add_argument("--blocklist", default="cache/tomcat_lm/blocklist")
+    ap.add_argument("--name-lexicon", default="cache/tomcat_lm/names/name_lexicon.json")
     ap.add_argument("--out", type=Path, default=Path("cache/tomcatgpt"))
     args = ap.parse_args()
     root = args.research_root.resolve()
@@ -81,7 +84,14 @@ def main() -> None:
     if not stems:
         raise SystemExit("could not read BLOCKED_NAMES from scripts/lm_sample.py")
     (out / "blocklist" / "name_stems.json").write_text(json.dumps(stems.group(1).split("|")), encoding="utf-8")
-    files = ["generator.pt", "judge.pt", "tokenizer.json"] + [
+    lexicon = root / args.name_lexicon
+    if lexicon.is_file():
+        names = json.loads(lexicon.read_text(encoding="utf-8"))["names"]
+        people = sorted(n for n, v in names.items() if not v["ambiguous"])  # never everyday words like "will"
+        (out / "person_names.json").write_text(json.dumps(people), encoding="utf-8")
+    files = ["generator.pt", "judge.pt", "tokenizer.json"]
+    files += ["person_names.json"] if lexicon.is_file() else []
+    files += [
         f"blocklist/{p.name}" for p in sorted((out / "blocklist").glob("*.json"))]
     manifest = {"created": datetime.now().isoformat(timespec="seconds"),
                 "sources": {"model": args.model, "judge": args.judge, "judge_base": base_path.name,

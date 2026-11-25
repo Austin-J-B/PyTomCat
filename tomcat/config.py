@@ -245,6 +245,10 @@ class Settings:
     bot_dm_id: int | None = int(os.getenv("BOT_DM_ID", "1352882061651873863") or "0") or None
     timezone: str = os.getenv("TIMEZONE", "America/Chicago")
     image_intake_channel_map: dict[int, str] = field(default_factory=_build_image_intake_channel_map)
+    #TomCatGPT demo (tomcat/handlers/tomcatgpt.py): the language model bundle, run in its own worker process
+    tomcatgpt_enabled: bool = field(default_factory=lambda: _get_env_bool("TOMCATGPT_ENABLED", True))
+    tomcatgpt_dir: str = os.getenv("TOMCATGPT_DIR", "cache/tomcatgpt")
+    tomcatgpt_threads: int = int(os.getenv("TOMCATGPT_THREADS", "2") or "2")
     #Admins
     silent_mode: bool = field(default_factory=lambda: _get_env_bool("SILENT_MODE", False))
 

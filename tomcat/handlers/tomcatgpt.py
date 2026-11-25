@@ -228,7 +228,7 @@ class Worker:
             raise RuntimeError(ready.get("error") or "TomCatGPT worker exited while loading")
         log_action("tomcatgpt_worker_ready", f"pid={self.proc.pid}",
                    f"load={ready.get('load_seconds')}s; wait={time.perf_counter() - started:.1f}s; "
-                   f"peak_mb={ready.get('peak_mb')}")
+                   f"peak_mb={ready.get('peak_mb')}; anon_mb={ready.get('anon_mb')}")
 
     async def _exit_code(self) -> Optional[int]:
         """The worker's exit code once its output has ended (None if it is somehow still running)."""
@@ -350,7 +350,7 @@ async def maybe_handle(message: Any, bot: Any) -> bool:
         return True
     log_action("tomcatgpt_reply", f"msg={message.id}; ch={getattr(channel, 'id', '?')}",
                f"thread={len(thread)}; candidates={result.get('candidates')}; seconds={result.get('seconds')}; "
-               f"worker_peak_mb={result.get('peak_mb')}")
+               f"worker_peak_mb={result.get('peak_mb')}; worker_anon_mb={result.get('anon_mb')}")
     await _send(message, result["text"])
     return True
 

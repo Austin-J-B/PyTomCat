@@ -8,12 +8,15 @@ out-of-memory kill takes this worker, not the bot (it raises its own OOM score a
 stdout, one JSON object per line:
     {"ready": true, "load_seconds": s, "step": n}                once, after loading
     {"id": i, "text": "...", "candidates": n, "seconds": s}      per request
+(both also carry peak_mb, the peak resident memory including the memory-mapped weights, and anon_mb, this
+process's own memory right now: the part that cannot be dropped and re-read from the bundle files)
     {"id": i, "error": "..."}                                    when a request fails
 stdin, one JSON object per line: {"id": i, "messages": [{"s": 1, "text": "..."}, ...]}
 """
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import sys
 import time
@@ -40,6 +43,34 @@ def peak_mb() -> int | None:
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
 
 
+def anon_mb() -> int | None:
+    """Resident anonymous memory now (Linux): the worker's own memory, without the file-backed weights."""
+    try:
+        for line in Path("/proc/self/status").read_text().splitlines():
+            if line.startswith("RssAnon:"):
+                return int(line.split()[1]) // 1024
+    except OSError:
+        pass
+    return None
+
+
+def _libc_trim():
+    try:
+        return ctypes.CDLL("libc.so.6").malloc_trim
+    except (OSError, AttributeError):  # not glibc (Windows, macOS, musl)
+        return None
+
+
+MALLOC_TRIM = _libc_trim()
+
+
+def release_memory() -> None:
+    """Hand freed heap back to the system. glibc keeps memory torch freed after a reply (activations, key/value
+    caches) in its arenas; without this the worker sits at ~380 MB of its own memory instead of ~170 MB."""
+    if MALLOC_TRIM is not None:
+        MALLOC_TRIM(0)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("bundle", type=Path)
@@ -56,8 +87,9 @@ def main() -> None:
         out.flush()
         traceback.print_exc()
         sys.exit(1)
+    release_memory()
     out.write(json.dumps({"ready": True, "load_seconds": round(time.perf_counter() - started, 2),
-                          "step": engine.step, "peak_mb": peak_mb()}) + "\n")
+                          "step": engine.step, "peak_mb": peak_mb(), "anon_mb": anon_mb()}) + "\n")
     out.flush()
     for line in sys.stdin:
         if not line.strip():
@@ -68,10 +100,13 @@ def main() -> None:
             rid = request.get("id")
             t0 = time.perf_counter()
             result = engine.reply(request["messages"])
+            seconds = round(time.perf_counter() - t0, 2)
+            release_memory()
             response = {"id": rid, "text": result["text"], "candidates": result["candidates"],
-                        "seconds": round(time.perf_counter() - t0, 2), "peak_mb": peak_mb()}
+                        "seconds": seconds, "peak_mb": peak_mb(), "anon_mb": anon_mb()}
         except Exception as exc:
             traceback.print_exc()
+            release_memory()
             response = {"id": rid, "error": f"{type(exc).__name__}: {exc}"}
         out.write(json.dumps(response, ensure_ascii=False) + "\n")
         out.flush()

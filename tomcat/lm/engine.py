@@ -41,6 +41,7 @@ from .tokenizer import SP, Tokenizer
 CANDIDATES = 4
 FALLBACK_CANDIDATES = 8  # every one of the 4 was a repeat: one full batch, like the dashboard
 MEOW_CANDIDATES = 32
+SAMPLE_CHUNK = 8  # rows sampled per pass (bounds the key/value cache memory)
 TEMPERATURE, TOP_P, MAX_TOKENS, CONTRAST, PLAUSIBLE = 0.6, 0.9, 80, 1.0, 0.1
 JUDGE_SPREAD = 0.38       # judge_mk_v3's score spread over model replies; pick uses judge / spread
 LENGTH_BONUS = 0.5
@@ -178,8 +179,16 @@ class CausalLM(nn.Module):
 
 def build_model(config: dict, untied: bool, state: dict, pad: int) -> CausalLM:
     """assign=True uses the loaded tensors as the weights instead of copying them in: with torch.load(mmap=True)
-    they stay file-backed pages, which the kernel can drop and re-read, rather than a second private copy."""
-    model = CausalLM(CausalConfig(**config), pad, untied)
+    they stay file-backed pages, which the kernel can drop and re-read, rather than a second private copy.
+    The layers skip their random initialisation: the placeholder weights stay untouched (never resident) until the
+    loaded ones replace them, instead of ~216 MB per model written for a moment at load. (The meta device would do
+    the same but its first use costs ~70 MB of memory for good.)"""
+    linear, embedding = nn.Linear.reset_parameters, nn.Embedding.reset_parameters
+    nn.Linear.reset_parameters = nn.Embedding.reset_parameters = lambda self: None
+    try:
+        model = CausalLM(CausalConfig(**config), pad, untied)
+    finally:
+        nn.Linear.reset_parameters, nn.Embedding.reset_parameters = linear, embedding
     model.load_state_dict(state, assign=True)
     return model.eval().requires_grad_(False)
 
@@ -507,7 +516,11 @@ class Engine:
         tok = self.tokenizer
         blocked = {copy_key(m["text"]) for m in messages}
         usable, unique = [], set()
-        for reply in self.sample(prefix, n, generator):
+        # Sampled SAMPLE_CHUNK rows at a time: the key/value caches grow with the rows, and a meow's 32 rows at
+        # once cost ~300 MB for a moment; same distribution, one chunk per pass.
+        sampled = [r for i in range(0, n, SAMPLE_CHUNK)
+                   for r in self.sample(prefix, min(SAMPLE_CHUNK, n - i), generator)]
+        for reply in sampled:
             if not reply or len(reply) < 2 or tuple(reply) in unique:
                 continue
             unique.add(tuple(reply))

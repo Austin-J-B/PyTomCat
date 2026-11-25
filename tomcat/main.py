@@ -2747,6 +2747,15 @@ async def on_message(message: discord.Message):
         # Keep it off the command-response path so CV requests still route immediately.
         asyncio.create_task(_run_image_intake(message))
 
+    #TomCatGPT (language model): its call tag and reply threads come before the "TomCat," commands and the
+    #fun triggers, so "TomCatGPT, meow" or "TomCatGPT, show me microwave" goes to the model alone.
+    try:
+        from .handlers.tomcatgpt import maybe_handle as _tomcatgpt_maybe_handle
+        if await _tomcatgpt_maybe_handle(message, bot):
+            return
+    except Exception as e:
+        log_action("tomcatgpt_error", f"ch={getattr(message.channel, 'id', '?')}", f"{type(e).__name__}: {e}")
+
     #Lightweight fun triggers (e.g., "meow") anywhere; safe_send respects silent mode
     try:
         await _handle_misc_raw(message, now_ts=time.time(), allow_in_channels=None)

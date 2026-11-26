@@ -4,7 +4,7 @@ A runtime copy of the research path (scripts/lm_watch.chat_reply with lm_sample'
 lm_reply_judge's reviewer), cut down to what one model needs and free of the research imports. The weights
 come from a bundle folder written by scripts/export_tomcatgpt_bundle.py:
 
-    generator.pt   the chat model (muon_u1_bo16)              {"config", "untied", "state_dict", "step"}
+    generator.pt   the chat model (muon_u1_bo16n)             {"config", "untied", "state_dict", "step"}
     judge.pt       the reviewer (judge_mk_v3) and its frozen   {"config", "untied", "lm", "head", "hidden",
                    base model for the fit features              "classes", "feats", "ref", "ref_untied"}
     tokenizer.json the vocabulary both were trained with

@@ -5,8 +5,9 @@ git-ignored cache/ folder and is copied to the server directly, never committed.
 
     python scripts/export_tomcatgpt_bundle.py --research-root ../PyTomCat --out cache/tomcatgpt
 
-Defaults: MuonKahuna (experiments/muon_u1_bo16/model.pt) as the chat model, judge_mk_v3 as the reviewer,
-corpus_v2/tokenizer_6000.json, the blocklist folder, and person_names.json from the research name lexicon
+Defaults: MuonKahuna (experiments/muon_u1_bo16n/model.pt: best-of-16 picks by the 1.7B judge, plus a capped
+push-down on the tries it flagged as contradicting, repeating or copying the chat) as the chat model, judge_mk_v3
+as the reviewer, corpus_v2/tokenizer_6000.json, the blocklist folder, and person_names.json from the research name lexicon
 (names/name_lexicon.json, scripts/lm_name_finder.py: the unambiguous people's names, for the engine's
 NAME_REPEAT_PENALTY; skipped when the lexicon is missing).
 """
@@ -45,7 +46,7 @@ def model_parts(path: Path):
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--research-root", type=Path, default=Path("."))
-    ap.add_argument("--model", default="cache/tomcat_lm/experiments/muon_u1_bo16/model.pt")
+    ap.add_argument("--model", default="cache/tomcat_lm/experiments/muon_u1_bo16n/model.pt")
     ap.add_argument("--judge", default="cache/tomcat_lm/reply_judge/judge_mk_v3.pt")
     ap.add_argument("--tokenizer", default="cache/tomcat_lm/corpus_v2/tokenizer_6000.json")
     ap.add_argument("--blocklist", default="cache/tomcat_lm/blocklist")

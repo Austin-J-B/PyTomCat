@@ -1,13 +1,21 @@
-"""TomCatGPT inference on CPU: the dashboard's MuonKahuna chat, best of 4.
+"""TomCatGPT inference on CPU: the dashboard's "Nerman int8" chat (or, from an older bundle, MuonKahuna), best of 4.
 
-A runtime copy of the research path (scripts/lm_watch.chat_reply with lm_sample's steered sampler and
-lm_reply_judge's reviewer), cut down to what one model needs and free of the research imports. The weights
-come from a bundle folder written by scripts/export_tomcatgpt_bundle.py:
+A runtime copy of the research path (scripts/lm_watch.chat_reply with lm_sample's steered sampler, and either
+lm_nerman_picker's one-model picker or lm_reply_judge's reviewer), cut down to what one model needs and free of
+the research imports. The weights come from a bundle folder written by scripts/export_tomcatgpt_bundle.py.
 
+A Nerman bundle (it has picker.pt):
+    generator.pt   the chat model (nerman_bo16), int8 except    {"config", "untied", "state_dict", "int8",
+                   the feed-forward down layers ("mixed")         "int8_mode", "step"}
+    picker.pt      the head on the chat model's own layers      {"dim", "hidden", "state_dict", "layers",
+                   (lm_nerman_picker, distilled from the 1.7B    "flags", "flag_cutoffs", "score_sd",
+                   judge)                                        "max_tokens"}
+A MuonKahuna bundle (kept for rollback) has judge.pt instead:
     generator.pt   the chat model (muon_u1_bo16n)             {"config", "untied", "state_dict", "step"}
     judge.pt       the reviewer (judge_mk_v3) and its frozen   {"config", "untied", "lm", "head", "hidden",
                    base model for the fit features              "classes", "feats", "ref", "ref_untied"}
-    tokenizer.json the vocabulary both were trained with
+Both:
+    tokenizer.json the vocabulary the models were trained with
     blocklist/     member_full_names.json, slur_patterns.json, name_stems.json (private; never in git)
     person_names.json  lowercase first names / handles of people (private; optional): names the bot already wrote in
                    a thread are made less likely (NAME_REPEAT_PENALTY)
@@ -20,6 +28,12 @@ message dropped, then the best by
     - 0.5 x echo of the last 3 messages - 3 x self-repeat share - 3 if it names a cat the chat didn't.
 A message that is only cat sounds gets 32 candidates and a bonus for meowing back.
 
+Nerman (dashboard "Nerman int8", 2026-11-28) picks the same way with the picker's score in its own SDs in place of
+judge / 0.38; a try the picker flags (contradicting, repeating, nonsense) or that copies 70%+ of a chat message
+only wins when every try is flagged. It writes as in its server training: channel "other", answering the last
+message with the reply button. When every try only copied a cat sound, the reply starts with that sound and the
+model finishes it its own way ("meow :3").
+
 This module imports torch: only the worker process (tomcat/lm/worker.py) may import it, never the bot.
 """
 from __future__ import annotations
@@ -29,6 +43,7 @@ import json
 import math
 import random
 import re
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -43,7 +58,8 @@ from .tokenizer import SP, Tokenizer
 CANDIDATES = 4
 FALLBACK_CANDIDATES = 8  # every one of the 4 was a repeat: one full batch, like the dashboard
 MEOW_CANDIDATES = 32
-SAMPLE_CHUNK = 8  # rows sampled per pass (bounds the key/value cache memory)
+SAMPLE_CHUNK = 8  # rows sampled per pass at least (more when they fit KV_CACHE_BUDGET; see cache_rows)
+KV_CACHE_BUDGET = 192 << 20  # bytes of key/value cache per pass for the prompt with the chat
 # A person's name the bot already wrote in this thread is made e^-NAME_REPEAT_PENALTY times as likely at every
 # step (AJ 2026-11-24: names are fine, the bot just gets stuck on one; control it, don't block it). 0 turns it off.
 # Measured on the 16 #bot-spam threads (2026-11-24) where the bot had named someone, best of 4, 8 seeds each:
@@ -74,6 +90,15 @@ MEOW_ONLY = re.compile(rf"^{MEOW_WORD}(?:\s+{MEOW_WORD})*$", re.I)
 # <img> marker (the bot has no picture to attach).
 NEVER = ("<pad>", "<bos>", "<xemoji>", "<cats>", "<reply_target>", "<quote>", "<quote_end>", "@user", "@", "<0x40>",
          "<0x01>", "<0x02>", "<0x03>", "<0x04>", "<0x05>", "<img>")
+# Nerman's vocabulary has name pointers ("<name_2>": speaker 2's name): the bot has no names to put there, so it
+# never writes one.
+NAME_POINTER = re.compile(r"<name_(?:[1-8]|other)>")
+
+# ---- Nerman picker (lm_nerman_picker) ----------------------------------------------------------------------
+NERMAN_CHANNEL = "other"  # server chat was trained with every channel as "other" (nerman/build_server.py)
+FLAG_PENALTY = 100.0       # a flagged try only wins when every try is flagged
+FEATURE_CHUNK = 4          # replies per feature pass (bounds memory when a meow brings 32 candidates)
+MEOW_VARIATION_TRIES, MEOW_VARIATION_TOKENS = 16, 40
 
 
 # ---- model (pretrain_ccc_causal.CausalLM, inference only) ------------------------------------------------
@@ -87,12 +112,26 @@ class CausalConfig:
     max_length: int = 128
     dropout: float = 0.1
     variant: str = "classic"
+    loops: int = 1
+    loop_max: int = 0
+    # Nerman options (all off by default, so MuonKahuna loads and runs unchanged): grouped-query attention
+    # (kv_heads), separate q/k/v, QK-norm, logit soft-cap, value residual, U-net skips, per-head output gate,
+    # one-gain norms, and projections after the embedding and before the output scores.
+    kv_heads: int = 0
+    split_qkv: bool = False
+    qk_norm: bool = False
+    logit_softcap: float = 0.0
+    value_residual: bool = False
+    unet_skips: bool = False
+    head_gate: bool = False
+    single_scale_norm: bool = False
+    embed_proj: bool = False
 
 
 class RMSNorm(nn.Module):
-    def __init__(self, width, eps=1e-6):
+    def __init__(self, width, eps=1e-6, single_scale=False):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(width))
+        self.weight = nn.Parameter(torch.ones(1 if single_scale else width))
         self.eps = eps
 
     def forward(self, x):
@@ -116,13 +155,25 @@ def rotary(x, factors):
 
 
 class CausalBlock(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, index=0):
         super().__init__()
         self.heads = cfg.heads
         self.modern = cfg.variant == "modern"
-        self.norm1 = RMSNorm(cfg.width) if self.modern else nn.LayerNorm(cfg.width)
-        self.norm2 = RMSNorm(cfg.width) if self.modern else nn.LayerNorm(cfg.width)
-        self.qkv = nn.Linear(cfg.width, 3 * cfg.width, bias=not self.modern)
+        single = cfg.single_scale_norm
+        self.norm1 = RMSNorm(cfg.width, single_scale=single) if self.modern else nn.LayerNorm(cfg.width)
+        self.norm2 = RMSNorm(cfg.width, single_scale=single) if self.modern else nn.LayerNorm(cfg.width)
+        self.kv_heads = cfg.kv_heads or cfg.heads
+        head = cfg.width // cfg.heads
+        self.split = cfg.split_qkv or self.kv_heads != cfg.heads
+        if self.split:
+            self.q = nn.Linear(cfg.width, cfg.width, bias=not self.modern)
+            self.k = nn.Linear(cfg.width, self.kv_heads * head, bias=not self.modern)
+            self.v = nn.Linear(cfg.width, self.kv_heads * head, bias=not self.modern)
+        else:
+            self.qkv = nn.Linear(cfg.width, 3 * cfg.width, bias=not self.modern)
+        self.qk_norm = cfg.qk_norm
+        if self.qk_norm:
+            self.q_norm, self.k_norm = RMSNorm(head), RMSNorm(head)
         self.proj = nn.Linear(cfg.width, cfg.width, bias=not self.modern)
         if self.modern:
             gated = max(8, round((cfg.feedforward * 2 / 3) / 8) * 8)
@@ -131,25 +182,64 @@ class CausalBlock(nn.Module):
             self.down = nn.Linear(gated, cfg.width, bias=False)
         else:
             self.up, self.down = nn.Linear(cfg.width, cfg.feedforward), nn.Linear(cfg.feedforward, cfg.width)
+        self.head_gate = nn.Linear(cfg.width, cfg.heads, bias=False) if cfg.head_gate else None
+        # [own values, first block's values]; the first block has nothing to mix in.
+        self.v_mix = nn.Parameter(torch.tensor([.5, .5])) if cfg.value_residual and index > 0 else None
 
-    def mlp(self, x):
+    def project(self, h):
+        """Queries [b, heads, n, hd] and keys, values [b, kv_heads, n, hd] for the normed input h (QK-norm, no RoPE)."""
+        b, n, w = h.shape
+        hd = w // self.heads
+        if self.split:
+            q = self.q(h).view(b, n, self.heads, hd)
+            k, v = self.k(h).view(b, n, self.kv_heads, hd), self.v(h).view(b, n, self.kv_heads, hd)
+        else:
+            q, k, v = self.qkv(h).view(b, n, 3, self.heads, hd).unbind(2)
+        if self.qk_norm:
+            q, k = self.q_norm(q), self.k_norm(k)
+        return q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+
+    def expand_kv(self, t):
+        """[b, kv_heads, n, hd] -> [b, heads, n, hd]: key/value head j serves query heads j*g .. j*g+g-1."""
+        return t if self.kv_heads == self.heads else t.repeat_interleave(self.heads // self.kv_heads, dim=1)
+
+    def mix_values(self, v, first_v):
+        if self.v_mix is None or first_v is None:
+            return v
+        return self.v_mix[0] * v + self.v_mix[1] * first_v
+
+    def attend_out(self, a, h):
+        """Attention output a [b, heads, n, hd] -> the update added to the stream (head gate, then projection)."""
+        if self.head_gate is not None:
+            a = a * torch.sigmoid(self.head_gate(h)).transpose(1, 2)[..., None]
+        b, _, n, _ = a.shape
+        return self.proj(a.transpose(1, 2).reshape(b, n, -1))
+
+    def feed_forward(self, x):
         hidden = self.norm2(x)
         hidden = F.silu(self.gate(hidden)) * self.up(hidden) if self.modern else F.gelu(self.up(hidden))
-        return x + self.down(hidden)
+        return self.down(hidden)
 
-    def forward(self, x, factors=None):
-        b, n, w = x.shape
-        q, k, v = self.qkv(self.norm1(x)).view(b, n, 3, self.heads, w // self.heads).unbind(2)
-        q, k, v = (t.transpose(1, 2) for t in (q, k, v))
+    def step(self, x, attend, first_v=None):
+        """One block with the attention left to attend(q, k, v) -> a [b, heads, n, hd] (q, k QK-normed, no RoPE;
+        v mixed). Returns (x, this block's own values)."""
+        h = self.norm1(x)
+        q, k, v = self.project(h)
+        a = attend(q, k, self.mix_values(v, first_v))
+        x = x + self.attend_out(a, h)
+        return x + self.feed_forward(x), v
+
+    def causal_attention(self, q, k, v, factors):
         if self.modern:
             q, k = rotary(q, factors), rotary(k, factors)
-        a = F.scaled_dot_product_attention(q, k, v, is_causal=True)
-        return self.mlp(x + self.proj(a.transpose(1, 2).reshape(b, n, w)))
+        return F.scaled_dot_product_attention(q, self.expand_kv(k), self.expand_kv(v), is_causal=True)
 
 
 class CausalLM(nn.Module):
     def __init__(self, cfg, pad, untied=False):
         super().__init__()
+        if cfg.loops != 1 or cfg.loop_max:
+            raise ValueError("looped models are not supported")
         self.cfg = cfg
         self.token = nn.Embedding(cfg.vocab_size, cfg.width, padding_idx=pad)
         self.position = nn.Embedding(cfg.max_length, cfg.width) if cfg.variant == "classic" else None
@@ -157,10 +247,14 @@ class CausalLM(nn.Module):
             cosine, sine = rotary_factors(cfg.max_length, cfg.width // cfg.heads)
             self.register_buffer("rope_cosine", cosine, persistent=False)
             self.register_buffer("rope_sine", sine, persistent=False)
-        self.blocks = nn.ModuleList(CausalBlock(cfg) for _ in range(cfg.layers))
-        self.norm = RMSNorm(cfg.width) if cfg.variant == "modern" else nn.LayerNorm(cfg.width)
+        self.blocks = nn.ModuleList(CausalBlock(cfg, i) for i in range(cfg.layers))
+        self.norm = (RMSNorm(cfg.width, single_scale=cfg.single_scale_norm) if cfg.variant == "modern"
+                     else nn.LayerNorm(cfg.width))
         self.bias = nn.Parameter(torch.zeros(cfg.vocab_size))
         self.output = nn.Linear(cfg.width, cfg.vocab_size, bias=False) if untied else None
+        self.skip_weights = nn.Parameter(torch.ones(cfg.layers // 2)) if cfg.unet_skips else None
+        self.embed_in = nn.Linear(cfg.width, cfg.width, bias=False) if cfg.embed_proj else None
+        self.embed_out = nn.Linear(cfg.width, cfg.width, bias=False) if cfg.embed_proj else None
 
     @property
     def out_weight(self):
@@ -173,31 +267,94 @@ class CausalLM(nn.Module):
 
     def embed(self, ids, start=0):
         x = self.token(ids)
+        if self.embed_in is not None:
+            x = self.embed_in(x)
         if self.position is not None:
             x = x + self.position(torch.arange(start, start + ids.shape[1]))[None]
         return x
 
-    def hidden_states(self, ids):
-        x = self.embed(ids)
+    def head(self, x):
+        """Final norm, output projection when set, output scores, and the logit soft-cap when set."""
+        h = self.norm(x)
+        if self.embed_out is not None:
+            h = self.embed_out(h)
+        logits = F.linear(h, self.out_weight, self.bias)
+        cap = self.cfg.logit_softcap
+        return cap * torch.tanh(logits / cap) if cap else logits
+
+    def walk(self, x, attend, each=None):
+        """The block stack with the attention left to attend(layer, block, q, k, v), applying the value residual
+        and U-net skips (pretrain_ccc_causal.CausalLM.walk). each(layer, x), when given, sees every block's output."""
+        skips, first_v = [], None
+        layers = len(self.blocks)
+        half = layers // 2 if self.skip_weights is not None else 0
+        for layer, block in enumerate(self.blocks):
+            if half and layer >= layers - half:
+                x = x + self.skip_weights[layer - (layers - half)] * skips.pop()
+            x, v = block.step(x, lambda q, k, v, layer=layer, block=block: attend(layer, block, q, k, v), first_v)
+            if self.cfg.value_residual and first_v is None:
+                first_v = v
+            if layer < half:
+                skips.append(x)
+            if each is not None:
+                each(layer, x)
+        return x
+
+    def causal(self, ids, each=None):
+        """Block-stack output for ids [rows, n] from position 0 (plain causal attention)."""
         factors = self.factors(0, ids.shape[1])
-        for block in self.blocks:
-            x = block(x, factors)
-        return self.norm(x)
+        return self.walk(self.embed(ids), lambda layer, block, q, k, v: block.causal_attention(q, k, v, factors),
+                         each)
+
+    def hidden_states(self, ids):
+        return self.norm(self.causal(ids))
 
 
-def build_model(config: dict, untied: bool, state: dict, pad: int) -> CausalLM:
+def quantized_linear(entry: dict) -> nn.Module:
+    """A dynamic int8 Linear (per-channel weights, CPU) from the exported int8 values, scales and zero points:
+    the same packed weights torch.ao.quantization.quantize_dynamic made in research (lm_nerman_quant.py).
+    torch 2.15 marks quantized tensors deprecated: where a later torch has dropped them, the layer is the same
+    weights expanded to fp32 (a plain Linear; ~3x the memory for these layers, same replies within noise)."""
+    values, bias = entry["int8"], entry.get("bias")
+    try:
+        from torch.ao.nn.quantized.dynamic import Linear as DynamicLinear
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*quantized tensor creation functions.*")
+            weight = torch._make_per_channel_quantized_tensor(values, entry["scales"], entry["zero_points"], 0)
+            layer = DynamicLinear(values.shape[1], values.shape[0], bias_=bias is not None, dtype=torch.qint8)
+            layer.set_weight_bias(weight, bias)
+        return layer
+    except (ImportError, AttributeError, RuntimeError, NotImplementedError):
+        layer = nn.Linear(values.shape[1], values.shape[0], bias=bias is not None)
+        scale, zero = entry["scales"].float()[:, None], entry["zero_points"].float()[:, None]
+        layer.weight = nn.Parameter((values.float() - zero) * scale, requires_grad=False)
+        if bias is not None:
+            layer.bias = nn.Parameter(bias.float(), requires_grad=False)
+        return layer
+
+
+def build_model(config: dict, untied: bool, state: dict, pad: int, int8: dict | None = None) -> CausalLM:
     """assign=True uses the loaded tensors as the weights instead of copying them in: with torch.load(mmap=True)
     they stay file-backed pages, which the kernel can drop and re-read, rather than a second private copy.
     The layers skip their random initialisation: the placeholder weights stay untouched (never resident) until the
     loaded ones replace them, instead of ~216 MB per model written for a moment at load. (The meta device would do
-    the same but its first use costs ~70 MB of memory for good.)"""
+    the same but its first use costs ~70 MB of memory for good.)
+    int8: {module name: quantized_linear entry} for the layers stored as int8; their packed weights live in this
+    process's own memory (the int8 values, not fp32)."""
     linear, embedding = nn.Linear.reset_parameters, nn.Embedding.reset_parameters
     nn.Linear.reset_parameters = nn.Embedding.reset_parameters = lambda self: None
     try:
         model = CausalLM(CausalConfig(**config), pad, untied)
     finally:
         nn.Linear.reset_parameters, nn.Embedding.reset_parameters = linear, embedding
-    model.load_state_dict(state, assign=True)
+    int8 = int8 or {}
+    missing, unexpected = model.load_state_dict(state, assign=True, strict=False)
+    missing = [k for k in missing if k.rpartition(".")[0] not in int8]
+    if missing or unexpected:
+        raise ValueError(f"chat model weights do not match its config: missing {missing[:3]}, extra {unexpected[:3]}")
+    for name, entry in int8.items():  # replaces the never-filled fp32 placeholder
+        parent, _, leaf = name.rpartition(".")
+        setattr(model.get_submodule(parent), leaf, quantized_linear(entry))
     return model.eval().requires_grad_(False)
 
 
@@ -207,11 +364,10 @@ class PromptRows:
     step() adds one token per row. .logits holds the latest next-token logits [n, vocab]."""
 
     def __init__(self, model: CausalLM, ids: list[int], n: int, new_tokens: int = MAX_TOKENS):
-        cfg = model.cfg
-        self.model, self.heads, self.width = model, cfg.heads, cfg.width
-        self.head = self.width // self.heads
+        cfg, block0 = model.cfg, model.blocks[0]
+        self.model = model
         length = min(cfg.max_length, len(ids) + new_tokens)  # only these positions are ever written
-        self.k = torch.zeros((len(model.blocks), n, self.heads, length, self.head))
+        self.k = torch.zeros((len(model.blocks), n, block0.kv_heads, length, cfg.width // cfg.heads))
         self.v = torch.zeros_like(self.k)
         self.logits = self._run(torch.tensor([ids]), 0).expand(n, -1)
         self.k[:, 1:] = self.k[:, :1]
@@ -223,22 +379,59 @@ class PromptRows:
         self.position += 1
         return self.logits
 
+    def keep_rows(self, index):
+        """Keep only these rows (finished rows leave the batch)."""
+        self.k, self.v, self.logits = self.k[:, index], self.v[:, index], self.logits[index]
+
+    def attend(self, layer, block, q, k, v, start):
+        """Attention for rows q, k, v [rows, heads, steps, hd] at positions start..: writes this prompt's cache."""
+        rows, steps = q.shape[0], q.shape[2]
+        if block.modern:
+            factors = self.model.factors(start, steps)
+            q, k = rotary(q, factors), rotary(k, factors)
+        self.k[layer, :rows, :, start:start + steps] = k
+        self.v[layer, :rows, :, start:start + steps] = v
+        keys = block.expand_kv(self.k[layer, :rows, :, :start + steps])
+        values = block.expand_kv(self.v[layer, :rows, :, :start + steps])
+        return F.scaled_dot_product_attention(q, keys, values, is_causal=steps > 1 and start == 0)
+
     def _run(self, ids, start):
-        model, heads, head, width = self.model, self.heads, self.head, self.width
-        rows, steps = ids.shape
-        x = model.embed(ids, start)
-        factors = model.factors(start, steps)
-        for layer, block in enumerate(model.blocks):
-            q, k, v = block.qkv(block.norm1(x)).view(rows, steps, 3, heads, head).unbind(2)
-            q, k, v = (t.transpose(1, 2) for t in (q, k, v))
-            if block.modern:
-                q, k = rotary(q, factors), rotary(k, factors)
-            self.k[layer, :rows, :, start:start + steps] = k
-            self.v[layer, :rows, :, start:start + steps] = v
-            keys, values = self.k[layer, :rows, :, :start + steps], self.v[layer, :rows, :, :start + steps]
-            a = F.scaled_dot_product_attention(q, keys, values, is_causal=steps > 1 and start == 0)
-            x = block.mlp(x + block.proj(a.transpose(1, 2).reshape(rows, steps, width)))
-        return F.linear(model.norm(x[:, -1]), model.out_weight, model.bias)
+        model = self.model
+        x = model.walk(model.embed(ids, start),
+                       lambda layer, block, q, k, v: self.attend(layer, block, q, k, v, start))
+        return model.head(x[:, -1])
+
+
+def cache_rows(model: CausalLM, prompt_tokens: int, new_tokens: int = MAX_TOKENS) -> int:
+    """Rows sampled per pass: as many as fit KV_CACHE_BUDGET for this prompt length, never fewer than
+    SAMPLE_CHUNK. Each token step costs about the same for 1 or 32 rows (the time goes to reading the weights), so
+    fewer passes are faster; the cache memory is what grows with the rows."""
+    cfg, block0 = model.cfg, model.blocks[0]
+    length = min(cfg.max_length, prompt_tokens + new_tokens)
+    per_row = len(model.blocks) * block0.kv_heads * length * (cfg.width // cfg.heads) * 4 * 2
+    return max(SAMPLE_CHUNK, KV_CACHE_BUDGET // per_row)
+
+
+def step_together(states: list[PromptRows], token: torch.Tensor) -> None:
+    """Add the same next token to every state in one pass through the weights (the contrast decoding's prompt
+    with the chat and the one without): the rows are stacked for every layer, and only attention runs per state
+    on its own cache and positions. Sets each state's .logits."""
+    model, n = states[0].model, token.shape[0]
+    if len(states) == 1 or model.position is not None:  # learned positions differ per state: one pass each
+        for st in states:
+            st.step(token)
+        return
+    starts = [st.position for st in states]
+
+    def attend(layer, block, q, k, v):
+        return torch.cat([st.attend(layer, block, q[i * n:(i + 1) * n], k[i * n:(i + 1) * n],
+                                    v[i * n:(i + 1) * n], start) for i, (st, start) in enumerate(zip(states, starts))])
+
+    x = model.walk(model.embed(token[:, None].repeat(len(states), 1)), attend)
+    logits = model.head(x[:, -1])
+    for i, st in enumerate(states):
+        st.logits = logits[i * n:(i + 1) * n]
+        st.position += 1
 
 
 def is_speaker(token: str) -> bool:
@@ -375,6 +568,79 @@ def judge_scores(judge: ReplyJudge, tokenizer: Tokenizer, item: dict, replies: l
     return (logits.softmax(-1) * torch.arange(logits.shape[-1])).sum(-1).tolist()
 
 
+# ---- Nerman's picker (lm_nerman_picker: a head on the chat model's own layers) ----------------------------
+class PickerHead(nn.Module):
+    def __init__(self, dim, hidden, flags):
+        super().__init__()
+        self.register_buffer("mu", torch.zeros(dim))
+        self.register_buffer("sd", torch.ones(dim))
+        self.net = nn.Sequential(nn.Linear(dim, hidden), nn.GELU(), nn.Dropout(0.1),
+                                 nn.Linear(hidden, hidden), nn.GELU(), nn.Dropout(0.1))
+        self.out = nn.Linear(hidden, 1 + flags)
+
+    def forward(self, x):
+        y = self.out(self.net((x - self.mu) / self.sd))
+        return y[:, 0], torch.sigmoid(y[:, 1:])
+
+
+def bare_of(prefix: list[str]) -> list[str]:
+    """Header + the reply opener, no chat (lm_nerman_picker.bare_of)."""
+    first = next(i for i, t in enumerate(prefix) if is_speaker(t))
+    tail = prefix[-3:] if len(prefix) >= 3 and prefix[-2] == "<re>" else prefix[-1:]
+    return prefix[:first] + tail
+
+
+def overlap(a, b):
+    x, y = set(a.lower().split()), set(b.lower().split())
+    return len(x & y) / max(1, len(x))
+
+
+def copies_chat(reply, chat_texts):
+    """4+ words and 70%+ of them in one chat message (lm_judge17_repick.copies_chat)."""
+    return len(reply.split()) >= 4 and any(overlap(reply, t) >= 0.7 for t in chat_texts)
+
+
+def reply_pass(model: CausalLM, prefix_ids: list[int], replies: list[list[int]], pad: int, layers=()):
+    """({layer: states at the reply tokens}, log p of each reply token) for prefix + each reply, right padded
+    (lm_nerman_picker._pass). Padding follows every real token, so the causal mask keeps it out of real positions."""
+    p = len(prefix_ids)
+    ids = torch.full((len(replies), p + max(map(len, replies))), pad, dtype=torch.long)
+    for i, r in enumerate(replies):
+        ids[i, :p] = torch.tensor(prefix_ids)
+        ids[i, p:p + len(r)] = torch.tensor(r)
+    keep = {}
+    x = model.causal(ids, each=lambda layer, h: keep.__setitem__(layer, h[:, p:]) if layer in layers else None)
+    logits = model.head(x[:, p - 1:-1]).float()
+    return keep, torch.log_softmax(logits, -1).gather(-1, ids[:, p:, None]).squeeze(-1)
+
+
+def picker_features(model: CausalLM, tokenizer: Tokenizer, prefix: list[str], replies: list[list[str]],
+                    layers) -> torch.Tensor:
+    """[replies, 4 x width + 4]: per layer the mean reply-token state and the last (<eom>) token's state, then
+    nats/token with the chat, without it, their difference, ln(tokens) (lm_nerman_picker.features)."""
+    tok = tokenizer
+    pad, unk = tok.id["<pad>"], tok.id["<unk>"]
+    pre = [tok.id.get(t, unk) for t in prefix]
+    bare = [tok.id.get(t, unk) for t in bare_of(prefix)]
+    out = []
+    for k in range(0, len(replies), FEATURE_CHUNK):
+        chunk = [[tok.id.get(t, unk) for t in r] for r in replies[k:k + FEATURE_CHUNK]]
+        hid, lp = reply_pass(model, pre, chunk, pad, layers)
+        _, lpb = reply_pass(model, bare, chunk, pad)
+        lens = torch.tensor([len(r) for r in chunk])
+        m = (torch.arange(lp.shape[1])[None] < lens[:, None]).float()
+        nll = -(lp * m).sum(1) / lens
+        nllb = -(lpb * m).sum(1) / lens
+        parts = []
+        for layer in layers:
+            h = hid[layer].float()
+            parts.append((h * m[..., None]).sum(1) / lens[:, None])
+            parts.append(h[torch.arange(len(chunk)), lens - 1])
+        parts.append(torch.stack([nll, nllb, nllb - nll, lens.float().log()], 1))
+        out.append(torch.cat(parts, 1))
+    return torch.cat(out)
+
+
 # ---- picker helpers (lm_watch) -----------------------------------------------------------------------------
 def content_words(text):
     return [w for w in re.findall(r"[a-z0-9']+", text.lower()) if len(w) > 2 and w not in STOPWORDS]
@@ -438,16 +704,29 @@ class Engine:
         gen = torch.load(bundle / "generator.pt", map_location="cpu", weights_only=True, mmap=True)
         if gen["config"]["vocab_size"] != len(tok.vocab):
             raise ValueError("tokenizer does not match the chat model")
-        self.model = build_model(gen["config"], gen["untied"], gen["state_dict"], pad)
+        self.model = build_model(gen["config"], gen["untied"], gen["state_dict"], pad, gen.get("int8"))
         self.step = gen.get("step")
         del gen
-        saved = torch.load(bundle / "judge.pt", map_location="cpu", weights_only=True, mmap=True)
-        lm = build_model(saved["config"], saved["untied"], saved["lm"], pad)
-        ref = build_model(saved["config"], saved["ref_untied"], saved["ref"], pad) if saved["feats"] else None
-        self.judge = ReplyJudge(lm, ref, saved["hidden"], saved["classes"], saved["feats"])
-        self.judge.head.load_state_dict(saved["head"])
-        self.judge.eval().requires_grad_(False)
-        del saved
+        self.judge = self.picker = None
+        if (bundle / "picker.pt").is_file():  # Nerman: the picker reads the chat model's own layers
+            saved = torch.load(bundle / "picker.pt", map_location="cpu", weights_only=True)
+            self.picker = PickerHead(saved["dim"], saved["hidden"], len(saved["flags"]))
+            self.picker.load_state_dict(saved["state_dict"])
+            self.picker.eval().requires_grad_(False)
+            self.picker_layers = tuple(saved["layers"])
+            self.flag_cutoffs = torch.tensor(saved["flag_cutoffs"])
+            self.score_sd = float(saved["score_sd"])
+            self.picker_tokens = int(saved["max_tokens"])
+            del saved
+        else:
+            saved = torch.load(bundle / "judge.pt", map_location="cpu", weights_only=True, mmap=True)
+            lm = build_model(saved["config"], saved["untied"], saved["lm"], pad)
+            ref = build_model(saved["config"], saved["ref_untied"], saved["ref"], pad) if saved["feats"] else None
+            self.judge = ReplyJudge(lm, ref, saved["hidden"], saved["classes"], saved["feats"])
+            self.judge.head.load_state_dict(saved["head"])
+            self.judge.eval().requires_grad_(False)
+            del saved
+        self.channel = NERMAN_CHANNEL if self.picker is not None else CHANNEL
         blocklist = bundle / "blocklist"
 
         def private_list(name):
@@ -460,7 +739,7 @@ class Engine:
         self.blocked += [re.compile(r"(?<![^\W_])" + stem, re.IGNORECASE)
                          for stem in private_list("name_stems.json")]
         banned = {tok.id[t] for t in NEVER if t in tok.id}
-        banned |= {i for i, t in enumerate(tok.vocab) if "@" in t or "＠" in t}
+        banned |= {i for i, t in enumerate(tok.vocab) if "@" in t or "＠" in t or NAME_POINTER.fullmatch(t)}
         self.banned = sorted(banned)
         self.speaker_ids = [i for i, t in enumerate(tok.vocab) if is_speaker(t)]
         names_path = bundle / "person_names.json"
@@ -489,13 +768,13 @@ class Engine:
     @torch.inference_mode()
     def sample(self, prefix: list[str], n: int, generator: torch.Generator, contrast: float = CONTRAST,
                temperature: float = TEMPERATURE, top_p: float = TOP_P,
-               penalize: list[int] | None = None) -> list[list[str] | None]:
-        """n one-message replies to prefix (ending with the reply's speaker slot), sampled together."""
+               penalize: list[int] | None = None, max_tokens: int = MAX_TOKENS) -> list[list[str] | None]:
+        """n one-message replies to prefix (ending where the reply's text starts), sampled together."""
         tok, model = self.tokenizer, self.model
-        prompts = [fit(list(prefix), model.cfg.max_length - MAX_TOKENS)]
+        prompts = [fit(list(prefix), model.cfg.max_length - max_tokens)]
         if contrast:
             prompts.append(bare_prefix(prefix))
-        states = [PromptRows(model, [tok.id[t] for t in p], n) for p in prompts]
+        states = [PromptRows(model, [tok.id[t] for t in p], n, max_tokens) for p in prompts]
         blocked = torch.zeros(states[0].logits.shape[1], dtype=torch.bool)
         blocked[self.speaker_ids] = True
         blocked[[tok.id["<eos>"], tok.id["<re>"]] + self.banned] = True
@@ -504,8 +783,9 @@ class Engine:
             shift[penalize] = -NAME_REPEAT_PENALTY
         eom = tok.id["<eom>"]
         rows = [[] for _ in range(n)]
+        batch = list(range(n))  # batch row j is rows[batch[j]]
         done = torch.zeros(n, dtype=torch.bool)
-        for _ in range(MAX_TOKENS):
+        for _ in range(max_tokens):
             logps = [torch.log_softmax((st.logits.float() + shift).masked_fill(blocked, -torch.inf), dim=-1)
                      for st in states]
             mixed = torch.logsumexp(torch.stack(logps[:1]), dim=0)
@@ -519,14 +799,21 @@ class Engine:
             ordered = ordered * ((ordered.cumsum(-1) - ordered) < top_p)
             token = order.gather(1, torch.multinomial(ordered, 1, generator=generator))[:, 0]
             token = torch.where(done, torch.full_like(token, eom), token)
-            for r, t in enumerate(token.tolist()):
-                if not rows[r] or rows[r][-1] != eom:
-                    rows[r].append(t)
+            for j, t in enumerate(token.tolist()):
+                row = rows[batch[j]]
+                if not row or row[-1] != eom:
+                    row.append(t)
             done |= token == eom
             if bool(done.all()):
                 break
-            for st in states:
-                st.step(token)
+            # Once half the batch has finished, drop the finished rows: past ~8 rows each step costs more per row,
+            # and one long try would otherwise carry every finished row to the end (a meow's 32 tries).
+            if 2 * int(done.sum()) >= len(batch):
+                keep = (~done).nonzero()[:, 0]
+                for st in states:
+                    st.keep_rows(keep)
+                batch, done, token = [batch[j] for j in keep.tolist()], done[keep], token[keep]
+            step_together(states, token)
         replies = []
         for row in rows:
             tokens = [tok.vocab[t] for t in row]
@@ -539,15 +826,15 @@ class Engine:
     # ---- picking ----
     def scored_candidates(self, prefix, item, messages, generator, n, echoes=None, penalize=None):
         """[(pick score, reply tokens, text)] for the usable candidates (lm_watch.score_candidates with
-        MuonKahuna's settings; with a judge the per-token gain is not computed). Candidates that only copy a
-        chat message are left out; if `echoes` is a list they are added to it (tokens) for the last resort."""
+        the dashboard's settings; with a judge or picker the per-token gain is not computed). Candidates that only
+        copy a chat message are left out; if `echoes` is a list they are added to it (tokens) for the last resort."""
         tok = self.tokenizer
         blocked = {copy_key(m["text"]) for m in messages}
         usable, unique = [], set()
-        # Sampled SAMPLE_CHUNK rows at a time: the key/value caches grow with the rows, and a meow's 32 rows at
-        # once cost ~300 MB for a moment; same distribution, one chunk per pass.
-        sampled = [r for i in range(0, n, SAMPLE_CHUNK)
-                   for r in self.sample(prefix, min(SAMPLE_CHUNK, n - i), generator, penalize=penalize)]
+        # Sampled in chunks (cache_rows): the key/value caches grow with the rows; same distribution per chunk.
+        chunk = cache_rows(self.model, len(prefix))
+        sampled = [r for i in range(0, n, chunk)
+                   for r in self.sample(prefix, min(chunk, n - i), generator, penalize=penalize)]
         for reply in sampled:
             if not reply or len(reply) < 2 or tuple(reply) in unique:
                 continue
@@ -560,10 +847,11 @@ class Engine:
                     echoes.append(reply)
                 continue
             usable.append(reply)
-        return self.score(usable, item, messages)
+        return self.score(usable, item, messages, prefix)
 
-    def score(self, replies, item, messages):
-        """Pick scores for reply token lists: judge grade plus the dashboard's picker bonuses and penalties."""
+    def score(self, replies, item, messages, prefix):
+        """Pick scores for reply token lists: judge grade (or Nerman's picker score) plus the dashboard's picker
+        bonuses and penalties."""
         tok = self.tokenizer
         own_words = {w for m in messages if m["s"] == BOT_SPEAKER for w in content_words(m["text"])}
         recent_words = {w for m in messages[-3:] for w in content_words(m["text"])}
@@ -591,10 +879,44 @@ class Engine:
             judged.append(text_tokens + ["<eom>"])
         if scored:
             with torch.inference_mode():
-                grades = judge_scores(self.judge, tok, item, judged)
+                if self.picker is not None:
+                    grades = self.picker_scores(prefix, judged, [m["text"] for m in messages])
+                else:
+                    grades = [g / JUDGE_SPREAD for g in judge_scores(self.judge, tok, item, judged)]
             for row, grade in zip(scored, grades):
-                row[0] += grade / JUDGE_SPREAD
+                row[0] += grade
         return scored
+
+    def picker_scores(self, prefix, replies, chat_texts):
+        """Nerman's picker score of each reply (text tokens + <eom>) in its own SDs, minus FLAG_PENALTY for a try
+        it flags or that copies 70%+ of a chat message (lm_nerman_picker.live_judge, net of lm_watch's / JUDGE_SD)."""
+        x = picker_features(self.model, self.tokenizer, prefix, [r[:self.picker_tokens] for r in replies],
+                            self.picker_layers)
+        score, flags = self.picker(x)
+        flagged = (flags >= self.flag_cutoffs).any(1).tolist()
+        out = []
+        for s, f, reply in zip(score.tolist(), flagged, replies):
+            text = self.tokenizer.decode([t for t in reply if t != "<eom>"])
+            out.append(s / self.score_sd - (FLAG_PENALTY if f or copies_chat(text, chat_texts) else 0.0))
+        return out
+
+    def meow_variation(self, prefix, sound, blocked, generator, penalize=None):
+        """When every try only copied a member's cat sound: start the reply with that sound and let the model
+        finish it its own way ("meow :3", "meoww"), preferring a finish that is still only cat sounds
+        (lm_watch.meow_variation, AJ 2026-11-28). Reply tokens ending in <eom>, or None."""
+        tok = self.tokenizer
+        start = tok.tokens(copy_key(sound))
+        if not start:
+            return None
+        fresh = []
+        for r in self.sample(list(prefix) + start, MEOW_VARIATION_TRIES, generator, contrast=0.0, temperature=0.8,
+                             top_p=0.95, penalize=penalize, max_tokens=MEOW_VARIATION_TOKENS):
+            if not r:
+                continue
+            text = tok.decode(start + r[:-1]).strip()
+            if copy_key(text) not in blocked and not self.unsendable(text):
+                fresh.append((not is_meow(text), start + r))
+        return min(fresh, key=lambda f: f[0])[1] if fresh else None
 
     def reply(self, messages: list[dict], seed: int | None = None, year: int | None = None) -> dict:
         """messages: [{"s": speaker number (2 = the bot), "text": str, "img": bool?}], oldest first, the last one
@@ -614,25 +936,33 @@ class Engine:
             raise ValueError("The last message must be from a person.")
         tok = self.tokenizer
         year = year or datetime.now().year
-        session = {"year": year, "channel": CHANNEL, "msgs": msgs}
+        session = {"year": year, "channel": self.channel, "msgs": msgs}
         prefix = tok.session_tokens(session, tags=True)[:-1] + [f"<s{BOT_SPEAKER}>"]
+        if self.picker is not None:  # Nerman answers with Discord's reply button, as every moment it trained on
+            prefix += ["<re>", f"<s{msgs[-1]['s']}>"]
+        prefix = fit(prefix, self.model.cfg.max_length - MAX_TOKENS)
         item = {"year": year, "channel": CHANNEL, "context": msgs, "speaker": BOT_SPEAKER, "re": msgs[-1]["s"]}
         seed = random.SystemRandom().randrange(1 << 63) if seed is None else seed
         generator = torch.Generator().manual_seed(seed)
-        n = MEOW_CANDIDATES if is_meow(msgs[-1]["text"]) else CANDIDATES
+        meow_in = is_meow(msgs[-1]["text"])
+        n = MEOW_CANDIDATES if meow_in else CANDIDATES
         echoes = []  # candidates that only copied a chat message ("WHAT?" -> "what????")
         penalize = self.repeat_name_ids(msgs)
         scored = self.scored_candidates(prefix, item, msgs, generator, n, echoes, penalize)
         if not scored:
             scored = self.scored_candidates(prefix, item, msgs, generator, FALLBACK_CANDIDATES, echoes, penalize)
         blocked = {copy_key(m["text"]) for m in msgs}
+        if not scored and meow_in:
+            variation = self.meow_variation(prefix, msgs[-1]["text"], blocked, generator, penalize)
+            if variation:
+                scored = [[0.0, variation, tok.decode(split_photo_tokens(tok, variation)).strip()]]
         tries = 0
         while not scored:  # last resort: plain samples at 0.8 / 0.95, still no copies of the chat
             if tries == 5:
                 if not echoes:
                     raise ValueError("The model only repeated the chat.")
                 # Every candidate was an echo: send the best-scoring one rather than nothing.
-                scored = self.score(echoes, item, msgs)
+                scored = self.score(echoes, item, msgs, prefix)
                 break
             tries += 1
             for reply in self.sample(prefix, 1, generator, contrast=0.0, temperature=0.8, top_p=0.95,

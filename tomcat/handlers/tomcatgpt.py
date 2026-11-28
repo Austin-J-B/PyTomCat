@@ -1,9 +1,9 @@
-"""TomCatGPT: the TomCat language model (MuonKahuna, best of 4) answering in Discord.
+"""TomCatGPT: the TomCat language model (Nerman int8, best of 4) answering in Discord.
 
     "TomCatGPT, what's up?"        -> the model answers that one message
     reply (Discord reply button) to a TomCatGPT answer -> the model answers with the whole reply thread as context
                                       (each message's parent, back to the tagged message; the model keeps as many
-                                      recent messages as fit its 512-token window)
+                                      recent messages as fit its 1,024-token window)
 
 The call tag is separate from the "TomCat," command wake word: on_message checks it first, so "TomCatGPT, show me
 microwave" goes to the model, not the photo command.

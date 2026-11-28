@@ -36,6 +36,27 @@ YEARS = [f"<y{y}>" for y in range(2019, 2029)]
 # tokenizer without them must keep loading and tokenizing exactly as before.
 # Built tokenizers append them to the end of the vocabulary, so existing ids do not move.
 QUOTE_TOKENS = ("<quote>", "<quote_end>")
+# Emoticons: each is one atomic token spelled exactly as typed (case kept: "xD" is not "XD").
+# Each entry is independent: it is used only when its token is in the vocabulary AND atomic
+# (Tokenizer.emoticons), so every legacy tokenizer, which has none, tokenizes as before.
+# Builds add all of them, appended after the other atomic tokens. An emoticon is matched
+# only when it stands alone (start or whitespace before, end or whitespace after), so
+# "(see this):", "3:00" and "a:)b" are unchanged. Longest first.
+EMOTICONS = (
+    ":-)", ";-)", ":-(", "</3", ":')", ":'(", ">:(", "^_^", "^-^", "-_-", ">_<", "T_T", ";_;", "._.", ":^)",
+    ":)", "(:", "):", ":(", ":D", "D:", ":P", ":p", ":3", "c:", ":c", ";)", ":/", ":|", ":O", ":o",
+    "xD", "XD", "xd", "<3", "^^", "o7", ":]", ":[", "=)", "=(",
+)
+# Tone indicators: same rules as EMOTICONS (one atomic token, standalone, exact case). Their
+# leading "/" never appears in a word, so no learned piece can spell one.
+TONE_INDICATORS = (
+    "/lhj", "/nsrs", "/genq", "/gen", "/srs", "/sar", "/ref", "/pos", "/neg", "/aff", "/lyr", "/hyp", "/nbh",
+    "/lh", "/hj", "/jk", "/nm", "/af", "/rh", "/li", "/ex", "/th", "/j", "/s", "/p", "/t", "/c", "/l", "/m", "/f",
+)
+# Name pointers: one token each, matched anywhere in text (like <url>), but only when the
+# tokenizer has all of them (Tokenizer.names). Legacy text such as "<name_9>" is not special.
+NAME_TOKENS = tuple(f"<name_{i}>" for i in range(1, 9)) + ("<name_other>",)
+NAME_SPLIT = re.compile(r"(<name_(?:[1-8]|other)>)")
 
 
 def segments(word: str) -> list[tuple[str, str]]:
@@ -71,6 +92,19 @@ class Tokenizer:
         if present and not all(t in self.atomic for t in QUOTE_TOKENS):
             raise ValueError("Quote markers must be atomic tokens")
         self.quotes = bool(present)              # quote text is emitted only with these markers
+        present = [t for t in NAME_TOKENS if t in self.id]
+        if present and len(present) != len(NAME_TOKENS):
+            raise ValueError("Tokenizer has only some of the name markers")
+        if present and not all(t in self.atomic for t in NAME_TOKENS):
+            raise ValueError("Name markers must be atomic tokens")
+        self.names = bool(present)
+        self.name_re = NAME_SPLIT if self.names else None
+        self.emoticons = tuple(e for e in EMOTICONS if e in self.id and e in self.atomic)
+        self.tone_indicators = tuple(t for t in TONE_INDICATORS if t in self.id and t in self.atomic)
+        # One pattern for every standalone atom; longest first so the longer spelling wins.
+        specials = sorted(set(self.emoticons) | set(self.tone_indicators), key=len, reverse=True)
+        self.standalone = (re.compile(r"(?<!\S)(?:" + "|".join(re.escape(e) for e in specials)
+                                      + r")(?!\S)") if specials else None)
         self.rank = {tuple(p): i for i, p in enumerate(data["merges"])}
         self.protected = set(data["protected"])  # whole-word tokens (cat names)
         self.custom = {e["name"]: e for e in data["custom_emoji"]}
@@ -146,6 +180,17 @@ class Tokenizer:
         space = 0
         pos = 0
         while pos < len(text):
+            # Whole-text atoms checked before ATOM: standalone emoticons and tone indicators,
+            # and name pointers (which may sit inside text). Each is one token, spaced like an emoji.
+            emo = self.standalone.match(text, pos) if self.standalone else None
+            if emo is None and self.name_re:
+                emo = self.name_re.match(text, pos)
+            if emo:
+                out.extend([SP] * space)
+                out.append(emo.group())
+                space = 0
+                pos = emo.end()
+                continue
             m = ATOM.match(text, pos)
             assert m is not None
             kind, s = m.lastgroup, m.group(0)
@@ -311,4 +356,3 @@ class Tokenizer:
     @classmethod
     def load(cls, path: Path) -> "Tokenizer":
         return cls(json.loads(path.read_text(encoding="utf-8")))
-
